@@ -35,6 +35,12 @@ class File {
     this.uri = target.uri;
     this.name = target.name;
   }
+  get size() {
+    return (files.get(this.uri) ?? '').length;
+  }
+  get md5() {
+    return 'synthetic-checksum';
+  }
   get exists() {
     return files.has(this.uri);
   }
@@ -96,7 +102,7 @@ await exporter.link((specifier) => {
 });
 await exporter.evaluate();
 const { exportProfileDay } =
-  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
+  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void,onArtifact?:(artifact:import('../core/history.js').HistoryArtifact)=>void)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
     exporter.namespace
   );
 const { parseExportSettings } = exportFiles;
@@ -125,12 +131,21 @@ const profile = {
   },
   export: parseExportSettings({ formats: ['json', 'jsonl'] }),
 };
+/** @type {import('../core/history.js').HistoryArtifact[]} */
+const artifacts = [];
 const result = await exportProfileDay(
   session,
   profile,
   interval,
   () => true,
   () => {},
+  (artifact) => artifacts.push(artifact),
+);
+assert.equal(artifacts.length, 2);
+assert.ok(
+  artifacts.every(
+    (a) => a.partial && a.recordCount === 3 && a.checksum === 'synthetic-checksum' && a.bytes > 0,
+  ),
 );
 assert.equal(result.count, 3);
 assert.equal(result.failedSources, 3);
@@ -182,6 +197,7 @@ await assert.rejects(
 );
 failWrite = false;
 failDelivery = true;
+artifacts.length = 0;
 await assert.rejects(
   exportProfileDay(
     session,
@@ -189,9 +205,11 @@ await assert.rejects(
     interval,
     () => true,
     () => {},
+    (artifact) => artifacts.push(artifact),
   ),
   /Upload failed/,
 );
+assert.equal(artifacts.length, 0);
 console.log(
   'Export resilience: partial records, skipped sources, manifests, all-failed preservation, cancellation, disk and delivery failures verified.',
 );

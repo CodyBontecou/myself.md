@@ -6,7 +6,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { registerDataTools, phoneApi, cancelPhone } from './data.js';
-import { cloud, registerCloudTools, ownCloudDevice } from './cloud.js';
+import { cloud, history, registerCloudTools, ownCloudDevice } from './cloud.js';
 import { parseProfile } from '../core/profiles.js';
 import { proxyAuth } from './auth-proxy.js';
 import { createPairingUrl, createPairingDeepLink } from '../core/index.js';
@@ -38,8 +38,8 @@ const metadata = {
   scopes_supported: ['qr-connect'],
   bearer_methods_supported: ['header'],
 };
-/** @param {string} subject */
-function makeMcp(subject) {
+/** @param {string} subject @param {string|null} client */
+function makeMcp(subject, client) {
   const mcp = new McpServer({ name: 'qr-connect', version: '1.0.0' });
   mcp.registerTool(
     'create_phone_pairing',
@@ -96,15 +96,15 @@ function makeMcp(subject) {
       return { content: [{ type: 'text', text: 'Disconnected.' }] };
     },
   );
-  registerDataTools(mcp, subject);
-  registerCloudTools(mcp, subject);
+  registerDataTools(mcp, subject, client);
+  registerCloudTools(mcp, subject, client);
   return mcp;
 }
 const handler = toNodeHandler(
   createMcpHandler((ctx) => {
     const subject = ctx.authInfo?.extra?.subject;
     if (typeof subject !== 'string') throw new Error('Authentication required.');
-    return makeMcp(subject);
+    return makeMcp(subject, ctx.authInfo?.clientId ?? null);
   }),
 );
 /** @param {import('node:http').ServerResponse} res @param {number} code @param {unknown} data */
@@ -232,6 +232,13 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     const subject = `${issuer}|${payload.sub}`;
+    if (url.pathname === '/api/history' && req.method === 'GET') {
+      if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+      const deviceId = z.string().uuid().parse(url.searchParams.get('deviceId'));
+      ownCloudDevice(subject, deviceId);
+      json(res, 200, history.list(subject, deviceId, Number(url.searchParams.get('offset') ?? 0)));
+      return;
+    }
     if (url.pathname.startsWith('/api/cloud/')) {
       if (payload.azp !== 'qr-phone')
         throw new PairingError(403, 'Cloud management requires the phone OAuth client.');

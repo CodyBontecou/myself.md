@@ -1,8 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { HistoryStore } from './history-store.js';
 import { CloudStore } from './cloud-store.js';
 import { devices, PairingError } from './store.js';
 const directory = process.env.DATA_DIR ?? '.local';
@@ -18,6 +19,7 @@ const key = process.env.CLOUD_ENCRYPTION_KEY
   ? Buffer.from(process.env.CLOUD_ENCRYPTION_KEY, 'hex')
   : readFileSync(path);
 export const cloud = new CloudStore(join(directory, 'cloud.sqlite'), key);
+export const history = new HistoryStore(join(directory, 'history.sqlite'), cloud);
 /** @param {string} subject @param {string} id */
 export function ownCloudDevice(subject, id) {
   if (!devices(subject).some((d) => d.id === id))
@@ -26,8 +28,8 @@ export function ownCloudDevice(subject, id) {
 const content = (/** @type {unknown} */ value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 });
-/** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject */
-export function registerCloudTools(mcp, subject) {
+/** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
+export function registerCloudTools(mcp, subject, client = null) {
   mcp.registerTool(
     'list_cloud_exports',
     {
@@ -50,8 +52,59 @@ export function registerCloudTools(mcp, subject) {
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ exportId, cursor, limit }) =>
-      content(cloud.page(subject, exportId, Number(cursor || 0), limit, true)),
+    async ({ exportId, cursor, limit }) => {
+      const row = cloud.row(subject, exportId),
+        metadata = cloud.metadata(row);
+      const stamp = new Date().toISOString(),
+        id = randomUUID();
+      const interval = /** @type {{start:string,end:string}} */ (
+        metadata.manifest.interval ?? {
+          start: new Date(row.day).toISOString(),
+          end: new Date(Date.parse(row.day) + 86400000).toISOString(),
+        }
+      );
+      /** @type {import('../core/history.js').HistoryEvent} */
+      const event = {
+        id,
+        kind: 'access',
+        startedAt: stamp,
+        updatedAt: stamp,
+        status: 'running',
+        actor: 'agent',
+        client,
+        target: 'cloud',
+        destination: 'QR Connect Cloud',
+        profile: {
+          id: row.profile,
+          name: metadata.profile.name,
+          selection: metadata.profile.selection,
+        },
+        interval,
+        timezone: 'UTC',
+        formats: [row.format],
+        recordCount: null,
+        artifacts: [],
+        warnings: [],
+        relatedId: exportId,
+        error: null,
+      };
+      history.record(subject, row.device, event);
+      try {
+        const page = cloud.page(subject, exportId, Number(cursor || 0), limit, true);
+        history.update(subject, id, {
+          status: 'complete',
+          recordCount: page.records.length,
+          warnings: page.nextCursor ? ['This returned page has more records available.'] : [],
+        });
+        return content(page);
+      } catch (error) {
+        history.update(subject, id, {
+          status: 'failed',
+          error: 'Cloud access was denied or the export could not be read.',
+        });
+        throw error;
+      }
+    },
   );
   mcp.registerTool(
     'delete_cloud_export',

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, StyleSheet, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
+import { useTheme } from '../src/lib/theme';
+import { router } from 'expo-router';
 import { Button, Switch, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
@@ -16,8 +18,22 @@ import ProfilePanel from './ProfilePanel.js';
 import { loadProfiles, saveProfiles } from './profiles.js';
 import { parseProfile, profileAllows } from '../core/profiles.js';
 import { shareDomain } from './export.js';
-/** @param {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
-export default function DataPanel({ session, incoming, onDismiss }) {
+/** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
+const PhoneDataContext = createContext(
+  /** @type {ReturnType<typeof usePhoneDataState>|null} */ (null),
+);
+export function usePhoneData() {
+  const value = useContext(PhoneDataContext);
+  if (!value) throw new Error('Phone data provider is required.');
+  return value;
+}
+/** @param {DataProviderProps} props */
+export function PhoneDataProvider(props) {
+  const value = usePhoneDataState(props);
+  return <PhoneDataContext.Provider value={value}>{props.children}</PhoneDataContext.Provider>;
+}
+/** @param {DataProviderProps} props */
+function usePhoneDataState({ session, incoming, onDismiss }) {
   const [grants, setGrants] = useState(() => loadGrants(session.deviceId));
   const allowed = useRef(grants);
   const [profiles, setProfiles] = useState(() => loadProfiles(session.deviceId));
@@ -41,8 +57,10 @@ export default function DataPanel({ session, incoming, onDismiss }) {
     () => profileState.current?.profiles.find((p) => p.id === profileState.current?.activeId),
     [],
   );
+  const [sourceNotes, setSourceNotes] = useState(/** @type {Record<string,string>} */ ({}));
   const phoneCatalog = useCallback(async () => {
     const raw = await catalog(session.owner, allowed.current);
+    setSourceNotes(Object.fromEntries(raw.domains.map((d) => [d.domain, d.notes.join(' ')])));
     setTypes({
       health: raw.domains.find((d) => d.domain === 'health')?.types ?? [],
       time: raw.domains.find((d) => d.domain === 'time')?.types ?? [],
@@ -89,7 +107,11 @@ export default function DataPanel({ session, incoming, onDismiss }) {
   }, [session]);
 
   const [busy, setBusy] = useState(false),
-    [message, setMessage] = useState('READY_ Waiting for chat queries.');
+    [message, setMessage] = useState(
+      session.server
+        ? 'Ready for agent queries while this app is open.'
+        : 'Your data stays on this phone until you pair an agent.',
+    );
   const [isTracking, setTracking] = useState(false),
     [days, setDays] = useState('7');
   const [notes, setNotes] = useState(/** @type {Record<string,string>} */ ({}));
@@ -141,16 +163,23 @@ export default function DataPanel({ session, incoming, onDismiss }) {
       Object.fromEntries(
         info.domains.map((d) => [
           d.domain,
-          `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.types.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
+          `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
         ]),
       ),
     );
+    if (!session.server) return;
     await api(session, `/api/phones/${session.deviceId}/poll`, {
       method: 'POST',
       body: JSON.stringify({ ...info, dispatch: false }),
     });
   }, [session, phoneCatalog]);
   useEffect(() => {
+    if (!session.server) {
+      void Promise.resolve()
+        .then(publish)
+        .catch((e) => setMessage(String(e)));
+      return;
+    }
     let active = true,
       running = false;
     /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
@@ -176,7 +205,7 @@ export default function DataPanel({ session, incoming, onDismiss }) {
             Object.fromEntries(
               info.domains.map((d) => [
                 d.domain,
-                `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.types.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
+                `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
               ]),
             ),
           );
@@ -227,7 +256,7 @@ export default function DataPanel({ session, incoming, onDismiss }) {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [session, phoneCatalog, activeProfile]);
+  }, [session, phoneCatalog, activeProfile, publish]);
   /** @param {()=>Promise<void>} action */
   async function run(action) {
     setBusy(true);
@@ -300,21 +329,105 @@ export default function DataPanel({ session, incoming, onDismiss }) {
       throw new Error('Choose 1–31 days. Repeat for older date windows through your chat.');
     const profile = activeProfile();
     if (!profile) throw new Error('Choose an active profile.');
-    const count = await shareDomain(
-      session.owner,
-      allowed.current,
-      domain,
-      profile,
-      range,
-      setMessage,
-    );
+    const count = await shareDomain(session, allowed.current, domain, profile, range, setMessage);
     setMessage(
       `Exported ${count} records. Check the file manifest for unreadable or partial sources.`,
     );
   }
+  /** @param {import('../core/profiles.js').ProfileState} next */
+  async function changeProfiles(next) {
+    if (!next.profiles.length || !next.profiles.some((p) => p.id === next.activeId))
+      throw new Error('Keep at least one active profile.');
+    for (const p of next.profiles) parseProfile(p);
+    for (const previous of profiles?.profiles ?? []) {
+      const changed = next.profiles.find((p) => p.id === previous.id);
+      if (
+        session.server &&
+        previous.export.destination === 'cloud' &&
+        JSON.stringify(changed) !== JSON.stringify(previous)
+      ) {
+        // Revoke stored-data sharing before accepting changed profile permissions.
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        await cloudAccess(session, previous, false);
+      }
+    }
+    version.current++;
+    saveProfiles(session.deviceId, next);
+    profileState.current = next;
+    setProfiles(next);
+    void reconcileExports().catch((e) => setMessage(`Profile saved. ${String(e)}`));
+    try {
+      await publish();
+    } catch {
+      setMessage('Profile saved locally. Server access updates when this phone reconnects.');
+    }
+  }
+  return {
+    session,
+    incoming,
+    onDismiss,
+    profiles,
+    types,
+    busy,
+    proposal,
+    setProposal,
+    grants,
+    isTracking,
+    locationInfo,
+    notes,
+    sourceNotes,
+    message,
+    filesOpen,
+    setFilesOpen,
+    days,
+    setDays,
+    run,
+    changeGrant,
+    changeRecording,
+    importFile,
+    exportFile,
+    changeProfiles,
+    setMessage,
+    setTracking,
+    publish,
+    refreshLocation,
+  };
+}
+/** @param {{domain?:import('../core/data.js').Domain, management?:boolean}} props */
+export default function DataPanel({ domain: selectedDomain = undefined, management = false }) {
+  const { colors } = useTheme();
+  const {
+    session,
+    incoming,
+    onDismiss,
+    profiles,
+    types,
+    busy,
+    proposal,
+    setProposal,
+    grants,
+    isTracking,
+    locationInfo,
+    notes,
+    sourceNotes,
+    message,
+    days,
+    setDays,
+    run,
+    changeGrant,
+    changeRecording,
+    importFile,
+    exportFile,
+    changeProfiles,
+    setMessage,
+    setTracking,
+    publish,
+    refreshLocation,
+  } = usePhoneData();
+  const [filesOpen, setFilesOpen] = useState(false);
   return (
     <View style={styles.container}>
-      {profiles ? (
+      {management && profiles ? (
         <ProfilePanel
           session={session}
           state={profiles}
@@ -325,71 +438,28 @@ export default function DataPanel({ session, incoming, onDismiss }) {
             if (incoming) onDismiss();
             else setProposal(null);
           }}
-          onChange={async (next) => {
-            if (!next.profiles.length || !next.profiles.some((p) => p.id === next.activeId))
-              throw new Error('Keep at least one active profile.');
-            for (const p of next.profiles) parseProfile(p);
-            for (const previous of profiles.profiles) {
-              const changed = next.profiles.find((p) => p.id === previous.id);
-              if (
-                previous.export.destination === 'cloud' &&
-                JSON.stringify(changed) !== JSON.stringify(previous)
-              ) {
-                // Revoke stored-data sharing before accepting changed profile permissions.
-                // oxlint-disable-next-line eslint/no-await-in-loop
-                await cloudAccess(session, previous, false);
-              }
-            }
-            version.current++;
-            saveProfiles(session.deviceId, next);
-            profileState.current = next;
-            setProfiles(next);
-            void reconcileExports().catch((e) => setMessage(`Profile saved. ${String(e)}`));
-            try {
-              await publish();
-            } catch {
-              setMessage(
-                'Profile saved locally. Server access updates when this phone reconnects.',
-              );
-            }
-          }}
+          onChange={changeProfiles}
         />
-      ) : (
+      ) : management ? (
         <Text>Loading export profiles…</Text>
-      )}
-      <Text style={styles.heading}>{'> DATA STREAMS'}</Text>
-      <Text style={styles.description}>
-        Toggle chat access. Keep this app open for queries. Location recording also runs in the
-        background.
-      </Text>
-      <Button
-        title={filesOpen ? '[-] Close file tools' : '[+] Import / export files'}
-        onPress={() => setFilesOpen(!filesOpen)}
-      />
-      {filesOpen ? (
-        <>
-          <Text style={styles.description}>EXPORT WINDOW / DAYS (1–31)</Text>
-          <TextInput
-            accessibilityLabel="Days to export"
-            keyboardType="number-pad"
-            value={days}
-            onChangeText={setDays}
-            style={styles.input}
-          />
-        </>
       ) : null}
-      {domains.map((domain) => (
-        <View key={domain} style={styles.card}>
+      {!management && (
+        <Text style={styles.description}>
+          Review permissions and choose what your agent can read.
+        </Text>
+      )}
+
+      {(management ? [] : domains.filter((item) => item === selectedDomain)).map((domain) => (
+        <View
+          key={domain}
+          style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}
+        >
           <Text style={styles.title}>
-            {domain === 'health'
-              ? '01 / HEALTH'
-              : domain === 'time'
-                ? '02 / SCREEN TIME'
-                : '03 / LOCATION'}
+            {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'}
           </Text>
           {domain === 'location' ? (
             <View style={styles.row}>
-              <Text style={styles.description}>RECORDING</Text>
+              <Text style={styles.description}>Background recording</Text>
               <Switch
                 accessibilityLabel="Record location in background"
                 value={isTracking}
@@ -399,17 +469,41 @@ export default function DataPanel({ session, incoming, onDismiss }) {
             </View>
           ) : null}
           <View style={styles.row}>
-            <Text style={styles.description}>CHAT ACCESS</Text>
+            <Text style={styles.description}>Agent access</Text>
             <Switch
               accessibilityLabel={`Allow chat to read ${domain} data`}
               value={grants[domain]}
-              disabled={busy}
+              disabled={busy || !session.server}
               onValueChange={(value) => void run(() => changeGrant(domain, value))}
             />
           </View>
           <Text style={styles.description}>
-            {grants[domain] ? 'SHARED' : 'PRIVATE'} / {notes[domain] ?? 'Checking data sources…'}
+            {grants[domain] ? 'Shared with your paired agent' : 'Private'} ·{' '}
+            {notes[domain] ?? 'Checking data sources…'}
           </Text>
+          {domain !== 'location' && (
+            <Button
+              title={
+                domain === 'health' ? 'Review health permissions' : 'Review screen time permissions'
+              }
+              disabled={busy}
+              onPress={() =>
+                void run(async () => {
+                  if (domain === 'health') {
+                    await authorizeHealth();
+                    setMessage(
+                      'Health permissions reviewed. Choose which data types to include in your profile.',
+                    );
+                  } else {
+                    const status = await authorizeUsage();
+                    setMessage(`Screen time access: ${status}.`);
+                  }
+                  await publish();
+                })
+              }
+            />
+          )}
+          <Button title="Choose data types" onPress={() => router.push('/manage')} />
           {domain === 'location' ? (
             <>
               <Text style={styles.description}>{locationInfo}</Text>
@@ -426,13 +520,33 @@ export default function DataPanel({ session, incoming, onDismiss }) {
                     await captureLocation(session.owner);
                     setMessage('Recorded one location point on this phone.');
                     await publish();
+                    await refreshLocation();
                   })
                 }
               />
             </>
           ) : null}
+          <Button
+            title={filesOpen ? 'Hide file tools' : 'Import & export files'}
+            onPress={() => setFilesOpen(!filesOpen)}
+          />
           {filesOpen ? (
             <>
+              <Text>Days to export (1–31)</Text>
+              <TextInput
+                accessibilityLabel="Days to export"
+                keyboardType="number-pad"
+                value={days}
+                onChangeText={setDays}
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.border,
+                    color: colors.text,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              />
               <Button
                 title={`Import ${domain === 'health' ? 'health.md' : domain === 'time' ? 'time.md' : 'iso.me'} JSON`}
                 disabled={busy}
@@ -447,17 +561,21 @@ export default function DataPanel({ session, incoming, onDismiss }) {
           ) : null}
         </View>
       ))}
-      <Text accessibilityLiveRegion="polite" style={styles.status}>
+      {!management && <Text style={styles.description}>{sourceNotes[selectedDomain ?? '']}</Text>}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.status, { backgroundColor: colors.subtle, borderColor: colors.border }]}
+      >
         {message}
       </Text>
-      {filesOpen ? (
+      {management ? (
         <Button
           title="Delete local imported and recorded data"
           disabled={busy}
           onPress={() =>
             Alert.alert(
               'Delete local data?',
-              'This deletes imported files and recorded location points from QR Connect. System health and usage data remain in their source apps.',
+              'This deletes imported files and recorded location points from this phone. System health and usage data remain in their source apps.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -482,14 +600,12 @@ export default function DataPanel({ session, incoming, onDismiss }) {
 }
 const styles = StyleSheet.create({
   container: { gap: 16 },
-  heading: { fontSize: 22, lineHeight: 30 },
   description: { fontSize: 16, lineHeight: 24 },
   card: {
     padding: 16,
     gap: 12,
-    borderTopWidth: 2,
-    borderColor: '#000000',
-    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   row: {
     flexDirection: 'row',
@@ -500,19 +616,19 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 19, lineHeight: 27 },
   input: {
-    fontFamily: 'Terminal',
+    borderRadius: 14,
     fontSize: 17,
     borderWidth: 1,
-    borderColor: '#000000',
+
     padding: 12,
-    color: '#000000',
-    backgroundColor: '#ffffff',
   },
   status: {
     fontSize: 15,
     lineHeight: 24,
-    borderLeftWidth: 3,
-    borderColor: '#000000',
+    borderRadius: 14,
+
+    padding: 16,
+
     paddingLeft: 12,
   },
 });

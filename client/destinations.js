@@ -79,7 +79,7 @@ export async function deliverExport(context, profile, file, format, manifest, va
       redirect: 'error',
     });
     if (!response.ok) throw new Error(`HTTP export failed (${response.status}).`);
-    return;
+    return null;
   }
   if (!credential?.server) throw new Error('Authorize cloud uploads on this profile first.');
   if (file.size > 16 * 1024 * 1024)
@@ -102,4 +102,5 @@ export async function deliverExport(context, profile, file, format, manifest, va
     redirect: 'error',
   });
   if (!result.ok) throw new Error(`Cloud upload failed (${result.status}).`);
+  return { id };
 }

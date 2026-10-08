@@ -5,13 +5,14 @@ import { dueOccurrences, occurrenceDays, addDays } from '../core/schedules.js';
 import { loadExportContext } from './export-context.js';
 import { loadProfiles } from './profiles.js';
 import { localCalendar } from './calendar.js';
+import { beginExport, recordArtifact, finishExport } from './history.js';
 import { exportProfileDay } from './profile-export.js';
 const task = 'profile-file-exports';
 const db = SQLite.openDatabaseSync('phone-data.sqlite');
 db.execSync(
   'CREATE TABLE IF NOT EXISTS profile_schedules (device TEXT, profile TEXT, value TEXT, PRIMARY KEY(device,profile))',
 );
-/** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number}} State */
+/** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{historyId?:string,profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number}} State */
 /** @param {import('../core/profiles.js').ExportProfile} profile */
 function fingerprint(profile) {
   return JSON.stringify(profile);
@@ -36,6 +37,11 @@ export function scheduleState(device, profile) {
         retryAt: 0,
       };
   if (state.fingerprint !== fingerprint(profile)) {
+    if (state.job?.historyId) {
+      const context = loadExportContext();
+      if (context?.deviceId === device)
+        finishExport(context, state.job.historyId, 'cancelled', 'The profile changed.');
+    }
     state.fingerprint = fingerprint(profile);
     state.job = null;
     state.progress.enabledAt = state.progress.enabled ? new Date().toISOString() : null;
@@ -58,6 +64,11 @@ function store(device, id, state) {
 /** @param {string} device @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} enabled */
 export async function setScheduleEnabled(device, profile, enabled) {
   const state = scheduleState(device, profile);
+  if (state.job?.historyId) {
+    const context = loadExportContext();
+    if (context?.deviceId === device)
+      finishExport(context, state.job.historyId, 'cancelled', 'Automatic exports were changed.');
+  }
   state.progress = {
     enabled,
     enabledAt: enabled ? new Date().toISOString() : null,
@@ -105,7 +116,12 @@ export async function exportNow(session, profile, progress) {
     loadProfiles(session.deviceId)?.profiles.some(
       (p) => p.id === profile.id && fingerprint(p) === fingerprint(profile),
     ) === true;
+  let historyId = '';
   try {
+    historyId = beginExport(session, profile, 'manual', {
+      start: localCalendar.instant(dates[0] ?? day, 0, 0),
+      end: profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0),
+    });
     state.files = [];
     let failedSources = 0;
     for (const d of dates) {
@@ -121,6 +137,7 @@ export async function exportNow(session, profile, progress) {
         },
         valid,
         progress,
+        (artifact) => recordArtifact(session, historyId, artifact),
       );
       state.files.push(...result.files);
       failedSources += result.failedSources;
@@ -131,6 +148,16 @@ export async function exportNow(session, profile, progress) {
     latest.files = state.files;
     latest.message = state.message;
     store(session.deviceId, profile.id, latest);
+    finishExport(session, historyId, 'complete');
+  } catch (error) {
+    if (historyId)
+      finishExport(
+        session,
+        historyId,
+        valid() ? 'failed' : 'cancelled',
+        'The export could not finish. Check source permissions and destination access.',
+      );
+    throw error;
   } finally {
     running = false;
   }
@@ -162,6 +189,17 @@ export async function runScheduledExports() {
         store(session.deviceId, profile.id, state);
       }
       const job = state.job;
+      const first = job.days[0],
+        last = job.days.at(-1);
+      if (!job.historyId && first && last) {
+        job.historyId = beginExport(session, job.profile, 'schedule', {
+          start: first.start,
+          end: last.end,
+        });
+        store(session.deviceId, profile.id, state);
+      }
+      const historyId = job.historyId;
+      if (!historyId) continue;
       const valid = () => {
         if (epoch !== generation || loadExportContext()?.deviceId !== session.deviceId)
           return false;
@@ -171,13 +209,36 @@ export async function runScheduledExports() {
         return s.progress.enabled && s.progress.enabledAt === state.progress.enabledAt;
       };
       try {
+        if (state.retryAt)
+          beginExport(
+            session,
+            job.profile,
+            'schedule',
+            { start: job.days[0]?.start ?? now, end: job.days.at(-1)?.end ?? now },
+            historyId,
+          );
         while (job.days.length && Date.now() < deadline) {
           const day = job.days[0];
           if (!day) break;
           // Checkpoint each completed daily replacement. A interrupted day is safely rebuilt.
           // oxlint-disable-next-line eslint/no-await-in-loop
-          const result = await exportProfileDay(session, job.profile, day, valid, () => {});
-          if (!valid()) break;
+          const result = await exportProfileDay(
+            session,
+            job.profile,
+            day,
+            valid,
+            () => {},
+            (artifact) => recordArtifact(session, historyId, artifact),
+          );
+          if (!valid()) {
+            finishExport(
+              session,
+              historyId,
+              'cancelled',
+              'The profile, schedule, or connection changed.',
+            );
+            break;
+          }
           job.days.shift();
           state.files = result.files;
           state.message = `Saved ${day.day} · ${result.count} records${result.failedSources ? ` · Partial export: ${result.failedSources} source failures. See file metadata for details.` : ''}`;
@@ -187,11 +248,18 @@ export async function runScheduledExports() {
           if (job.occurrence.kind === 'completed-day')
             state.progress.lastCompleted = job.occurrence.fireDate;
           else state.progress.lastRefresh = job.occurrence.fireDate;
+          finishExport(session, historyId, 'complete');
           state.job = null;
           state.retryAt = 0;
           store(session.deviceId, profile.id, state);
         }
       } catch (e) {
+        finishExport(
+          session,
+          historyId,
+          valid() ? 'failed' : 'cancelled',
+          'The export could not finish. Check source permissions and destination access.',
+        );
         if (valid()) {
           state.message = e instanceof Error ? e.message : 'Export failed.';
           state.retryAt = Date.now() + 300000;

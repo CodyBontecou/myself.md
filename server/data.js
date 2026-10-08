@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { devices, PairingError } from './store.js';
 import { parseProfile, profileLink } from '../core/profiles.js';
+import { history } from './cloud.js';
 import { domains, exportPage } from '../core/data.js';
 const ttl = 300000;
 const domainSchema = z.enum(domains);
@@ -92,7 +93,15 @@ const catalogSchema = z.object({
 // Query payloads are never persisted. A restarted server requires a fresh phone heartbeat.
 const cleanup = setInterval(() => {
   for (const [id, p] of proposals) if (p.expires <= Date.now()) proposals.delete(id);
-  for (const [id, job] of jobs) if (job.expires <= Date.now()) jobs.delete(id);
+  for (const [id, job] of jobs)
+    if (job.expires <= Date.now()) {
+      if (job.state !== 'failed' && history.get(job.subject, id)?.event.status !== 'complete')
+        history.update(job.subject, id, {
+          status: 'expired',
+          error: 'The request expired before the agent retrieved its response.',
+        });
+      jobs.delete(id);
+    }
   for (const [id, phone] of phones) if (phone.seen + ttl <= Date.now()) phones.delete(id);
 }, 10000);
 cleanup.unref();
@@ -107,15 +116,19 @@ export function cancelPhone(deviceId, subject) {
   for (const [id, p] of proposals)
     if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
   for (const [id, job] of jobs)
-    if (job.deviceId === deviceId && job.subject === subject) jobs.delete(id);
+    if (job.deviceId === deviceId && job.subject === subject) {
+      if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
+        history.update(subject, id, { status: 'cancelled', error: 'Phone disconnected.' });
+      jobs.delete(id);
+    }
 }
 /** @param {unknown} value */
 const content = (value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
   structuredContent: /** @type {Record<string,unknown>} */ (value),
 });
-/** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject */
-export function registerDataTools(mcp, subject) {
+/** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
+export function registerDataTools(mcp, subject, client = null) {
   mcp.registerTool(
     'create_phone_export_profile',
     {
@@ -190,21 +203,56 @@ export function registerDataTools(mcp, subject) {
       own(query.deviceId, subject);
       const phone = phones.get(query.deviceId);
       const domain = phone?.catalog.domains.find((d) => d.domain === query.domain);
-      if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
-        throw new PairingError(409, 'Phone is offline. Open QR Connect first.');
-      if (phone.catalog.activeProfileId !== query.profileId)
-        throw new PairingError(403, 'Choose the active profile ID from the phone catalog.');
-      if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))
-        throw new PairingError(
-          403,
-          'Enable this domain and data type in the active phone profile.',
-        );
-      if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
-        throw new PairingError(429, 'Read or forget existing requests first.');
-      const id = randomUUID();
-      const expires = Date.now() + ttl;
-      jobs.set(id, { id, subject, deviceId: query.deviceId, query, expires, state: 'queued' });
-      return content({ requestId: id, status: 'queued', expiresAt: expires });
+      const id = randomUUID(),
+        stamp = new Date().toISOString();
+      const profile = phone?.catalog.profiles.find((p) => p.id === query.profileId);
+      history.record(subject, query.deviceId, {
+        id,
+        kind: 'access',
+        startedAt: stamp,
+        updatedAt: stamp,
+        status: 'running',
+        actor: 'agent',
+        client,
+        target: 'phone',
+        request: { domain: query.domain, source: query.source, type: query.type },
+        destination: 'Live phone data',
+        profile: {
+          id: query.profileId,
+          name: profile?.name ?? 'Phone data',
+          selection: profile?.selection ?? { health: [], time: [], location: [] },
+        },
+        interval: { start: query.start, end: query.end },
+        timezone: 'UTC',
+        formats: [query.format],
+        recordCount: null,
+        artifacts: [],
+        warnings: [],
+        relatedId: null,
+        error: null,
+      });
+      try {
+        if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
+          throw new PairingError(409, 'Phone is offline. Open QR Connect first.');
+        if (phone.catalog.activeProfileId !== query.profileId)
+          throw new PairingError(403, 'Choose the active profile ID from the phone catalog.');
+        if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))
+          throw new PairingError(
+            403,
+            'Enable this domain and data type in the active phone profile.',
+          );
+        if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
+          throw new PairingError(429, 'Read or forget existing requests first.');
+        const expires = Date.now() + ttl;
+        jobs.set(id, { id, subject, deviceId: query.deviceId, query, expires, state: 'queued' });
+        return content({ requestId: id, status: 'queued', expiresAt: expires });
+      } catch (error) {
+        history.update(subject, id, {
+          status: 'failed',
+          error: 'The request could not proceed. Check phone connectivity and access permissions.',
+        });
+        throw error;
+      }
     },
   );
   mcp.registerTool(
@@ -220,6 +268,7 @@ export function registerDataTools(mcp, subject) {
       if (!job || job.subject !== subject || job.expires <= Date.now())
         throw new PairingError(404, 'Request expired or not found.');
       own(job.deviceId, subject);
+      if (job.state === 'complete') history.update(subject, requestId, { status: 'complete' });
       return content({
         requestId,
         status: job.state,
@@ -237,7 +286,14 @@ export function registerDataTools(mcp, subject) {
     },
     async ({ requestId }) => {
       const job = jobs.get(requestId);
-      if (job?.subject === subject) jobs.delete(requestId);
+      if (job?.subject === subject) {
+        if (history.get(subject, requestId)?.event.status !== 'complete' && job.state !== 'failed')
+          history.update(subject, requestId, {
+            status: 'cancelled',
+            error: 'The agent discarded this request.',
+          });
+        jobs.delete(requestId);
+      }
       return content({ forgotten: true });
     },
   );
@@ -280,8 +336,11 @@ export function phoneApi(path, method, subject, body) {
               d.enabled &&
               d.types.includes(`${j.query.source}:${j.query.type}`),
           ))
-      )
+      ) {
+        if (history.get(subject, id)?.event.status !== 'complete' && j.state !== 'failed')
+          history.update(subject, id, { status: 'cancelled', error: 'Phone access was revoked.' });
         jobs.delete(id);
+      }
     const job = catalog.dispatch
       ? [...jobs.values()].find(
           (j) =>
@@ -339,6 +398,10 @@ export function phoneApi(path, method, subject, body) {
   if (input.error) {
     job.error = input.error;
     job.state = 'failed';
+    history.update(subject, input.id, {
+      status: 'failed',
+      error: 'The phone could not read the requested data.',
+    });
   } else if (input.page) {
     if (input.page.records.some((r) => r.domain !== job.query.domain || r.type !== job.query.type))
       throw new PairingError(400, 'Response does not match the query.');
@@ -348,6 +411,14 @@ export function phoneApi(path, method, subject, body) {
       export: job.query.format === 'json' ? null : exportPage(input.page, job.query.format),
     };
     job.state = 'complete';
+    history.update(subject, input.id, {
+      status: 'ready',
+      recordCount: input.page.records.length,
+      warnings: [
+        ...input.page.warnings,
+        ...(input.page.nextCursor ? ['This returned page has more records available.'] : []),
+      ],
+    });
   } else throw new PairingError(400, 'Page or error required.');
   return { ok: true };
 }

@@ -1,13 +1,17 @@
-import { StyleSheet, Switch, TextInput, View } from 'react-native';
-import { Button, Text } from './Terminal.js';
-/** @param {{settings:import('../core/export-files.js').ExportSettings,schedule:import('../core/schedules.js').ScheduleConfig,onSettings:(value:import('../core/export-files.js').ExportSettings)=>void,onSchedule:(value:import('../core/schedules.js').ScheduleConfig)=>void,disabled:boolean}} props */
+import { useTheme } from '../src/lib/theme';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { Text, Switch } from './Terminal.js';
+import { Group, Row, Icon } from '../src/components/ui';
+/** @param {{section?:string,settings:import('../core/export-files.js').ExportSettings,schedule:import('../core/schedules.js').ScheduleConfig,onSettings:(value:import('../core/export-files.js').ExportSettings)=>void,onSchedule:(value:import('../core/schedules.js').ScheduleConfig)=>void,disabled:boolean}} props */
 export default function ExportSettingsEditor({
+  section,
   settings,
   schedule,
   onSettings,
   onSchedule,
   disabled,
 }) {
+  const { colors } = useTheme();
   /** @param {string} label @param {string} value @param {(value:string)=>void} change @param {boolean} [numeric] */
   function input(label, value, change, numeric = false) {
     return (
@@ -19,7 +23,10 @@ export default function ExportSettingsEditor({
           value={value}
           onChangeText={change}
           keyboardType={numeric ? 'number-pad' : 'default'}
-          style={styles.input}
+          style={[
+            styles.input,
+            { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+          ]}
         />
       </View>
     );
@@ -40,166 +47,213 @@ export default function ExportSettingsEditor({
   }
   return (
     <View style={styles.container}>
-      <Text>EXPORT DESTINATION</Text>
-      {['local', 'http', 'cloud'].map((destination) => (
-        <Button
-          key={destination}
-          title={`${settings.destination === destination ? '[X] ' : ''}${destination === 'local' ? 'Local JSON / JSONL files' : destination === 'http' ? 'HTTP request' : 'Cloud service'}`}
-          disabled={disabled}
-          onPress={() =>
-            onSettings({
-              ...settings,
-              destination:
-                /** @type {import('../core/export-files.js').ExportSettings['destination']} */ (
-                  destination
-                ),
-            })
-          }
-        />
-      ))}
-      {settings.destination === 'http'
-        ? input('HTTPS endpoint', settings.httpUrl ?? '', (v) =>
-            onSettings({ ...settings, httpUrl: v || null }),
-          )
-        : null}
-      <Text>
-        Remote exports send your selected data to the chosen destination. Save and use Export
-        profile now, or opt in to automatic exports.
-      </Text>
-      <Text>EXPORT FILE SETTINGS</Text>
-      {['json', 'jsonl'].map((format) =>
-        toggle(
-          format.toUpperCase(),
-          settings.formats.includes(
-            /** @type {import('../core/export-files.js').ExportFormat} */ (format),
-          ),
-          (v) =>
-            onSettings({
-              ...settings,
-              formats: v
-                ? [
-                    ...settings.formats,
-                    /** @type {import('../core/export-files.js').ExportFormat} */ (format),
-                  ]
-                : settings.formats.filter((f) => f !== format),
-            }),
-        ),
-      )}
-      {input(
-        'Completed days (1–30)',
-        String(settings.lookbackDays),
-        (v) => onSettings({ ...settings, lookbackDays: Number(v) }),
-        true,
-      )}
-      {toggle('Include today in manual exports', settings.includeToday, (v) =>
-        onSettings({ ...settings, includeToday: v }),
-      )}
-      {input('Documents folder', settings.folderName, (v) =>
-        onSettings({ ...settings, folderName: v }),
-      )}
-      {input('Daily filename template', settings.filenameTemplate, (v) =>
-        onSettings({ ...settings, filenameTemplate: v }),
-      )}
-      <Text>
-        Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files are
-        replaced.
-      </Text>
-      {toggle('Separate folders for JSON and JSONL', settings.formatFolders, (v) =>
-        onSettings({ ...settings, formatFolders: v }),
-      )}
-      <Text>SCHEDULE SETTINGS</Text>
-      {['daily', 'weekly', 'custom'].map((frequency) => (
-        <Button
-          key={frequency}
-          title={`${schedule.frequency === frequency ? '[X] ' : ''}${frequency}`}
-          disabled={disabled}
-          onPress={() =>
-            onSchedule({
-              ...schedule,
-              frequency: /** @type {import('../core/schedules.js').ScheduleConfig['frequency']} */ (
-                frequency
-              ),
-            })
-          }
-        />
-      ))}
-      {input(
-        'Local hour (0–23)',
-        String(schedule.hour),
-        (v) => onSchedule({ ...schedule, hour: Number(v) }),
-        true,
-      )}
-      {input(
-        'Minute (0–59)',
-        String(schedule.minute),
-        (v) => onSchedule({ ...schedule, minute: Number(v) }),
-        true,
-      )}
-      {schedule.frequency === 'weekly'
-        ? input(
-            'Weekday (1 Monday – 7 Sunday)',
-            String(schedule.weekday),
-            (v) => onSchedule({ ...schedule, weekday: Number(v) }),
-            true,
-          )
-        : null}
-      {schedule.frequency === 'custom' ? (
+      {(!section || section === 'destination') && (
         <>
+          <Text>Destination</Text>
+          <Group>
+            {['local', 'http', 'cloud'].map((destination) => (
+              <Choice
+                key={destination}
+                selected={settings.destination === destination}
+                title={
+                  destination === 'local'
+                    ? 'On this phone'
+                    : destination === 'http'
+                      ? 'HTTPS endpoint'
+                      : 'Cloud service'
+                }
+                disabled={disabled}
+                onPress={() =>
+                  onSettings({
+                    ...settings,
+                    destination:
+                      /** @type {import('../core/export-files.js').ExportSettings['destination']} */ (
+                        destination
+                      ),
+                  })
+                }
+              />
+            ))}
+          </Group>
+          {settings.destination === 'http'
+            ? input('HTTPS endpoint', settings.httpUrl ?? '', (v) =>
+                onSettings({ ...settings, httpUrl: v || null }),
+              )
+            : null}
+          <Text>
+            Remote exports send your selected data to the chosen destination. Save and use Export
+            profile now, or opt in to automatic exports.
+          </Text>
+        </>
+      )}
+      {(!section || section === 'output') && (
+        <>
+          <Text>Output</Text>
+          {['json', 'jsonl'].map((format) =>
+            toggle(
+              format.toUpperCase(),
+              settings.formats.includes(
+                /** @type {import('../core/export-files.js').ExportFormat} */ (format),
+              ),
+              (v) =>
+                onSettings({
+                  ...settings,
+                  formats: v
+                    ? [
+                        ...settings.formats,
+                        /** @type {import('../core/export-files.js').ExportFormat} */ (format),
+                      ]
+                    : settings.formats.filter((f) => f !== format),
+                }),
+            ),
+          )}
           {input(
-            'Every (1–365)',
-            String(schedule.interval),
-            (v) => onSchedule({ ...schedule, interval: Number(v) }),
+            'Completed days (1–30)',
+            String(settings.lookbackDays),
+            (v) => onSettings({ ...settings, lookbackDays: Number(v) }),
             true,
           )}
-          {['day', 'week', 'month'].map((unit) => (
-            <Button
-              key={unit}
-              title={`${schedule.unit === unit ? '[X] ' : ''}${unit}`}
-              disabled={disabled}
-              onPress={() =>
-                onSchedule({
-                  ...schedule,
-                  unit: /** @type {import('../core/schedules.js').ScheduleConfig['unit']} */ (unit),
-                })
-              }
-            />
-          ))}
-          {input(
-            'Anchor date (YYYY-MM-DD; blank uses opt-in day)',
-            schedule.anchorDate ?? '',
-            (v) => onSchedule({ ...schedule, anchorDate: v || null }),
+          {toggle('Include today in manual exports', settings.includeToday, (v) =>
+            onSettings({ ...settings, includeToday: v }),
+          )}
+          {input('Documents folder', settings.folderName, (v) =>
+            onSettings({ ...settings, folderName: v }),
+          )}
+          {input('Daily filename template', settings.filenameTemplate, (v) =>
+            onSettings({ ...settings, filenameTemplate: v }),
+          )}
+          <Text>
+            Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files are
+            replaced.
+          </Text>
+          {toggle('Separate folders for JSON and JSONL', settings.formatFolders, (v) =>
+            onSettings({ ...settings, formatFolders: v }),
           )}
         </>
-      ) : null}
-      {toggle('Today Refresh', schedule.todayRefresh, (v) =>
-        onSchedule({ ...schedule, todayRefresh: v }),
       )}
-      {schedule.todayRefresh
-        ? [3, 6, 12].map((hours) => (
-            <Button
-              key={hours}
-              title={`${schedule.refreshHours === hours ? '[X] ' : ''}Refresh every ${hours} hours`}
-              disabled={disabled}
-              onPress={() =>
-                onSchedule({ ...schedule, refreshHours: /** @type {3|6|12} */ (hours) })
-              }
-            />
-          ))
-        : null}
-      <Text>
-        Today Refresh rewrites the current day independently of completed-day runs. Save, then
-        enable automatic exports on the profile card.
-      </Text>
+      {(!section || section === 'schedule') && (
+        <>
+          <Text>Schedule</Text>
+          <Group>
+            {['daily', 'weekly', 'custom'].map((frequency) => (
+              <Choice
+                key={frequency}
+                selected={schedule.frequency === frequency}
+                title={
+                  frequency === 'daily'
+                    ? 'Daily'
+                    : frequency === 'weekly'
+                      ? 'Weekly'
+                      : 'Custom interval'
+                }
+                disabled={disabled}
+                onPress={() =>
+                  onSchedule({
+                    ...schedule,
+                    frequency:
+                      /** @type {import('../core/schedules.js').ScheduleConfig['frequency']} */ (
+                        frequency
+                      ),
+                  })
+                }
+              />
+            ))}
+          </Group>
+          {input(
+            'Local hour (0–23)',
+            String(schedule.hour),
+            (v) => onSchedule({ ...schedule, hour: Number(v) }),
+            true,
+          )}
+          {input(
+            'Minute (0–59)',
+            String(schedule.minute),
+            (v) => onSchedule({ ...schedule, minute: Number(v) }),
+            true,
+          )}
+          {schedule.frequency === 'weekly'
+            ? input(
+                'Weekday (1 Monday – 7 Sunday)',
+                String(schedule.weekday),
+                (v) => onSchedule({ ...schedule, weekday: Number(v) }),
+                true,
+              )
+            : null}
+          {schedule.frequency === 'custom' ? (
+            <>
+              {input(
+                'Every (1–365)',
+                String(schedule.interval),
+                (v) => onSchedule({ ...schedule, interval: Number(v) }),
+                true,
+              )}
+              {['day', 'week', 'month'].map((unit) => (
+                <Choice
+                  key={unit}
+                  selected={schedule.unit === unit}
+                  title={unit === 'day' ? 'Days' : unit === 'week' ? 'Weeks' : 'Months'}
+                  disabled={disabled}
+                  onPress={() =>
+                    onSchedule({
+                      ...schedule,
+                      unit: /** @type {import('../core/schedules.js').ScheduleConfig['unit']} */ (
+                        unit
+                      ),
+                    })
+                  }
+                />
+              ))}
+              {input(
+                'Anchor date (YYYY-MM-DD; blank uses opt-in day)',
+                schedule.anchorDate ?? '',
+                (v) => onSchedule({ ...schedule, anchorDate: v || null }),
+              )}
+            </>
+          ) : null}
+          {toggle('Today Refresh', schedule.todayRefresh, (v) =>
+            onSchedule({ ...schedule, todayRefresh: v }),
+          )}
+          {schedule.todayRefresh
+            ? [3, 6, 12].map((hours) => (
+                <Choice
+                  key={hours}
+                  selected={schedule.refreshHours === hours}
+                  title={`Every ${hours} hours`}
+                  disabled={disabled}
+                  onPress={() =>
+                    onSchedule({ ...schedule, refreshHours: /** @type {3|6|12} */ (hours) })
+                  }
+                />
+              ))
+            : null}
+          <Text>
+            Today Refresh rewrites the current day independently of completed-day runs. Save, then
+            enable automatic exports on the profile detail screen.
+          </Text>
+        </>
+      )}
     </View>
+  );
+}
+/** @param {{title:string,selected:boolean,disabled:boolean,onPress:()=>void}} props */
+function Choice({ title, selected, disabled, onPress }) {
+  return (
+    <Row
+      title={title}
+      selected={selected}
+      onPress={disabled ? undefined : onPress}
+      trailing={selected ? <Icon name="checkmark" /> : undefined}
+    />
   );
 }
 const styles = StyleSheet.create({
   container: { gap: 12 },
   input: {
-    borderWidth: 1,
-    borderColor: '#000000',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+
     padding: 12,
-    color: '#000000',
+
     fontSize: 16,
     minHeight: 44,
   },

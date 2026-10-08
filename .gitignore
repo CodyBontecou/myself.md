@@ -31,10 +31,22 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# local device data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
 
 # typescript
 *.tsbuildinfo
+
+# Local design verification recordings
+.argent/
 
 # generated native folders
 /ios
@@ -47,3 +59,6 @@ yarn-error.*
 .local/
 
 .env.cloud
+
+# Generated local-module native artifacts
+modules/*/android/build/

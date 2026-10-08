@@ -10,7 +10,7 @@ module.exports = defineConfig([
     files: ['**/*.{js,jsx}'],
     plugins: { 'react-native': reactNative },
     rules: {
-      'react-native/no-raw-text': 'error',
+      'react-native/no-raw-text': ['error', { skip: ['Copy'] }],
       'react-native/no-unused-styles': 'error',
       'react-native/no-inline-styles': 'error',
     },

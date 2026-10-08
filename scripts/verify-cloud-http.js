@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { parseHistoryEvent } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -178,6 +179,81 @@ try {
   const result = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
   assert.ok(!result.isError);
   assert.ok(JSON.stringify(result).includes('synthetic'));
+  const historyPath = `/api/history?deviceId=${deviceId}`;
+  assert.equal((await request(historyPath, bobToken)).status, 404);
+  assert.equal((await request(historyPath, chatToken)).status, 403);
+  const cloudHistory = await request(historyPath, phoneToken);
+  assert.equal(cloudHistory.status, 200);
+  const historyEvents = z
+    .object({ events: z.array(z.unknown()) })
+    .parse(cloudHistory.value)
+    .events.map(parseHistoryEvent);
+  assert.equal(historyEvents.length, 2);
+  assert.ok(
+    historyEvents.some(
+      (event) =>
+        event.status === 'complete' && event.relatedId === id && event.client === 'fixture-chat',
+    ),
+  );
+  assert.ok(!JSON.stringify(cloudHistory.value).includes('native'));
+  const catalog = {
+    activeProfileId: profile.id,
+    profiles: [profile],
+    domains: ['health', 'time', 'location'].map((domain) => ({
+      domain,
+      enabled: domain === 'health',
+      availableTypes: domain === 'health' ? ['imported:sleep'] : [],
+      types: domain === 'health' ? ['imported:sleep'] : [],
+      notes: [],
+    })),
+  };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
+    200,
+  );
+  const queried = await client.callTool({
+    name: 'query_phone_data',
+    arguments: {
+      deviceId,
+      profileId: profile.id,
+      domain: 'health',
+      type: 'sleep',
+      source: 'imported',
+      start: '2026-10-08T00:00:00.000Z',
+      end: '2026-10-09T00:00:00.000Z',
+    },
+  });
+  assert.ok(!queried.isError);
+  const requestId = z.object({ requestId: z.string() }).parse(queried.structuredContent).requestId;
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
+        id: requestId,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    200,
+  );
+  const readHistory = async () =>
+    z
+      .object({ events: z.array(z.unknown()) })
+      .parse((await request(historyPath, phoneToken)).value)
+      .events.map(parseHistoryEvent);
+  const ready = (await readHistory()).find((event) => event.id === requestId);
+  assert.ok(ready);
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.recordCount, 1);
+  await client.callTool({ name: 'get_phone_request', arguments: { requestId } });
+  assert.equal((await readHistory()).find((event) => event.id === requestId)?.status, 'complete');
+  // Consent changes discard retained response data, while preserving the successful audit.
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+    ...catalog,
+    domains: catalog.domains.map((domain) =>
+      Object.assign({}, domain, { enabled: false, types: [] }),
+    ),
+  });
+  assert.equal((await readHistory()).find((event) => event.id === requestId)?.status, 'complete');
   assert.equal((await request(`/api/cloud/exports/${id}`, bobToken, 'DELETE')).status, 404);
   assert.equal((await request(`/api/devices/${deviceId}`, phoneToken, 'DELETE')).status, 200);
   const revoked = await fetch(`${origin}/api/cloud/uploads`, {

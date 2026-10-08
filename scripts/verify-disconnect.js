@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { createPairingUrl, createPairingDeepLink, parsePairingQr } from '../core/index.js';
 // Exercise the actual UI handler with native/network boundaries replaced.
-const app = readFileSync('App.js', 'utf8');
+const app = readFileSync('client/PhoneProvider.js', 'utf8');
 const ticket = 'a'.repeat(43);
 const server = 'https://qr-connect-cloud-cody.fly.dev';
 const links = [createPairingUrl(server, ticket), createPairingDeepLink(server, ticket)];
@@ -18,6 +18,7 @@ let incomingPairing;
 let linkError = '';
 const linkContext = vm.createContext({
   parsePairingQr,
+  router: { push: () => {} },
   profileFromLink: () => {},
   setIncoming: () => {},
   /** @param {unknown} value */

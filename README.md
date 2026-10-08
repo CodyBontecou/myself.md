@@ -71,6 +71,8 @@ The standalone Keycloak launcher is the supported setup here. Apple support uses
 
 Profiles follow health-md's named configurations and active-profile editing model: create, rename, duplicate with a fresh ID, activate, and delete (except the final profile). Each profile stores its own explicit selection of native and imported data types across health, screen time and location. These are data-type controls; selecting a type includes its native metadata, not field-level redaction. Search the editor to find individual metrics. New profiles start empty; newly discovered types stay disabled. The initial Default profile snapshots the readable types in domains already enabled before migration. Existing domain grants and OS authorization remain separate. Local file export uses the profile selection without requiring chat grants.
 
+Open Profiles & exports, then select a profile to inspect its data selection, destination, output, schedule and stable ID. Customize profile opens a draft editor with focused data, destination, output and schedule sections; Save applies the draft, while Cancel confirms before discarding changed settings. New, duplicated and imported profiles open their own detail after saving. Automatic-export opt-in, HTTP credentials and cloud access remain on the saved profile detail. This view adapts health-md’s profile management to the supported JSON/JSONL export engine; it does not add Daily Notes, rollups or unsupported output formats.
+
 The portable wire format is `qr-connect.profile.v1`, specific to this app; it follows health-md's profile behavior but does not decode health-md's Swift/Kotlin settings, destination bindings or schedules. Profile selection never changes the data export schema. Profiles are saved locally per pairing; server catalogs and delivery queues are ephemeral. Export and cadence settings travel with the profile; destination credentials, system grants, tracking switches and automatic-export opt-in do not.
 
 Example MCP call to `create_phone_export_profile` (omit `deviceId` for a link only):
@@ -190,7 +192,7 @@ npm run ios -- --configuration Release
 npm run android -- --variant release
 ```
 
-Native builds require Xcode/CocoaPods or Android SDK/JDK. Store distribution requires your signing credentials. `bundle` validates Metro resolution, not native compilation. App and server source remain plain JavaScript with JSDoc. The OS usage bridge is necessarily Swift/Kotlin; native compilation validates it outside the fast JavaScript gate.
+Native builds require Xcode/CocoaPods or Android SDK/JDK. Store distribution requires your signing credentials. `bundle` validates Metro resolution, not native compilation. Metro includes the SQLite WebAssembly asset extension; web hosting still needs the isolation headers required by Expo SQLite. App and server source remain plain JavaScript with JSDoc. The OS usage bridge is necessarily Swift/Kotlin; native compilation validates it outside the fast JavaScript gate.
 
 ## Fast static checking
 
@@ -253,3 +255,11 @@ Run `npm run verify:exports` for calendar, opt-in, DST and JSON/JSONL business r
 ## Hosted cloud exports
 
 Profiles can now export to local files, an HTTPS endpoint or the paired cloud service. Cloud uploads are encrypted and persist independently of the phone. A separate cloud MCP switch controls stored-data access. See [cloud-service setup, API, limits and connector guide](docs/cloud-service.md). Run `npm run verify:cloud` for storage and HTTP/MCP isolation checks; `npm run cloud:setup -- <domain>` and `npm run cloud:start` prepare and start the container deployment.
+
+The redesigned Expo Router routes and UI in `src/` remain plain JavaScript and are included in all source checks. Native text lint recognizes `Copy`, the shared wrapper that renders React Native `Text`. The entry file has one documented side-effect import for Expo Router registration. Router peer dependencies (`expo-constants`, `expo-linking`, `react-native-screens`, `react-native-reanimated`, `react-native-worklets`) are required by the navigator even where application source does not import them directly.
+
+History is available from Connections and each profile. It groups manual and scheduled exports with live phone queries and cloud export reads. Details preserve the profile name and selection at the time, requested interval, destination hostname, authenticated MCP client ID, confirmed record counts, files and outcome. Entries begin with this version; previous activity is not reconstructed. System sharing records that the share sheet opened, since the recipient and delivery cannot be confirmed.
+
+Local metadata lives in the account/device partition of `phone-data.sqlite`. Server activity metadata is encrypted in `history.sqlite` using the cloud key, retained for 90 days independently of cloud files (30 days), and returned only to the owning phone client. Cached server entries remain available offline on that phone. History excludes raw records, OAuth/upload tokens and endpoint paths/query strings. Live access becomes complete when the agent retrieves the response; disconnect/revocation deletes ephemeral responses without rewriting completed audit events. Restarted unfinished manual exports and server reads become interrupted. Scheduled exports retain their checkpoint and reuse one history entry when retried.
+
+Local file actions verify the original checksum before opening the system share sheet, so overwritten or removed files report unavailable. Updating the phone and server together enables remote agent history; older servers leave the phone's saved export history available with a refresh notice. Run `npm run verify:history`, `npm run verify:exports` and `npm run verify:cloud` for metadata retention/isolation, confirmed artifact outcomes and authenticated HTTP/MCP activity checks.

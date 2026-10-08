@@ -1,63 +1,25 @@
-import { Text as NativeText, Pressable, Platform, StyleSheet } from 'react-native';
-import { isLoaded } from 'expo-font';
+import { Text as NativeText, Switch as NativeSwitch, StyleSheet } from 'react-native';
+import { Button as BridgeButton } from '../src/components/ui';
+import { useTheme } from '../src/lib/theme';
 /** @param {import('react-native').TextProps} props */
 export function Text({ style, ...props }) {
+  const { colors } = useTheme();
+  return <NativeText {...props} style={[styles.text, { color: colors.text }, style]} />;
+}
+/** @param {{title:string,onPress:()=>void,disabled?:boolean}} props */
+export function Button({ title, onPress, disabled = false }) {
+  return <BridgeButton label={title} onPress={onPress} disabled={disabled} secondary />;
+}
+/** @param {import('react-native').SwitchProps} props */
+export function Switch(props) {
+  const { colors } = useTheme();
   return (
-    <NativeText
+    <NativeSwitch
       {...props}
-      style={[styles.text, isLoaded('Terminal') ? styles.mono : styles.fallback, style]}
+      trackColor={{ false: colors.border, true: colors.accent }}
+      hitSlop={8}
     />
   );
 }
-/** @param {{title:string, onPress:()=>void, disabled?:boolean}} props */
-export function Button({ title, onPress, disabled = false }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && styles.pressed,
-        disabled && styles.disabled,
-      ]}
-    >
-      <Text style={styles.command}>{`> ${title.toUpperCase()}`}</Text>
-    </Pressable>
-  );
-}
-/** @param {{value:boolean, onValueChange:(value:boolean)=>void, disabled?:boolean, accessibilityLabel:string}} props */
-export function Switch({ value, onValueChange, disabled = false, accessibilityLabel }) {
-  return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ checked: value, disabled }}
-      disabled={disabled}
-      onPress={() => onValueChange(!value)}
-      style={[styles.toggle, disabled && styles.disabled]}
-    >
-      <Text>{value ? '[X] ON' : '[ ] OFF'}</Text>
-    </Pressable>
-  );
-}
-const styles = StyleSheet.create({
-  text: { color: '#000000', fontSize: 17, lineHeight: 25 },
-  mono: { fontFamily: 'Terminal' },
-  fallback: { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  button: {
-    minHeight: 44,
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#000000',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
-  },
-  command: { fontSize: 15, lineHeight: 24 },
-  pressed: { borderWidth: 2, paddingHorizontal: 11, paddingVertical: 7 },
-  disabled: { opacity: 0.4 },
-  toggle: { minHeight: 44, minWidth: 88, justifyContent: 'center', alignItems: 'flex-end' },
-});
+
+const styles = StyleSheet.create({ text: { fontSize: 16, lineHeight: 23 } });

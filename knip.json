@@ -7,9 +7,10 @@
     "server/**/*.js",
     "scripts/**/*.js",
     "client/**/*.js",
-    "plugins/**/*.cjs"
+    "plugins/**/*.cjs",
+    "src/**/*.js"
   ],
   "ignoreDependencies": ["@types/punycode"],
   "ignoreBinaries": ["fly"],
-  "entry": ["scripts/*.js", "plugins/*.cjs"]
+  "entry": ["scripts/*.js", "plugins/*.cjs", "index.js", "src/app/**/*.js"]
 }

@@ -22,5 +22,5 @@
     "tsBuildInfoFile": "node_modules/.cache/mobile.tsbuildinfo",
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["App.js", "index.js", "core/**/*.js", "client/**/*.js", "assets.d.ts"]
+  "include": ["index.js", "core/**/*.js", "client/**/*.js", "assets.d.ts", "src/**/*.js"]
 }

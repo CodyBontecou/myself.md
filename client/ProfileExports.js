@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Switch, View, TextInput } from 'react-native';
+import { View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
-import { Button, Text } from './Terminal.js';
+import { Button, Text, Switch } from './Terminal.js';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
 import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
 import { nextOccurrence } from '../core/schedules.js';
@@ -50,7 +50,7 @@ export default function ProfileExports({ session, profile, disabled }) {
   }, [session, profile]);
   const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
   return (
-    <View>
+    <View style={styles.container}>
       <Text>
         {profile.export.formats.join(' + ').toUpperCase()} · {profile.export.lookbackDays} completed
         days{profile.export.includeToday ? ' + today' : ''}
@@ -178,3 +178,5 @@ export default function ProfileExports({ session, profile, disabled }) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({ container: { gap: 12 } });

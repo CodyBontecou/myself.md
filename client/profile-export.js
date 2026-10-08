@@ -5,8 +5,15 @@ import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress */
-export async function exportProfileDay(session, profile, interval, valid, progress) {
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] */
+export async function exportProfileDay(
+  session,
+  profile,
+  interval,
+  valid,
+  progress,
+  onArtifact = () => {},
+) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
     throw new Error('Select at least one data type.');
@@ -117,7 +124,25 @@ export async function exportProfileDay(session, profile, interval, valid, progre
       if (settings.destination !== 'local') {
         // Destinations acknowledge each complete daily file before progress advances.
         // oxlint-disable-next-line eslint/no-await-in-loop
-        await deliverExport(session, profile, f.target, f.format, manifest, valid);
+        const delivered = await deliverExport(
+          session,
+          profile,
+          f.target,
+          f.format,
+          manifest,
+          valid,
+        );
+        onArtifact({
+          day: interval.day,
+          name: f.target.name,
+          format: f.format,
+          recordCount: count,
+          bytes: f.target.size,
+          uri: null,
+          cloudId: delivered?.id ?? null,
+          checksum: null,
+          partial: failures.length > 0,
+        });
         f.target.delete();
         continue;
       }
@@ -132,6 +157,17 @@ export async function exportProfileDay(session, profile, interval, valid, progre
         stagedMetadata.move(metadata, { overwrite: true });
         saved.push(metadata.uri);
       }
+      onArtifact({
+        day: interval.day,
+        name: f.target.name,
+        format: f.format,
+        recordCount: count,
+        bytes: f.target.size,
+        uri: f.target.uri,
+        cloudId: null,
+        checksum: f.target.md5,
+        partial: failures.length > 0,
+      });
     }
     return { count, files: saved, failedSources: failures.length };
   } finally {

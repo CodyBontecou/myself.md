@@ -38,7 +38,7 @@
   },
   "overrides": [
     {
-      "files": ["App.js", "index.js", "client/**/*.js"],
+      "files": ["App.js", "index.js", "client/**/*.js", "src/**/*.js"],
       "env": {
         "browser": true
       },

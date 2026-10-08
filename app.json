@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "QR Connect",
+    "name": "Agent Bridge",
     "slug": "shared-js-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,7 +20,8 @@
       "entitlements": {
         "com.apple.developer.family-controls": true,
         "com.apple.developer.family-controls.app-and-website-usage": true
-      }
+      },
+      "appleTeamId": "67KC823C9A"
     },
     "android": {
       "adaptiveIcon": {
@@ -73,10 +74,8 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "updates": {
-      "enabled": false
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-web-browser",
@@ -110,8 +109,14 @@
       ],
       "./plugins/with-phone-data.cjs",
       "expo-font",
-      "expo-background-task"
+      "expo-background-task",
+      "expo-router",
+      "expo-status-bar",
+      "@react-native-vector-icons/ionicons"
     ],
-    "scheme": "qrconnect"
+    "scheme": ["qrconnect", "agentbridge"],
+    "updates": {
+      "enabled": false
+    }
   }
 }
