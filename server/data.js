@@ -85,7 +85,7 @@ const catalogSchema = z.object({
 });
 /** @typedef {z.infer<typeof querySchema>} Query */
 /** @typedef {{subject:string,deviceId:string,seen:number,catalog:z.infer<typeof catalogSchema>}} Phone */
-/** @typedef {{id:string,subject:string,deviceId:string,expires:number,state:'queued'|'running'|'complete'|'failed',query:Query,result?:unknown,error?:string}} Job */
+/** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:unknown,error?:string}} Job */
 /** @type {Map<string,Phone>} */ const phones = new Map();
 /** @type {Map<string,Job>} */ const jobs = new Map();
 /** @typedef {{id:string,subject:string,deviceId:string,profile:import('../core/profiles.js').ProfileDraft,expires:number,state:'queued'|'delivered'}} Proposal */
@@ -121,6 +121,17 @@ export function cancelPhone(deviceId, subject) {
         history.update(subject, id, { status: 'cancelled', error: 'Phone disconnected.' });
       jobs.delete(id);
     }
+}
+/** Blocking an agent also discards its queued and retained live requests.
+ * @param {string} subject @param {string} client */
+export function cancelAgent(subject, client) {
+  for (const [id, job] of jobs) {
+    if (job.subject === subject && job.client === client) {
+      if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
+        history.update(subject, id, { status: 'cancelled', error: 'Agent access was revoked.' });
+      jobs.delete(id);
+    }
+  }
 }
 /** @param {unknown} value */
 const content = (value) => ({
@@ -244,7 +255,15 @@ export function registerDataTools(mcp, subject, client = null) {
         if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
           throw new PairingError(429, 'Read or forget existing requests first.');
         const expires = Date.now() + ttl;
-        jobs.set(id, { id, subject, deviceId: query.deviceId, query, expires, state: 'queued' });
+        jobs.set(id, {
+          id,
+          subject,
+          client,
+          deviceId: query.deviceId,
+          query,
+          expires,
+          state: 'queued',
+        });
         return content({ requestId: id, status: 'queued', expiresAt: expires });
       } catch (error) {
         history.update(subject, id, {

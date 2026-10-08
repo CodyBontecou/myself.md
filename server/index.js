@@ -8,7 +8,9 @@ import { z } from 'zod';
 import { registerDataTools, phoneApi, cancelPhone } from './data.js';
 import { cloud, history, registerCloudTools, ownCloudDevice } from './cloud.js';
 import { parseProfile } from '../core/profiles.js';
+import { dashboardAsset, dashboardApi } from './dashboard.js';
 import { proxyAuth } from './auth-proxy.js';
+import { dashboardLogin } from './dashboard-login.js';
 import { createPairingUrl, createPairingDeepLink } from '../core/index.js';
 import {
   claim,
@@ -138,6 +140,22 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       json(res, 200, { ok: true });
       return;
     }
+    if (
+      (req.method === 'GET' || req.method === 'HEAD') &&
+      dashboardAsset(url.pathname, res, issuer)
+    )
+      return;
+    if (url.pathname === '/dashboard/login' && req.method === 'POST') {
+      if (req.headers.origin !== new URL(publicUrl).origin)
+        throw new PairingError(403, 'Invalid sign-in origin.');
+      const body = JSON.parse((await bodyBytes(req, 16384)).toString());
+      json(res, 200, await dashboardLogin(body, issuer, publicUrl));
+      return;
+    }
+    if (url.pathname === '/dashboard/config') {
+      json(res, 200, { issuer, clientId: 'qr-dashboard' });
+      return;
+    }
     if (url.pathname === '/config') {
       json(res, 200, { issuer, clientId: 'qr-phone', resource });
       return;
@@ -232,6 +250,25 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     const subject = `${issuer}|${payload.sub}`;
+    if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {
+      if (payload.azp !== 'qr-dashboard')
+        throw new PairingError(403, 'Dashboard OAuth client required.');
+      const body =
+        req.method === 'PUT' ? JSON.parse((await bodyBytes(req, 4096)).toString()) : null;
+      json(
+        res,
+        200,
+        dashboardApi(
+          subject,
+          String(payload.preferred_username ?? payload.sub),
+          url.pathname,
+          req.method ?? 'GET',
+          url.searchParams,
+          body,
+        ),
+      );
+      return;
+    }
     if (url.pathname === '/api/history' && req.method === 'GET') {
       if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
       const deviceId = z.string().uuid().parse(url.searchParams.get('deviceId'));
@@ -270,6 +307,9 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     if (url.pathname === '/mcp') {
+      if (typeof payload.azp !== 'string' || ['qr-phone', 'qr-dashboard'].includes(payload.azp))
+        throw new PairingError(403, 'Agent OAuth client required.');
+      cloud.observeAgent(subject, payload.azp);
       await handler(
         Object.assign(req, {
           method: req.method ?? 'GET',

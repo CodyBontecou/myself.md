@@ -59,7 +59,9 @@ async function token(subject, azp) {
 }
 const phoneToken = await token('alice', 'qr-phone'),
   chatToken = await token('alice', 'fixture-chat'),
-  bobToken = await token('bob', 'qr-phone');
+  bobToken = await token('bob', 'qr-phone'),
+  dashboardToken = await token('alice', 'qr-dashboard'),
+  bobDashboardToken = await token('bob', 'qr-dashboard');
 /** @param {string} path @param {string|null} bearer @param {string} [method] @param {unknown} [body] */
 async function request(path, bearer, method = 'GET', body) {
   const response = await fetch(origin + path, {
@@ -72,6 +74,11 @@ async function request(path, bearer, method = 'GET', body) {
   });
   return { status: response.status, value: await response.json() };
 }
+const dashboardSchema = z.object({
+  exports: z.array(z.object({ id: z.string() })),
+  profiles: z.array(z.object({ shared: z.boolean() })),
+  agents: z.array(z.object({ client: z.string(), blocked: z.boolean() })),
+});
 try {
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
@@ -85,6 +92,28 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
+  const dashboardPage = await fetch(`${origin}/dashboard`);
+  assert.equal(dashboardPage.status, 200);
+  assert.ok(
+    dashboardPage.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"),
+  );
+  const dashboardHtml = await dashboardPage.text();
+  assert.ok(dashboardHtml.includes('Stored data'));
+  assert.ok(!dashboardHtml.includes('__STYLE_NONCE__'));
+  const nonce = dashboardHtml.match(/name="style-nonce" content="([^"]+)"/)?.[1];
+  assert.ok(nonce);
+  assert.ok(dashboardPage.headers.get('content-security-policy')?.includes(`'nonce-${nonce}'`));
+  assert.equal((await fetch(`${origin}/dashboard/app.js`)).status, 200);
+  assert.equal((await fetch(`${origin}/dashboard/callback`)).status, 200);
+  assert.equal(
+    z.object({ clientId: z.string() }).parse((await request('/dashboard/config', null)).value)
+      .clientId,
+    'qr-dashboard',
+  );
+  assert.equal((await request('/api/dashboard', null)).status, 401);
+  assert.equal((await request('/api/dashboard', phoneToken)).status, 403);
+  assert.equal((await request('/api/dashboard', chatToken)).status, 403);
+
   const association = await request('/.well-known/apple-app-site-association', null);
   assert.equal(association.status, 200);
   assert.deepEqual(association.value, {
@@ -169,6 +198,69 @@ try {
     body: JSON.stringify(record) + '\n',
   });
   assert.equal(committed.status, 200);
+  const dashboard = dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value);
+  assert.equal(dashboard.exports.length, 1);
+  assert.equal(dashboard.profiles.length, 1);
+  assert.equal(dashboard.profiles[0]?.shared, false);
+  assert.equal(dashboard.agents[0]?.client, 'fixture-chat');
+  assert.equal(
+    dashboardSchema.parse((await request('/api/dashboard', bobDashboardToken)).value).exports
+      .length,
+    0,
+  );
+  const recordsPath = `/api/dashboard/exports/${id}`;
+  assert.deepEqual(
+    z
+      .object({ records: z.array(z.unknown()) })
+      .parse((await request(recordsPath, dashboardToken)).value).records,
+    [record],
+  );
+  assert.equal((await request(recordsPath, bobDashboardToken)).status, 404);
+  assert.equal((await request(recordsPath, chatToken)).status, 403);
+  assert.equal((await request(recordsPath + '?offset=-1', dashboardToken)).status, 400);
+  assert.equal((await request(recordsPath, bobDashboardToken, 'DELETE')).status, 404);
+  assert.equal(
+    (await request('/api/cloud/credential', dashboardToken, 'POST', { deviceId, profile })).status,
+    403,
+  );
+
+  const multiple = await fetch(`${origin}/api/cloud/uploads`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Upload ${z.object({ token: z.string() }).parse(credential.value).token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      profile,
+      day: '2026-10-07',
+      format: 'jsonl',
+      manifest: { profileId: profile.id, recordCount: 55 },
+    }),
+  });
+  const multipleId = z.object({ id: z.string() }).parse(await multiple.json()).id;
+  const multipleCommit = await fetch(`${origin}/api/cloud/uploads/${multipleId}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Upload ${z.object({ token: z.string() }).parse(credential.value).token}`,
+    },
+    body:
+      Array.from({ length: 55 }, (_value, i) =>
+        JSON.stringify({ ...record, native: { sample: i } }),
+      ).join('\n') + '\n',
+  });
+  assert.equal(multipleCommit.status, 200);
+  const pageSchema = z.object({ records: z.array(z.unknown()), nextCursor: z.string().nullable() });
+  const firstPage = pageSchema.parse(
+    (await request(`/api/dashboard/exports/${multipleId}`, dashboardToken)).value,
+  );
+  assert.equal(firstPage.records.length, 50);
+  assert.equal(firstPage.nextCursor, '50');
+  const lastPage = pageSchema.parse(
+    (await request(`/api/dashboard/exports/${multipleId}?offset=50`, dashboardToken)).value,
+  );
+  assert.equal(lastPage.records.length, 5);
+  assert.equal(lastPage.nextCursor, null);
+  await request(`/api/dashboard/exports/${multipleId}`, dashboardToken, 'DELETE');
   const denied = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
   assert.equal(denied.isError, true);
   assert.equal(
@@ -246,6 +338,35 @@ try {
   assert.equal(ready.recordCount, 1);
   await client.callTool({ name: 'get_phone_request', arguments: { requestId } });
   assert.equal((await readHistory()).find((event) => event.id === requestId)?.status, 'complete');
+  const pendingQuery = await client.callTool({
+    name: 'query_phone_data',
+    arguments: {
+      deviceId,
+      profileId: profile.id,
+      domain: 'health',
+      type: 'sleep',
+      source: 'imported',
+      start: '2026-10-08T00:00:00.000Z',
+      end: '2026-10-09T00:00:00.000Z',
+    },
+  });
+  const pendingId = z
+    .object({ requestId: z.string() })
+    .parse(pendingQuery.structuredContent).requestId;
+  await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+    client: 'fixture-chat',
+    blocked: true,
+  });
+  await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+    client: 'fixture-chat',
+    blocked: false,
+  });
+  assert.equal(
+    (await client.callTool({ name: 'get_phone_request', arguments: { requestId: pendingId } }))
+      .isError,
+    true,
+  );
+  assert.equal((await readHistory()).find((event) => event.id === pendingId)?.status, 'cancelled');
   // Consent changes discard retained response data, while preserving the successful audit.
   await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
     ...catalog,
@@ -264,8 +385,93 @@ try {
     body: '{}',
   });
   assert.equal(revoked.status, 404);
+  // Cloud permissions remain manageable after disconnect and preserve the phone selection.
+  assert.equal(
+    (
+      await request('/api/dashboard/permissions', bobDashboardToken, 'PUT', {
+        deviceId,
+        profileId: profile.id,
+        shared: false,
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
+        deviceId,
+        profileId: profile.id,
+        shared: false,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+  );
+  const restored = await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
+    deviceId,
+    profileId: profile.id,
+    shared: true,
+  });
+  assert.deepEqual(
+    z.object({ selection: z.unknown() }).parse(restored.value).selection,
+    profile.selection,
+  );
+  assert.ok(
+    !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/agents', bobDashboardToken, 'PUT', {
+        client: 'fixture-chat',
+        blocked: true,
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+        client: 'fixture-chat',
+        blocked: true,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await fetch(`${origin}/mcp`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${chatToken}` },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).agents[0]
+      ?.blocked,
+    true,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+        client: 'fixture-chat',
+        blocked: false,
+      })
+    ).status,
+    200,
+  );
+  assert.ok(!(await client.callTool({ name: 'list_cloud_exports', arguments: {} })).isError);
+  assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 200);
+  assert.equal((await request(recordsPath, dashboardToken)).status, 404);
+  assert.equal(
+    dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
+    0,
+  );
   console.log(
-    'HTTP/MCP: OAuth resource metadata, real SDK transport, tenant isolation, upload-only credentials, explicit cloud sharing and device revocation passed.',
+    'HTTP/MCP: OAuth resource metadata, real SDK transport, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
   );
 } finally {
   await client.close();

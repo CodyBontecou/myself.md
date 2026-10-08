@@ -55,8 +55,17 @@ try {
   const encrypted = store.row('alice', id).content;
   assert.ok(encrypted);
   assert.ok(!Buffer.from(encrypted).includes('synthetic-private-value'));
+  store.observeAgent('alice', 'test-agent');
+  store.setAgent('alice', 'test-agent', true);
+  assert.throws(() => store.observeAgent('alice', 'test-agent'));
+  assert.throws(() => store.setAgent('bob', 'test-agent', false));
   store.db.close();
   store = new CloudStore(path, key);
+  assert.equal(store.agents('alice')[0]?.blocked, true);
+  assert.throws(() => store.observeAgent('alice', 'test-agent'));
+  store.setAgent('alice', 'test-agent', false);
+  store.observeAgent('alice', 'test-agent');
+
   assert.deepEqual(store.page('alice', id, 0, 50, true).records, records);
   assert.throws(() => store.page('bob', id, 0, 50, true));
   assert.throws(() => store.delete('bob', id));

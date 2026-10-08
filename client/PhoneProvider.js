@@ -64,7 +64,7 @@ function usePhoneState() {
       try {
         if (url.startsWith('qrconnect://profile')) {
           setIncoming(profileFromLink(url));
-          router.push('/manage');
+          router.navigate('/profiles');
         } else if (url.startsWith('qrconnect://pair?') || /^https?:\/\/[^/]+\/pair#/.test(url)) {
           setPairing(parsePairingQr(url));
           router.push('/pair');
@@ -196,6 +196,7 @@ function usePhoneState() {
       setPairing(next);
       locked.current = true;
     },
-    signIn: async () => setSession(await signIn(pairing?.server ?? '')),
+    /** @param {string} [provider] */
+    signIn: async (provider) => setSession(await signIn(pairing?.server ?? '', provider)),
   };
 }

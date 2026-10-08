@@ -1,9 +1,9 @@
 import { router } from 'expo-router';
 import { useTheme } from '../src/lib/theme';
 import { useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Copy, Group, Row, SectionHeader, Notice, Screen } from '../src/components/ui';
-import { Alert, Modal, Share, StyleSheet, TextInput, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Copy, Group, Row, SectionHeader, Icon, Screen } from '../src/components/ui';
+import { Alert, Modal, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
 import { Button, Text } from './Terminal.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
@@ -24,13 +24,17 @@ export default function ProfilePanel({
   profileId,
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [exportSettings, setExportSettings] = useState(() => parseExportSettings(undefined));
   const [scheduleSettings, setScheduleSettings] = useState(() => parseSchedule(undefined));
   const [editing, setEditing] = useState('');
   const [section, setSection] = useState('');
   const originalDraft = useRef('');
   const actionRunning = useRef(false);
-  const profile = state.profiles.find((p) => p.id === profileId);
+  const [deletingProfile, setDeletingProfile] = useState(
+    /** @type {import('../core/profiles.js').ExportProfile|null} */ (null),
+  );
+  const profile = state.profiles.find((p) => p.id === profileId) ?? deletingProfile;
   const [name, setName] = useState('');
   const [selection, setSelection] = useState(
     /** @type {import('../core/profiles.js').ProfileDraft['selection']} */ ({
@@ -47,6 +51,7 @@ export default function ProfilePanel({
   const disabled = busy || working;
   /** @param {import('../core/profiles.js').ProfileDraft} p @param {string} [id] */
   function edit(p, id = '') {
+    if (disabled) return;
     originalDraft.current = JSON.stringify({
       name: p.name,
       selection: p.selection,
@@ -54,6 +59,7 @@ export default function ProfilePanel({
       schedule: parseSchedule(p.schedule),
     });
     setSection('');
+    setImportText('');
     setEditing(id || 'new');
     setName(p.name);
     setSelection(p.selection);
@@ -91,7 +97,13 @@ export default function ProfilePanel({
     const others = state.profiles.filter((p) => p.id !== id);
     const savedProfile = { ...parsed, id, name: uniqueProfileName(parsed.name, others) };
     if (others.length >= 50) throw new Error('Keep at most 50 profiles.');
-    await onChange({ ...state, profiles: [...others, savedProfile] });
+    await onChange({
+      ...state,
+      profiles:
+        editing === 'new'
+          ? [...state.profiles, savedProfile]
+          : state.profiles.map((p) => (p.id === id ? savedProfile : p)),
+    });
     setEditing('');
     if (editing === 'new') router.push({ pathname: '/profiles/[id]', params: { id } });
     if (review) {
@@ -117,31 +129,35 @@ export default function ProfilePanel({
         { text: 'Discard', style: 'destructive', onPress: closeEditor },
       ]);
   }
-  return (
-    <View style={styles.container}>
-      {!profileId && (
-        <Notice
-          title="Profiles"
-          body="Save a configuration for each export. Select a profile to customize its data, destination, output and schedule."
-        />
-      )}
+  const content = (
+    <View
+      style={styles.container}
+      accessibilityElementsHidden={Boolean(editing)}
+      importantForAccessibility={editing ? 'no-hide-descendants' : 'auto'}
+    >
       {profileId && !profile && <Text>This profile no longer exists.</Text>}
       {profile && (
         <>
-          <Notice
-            title={profile.id === state.activeId ? 'Active profile' : 'Saved profile'}
-            body={
-              profile.id === state.activeId
-                ? 'This profile controls live agent access. Saved edits apply immediately; domain and system permissions still apply.'
-                : 'Its schedule runs independently. Make it active to use these selections for live agent access.'
-            }
-          />
-          <Button
-            title="Customize profile"
-            disabled={disabled}
-            onPress={() => edit(profile, profile.id)}
-          />
+          <Group compact>
+            <Row
+              compact
+              title={profile.id === state.activeId ? 'Active profile' : 'Saved profile'}
+              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)} selected · ${profile.export.formats.join(' + ').toUpperCase()}`}
+            />
+            <Row
+              compact
+              title="Customize profile"
+              onPress={() => edit(profile, profile.id)}
+              disabled={disabled}
+            />
+          </Group>
+          <Copy variant="caption" muted>
+            {profile.id === state.activeId
+              ? 'Saved selections apply to live agent access. Source permissions still apply.'
+              : 'Schedules run independently. Activate to use this profile for live agent access.'}
+          </Copy>
           <SectionHeader
+            compact
             title="Data selection"
             action="Edit"
             onPress={() => {
@@ -149,18 +165,20 @@ export default function ProfilePanel({
               setSection('data');
             }}
           />
-          <Group>
+          <Group compact>
             {domains.map((domain) => (
               <Row
+                compact
                 key={domain}
                 title={
                   domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'
                 }
-                subtitle={`${profile.selection[domain].length} selected data types`}
+                value={`${profile.selection[domain].length} selected`}
               />
             ))}
           </Group>
           <SectionHeader
+            compact
             title="Destination"
             action="Edit"
             onPress={() => {
@@ -168,8 +186,9 @@ export default function ProfilePanel({
               setSection('destination');
             }}
           />
-          <Group>
+          <Group compact>
             <Row
+              compact
               title={
                 profile.export.destination === 'local'
                   ? 'On this phone'
@@ -177,7 +196,7 @@ export default function ProfilePanel({
                     ? 'HTTPS endpoint'
                     : 'Cloud service'
               }
-              subtitle={
+              value={
                 profile.export.destination === 'local'
                   ? `Documents/${profile.export.folderName}`
                   : profile.export.destination === 'http'
@@ -187,6 +206,7 @@ export default function ProfilePanel({
             />
           </Group>
           <SectionHeader
+            compact
             title="Output"
             action="Edit"
             onPress={() => {
@@ -194,31 +214,35 @@ export default function ProfilePanel({
               setSection('output');
             }}
           />
-          <Group>
-            <Row title="Formats" subtitle={profile.export.formats.join(' + ').toUpperCase()} />
+          <Group compact>
+            <Row compact title="Formats" value={profile.export.formats.join(' + ').toUpperCase()} />
             <Row
+              compact
               title="Export window"
-              subtitle={`${profile.export.lookbackDays} completed days${profile.export.includeToday ? ' + today for manual exports' : ''}`}
+              value={`${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`}
             />
-            <Row title="Filename" subtitle={profile.export.filenameTemplate} />
+            <Row compact title="Filename" value={profile.export.filenameTemplate} />
             <Row
+              compact
               title="Folders"
-              subtitle={`${profile.export.folderName}${profile.export.formatFolders ? ' · separate format folders' : ''}`}
+              value={`${profile.export.folderName}${profile.export.formatFolders ? ' · separate format folders' : ''}`}
             />
-            <Row title="When files exist" subtitle="Replace matching daily files" />
+            <Row compact title="When files exist" value="Replace matching daily files" />
           </Group>
           <SectionHeader
-            title="Schedule & exports"
+            compact
+            title="Schedule"
             action="Edit"
             onPress={() => {
               edit(profile, profile.id);
               setSection('schedule');
             }}
           />
-          <Group>
+          <Group compact>
             <Row
+              compact
               title="Cadence"
-              subtitle={
+              value={
                 profile.schedule.frequency === 'custom'
                   ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
                   : profile.schedule.frequency === 'weekly'
@@ -227,38 +251,37 @@ export default function ProfilePanel({
               }
             />
             <Row
+              compact
               title="Preferred time"
-              subtitle={`${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`}
+              value={`${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`}
             />
             <Row
+              compact
               title="Today Refresh"
-              subtitle={
+              value={
                 profile.schedule.todayRefresh
                   ? `Every ${profile.schedule.refreshHours} hours`
                   : 'Off'
               }
             />
           </Group>
-          <View
-            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <ProfileExports
-              key={profile.id}
-              session={session}
-              profile={profile}
-              disabled={disabled}
-            />
-          </View>
-          <Group>
+          <ProfileExports
+            key={profile.id}
+            session={session}
+            profile={profile}
+            disabled={disabled}
+          />
+          <Group compact>
             <Row
+              compact
               title="View history"
               subtitle="Exports and agent access for this profile"
               onPress={() =>
-                router.push({ pathname: '/history', params: { profileId: profile.id } })
+                router.push({ pathname: '/profiles/history', params: { profileId: profile.id } })
               }
             />
           </Group>
-          <SectionHeader title="Profile ID" />
+          <SectionHeader compact title="Profile ID" />
           <View
             style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
@@ -267,64 +290,73 @@ export default function ProfilePanel({
               Use this ID to identify the profile in exports and agent requests.
             </Copy>
           </View>
-          <SectionHeader title="Manage profile" />
-          <Button
-            title="Rename profile"
-            disabled={disabled}
-            onPress={() => edit(profile, profile.id)}
-          />
-          <Button
-            title="Make active"
-            disabled={disabled || profile.id === state.activeId}
-            onPress={() => void run(() => onChange({ ...state, activeId: profile.id }))}
-          />
-          <Button
-            title="Duplicate profile"
-            disabled={disabled}
-            onPress={() =>
-              edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
-            }
-          />
-          <Button
-            title="Share profile link"
-            disabled={disabled}
-            onPress={() =>
-              void run(async () => {
-                const link = profileLink(profile);
-                setShareLink(link);
-                await Share.share({ message: link, title: profile.name });
-              })
-            }
-          />
-          <Button
-            title="Delete profile"
-            disabled={disabled || state.profiles.length === 1}
-            onPress={() =>
-              Alert.alert(
-                'Delete profile?',
-                `Remove ${profile.name} and its schedule configuration?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () =>
-                      void run(async () => {
-                        const profiles = state.profiles.filter((p) => p.id !== profile.id);
-                        await onChange({
-                          profiles,
-                          activeId:
-                            state.activeId === profile.id
-                              ? (profiles[0]?.id ?? state.activeId)
-                              : state.activeId,
-                        });
-                        router.back();
-                      }),
-                  },
-                ],
-              )
-            }
-          />
+          <SectionHeader compact title="Manage profile" />
+          <Group compact>
+            <Row
+              compact
+              title="Rename profile"
+              disabled={disabled}
+              onPress={() => edit(profile, profile.id)}
+            />
+            <Row
+              compact
+              title="Make active"
+              disabled={disabled || profile.id === state.activeId}
+              onPress={() => void run(() => onChange({ ...state, activeId: profile.id }))}
+            />
+            <Row
+              compact
+              title="Duplicate profile"
+              disabled={disabled}
+              onPress={() =>
+                edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
+              }
+            />
+            <Row
+              compact
+              title="Share profile link"
+              disabled={disabled}
+              onPress={() =>
+                void run(async () => {
+                  const link = profileLink(profile);
+                  setShareLink(link);
+                  await Share.share({ message: link, title: profile.name });
+                })
+              }
+            />
+            <Row
+              compact
+              destructive
+              title="Delete profile"
+              disabled={disabled || state.profiles.length === 1}
+              onPress={() =>
+                Alert.alert(
+                  'Delete profile?',
+                  `Remove ${profile.name} and its schedule configuration?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: () =>
+                        void run(async () => {
+                          setDeletingProfile(profile);
+                          const profiles = state.profiles.filter((p) => p.id !== profile.id);
+                          await onChange({
+                            profiles,
+                            activeId:
+                              state.activeId === profile.id
+                                ? (profiles[0]?.id ?? state.activeId)
+                                : state.activeId,
+                          });
+                          router.back();
+                        }),
+                    },
+                  ],
+                )
+              }
+            />
+          </Group>
         </>
       )}
       {draft && !review ? (
@@ -349,10 +381,11 @@ export default function ProfilePanel({
       ) : null}
       {!profileId && (
         <>
-          <SectionHeader title="Your profiles" count={state.profiles.length} />
-          <Group>
+          <SectionHeader compact title="Your profiles" />
+          <Group compact>
             {state.profiles.map((p) => (
               <Row
+                compact
                 key={p.id}
                 title={p.name}
                 subtitle={`${p.id === state.activeId ? 'Active · ' : ''}${domains.reduce((n, d) => n + p.selection[d].length, 0)} types · ${p.export.formats.join(' + ').toUpperCase()} · ${p.export.destination === 'local' ? 'On this phone' : p.export.destination === 'http' ? 'HTTPS' : 'Cloud'}`}
@@ -360,42 +393,44 @@ export default function ProfilePanel({
               />
             ))}
           </Group>
-          <Button
-            title="New profile"
-            disabled={disabled}
-            onPress={() =>
-              edit({
-                schema: 'qr-connect.profile.v1',
-                name: 'Profile',
-                selection: { health: [], time: [], location: [] },
-              })
-            }
-          />
-          <TextInput
-            accessibilityLabel="Profile JSON or deep link"
-            placeholder="Paste profile JSON or qrconnect link"
-            value={importText}
-            onChangeText={setImportText}
-            multiline
-            style={[
-              styles.input,
-              { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-            ]}
-          />
-          <Button
-            title="Review pasted profile"
-            disabled={disabled || !importText}
-            onPress={() =>
-              void run(async () => {
-                edit(
-                  importText.trim().startsWith('qrconnect:')
-                    ? profileFromLink(importText.trim())
-                    : parseProfile(JSON.parse(importText)),
-                );
-              })
-            }
-          />
         </>
+      )}
+    </View>
+  );
+  return (
+    <View style={!profileId && styles.feed}>
+      {profileId ? (
+        content
+      ) : (
+        <Screen>
+          {content}
+          <View style={styles.feedClearance} />
+        </Screen>
+      )}
+      {!profileId && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="New profile"
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={() =>
+            edit({
+              schema: 'qr-connect.profile.v1',
+              name: 'Profile',
+              selection: { health: [], time: [], location: [] },
+            })
+          }
+          style={({ pressed }) => [
+            styles.floatingAction,
+            {
+              bottom: insets.bottom + 16,
+              backgroundColor: colors.accent,
+              opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Icon name="add" size={30} color={colors.onAccent} />
+        </Pressable>
       )}
       <Modal
         visible={Boolean(editing)}
@@ -408,16 +443,32 @@ export default function ProfilePanel({
           style={[styles.modal, { backgroundColor: colors.background }]}
         >
           <View style={styles.toolbar}>
-            <View style={styles.label}>
-              <Button
-                title={section ? 'All settings' : 'Cancel'}
-                disabled={disabled}
-                onPress={() => (section ? setSection('') : cancel())}
-              />
-            </View>
-            <View style={styles.label}>
-              <Button title="Save profile" disabled={disabled} onPress={() => void run(save)} />
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={disabled}
+              accessibilityState={{ disabled }}
+              onPress={() => (section ? setSection('') : cancel())}
+              style={({ pressed }) => [
+                styles.toolbarAction,
+                { backgroundColor: colors.subtle, opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Copy style={styles.toolbarLabel}>{section ? 'All settings' : 'Cancel'}</Copy>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={disabled}
+              accessibilityState={{ disabled }}
+              onPress={() => void run(save)}
+              style={({ pressed }) => [
+                styles.toolbarAction,
+                { backgroundColor: colors.accent, opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Copy style={[styles.toolbarLabel, { color: colors.onAccent }]}>
+                {working ? 'Saving…' : 'Save profile'}
+              </Copy>
+            </Pressable>
           </View>
           {error ? (
             <Text accessibilityRole="alert" style={styles.editorError}>
@@ -432,17 +483,57 @@ export default function ProfilePanel({
               disabled={disabled}
             />
           ) : (
-            <Screen>
+            <Screen compact>
               <Copy variant="heading">
-                {review
-                  ? 'Review generated profile'
-                  : editing === 'new'
-                    ? 'New profile'
-                    : 'Customize profile'}
+                {section
+                  ? ({ destination: 'Destination', output: 'Output', schedule: 'Schedule' }[
+                      section
+                    ] ?? 'Customize profile')
+                  : review
+                    ? 'Review generated profile'
+                    : editing === 'new'
+                      ? 'New profile'
+                      : 'Customize profile'}
               </Copy>
+              {!section && editing === 'new' && !review && (
+                <>
+                  <SectionHeader compact title="Import profile" />
+                  <TextInput
+                    accessibilityLabel="Profile JSON or deep link"
+                    placeholder="Paste profile JSON or qrconnect link"
+                    editable={!disabled}
+                    value={importText}
+                    onChangeText={setImportText}
+                    multiline
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                        color: colors.text,
+                      },
+                    ]}
+                  />
+                  <Button
+                    title="Review pasted profile"
+                    disabled={disabled || !importText}
+                    onPress={() =>
+                      void run(async () => {
+                        edit(
+                          importText.trim().startsWith('qrconnect:')
+                            ? profileFromLink(importText.trim())
+                            : parseProfile(JSON.parse(importText)),
+                        );
+                      })
+                    }
+                  />
+                </>
+              )}
               {!section && (
                 <>
-                  <Text>Profile name</Text>
+                  <Copy variant="caption" muted>
+                    Profile name
+                  </Copy>
                   <TextInput
                     accessibilityLabel="Profile name"
                     editable={!disabled}
@@ -458,41 +549,20 @@ export default function ProfilePanel({
                       },
                     ]}
                   />
-                  <Group>
+                  <Group compact>
                     <Row
+                      compact
                       title="Data selection"
-                      subtitle={`${domains.reduce((n, d) => n + selection[d].length, 0)} selected types`}
+                      subtitle={`${domains.reduce((n, d) => n + selection[d].length, 0)} selected`}
                       onPress={() => setSection('data')}
                     />
-                    <Row
-                      title="Destination"
-                      subtitle={
-                        exportSettings.destination === 'local'
-                          ? 'On this phone'
-                          : exportSettings.destination === 'http'
-                            ? 'HTTPS endpoint'
-                            : 'Cloud service'
-                      }
-                      onPress={() => setSection('destination')}
-                    />
-                    <Row
-                      title="Output"
-                      subtitle={exportSettings.formats.join(' + ').toUpperCase()}
-                      onPress={() => setSection('output')}
-                    />
-                    <Row
-                      title="Schedule"
-                      subtitle={scheduleSettings.frequency}
-                      onPress={() => setSection('schedule')}
-                    />
                   </Group>
-                  <Notice
-                    title="Save when ready"
-                    body="Changes stay in this draft until you save. Automatic exports and destination credentials are managed on the saved profile."
-                  />
+                  <Copy variant="caption" muted>
+                    Changes stay in this draft until you save.
+                  </Copy>
                 </>
               )}
-              {['destination', 'output', 'schedule'].includes(section) && (
+              {(!section || ['destination', 'output', 'schedule'].includes(section)) && (
                 <ExportSettingsEditor
                   section={section}
                   settings={exportSettings}
@@ -502,10 +572,9 @@ export default function ProfilePanel({
                   disabled={disabled}
                 />
               )}
-              <Text>
-                Edits to the active profile apply when saved. Activate a new profile when ready to
-                use it.
-              </Text>
+              <Copy variant="caption" muted>
+                Automatic exports and credentials are managed on the saved profile.
+              </Copy>
             </Screen>
           )}
         </SafeAreaView>
@@ -520,20 +589,38 @@ export default function ProfilePanel({
   );
 }
 const styles = StyleSheet.create({
-  container: { gap: 16 },
+  container: { gap: 8 },
+  feed: { flex: 1 },
+  feedClearance: { height: 72 },
+  floatingAction: {
+    position: 'absolute',
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modal: { flex: 1 },
-  editorError: { paddingHorizontal: 24, paddingBottom: 12 },
-  toolbar: { flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingVertical: 12 },
-  card: {
+  editorError: { paddingHorizontal: 16, paddingBottom: 12 },
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  card: {
+    gap: 8,
+    padding: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
+    borderRadius: 12,
     borderCurve: 'continuous',
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
+    borderRadius: 12,
     borderCurve: 'continuous',
 
     padding: 12,
@@ -541,6 +628,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 44,
   },
-  label: { flex: 1 },
+  toolbarAction: {
+    minHeight: 48,
+    flexShrink: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolbarLabel: { fontWeight: '600', textAlign: 'center' },
   detail: { fontSize: 13, lineHeight: 20 },
 });

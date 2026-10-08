@@ -35,17 +35,23 @@ export function Copy({ children, variant = 'body', muted = false, style, selecta
     </Text>
   );
 }
-/** @param {{children:import('react').ReactNode}} props */
-export function Screen({ children }) {
+/** @param {{children:import('react').ReactNode,compact?:boolean}} props */
+export function Screen({ children, compact = false }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
       style={[styles.fill, { backgroundColor: colors.background }]}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.screen, { paddingBottom: insets.bottom + 32 }]}
+      contentContainerStyle={[
+        styles.screen,
+        compact && styles.compactScreen,
+        { paddingBottom: insets.bottom + 32 },
+      ]}
     >
-      <View style={styles.column}>{children}</View>
+      <View style={[styles.column, compact && styles.compactColumn]}>{children}</View>
     </ScrollView>
   );
 }
@@ -90,11 +96,17 @@ export function Button({ label, onPress, secondary = false, disabled = false, ic
     </Pressable>
   );
 }
-/** @param {{children:import('react').ReactNode}} props */
-export function Group({ children }) {
+/** @param {{children:import('react').ReactNode,compact?:boolean}} props */
+export function Group({ children, compact = false }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.group,
+        compact && styles.compactGroup,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
       {children}
     </View>
   );
@@ -103,20 +115,44 @@ export function Divider() {
   const { colors } = useTheme();
   return <View style={[styles.divider, { backgroundColor: colors.border }]} />;
 }
-/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,selected?:boolean}} props */
-export function Row({ title, subtitle, icon, trailing, onPress, selected }) {
+/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,selected?:boolean,compact?:boolean,value?:string,disabled?:boolean,destructive?:boolean}} props */
+export function Row({
+  title,
+  subtitle,
+  icon,
+  trailing,
+  onPress,
+  selected,
+  compact = false,
+  value,
+  disabled = false,
+  destructive = false,
+}) {
   const { colors } = useTheme();
   const content = (
     <>
       {icon}
       <View style={styles.rowText}>
-        <Copy style={styles.rowTitle}>{title}</Copy>
+        <Copy
+          style={[
+            styles.rowTitle,
+            compact && styles.compactTitle,
+            destructive && { color: colors.danger },
+          ]}
+        >
+          {title}
+        </Copy>
         {subtitle && (
           <Copy variant="caption" muted>
             {subtitle}
           </Copy>
         )}
       </View>
+      {value !== undefined && (
+        <Copy selectable variant="caption" style={styles.rowValue}>
+          {value}
+        </Copy>
+      )}
       {trailing}
       {onPress && selected === undefined && (
         <Icon name="chevron-forward" size={17} color={colors.secondary} />
@@ -126,27 +162,36 @@ export function Row({ title, subtitle, icon, trailing, onPress, selected }) {
   return onPress ? (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={selected === undefined ? undefined : { selected }}
-      accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
+      disabled={disabled}
+      accessibilityState={{ disabled, ...(selected === undefined ? {} : { selected }) }}
+      accessibilityLabel={[title, value, subtitle].filter(Boolean).join(', ')}
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
+        compact && [styles.compactRow, { borderBottomColor: colors.border }],
+        disabled && styles.disabled,
         { backgroundColor: pressed ? colors.subtle : 'transparent' },
       ]}
     >
       {content}
     </Pressable>
   ) : (
-    <View style={styles.row}>{content}</View>
+    <View
+      style={[styles.row, compact && [styles.compactRow, { borderBottomColor: colors.border }]]}
+    >
+      {content}
+    </View>
   );
 }
-/** @param {{title:string,count?:number,action?:string,onPress?:()=>void}} props */
-export function SectionHeader({ title, count, action, onPress }) {
+/** @param {{title:string,count?:number,action?:string,onPress?:()=>void,compact?:boolean}} props */
+export function SectionHeader({ title, count, action, onPress, compact = false }) {
   const { colors } = useTheme();
   return (
-    <View style={styles.sectionHeader}>
+    <View style={[styles.sectionHeader, compact && styles.compactSectionHeader]}>
       <View style={styles.sectionTitle}>
-        <Copy variant="heading">{title}</Copy>
+        <Copy variant={compact ? 'caption' : 'heading'} style={compact && styles.semibold}>
+          {title}
+        </Copy>
         {count !== undefined && (
           <Copy variant="caption" muted>
             {count}
@@ -204,6 +249,20 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline' }) {
 }
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  compactScreen: { paddingHorizontal: 16, paddingTop: 8 },
+  compactColumn: { gap: 12 },
+  compactGroup: { borderRadius: 12 },
+  compactRow: {
+    minHeight: 44,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  compactTitle: { fontSize: 14, lineHeight: 20 },
+  rowValue: { flexShrink: 1, maxWidth: '60%', textAlign: 'right', fontVariant: ['tabular-nums'] },
+  compactSectionHeader: { minHeight: 32 },
+  disabled: { opacity: 0.45 },
   buttonLabel: { fontWeight: '600', textAlign: 'center' },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 72 },
   rowText: { flex: 1, gap: 4 },

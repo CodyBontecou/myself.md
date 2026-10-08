@@ -7,3 +7,5 @@ assets/
 package-lock.json
 
 .local/
+
+dashboard/dist/

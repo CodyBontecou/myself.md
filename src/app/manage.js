@@ -1,9 +1,4 @@
-import { Screen } from '../components/ui';
-import DataPanel from '../../client/DataPanel';
-export default function ManagementScreen() {
-  return (
-    <Screen>
-      <DataPanel management />
-    </Screen>
-  );
+import { Redirect } from 'expo-router';
+export default function ManagementRedirect() {
+  return <Redirect href="/profiles" />;
 }

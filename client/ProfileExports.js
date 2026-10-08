@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
-import { Button, Text, Switch } from './Terminal.js';
+import { Switch } from './Terminal.js';
+import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
+import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
 import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
 /** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean}} props */
 export default function ProfileExports({ session, profile, disabled }) {
+  const { colors } = useTheme();
+  const running = useRef(false);
   const [bearer, setBearer] = useState('');
   const [shared, setShared] = useState(false);
   const [now, setNow] = useState(() => new Date().toISOString());
@@ -31,6 +35,8 @@ export default function ProfileExports({ session, profile, disabled }) {
   }, [session.deviceId, profile]);
   /** @param {()=>Promise<void>} action */
   async function run(action) {
+    if (running.current || disabled) return;
+    running.current = true;
     setBusy(true);
     try {
       await action();
@@ -39,6 +45,7 @@ export default function ProfileExports({ session, profile, disabled }) {
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Export failed.');
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -51,18 +58,54 @@ export default function ProfileExports({ session, profile, disabled }) {
   const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
   return (
     <View style={styles.container}>
-      <Text>
-        {profile.export.formats.join(' + ').toUpperCase()} · {profile.export.lookbackDays} completed
-        days{profile.export.includeToday ? ' + today' : ''}
-      </Text>
-      <Text>
-        Destination:{' '}
-        {profile.export.destination === 'local'
-          ? `Documents/${profile.export.folderName}/${session.deviceId}/${profile.id}`
-          : profile.export.destination === 'http'
-            ? profile.export.httpUrl
-            : 'Your paired cloud service'}
-      </Text>
+      <SectionHeader compact title="Exports" />
+      <Group compact>
+        <Row
+          compact
+          title="Automatic exports"
+          trailing={
+            <Switch
+              accessibilityLabel={`Automatic exports for ${profile.name}`}
+              disabled={disabled || busy}
+              value={state.progress.enabled}
+              onValueChange={(v) =>
+                void run(() => setScheduleEnabled(session.deviceId, profile, v))
+              }
+            />
+          }
+        />
+        <Row compact title="Next eligible" value={next ? new Date(next).toLocaleString() : 'Off'} />
+        {state.job && <Row compact title="Pending" value={`${state.job.days.length} days`} />}
+        <Row
+          compact
+          title={busy ? 'Exporting…' : 'Export profile now'}
+          disabled={disabled || busy}
+          onPress={() => void run(() => exportNow(session, profile, setMessage))}
+        />
+        <Row compact title="Files" value={String(state.files.length)} />
+        {state.files.map((uri) => (
+          <Row
+            compact
+            key={uri}
+            title={`Share ${decodeURIComponent(uri.split('/').at(-1) ?? 'file')}`}
+            disabled={disabled || busy}
+            onPress={() =>
+              void run(async () => {
+                if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing unavailable.');
+                await Sharing.shareAsync(uri);
+              })
+            }
+          />
+        ))}
+      </Group>
+      {message || state.message ? (
+        <Copy variant="caption" selectable>
+          {message || state.message}
+        </Copy>
+      ) : null}
+      <Copy variant="caption" muted>
+        Background timing depends on the OS. Opening the app catches up.
+      </Copy>
       {profile.export.destination === 'http' ? (
         <>
           <TextInput
@@ -71,8 +114,17 @@ export default function ProfileExports({ session, profile, disabled }) {
             value={bearer}
             onChangeText={setBearer}
             secureTextEntry
+            editable={!disabled && !busy}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholderTextColor={colors.secondary}
+            style={[
+              styles.input,
+              { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
+            ]}
           />
-          <Button
+          <Row
+            compact
             title="Save HTTP credential"
             disabled={disabled || busy}
             onPress={() =>
@@ -89,7 +141,9 @@ export default function ProfileExports({ session, profile, disabled }) {
       ) : null}
       {profile.export.destination === 'cloud' ? (
         <>
-          <Button
+          <SectionHeader compact title="Cloud access" />
+          <Row
+            compact
             title="Authorize cloud uploads (30 days)"
             disabled={disabled || busy}
             onPress={() =>
@@ -99,84 +153,78 @@ export default function ProfileExports({ session, profile, disabled }) {
               })
             }
           />
-          <Text selectable>Connector URL: {session.server}/mcp</Text>
-          <Text>
+          <Copy variant="caption" selectable>
+            Connector URL: {session.server}/mcp
+          </Copy>
+          <Copy variant="caption" muted>
             Add this remote MCP endpoint to your connector and sign in with the same account as this
             phone.
-          </Text>
-          <Text>Allow stored cloud data in MCP connectors</Text>
-          <Switch
-            accessibilityLabel={`Cloud MCP access for ${profile.name}`}
-            value={shared}
-            disabled={disabled || busy}
-            onValueChange={(v) =>
-              void run(async () => {
-                const result = await cloudAccess(session, profile, v);
-                setShared(result.shared);
-              })
+          </Copy>
+          <Row
+            compact
+            title="Allow stored data in connectors"
+            trailing={
+              <Switch
+                accessibilityLabel={`Cloud MCP access for ${profile.name}`}
+                value={shared}
+                disabled={disabled || busy}
+                onValueChange={(v) =>
+                  void run(async () => {
+                    const result = await cloudAccess(session, profile, v);
+                    setShared(result.shared);
+                  })
+                }
+              />
             }
           />
-          <Button
+          <Row
+            compact
+            destructive
             title="Delete this profile’s cloud exports"
             disabled={disabled || busy}
             onPress={() =>
-              void run(async () => {
-                const { api } = await import('./session.js');
-                const exports = /** @type {{id:string,profileId:string,deviceId:string}[]} */ (
-                  await api(session, '/api/cloud/exports')
-                );
-                for (const item of exports.filter(
-                  (v) => v.profileId === profile.id && v.deviceId === session.deviceId,
-                )) {
-                  // Delete owner-matched exports sequentially.
-                  // oxlint-disable-next-line eslint/no-await-in-loop
-                  await api(session, `/api/cloud/exports/${item.id}`, { method: 'DELETE' });
-                }
-              })
+              Alert.alert(
+                'Delete cloud exports?',
+                `Remove all stored exports for ${profile.name}?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () =>
+                      void run(async () => {
+                        const { api } = await import('./session.js');
+                        const exports =
+                          /** @type {{id:string,profileId:string,deviceId:string}[]} */ (
+                            await api(session, '/api/cloud/exports')
+                          );
+                        for (const item of exports.filter(
+                          (v) => v.profileId === profile.id && v.deviceId === session.deviceId,
+                        )) {
+                          // Delete owner-matched exports sequentially.
+                          // oxlint-disable-next-line eslint/no-await-in-loop
+                          await api(session, `/api/cloud/exports/${item.id}`, { method: 'DELETE' });
+                        }
+                      }),
+                  },
+                ],
+              )
             }
           />
         </>
       ) : null}
-      <Text>
-        Schedule: {profile.schedule.frequency} · {String(profile.schedule.hour).padStart(2, '0')}:
-        {String(profile.schedule.minute).padStart(2, '0')} local time
-      </Text>
-      <Text>Automatic exports</Text>
-      <Switch
-        accessibilityLabel={`Automatic exports for ${profile.name}`}
-        disabled={disabled || busy}
-        value={state.progress.enabled}
-        onValueChange={(v) => void run(() => setScheduleEnabled(session.deviceId, profile, v))}
-      />
-      <Text>
-        Background timing depends on iOS/Android. Opening the app catches up. Local files replace
-        matching days; JSONL has a companion manifest.
-      </Text>
-      {next ? <Text>Next eligible: {new Date(next).toLocaleString()}</Text> : null}
-      <Text>
-        {message || state.message}
-        {state.job ? ` · ${state.job.days.length} days pending` : ''}
-      </Text>
-      <Button
-        title="Export profile now"
-        disabled={disabled || busy}
-        onPress={() => void run(() => exportNow(session, profile, setMessage))}
-      />
-      {state.files.map((uri) => (
-        <Button
-          key={uri}
-          title={`Share ${decodeURIComponent(uri.split('/').at(-1) ?? 'file')}`}
-          disabled={busy}
-          onPress={() =>
-            void run(async () => {
-              if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing unavailable.');
-              await Sharing.shareAsync(uri);
-            })
-          }
-        />
-      ))}
     </View>
   );
 }
 
-const styles = StyleSheet.create({ container: { gap: 12 } });
+const styles = StyleSheet.create({
+  container: { gap: 8 },
+  input: {
+    minHeight: 44,
+    padding: 12,
+    fontSize: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+  },
+});

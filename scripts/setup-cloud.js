@@ -24,6 +24,12 @@ try {
   for (const scope of realm.clientScopes)
     for (const mapper of scope.protocolMappers ?? [])
       if (mapper.name === 'mcp-audience') mapper.config['included.custom.audience'] = resource;
+  const dashboard = realm.clients.find(
+    (/** @type {{clientId:string}} */ client) => client.clientId === 'qr-dashboard',
+  );
+  dashboard.redirectUris = [`https://${domain}/dashboard/callback`];
+  dashboard.webOrigins = [`https://${domain}`];
+  dashboard.attributes['post.logout.redirect.uris'] = `https://${domain}/dashboard`;
   mkdirSync('.local/cloud-realm', { recursive: true });
   writeFileSync('.local/cloud-realm/qr-connect.json', JSON.stringify(realm, null, 2), {
     mode: 0o644,

@@ -109,7 +109,7 @@ export default function Overview() {
             title="Profiles & exports"
             subtitle="Choose data types, destinations, and schedules"
             icon={<SourceIcon icon="folder-outline" />}
-            onPress={() => router.push('/manage')}
+            onPress={() => router.navigate('/profiles')}
           />
         </Group>
       </View>
@@ -118,7 +118,7 @@ export default function Overview() {
           title="History"
           subtitle="Past exports and agent access"
           icon={<SourceIcon icon="time-outline" />}
-          onPress={() => router.push('/history')}
+          onPress={() => router.navigate('/history')}
         />
       </Group>
       <Button
@@ -147,7 +147,7 @@ function SettingsButton() {
     <IconButton
       icon="options-outline"
       label="Open settings"
-      onPress={() => router.push('/settings')}
+      onPress={() => router.navigate('/settings')}
     />
   );
 }

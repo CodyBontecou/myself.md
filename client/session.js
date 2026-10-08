@@ -66,8 +66,8 @@ function trustedUrl(value) {
   if (url.username || url.password) throw new Error('Invalid server URL.');
   return url;
 }
-/** @param {string} server @returns {Promise<Session>} */
-export async function signIn(server) {
+/** @param {string} server @param {string} [provider] @returns {Promise<Session>} */
+export async function signIn(server, provider) {
   trustedUrl(server);
   const config = await request(/** @type {string} */ (`${server}/config`));
   const checked = /** @type {{issuer:string,clientId:string,resource:string}} */ (config);
@@ -83,7 +83,11 @@ export async function signIn(server) {
     usePKCE: true,
     codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
     scopes: ['openid', 'profile', 'qr-connect'],
-    extraParams: { resource: checked.resource, prompt: 'select_account' },
+    extraParams: {
+      resource: checked.resource,
+      prompt: 'select_account',
+      ...(provider ? { kc_idp_hint: provider } : {}),
+    },
   });
   const result = await auth.promptAsync(discovery);
   if (result.type !== 'success' || !result.params.code || !auth.codeVerifier)

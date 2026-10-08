@@ -8,9 +8,19 @@
     "scripts/**/*.js",
     "client/**/*.js",
     "plugins/**/*.cjs",
-    "src/**/*.js"
+    "src/**/*.js",
+    "dashboard/**/*.js",
+    "!dashboard/dist/**",
+    "dashboard/**/*.css"
   ],
   "ignoreDependencies": ["@types/punycode"],
   "ignoreBinaries": ["fly"],
-  "entry": ["scripts/*.js", "plugins/*.cjs", "index.js", "src/app/**/*.js"]
+  "entry": [
+    "scripts/*.js",
+    "plugins/*.cjs",
+    "index.js",
+    "src/app/**/*.js",
+    "dashboard/app.js",
+    "dashboard/style.css"
+  ]
 }

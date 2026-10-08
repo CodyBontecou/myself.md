@@ -1,7 +1,7 @@
-import { Alert, Linking, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { Stack } from 'expo-router';
-import { Screen, Copy, Group, Row, Button, Notice } from '../src/components/ui';
+import { Screen, Copy, Group, Row, Button, Icon, Notice } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { usePhone } from './PhoneProvider';
 export default function PairScreen() {
@@ -41,10 +41,6 @@ export default function PairScreen() {
             secondary
             disabled={busy}
             onPress={() => void run(refresh)}
-          />
-          <Notice
-            title="Access is yours to manage"
-            body="Choose permissions on each data source and select individual types in Profiles & exports. Keep this app open for live agent queries."
           />
           <Button
             label="Disconnect agent"
@@ -95,7 +91,28 @@ export default function PairScreen() {
               />
             </>
           ) : (
-            <Button label="Sign in" disabled={busy} onPress={() => void run(signIn)} />
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Apple"
+                accessibilityState={{ disabled: busy }}
+                disabled={busy}
+                onPress={() => void run(() => signIn('apple'))}
+                style={({ pressed }) => [
+                  styles.appleButton,
+                  { opacity: busy ? 0.45 : pressed ? 0.7 : 1 },
+                ]}
+              >
+                <Icon name="logo-apple" size={22} color="#fff" />
+                <Copy style={styles.appleLabel}>Sign in with Apple</Copy>
+              </Pressable>
+              <Button
+                label="Sign in another way"
+                secondary
+                disabled={busy}
+                onPress={() => void run(() => signIn())}
+              />
+            </>
           )}
           <Button
             label="Use another account"
@@ -171,6 +188,21 @@ export default function PairScreen() {
 }
 
 const styles = StyleSheet.create({
+  appleButton: {
+    minHeight: 54,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#000',
+    borderColor: '#fff',
+    borderWidth: 1,
+  },
+  appleLabel: { color: '#fff', fontWeight: '600', textAlign: 'center' },
   camera: { height: 240, borderRadius: 20, overflow: 'hidden' },
   fields: { gap: 12 },
   input: { padding: 16, borderRadius: 14, minHeight: 52 },

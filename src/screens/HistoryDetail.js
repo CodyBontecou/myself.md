@@ -1,13 +1,13 @@
 import { Alert, StyleSheet, View } from 'react-native';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams, usePathname } from 'expo-router';
 import { File } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { Copy, Empty, Group, Row, Screen, SectionHeader, Notice } from '../../components/ui.js';
-import { usePhoneData } from '../../../client/DataPanel.js';
-import { useHistory } from '../../../client/useHistory.js';
-import { historyEntry, relatedHistory } from '../../../client/history.js';
-import { historyTitle, historyOutcome, historyRoute } from '../../../client/history-display.js';
-/** @param {import('../../../core/history.js').HistoryArtifact} artifact */
+import { Copy, Empty, Group, Row, Screen, SectionHeader, Notice } from '../components/ui.js';
+import { usePhoneData } from '../../client/DataPanel.js';
+import { useHistory } from '../../client/useHistory.js';
+import { historyEntry, relatedHistory } from '../../client/history.js';
+import { historyTitle, historyOutcome, historyRoute } from '../../client/history-display.js';
+/** @param {import('../../core/history.js').HistoryArtifact} artifact */
 async function shareFile(artifact) {
   try {
     if (!artifact.uri) return;
@@ -27,6 +27,7 @@ async function shareFile(artifact) {
   }
 }
 export default function HistoryDetail() {
+  const profileScoped = usePathname().startsWith('/profiles/history');
   const { id } = useLocalSearchParams(),
     { session } = usePhoneData();
   const { events, loading } = useHistory();
@@ -158,7 +159,12 @@ export default function HistoryDetail() {
                 key={item.id}
                 title={historyTitle(item)}
                 subtitle={`${historyOutcome(item)} · ${new Date(item.startedAt).toLocaleString()}`}
-                onPress={() => router.push({ pathname: '/history/[id]', params: { id: item.id } })}
+                onPress={() =>
+                  router.push({
+                    pathname: profileScoped ? '/profiles/history/[id]' : '/history/[id]',
+                    params: { id: item.id },
+                  })
+                }
               />
             ))}
           </Group>

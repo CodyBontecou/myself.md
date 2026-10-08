@@ -1,7 +1,7 @@
 import { useTheme } from '../src/lib/theme';
 import { StyleSheet, TextInput, View } from 'react-native';
-import { Text, Switch } from './Terminal.js';
-import { Group, Row, Icon } from '../src/components/ui';
+import { Switch } from './Terminal.js';
+import { Group, Row, Icon, Copy, SectionHeader } from '../src/components/ui';
 /** @param {{section?:string,settings:import('../core/export-files.js').ExportSettings,schedule:import('../core/schedules.js').ScheduleConfig,onSettings:(value:import('../core/export-files.js').ExportSettings)=>void,onSchedule:(value:import('../core/schedules.js').ScheduleConfig)=>void,disabled:boolean}} props */
 export default function ExportSettingsEditor({
   section,
@@ -15,13 +15,17 @@ export default function ExportSettingsEditor({
   /** @param {string} label @param {string} value @param {(value:string)=>void} change @param {boolean} [numeric] */
   function input(label, value, change, numeric = false) {
     return (
-      <View>
-        <Text>{label}</Text>
+      <View style={styles.field}>
+        <Copy variant="caption" muted>
+          {label}
+        </Copy>
         <TextInput
           accessibilityLabel={label}
           editable={!disabled}
           value={value}
           onChangeText={change}
+          autoCorrect={false}
+          autoCapitalize="none"
           keyboardType={numeric ? 'number-pad' : 'default'}
           style={[
             styles.input,
@@ -34,23 +38,26 @@ export default function ExportSettingsEditor({
   /** @param {string} label @param {boolean} value @param {(value:boolean)=>void} change */
   function toggle(label, value, change) {
     return (
-      <View style={styles.row}>
-        <Text style={styles.label}>{label}</Text>
-        <Switch
-          accessibilityLabel={label}
-          disabled={disabled}
-          value={value}
-          onValueChange={change}
-        />
-      </View>
+      <Row
+        compact
+        title={label}
+        trailing={
+          <Switch
+            accessibilityLabel={label}
+            disabled={disabled}
+            value={value}
+            onValueChange={change}
+          />
+        }
+      />
     );
   }
   return (
     <View style={styles.container}>
       {(!section || section === 'destination') && (
         <>
-          <Text>Destination</Text>
-          <Group>
+          {!section && <SectionHeader compact title="Destination" />}
+          <Group compact>
             {['local', 'http', 'cloud'].map((destination) => (
               <Choice
                 key={destination}
@@ -80,15 +87,15 @@ export default function ExportSettingsEditor({
                 onSettings({ ...settings, httpUrl: v || null }),
               )
             : null}
-          <Text>
+          <Copy variant="caption" muted>
             Remote exports send your selected data to the chosen destination. Save and use Export
             profile now, or opt in to automatic exports.
-          </Text>
+          </Copy>
         </>
       )}
       {(!section || section === 'output') && (
         <>
-          <Text>Output</Text>
+          {!section && <SectionHeader compact title="Output" />}
           {['json', 'jsonl'].map((format) =>
             toggle(
               format.toUpperCase(),
@@ -122,10 +129,10 @@ export default function ExportSettingsEditor({
           {input('Daily filename template', settings.filenameTemplate, (v) =>
             onSettings({ ...settings, filenameTemplate: v }),
           )}
-          <Text>
+          <Copy variant="caption" muted>
             Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files are
             replaced.
-          </Text>
+          </Copy>
           {toggle('Separate folders for JSON and JSONL', settings.formatFolders, (v) =>
             onSettings({ ...settings, formatFolders: v }),
           )}
@@ -133,8 +140,8 @@ export default function ExportSettingsEditor({
       )}
       {(!section || section === 'schedule') && (
         <>
-          <Text>Schedule</Text>
-          <Group>
+          {!section && <SectionHeader compact title="Schedule" />}
+          <Group compact>
             {['daily', 'weekly', 'custom'].map((frequency) => (
               <Choice
                 key={frequency}
@@ -226,10 +233,10 @@ export default function ExportSettingsEditor({
                 />
               ))
             : null}
-          <Text>
+          <Copy variant="caption" muted>
             Today Refresh rewrites the current day independently of completed-day runs. Save, then
             enable automatic exports on the profile detail screen.
-          </Text>
+          </Copy>
         </>
       )}
     </View>
@@ -239,9 +246,11 @@ export default function ExportSettingsEditor({
 function Choice({ title, selected, disabled, onPress }) {
   return (
     <Row
+      compact
       title={title}
       selected={selected}
-      onPress={disabled ? undefined : onPress}
+      onPress={onPress}
+      disabled={disabled}
       trailing={selected ? <Icon name="checkmark" /> : undefined}
     />
   );
@@ -250,13 +259,13 @@ const styles = StyleSheet.create({
   container: { gap: 12 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
+    borderRadius: 12,
+    borderCurve: 'continuous',
 
     padding: 12,
 
     fontSize: 16,
     minHeight: 44,
   },
-  row: { minHeight: 44, flexDirection: 'row', gap: 12, alignItems: 'center' },
-  label: { flex: 1 },
+  field: { gap: 4 },
 });

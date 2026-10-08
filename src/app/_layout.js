@@ -3,9 +3,18 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme';
 import PhoneProvider from '../../client/PhoneProvider';
+import { OnboardingProvider, useOnboarding } from '../../client/onboarding';
 export const unstable_settings = { initialRouteName: 'index' };
 export default function RootLayout() {
+  return (
+    <OnboardingProvider>
+      <RootStack />
+    </OnboardingProvider>
+  );
+}
+function RootStack() {
   const { colors, isDark } = useTheme();
+  const { complete } = useOnboarding();
   const base = isDark ? DarkTheme : DefaultTheme;
   return (
     <SafeAreaProvider>
@@ -35,13 +44,16 @@ export default function RootLayout() {
               headerBackButtonDisplayMode: 'minimal',
             }}
           >
-            <Stack.Screen name="index" options={{ title: 'Connections' }} />
-            <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
-            <Stack.Screen name="manage" options={{ title: 'Profiles & exports' }} />
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Protected guard={!complete}>
+              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            </Stack.Protected>
+            <Stack.Protected guard={complete}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
+              <Stack.Screen name="manage" options={{ headerShown: false }} />
+            </Stack.Protected>
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
-            <Stack.Screen name="history/index" options={{ title: 'History' }} />
-            <Stack.Screen name="history/[id]" options={{ title: 'Activity details' }} />
-            <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
           </Stack>
         </PhoneProvider>
       </ThemeProvider>

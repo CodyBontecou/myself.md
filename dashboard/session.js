@@ -1,0 +1,204 @@
+/** @typedef {{id:string,profileId:string,profileName:string,deviceId:string,day:string,format:string,bytes:number,created:number,shared:boolean}} StoredExport */
+/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>}} Profile */
+/** @typedef {{client:string,blocked:boolean,lastSeen:number}} Agent */
+/** @typedef {{account:string,exports:StoredExport[],profiles:Profile[],agents:Agent[],devices:{id:string,name:string}[]}} Workspace */
+/** @typedef {{records:{domain:string,type:string,source:string,start:string|null,end:string|null,native:unknown}[],nextCursor:string|null,manifest:Record<string,unknown>}} RecordPage */
+/** @type {{issuer:string,clientId:string}|null} */ let config = null;
+/** @type {{access_token:string,refresh_token?:string,id_token?:string,expires_in:number}|null} */ let tokens =
+  null;
+let expires = 0;
+/** @type {Promise<void>|null} */ let refreshing = null;
+function reset() {
+  tokens = null;
+}
+export function hasSession() {
+  return tokens !== null;
+}
+/** @param {Record<string,string>} parameters */
+async function exchange(parameters) {
+  if (!config) throw new Error('Sign-in is not ready.');
+  const response = await fetch(`${config.issuer}/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: config.clientId, ...parameters }),
+  });
+  if (!response.ok) {
+    reset();
+    throw new Error('Sign-in expired or could not be completed. Please sign in again.');
+  }
+  tokens = await response.json();
+  if (!tokens?.access_token || !Number.isFinite(tokens.expires_in)) {
+    reset();
+    throw new Error('Invalid sign-in response.');
+  }
+  expires = Date.now() + tokens.expires_in * 1000;
+}
+async function ensureToken() {
+  if (!tokens) throw new Error('Sign in to continue.');
+  if (expires > Date.now() + 30000) return;
+  if (!refreshing) {
+    if (!tokens.refresh_token) {
+      reset();
+      throw new Error('Your session expired. Please sign in again.');
+    }
+    refreshing = exchange({
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+    }).finally(() => {
+      refreshing = null;
+    });
+  }
+  await refreshing;
+}
+/** @template T @param {string} path @param {string} [method] @param {unknown} [body] @returns {Promise<T>} */
+export async function api(path, method = 'GET', body) {
+  await ensureToken();
+  const response = await fetch(path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${tokens?.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (response.status === 401) reset();
+  if (!response.ok) throw new Error(data.error ?? 'The server could not complete this request.');
+  return data;
+}
+function random() {
+  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+}
+async function authorizationUrl() {
+  if (!config) throw new Error('Sign-in is not ready.');
+  const verifier = random(),
+    state = random();
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+  sessionStorage.setItem(
+    'qr-dashboard-login',
+    JSON.stringify({
+      verifier,
+      state,
+      created: Date.now(),
+      returnTo: `${location.pathname}${location.search}`,
+    }),
+  );
+  const url = new URL(`${config.issuer}/protocol/openid-connect/auth`);
+  url.search = new URLSearchParams({
+    client_id: config.clientId,
+    response_type: 'code',
+    scope: 'openid profile qr-connect',
+    redirect_uri: `${location.origin}/dashboard/callback`,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state,
+  }).toString();
+  return url;
+}
+/** @param {string} [provider] */
+export async function signIn(provider) {
+  const url = await authorizationUrl();
+  if (provider) url.searchParams.set('kc_idp_hint', provider);
+  location.assign(url);
+}
+/** @typedef {{attempt:string,action:string,providers:{id:string,label:string}[],error:string}} LoginForm */
+/** @param {string} url @param {string} [attempt] @param {Record<string,string>} [fields] @returns {Promise<LoginForm|null>} */
+async function loginRequest(url, attempt, fields) {
+  const response = await fetch('/dashboard/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, attempt, fields }),
+    cache: 'no-store',
+  });
+  const data = /** @type {{html:string,attempt:string,redirect:string|null,error?:string}} */ (
+    await response.json()
+  );
+  if (!response.ok) throw new Error(data.error ?? 'Sign-in could not be completed.');
+  if (data.redirect) {
+    location.assign(data.redirect);
+    return null;
+  }
+  const page = new DOMParser().parseFromString(data.html, 'text/html');
+  const form = page.querySelector('form#kc-form-login');
+  const action = form?.getAttribute('action');
+  if (!action)
+    throw new Error(
+      'This account needs an additional sign-in step. Use secure sign-in to continue.',
+    );
+  const providers = [...page.querySelectorAll('#kc-social-providers a')].flatMap((link) => {
+    const href = link.getAttribute('href');
+    const match = href && new URL(href, url).pathname.match(/\/broker\/([^/]+)\/login$/);
+    return match?.[1]
+      ? [{ id: decodeURIComponent(match[1]), label: link.textContent?.trim() ?? match[1] }]
+      : [];
+  });
+  return {
+    attempt: data.attempt,
+    action: new URL(action, url).href,
+    providers,
+    error: page.querySelector('#input-error, .kc-feedback-text')?.textContent?.trim() ?? '',
+  };
+}
+export async function loadLoginForm() {
+  return loginRequest((await authorizationUrl()).href);
+}
+/** @param {LoginForm} form @param {string} username @param {string} password */
+export async function submitLogin(form, username, password) {
+  return loginRequest(form.action, form.attempt, { username, password, credentialId: '' });
+}
+export async function initializeSession() {
+  const response = await fetch('/dashboard/config', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load sign-in configuration.');
+  config = await response.json();
+  if (location.pathname !== '/dashboard/callback') return false;
+  const query = new URLSearchParams(location.search),
+    stored = sessionStorage.getItem('qr-dashboard-login');
+  sessionStorage.removeItem('qr-dashboard-login');
+  history.replaceState(null, '', '/dashboard');
+  if (query.has('error')) throw new Error('Sign-in was cancelled or denied. Please try again.');
+  const login = stored
+    ? /** @type {{verifier:string,state:string,created:number,returnTo?:string}} */ (
+        JSON.parse(stored)
+      )
+    : null;
+  if (
+    !login ||
+    query.get('state') !== login.state ||
+    !query.get('code') ||
+    Date.now() - login.created > 600000
+  )
+    throw new Error('Sign-in could not be verified. Please start again.');
+  await exchange({
+    grant_type: 'authorization_code',
+    code: query.get('code') ?? '',
+    code_verifier: login.verifier,
+    redirect_uri: `${location.origin}/dashboard/callback`,
+  });
+  const destination = new URL(login.returnTo ?? '/dashboard', location.origin);
+  if (destination.origin === location.origin && destination.pathname === '/dashboard') {
+    history.replaceState(null, '', `${destination.pathname}${destination.search}`);
+    window.dispatchEvent(new Event('popstate'));
+  }
+  return true;
+}
+export function signOut() {
+  if (!config) return;
+  const hint = tokens?.id_token;
+  reset();
+  sessionStorage.removeItem('qr-dashboard-login');
+  const logout = new URL(`${config.issuer}/protocol/openid-connect/logout`);
+  logout.search = new URLSearchParams({
+    client_id: config.clientId,
+    post_logout_redirect_uri: `${location.origin}/dashboard`,
+    ...(hint ? { id_token_hint: hint } : {}),
+  }).toString();
+  location.assign(logout);
+}

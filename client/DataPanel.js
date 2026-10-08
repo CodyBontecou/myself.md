@@ -8,7 +8,7 @@ import { Button, Switch, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
-import { deleteLocalData, importArchive, loadGrants, saveGrants } from './library.js';
+import { importArchive, loadGrants, saveGrants } from './library.js';
 import { authorizeHealth } from './health.js';
 import { authorizeUsage } from './usage.js';
 import { captureLocation, startTracking, stopTracking, locationStatus } from './location-task.js';
@@ -420,13 +420,12 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     exportFile,
     changeProfiles,
     setMessage,
-    setTracking,
     publish,
     refreshLocation,
   } = usePhoneData();
   const [filesOpen, setFilesOpen] = useState(false);
   return (
-    <View style={styles.container}>
+    <View style={management ? styles.management : styles.container}>
       {management && profiles ? (
         <ProfilePanel
           session={session}
@@ -503,7 +502,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
               }
             />
           )}
-          <Button title="Choose data types" onPress={() => router.push('/manage')} />
+          <Button title="Choose data types" onPress={() => router.navigate('/profiles')} />
           {domain === 'location' ? (
             <>
               <Text style={styles.description}>{locationInfo}</Text>
@@ -562,44 +561,20 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
         </View>
       ))}
       {!management && <Text style={styles.description}>{sourceNotes[selectedDomain ?? '']}</Text>}
-      <Text
-        accessibilityLiveRegion="polite"
-        style={[styles.status, { backgroundColor: colors.subtle, borderColor: colors.border }]}
-      >
-        {message}
-      </Text>
-      {management ? (
-        <Button
-          title="Delete local imported and recorded data"
-          disabled={busy}
-          onPress={() =>
-            Alert.alert(
-              'Delete local data?',
-              'This deletes imported files and recorded location points from this phone. System health and usage data remain in their source apps.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: () =>
-                    void run(async () => {
-                      await stopTracking();
-                      setTracking(false);
-                      deleteLocalData(session.owner);
-                      setMessage('Local records deleted.');
-                      await publish();
-                    }),
-                },
-              ],
-            )
-          }
-        />
-      ) : null}
+      {!management && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[styles.status, { backgroundColor: colors.subtle, borderColor: colors.border }]}
+        >
+          {message}
+        </Text>
+      )}
     </View>
   );
 }
 const styles = StyleSheet.create({
   container: { gap: 16 },
+  management: { flex: 1 },
   description: { fontSize: 16, lineHeight: 24 },
   card: {
     padding: 16,

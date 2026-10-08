@@ -5,3 +5,7 @@
 !core/**
 !server/
 !server/**
+!dashboard/
+!dashboard/**
+!scripts/
+!scripts/build-dashboard.js

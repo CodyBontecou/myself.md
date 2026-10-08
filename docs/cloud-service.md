@@ -89,3 +89,31 @@ Use `https://<domain>/mcp` as the Streamable HTTP endpoint. Authentication is OA
 ## Verification
 
 `npm run verify:cloud` tests encrypted persistent storage and a real synthetic HTTP/OAuth/MCP exchange using the installed SDK client. It checks tenant isolation, upload-only authority, sharing, selection revocation, incomplete uploads, restart persistence, deletion and retention. The network fixture requires local loopback listening permission. `npm run verify:exports` covers schedule/calendar and encoding behavior. Run `npm run format`, `npm run check` and `npm run bundle` after edits. The current Fly deployment was also checked over public HTTPS with a temporary synthetic account: real Keycloak login with PKCE, authenticated SDK MCP discovery, pairing, upload, denial before sharing, successful shared reads and sharing revocation. The temporary export, device and account were removed. Actual ChatGPT/Claude/Grok account linking remains to be verified in each provider.
+
+## Account dashboard
+
+Open `https://qr-connect-cloud-cody.fly.dev/dashboard` and sign in with the same cloud account used in QR Connect. The dashboard uses a dedicated public Keycloak client, `qr-dashboard`, in the existing `qr-connect` realm. Account ownership remains the issuer plus user subject, exactly as on the phone; no email-based account matching or second data store is involved.
+
+The export library shows stored profile snapshots, date, format, size and current sharing status. Search the library and open an export to browse records in bounded pages of up to 50 records / 200 KB, including expandable original native fields. Delete removes the entire selected cloud export after confirmation, preserving phone files; a later scheduled upload can recreate it. Individual record deletion and editing are not supported. The existing 30-day retention and 256 MiB account quota apply.
+
+Profiles & permissions controls the existing profile-wide cloud MCP sharing switch without changing the phone-approved selection, including for disconnected devices. The app reads the same permission on its next permission refresh. Data selection, scheduling, upload authorization and live phone permissions remain managed on the phone. Allowed agents share access to all enabled cloud profiles; there is no per-agent profile allowlist. Connected agents lists OAuth client IDs observed by this service since the dashboard upgrade, rather than claiming those IDs are verified product names. Blocking a client denies all its MCP requests for this account, even with an already issued access token, and discards its queued and retained live queries. Blocks persist across service restarts. Unblocking restores access subject to profile and phone permissions. This does not erase data already copied into an agent’s history or revoke its Keycloak login.
+
+The signed-out dashboard shows the username/password form and the enabled Keycloak OAuth providers directly. Password submissions relay the existing Keycloak browser flow through `/dashboard/login`, with same-origin POST enforcement and a bounded ten-minute in-memory cookie jar; credentials are forwarded once and never saved. OAuth buttons start a fresh authorization request with the provider hint, going straight to that provider. Accounts requiring additional steps can continue through Keycloak secure sign-in.
+
+Browser sign-in uses authorization code with PKCE S256 and a ten-minute, single-use state/verifier stored only for the redirect. Access and refresh tokens stay in page memory, so reloading the page requires signing in again (the existing Keycloak SSO session can complete it). Sign out uses Keycloak’s logout endpoint. Dashboard APIs accept only audience-validated, `qr-connect`-scoped tokens from `qr-dashboard`; phone and MCP clients cannot use these owner management endpoints. CSP prohibits inline scripts, framing and unrelated network origins; record values are rendered as React text. Style attributes support shadcn/Radix positioning and Recharts. A per-response style nonce is registered with the scroll-lock stylesheet injector.
+
+Fresh `cloud:setup` includes the dashboard client. For an existing deployment, provision it once through the private identity tunnel, preserving users and other OAuth clients:
+
+```sh
+fly proxy 18081:8080 --app qr-connect-cloud-cody-auth
+# In a separate terminal, with .env.cloud already configured:
+KEYCLOAK_ADMIN_URL=http://127.0.0.1:18081/auth npm run dashboard:auth
+# Close the proxy after provisioning, then deploy the service:
+npm run cloud:fly:deploy
+```
+
+For local development, use `KEYCLOAK_ADMIN_URL=http://127.0.0.1:8080/auth node --env-file=.env scripts/setup-dashboard.js` (omit `/auth` when using a realm without the auth proxy). The script upserts only the dashboard client, using exact service-origin callback and web origins and mandatory PKCE. It also retains that client in the ignored realm seed. See [Keycloak’s authorization and token endpoints](https://www.keycloak.org/securing-apps/oidc-layers) for the underlying browser sign-in flow.
+
+`npm run check` includes a separate DOM-enabled strict JavaScript check for `dashboard/`, plus formatting, lint and unused-code coverage. `npm run verify:cloud` verifies owner/client isolation, record viewing and deletion, sharing revocation and restoration, agent blocking and restart persistence, and cancellation of pending agent requests. Browser QA uses synthetic data and a mock identity provider; real account sign-in needs the deployed Keycloak client.
+
+The dashboard frontend is based on shadcn’s `dashboard-01` block, with the neutral inset sidebar, four summary cards, an interactive area chart and a sortable, searchable, paginated data table. All figures come from the signed-in account’s stored exports and permissions. The chart counts files still in storage by export date, rather than claiming to be a historical activity log. To rebuild local assets, run `npm run dashboard:build`; Docker runs the same build during deployment. `dashboard/components/ui/` contains the retained generated shadcn primitives with JSDoc contracts; unused demo components, sample data, drag reordering, and pretend editing controls are omitted.

@@ -1,26 +1,27 @@
 import { useMemo, useState } from 'react';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams, usePathname } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Copy, Empty, Icon, Notice } from '../../components/ui.js';
-import { useTheme } from '../../lib/theme.js';
-import { useHistory } from '../../../client/useHistory.js';
+import { Copy, Empty, Icon } from '../components/ui.js';
+import { useTheme } from '../lib/theme.js';
+import { useHistory } from '../../client/useHistory.js';
 import {
   historyDay,
   historyTitle,
   historyOutcome,
   historyRoute,
-} from '../../../client/history-display.js';
-/** @typedef {import('../../../core/history.js').HistoryEvent} Event */
+} from '../../client/history-display.js';
+/** @typedef {import('../../core/history.js').HistoryEvent} Event */
 /** @typedef {{kind:'heading',id:string,title:string}|{kind:'event',id:string,event:Event,first:boolean,last:boolean}} Item */
 export default function HistoryScreen() {
   const { colors, isDark } = useTheme(),
     insets = useSafeAreaInsets();
-  const { events, loading, refreshing, error, hasMore, refresh, loadMore } = useHistory();
+  const { events, loading, refreshing, hasMore, refresh, loadMore } = useHistory();
   const [filter, setFilter] = useState(0);
   const { profileId } = useLocalSearchParams();
+  const profileScoped = usePathname().startsWith('/profiles/history');
   const items = useMemo(() => {
     const filtered = events.filter(
       (e) =>
@@ -45,7 +46,7 @@ export default function HistoryScreen() {
     return result;
   }, [events, filter, profileId]);
   return (
-    <View style={[styles.fill, { backgroundColor: colors.background }]}>
+    <View collapsable={false} style={[styles.fill, { backgroundColor: colors.background }]}>
       <Stack.Screen options={{ title: profileId ? 'Profile history' : 'History' }} />
       <FlashList
         data={items}
@@ -61,7 +62,6 @@ export default function HistoryScreen() {
                   'This profile'}
               </Copy>
             ) : null}
-            <Copy muted>See where your data went, and when an agent accessed it.</Copy>
             <SegmentedControl
               style={styles.segment}
               values={['All', 'Exports', 'Agent access']}
@@ -70,9 +70,6 @@ export default function HistoryScreen() {
               appearance={isDark ? 'dark' : 'light'}
               accessibilityLabel="History type"
             />
-            {error ? (
-              <Notice title="Showing saved history" body={error} icon="cloud-offline-outline" />
-            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -96,7 +93,7 @@ export default function HistoryScreen() {
                   : 'New exports and agent access will appear here. Earlier activity was not recorded.'
               }
               action={filter === 2 ? 'Manage connection' : 'Profiles & exports'}
-              onPress={() => router.push(filter === 2 ? '/pair' : '/manage')}
+              onPress={() => (filter === 2 ? router.push('/pair') : router.navigate('/profiles'))}
             />
           )
         }
@@ -119,15 +116,15 @@ export default function HistoryScreen() {
               <Copy variant="heading">{item.title}</Copy>
             </View>
           ) : (
-            <HistoryRow item={item} />
+            <HistoryRow item={item} profileScoped={profileScoped} />
           )
         }
       />
     </View>
   );
 }
-/** @param {{item:Extract<Item,{kind:'event'}>}} props */
-function HistoryRow({ item }) {
+/** @param {{item:Extract<Item,{kind:'event'}>,profileScoped:boolean}} props */
+function HistoryRow({ item, profileScoped }) {
   const { colors } = useTheme(),
     { event, first, last } = item;
   const outcome = historyOutcome(event);
@@ -140,7 +137,12 @@ function HistoryRow({ item }) {
         outcome,
         new Date(event.startedAt).toLocaleString(),
       ].join(', ')}
-      onPress={() => router.push({ pathname: '/history/[id]', params: { id: event.id } })}
+      onPress={() =>
+        router.push({
+          pathname: profileScoped ? '/profiles/history/[id]' : '/history/[id]',
+          params: { id: event.id },
+        })
+      }
       style={({ pressed }) => [
         styles.row,
         first && styles.first,

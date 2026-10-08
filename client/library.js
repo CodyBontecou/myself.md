@@ -110,7 +110,3 @@ export function localPage(owner, query, token) {
     ],
   };
 }
-/** @param {string} owner */
-export function deleteLocalData(owner) {
-  db.runSync('DELETE FROM records WHERE owner=?', owner);
-}

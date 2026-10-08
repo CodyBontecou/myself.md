@@ -21,6 +21,7 @@ export class CloudStore {
  CREATE TABLE IF NOT EXISTS exports(id TEXT PRIMARY KEY,subject TEXT,device TEXT,profile TEXT,day TEXT,format TEXT,created INTEGER,content BLOB,metadata BLOB,size INTEGER);
  CREATE INDEX IF NOT EXISTS exports_owner ON exports(subject,created);
  CREATE TABLE IF NOT EXISTS cloud_access(subject TEXT,device TEXT,profile TEXT,shared INTEGER,selection TEXT,PRIMARY KEY(subject,device,profile));
+ CREATE TABLE IF NOT EXISTS agents(subject TEXT,client TEXT,blocked INTEGER,last_seen INTEGER,PRIMARY KEY(subject,client));
  CREATE TABLE IF NOT EXISTS upload_keys(hash TEXT PRIMARY KEY,subject TEXT,device TEXT,profile TEXT,expires INTEGER);`);
   }
   /** @param {Uint8Array} plain @param {string} aad */
@@ -96,6 +97,66 @@ export class CloudStore {
       shared: row?.shared === 1,
       selection: row ? JSON.parse(row.selection) : { health: [], time: [], location: [] },
     };
+  }
+  /** Cloud permissions include profiles without completed exports and disconnected phones.
+   * @param {string} subject */
+  profiles(subject) {
+    const exports = this.list(subject);
+    return this.db
+      .prepare('SELECT device,profile,shared,selection FROM cloud_access WHERE subject=?')
+      .all(subject)
+      .map((r) => ({
+        deviceId: String(r.device),
+        profileId: String(r.profile),
+        shared: r.shared === 1,
+        selection: JSON.parse(String(r.selection)),
+        name:
+          exports.find((e) => e.deviceId === r.device && e.profileId === r.profile)?.profileName ??
+          String(r.profile),
+      }));
+  }
+  /** Change only the switch, preserving the phone-approved type selection.
+   * @param {string} subject @param {string} device @param {string} profile @param {boolean} shared */
+  setSharing(subject, device, profile, shared) {
+    const result = this.db
+      .prepare('UPDATE cloud_access SET shared=? WHERE subject=? AND device=? AND profile=?')
+      .run(shared ? 1 : 0, subject, device, profile);
+    if (!result.changes) throw new PairingError(404, 'Cloud profile not found.');
+    return this.permission(subject, device, profile);
+  }
+  /** @param {string} subject @param {string} client */
+  observeAgent(subject, client) {
+    this.db
+      .prepare(
+        'INSERT INTO agents VALUES (?,?,0,?) ON CONFLICT(subject,client) DO UPDATE SET last_seen=excluded.last_seen',
+      )
+      .run(subject, client, Date.now());
+    const row = this.db
+      .prepare('SELECT blocked FROM agents WHERE subject=? AND client=?')
+      .get(subject, client);
+    if (row?.blocked === 1)
+      throw new PairingError(403, 'This agent has been blocked by the account owner.');
+  }
+  /** @param {string} subject */
+  agents(subject) {
+    return this.db
+      .prepare(
+        'SELECT client,blocked,last_seen FROM agents WHERE subject=? ORDER BY last_seen DESC',
+      )
+      .all(subject)
+      .map((r) => ({
+        client: String(r.client),
+        blocked: r.blocked === 1,
+        lastSeen: Number(r.last_seen),
+      }));
+  }
+  /** @param {string} subject @param {string} client @param {boolean} blocked */
+  setAgent(subject, client, blocked) {
+    const result = this.db
+      .prepare('UPDATE agents SET blocked=? WHERE subject=? AND client=?')
+      .run(blocked ? 1 : 0, subject, client);
+    if (!result.changes) throw new PairingError(404, 'Agent not found.');
+    return { blocked };
   }
   /** @param {string} subject @param {string} device @param {string} profileId @param {unknown} value */
   begin(subject, device, profileId, value) {
@@ -270,6 +331,7 @@ export class CloudStore {
   }
   /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] */
   page(subject, id, offset, limit, forMcp = false) {
+    this.cleanup();
     const row = this.row(subject, id),
       permission = this.permission(subject, row.device, row.profile);
     if (!row.content || (forMcp && !permission.shared))

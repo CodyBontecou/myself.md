@@ -89,6 +89,20 @@ const realm = {
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
     {
+      clientId: 'qr-dashboard',
+      name: 'QR Connect Dashboard',
+      publicClient: true,
+      standardFlowEnabled: true,
+      directAccessGrantsEnabled: false,
+      redirectUris: [`${origin}/dashboard/callback`],
+      webOrigins: [origin],
+      defaultClientScopes: ['profile', 'qr-connect'],
+      attributes: {
+        'pkce.code.challenge.method': 'S256',
+        'post.logout.redirect.uris': `${origin}/dashboard`,
+      },
+    },
+    {
       clientId: 'qr-mcp',
       publicClient: true,
       standardFlowEnabled: true,

@@ -9,7 +9,15 @@
   "env": {
     "es2022": true
   },
-  "ignorePatterns": ["node_modules/**", "ios/**", "android/**", "dist/**", ".expo/**", ".local/**"],
+  "ignorePatterns": [
+    "node_modules/**",
+    "ios/**",
+    "android/**",
+    "dist/**",
+    ".expo/**",
+    ".local/**",
+    "dashboard/dist/**"
+  ],
   "rules": {
     "eslint/no-debugger": "error",
     "eslint/eqeqeq": ["error", "always"],
@@ -107,6 +115,12 @@
           "setTimeout",
           "setInterval"
         ]
+      }
+    },
+    {
+      "files": ["dashboard/**/*.js"],
+      "env": {
+        "browser": true
       }
     }
   ]
