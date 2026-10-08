@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Dialog } from 'radix-ui';
 import {
   IconChevronLeft,
   IconChevronRight,
+  IconChevronDown,
   IconX,
   IconFilter,
   IconLink,
@@ -81,6 +82,8 @@ function SelectField({ label, name, defaultValue, children }) {
 }
 /** @param {{query:ExplorerQuery,facets:Facets,workspace:import('./session.js').Workspace,onApply:(query:ExplorerQuery)=>void}} props */
 function QueryBuilder({ query, facets, workspace, onApply }) {
+  const [expanded, setExpanded] = useState(true);
+  const contentId = useId();
   const [filters, setFilters] = useState(
     query.filters.map((filter, index) => ({ ...filter, key: `initial-${index}` })),
   );
@@ -123,16 +126,28 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <IconFilter className="size-4" />
-          Query records
-        </CardTitle>
-        <CardDescription>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((current) => !current)}
+          className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+        >
+          <span className="flex items-center gap-2 leading-none font-semibold">
+            <IconFilter className="size-4" aria-hidden="true" />
+            Query records
+          </span>
+          <IconChevronDown
+            className={`size-4 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
+            aria-hidden="true"
+          />
+        </button>
+        <CardDescription hidden={!expanded}>
           Filters run over all matching stored records. Time range uses record start; the end is
           exclusive.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent id={contentId} hidden={!expanded}>
         <form onSubmit={apply} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <SelectField label="Domain" name="domain" defaultValue={query.domain}>
