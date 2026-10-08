@@ -82,7 +82,7 @@ function SelectField({ label, name, defaultValue, children }) {
 }
 /** @param {{query:ExplorerQuery,facets:Facets,workspace:import('./session.js').Workspace,onApply:(query:ExplorerQuery)=>void}} props */
 function QueryBuilder({ query, facets, workspace, onApply }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const [filters, setFilters] = useState(
     query.filters.map((filter, index) => ({ ...filter, key: `initial-${index}` })),
