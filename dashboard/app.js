@@ -28,7 +28,6 @@ import {
   IconArrowUp,
   IconArrowDown,
 } from '@tabler/icons-react';
-import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   FlexRender,
   createPaginatedRowModel,
@@ -40,6 +39,7 @@ import {
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Explorer } from './explorer.js';
+import { ExportActivity } from './export-activity.js';
 import { subscribeRoute, routeSnapshot, navigateRoute, recordRoute } from './explorer-route.js';
 import { Button } from './components/ui/button.js';
 import { Badge } from './components/ui/badge.js';
@@ -276,93 +276,6 @@ function SectionCards({ workspace }) {
         </Card>
       ))}
     </div>
-  );
-}
-/** @param {{workspace:Workspace,asOf:string}} props */
-function ChartAreaInteractive({ workspace, asOf }) {
-  const [range, setRange] = useState(30);
-  const today = asOf.slice(0, 10);
-  const data = Array.from({ length: range }, (_value, i) => {
-    const date = new Date(`${today}T00:00:00Z`);
-    date.setUTCDate(date.getUTCDate() - range + i + 1);
-    const day = date.toISOString().slice(0, 10);
-    return { date: day, exports: workspace.exports.filter((item) => item.day === day).length };
-  });
-  const count = data.reduce((sum, item) => sum + item.exports, 0);
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardTitle>Stored exports over time</CardTitle>
-        <CardDescription>
-          Daily files currently stored in the cloud. Expired and deleted files are excluded.
-        </CardDescription>
-        <CardAction>
-          <div className="inline-flex rounded-lg border p-0.5" aria-label="Chart date range">
-            {[30, 14, 7].map((days) => (
-              <Button
-                key={days}
-                variant={range === days ? 'secondary' : 'ghost'}
-                size="sm"
-                aria-pressed={range === days}
-                onClick={() => setRange(days)}
-              >
-                {days} days
-              </Button>
-            ))}
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <div
-          className="chart-container"
-          role="img"
-          aria-label={`${count} stored exports with export dates in the last ${range} days`}
-        >
-          <ResponsiveContainer
-            width="100%"
-            height="100%"
-            initialDimension={{ width: 320, height: 250 }}
-          >
-            <AreaChart data={data} accessibilityLayer>
-              <defs>
-                <linearGradient id="fillExports" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                minTickGap={32}
-                tickFormatter={(value) =>
-                  new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    timeZone: 'UTC',
-                  })
-                }
-              />
-              <Tooltip
-                cursor={false}
-                wrapperClassName="chart-tooltip"
-                labelFormatter={(value) => String(value)}
-                formatter={(value) => [String(value), 'Stored exports']}
-              />
-              <Area
-                dataKey="exports"
-                type="monotone"
-                fill="url(#fillExports)"
-                stroke="var(--primary)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 const features = tableFeatures({
@@ -926,7 +839,7 @@ function App() {
                       {view === 'exports' ? (
                         <>
                           <div className="px-4 lg:px-6">
-                            <ChartAreaInteractive workspace={workspace} asOf={updated} />
+                            <ExportActivity workspace={workspace} asOf={updated} />
                           </div>
                           <DataTable
                             workspace={workspace}

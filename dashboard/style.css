@@ -110,26 +110,97 @@
     cursor: pointer;
   }
 }
-@layer components {
-  .chart-container {
-    @apply h-[250px] w-full text-xs;
-  }
-  .chart-container .recharts-cartesian-axis-tick text {
-    fill: var(--muted-foreground);
-  }
-  .chart-container .recharts-cartesian-grid line {
-    stroke: var(--border);
-  }
-  .chart-container .recharts-layer,
-  .chart-container .recharts-surface {
-    outline: none;
-  }
-  .chart-tooltip {
-    @apply rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-xl;
-  }
-}
 
 .dashboard-layout {
   --sidebar-width: 18rem;
   --header-height: 3rem;
+}
+
+.export-calendar-scroll {
+  container-type: inline-size;
+}
+
+.export-calendar {
+  --cell-size: max(12px, calc((100cqw - 2rem - 212px) / 53));
+  display: grid;
+  grid-template-columns: 2rem repeat(53, var(--cell-size));
+  gap: 4px;
+  width: max-content;
+}
+
+.export-calendar-week,
+.export-calendar-labels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1.25rem repeat(7, var(--cell-size));
+  gap: 4px;
+}
+
+.export-calendar-labels,
+.export-calendar-month {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.25rem;
+}
+
+.export-calendar-labels span {
+  align-self: center;
+}
+
+.export-calendar-day,
+.export-calendar-swatch {
+  border-radius: 3px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.export-calendar-swatch {
+  width: 12px;
+  height: 12px;
+}
+
+.export-calendar [data-level='1'],
+.export-calendar-swatch[data-level='1'] {
+  background: #9be9a8;
+}
+
+.export-calendar [data-level='2'],
+.export-calendar-swatch[data-level='2'] {
+  background: #40c463;
+}
+
+.export-calendar [data-level='3'],
+.export-calendar-swatch[data-level='3'] {
+  background: #30a14e;
+}
+
+.export-calendar [data-level='4'],
+.export-calendar-swatch[data-level='4'] {
+  background: #216e39;
+}
+
+.export-calendar-day:hover,
+.export-calendar-day:focus-visible,
+.export-calendar-day[aria-pressed='true'] {
+  outline: 2px solid var(--foreground);
+  outline-offset: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .export-calendar [data-level='1'],
+  .export-calendar-swatch[data-level='1'] {
+    background: #0e4429;
+  }
+  .export-calendar [data-level='2'],
+  .export-calendar-swatch[data-level='2'] {
+    background: #006d32;
+  }
+  .export-calendar [data-level='3'],
+  .export-calendar-swatch[data-level='3'] {
+    background: #26a641;
+  }
+  .export-calendar [data-level='4'],
+  .export-calendar-swatch[data-level='4'] {
+    background: #39d353;
+  }
 }
