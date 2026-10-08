@@ -1,7 +1,7 @@
 import { parseProfile } from './profiles.js';
 /** @typedef {'running'|'ready'|'complete'|'partial'|'failed'|'cancelled'|'expired'|'interrupted'} HistoryStatus */
 /** @typedef {{id:string,name:string,selection:Record<import('./data.js').Domain,string[]>}} ProfileSnapshot */
-/** @typedef {{day:string,name:string,format:string,recordCount:number,bytes:number,uri:string|null,cloudId:string|null,checksum:string|null,partial:boolean}} HistoryArtifact */
+/** @typedef {{day:string,name:string,format:string,recordCount:number,bytes:number,uri:string|null,cloudId:string|null,checksum:string|null,partial:boolean,warnings?:string[]}} HistoryArtifact */
 /** @typedef {{id:string,kind:'export'|'access',startedAt:string,updatedAt:string,status:HistoryStatus,actor:'manual'|'schedule'|'agent',client:string|null,target:'local'|'http'|'cloud'|'phone'|'share',destination:string,profile:ProfileSnapshot,interval:{start:string,end:string},timezone:string,formats:string[],recordCount:number|null,artifacts:HistoryArtifact[],warnings:string[],relatedId:string|null,error:string|null,request?:{domain:string,source:string,type:string}|null}} HistoryEvent */
 /** Metadata snapshots deliberately exclude credentials, records, and destination URL paths.
  * @param {{id:string,profile:import('./profiles.js').ExportProfile,actor:'manual'|'schedule',interval:HistoryEvent['interval'],stamp:string,timezone:string}} input
@@ -54,6 +54,7 @@ export function addArtifact(event, artifact, stamp) {
     ...event,
     updatedAt: stamp,
     artifacts,
+    warnings: [...new Set(artifacts.flatMap((a) => a.warnings ?? []))].slice(0, 100),
     recordCount: [...counts.values()].reduce((a, b) => a + b, 0),
   };
 }
@@ -153,6 +154,7 @@ export function parseHistoryEvent(value) {
         cloudId: nullable(a.cloudId),
         checksum: nullable(a.checksum ?? null),
         partial: a.partial === true,
+        warnings: strings(a.warnings ?? []),
       };
     }),
   };

@@ -1,5 +1,5 @@
 import { Ionicons } from '@react-native-vector-icons/ionicons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme';
 /** @typedef {import('react').ComponentProps<typeof Ionicons>['name']} IconName */
@@ -15,8 +15,10 @@ export function Icon({ name, size = 22, color }) {
 /** @param {{children:import('react').ReactNode,variant?:'body'|'title'|'caption'|'heading',muted?:boolean,style?:import('react-native').StyleProp<import('react-native').TextStyle>,selectable?:boolean}} props */
 export function Copy({ children, variant = 'body', muted = false, style, selectable = false }) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
   return (
     <Text
+      key={fontScale}
       selectable={selectable}
       style={[
         {

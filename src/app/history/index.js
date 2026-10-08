@@ -63,6 +63,7 @@ export default function HistoryScreen() {
             ) : null}
             <Copy muted>See where your data went, and when an agent accessed it.</Copy>
             <SegmentedControl
+              style={styles.segment}
               values={['All', 'Exports', 'Agent access']}
               selectedIndex={filter}
               onChange={(event) => setFilter(event.nativeEvent.selectedSegmentIndex)}
@@ -193,6 +194,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { paddingHorizontal: 24, paddingTop: 16 },
   header: { gap: 20, paddingBottom: 8 },
+  segment: { height: 44 },
   loading: { paddingVertical: 40, alignItems: 'center' },
   footer: { paddingTop: 24 },
   day: { paddingTop: 20, paddingBottom: 12 },

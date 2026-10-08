@@ -147,6 +147,8 @@ assert.ok(
     (a) => a.partial && a.recordCount === 3 && a.checksum === 'synthetic-checksum' && a.bytes > 0,
   ),
 );
+assert.equal(artifacts[0]?.warnings?.length, 3);
+assert.ok(!JSON.stringify(artifacts).includes('Authorization not determined'));
 assert.equal(result.count, 3);
 assert.equal(result.failedSources, 3);
 /** @type {{status:string,failures:{type:string,recordCount:number}[],records:import('../core/data.js').DataRecord[]}} */

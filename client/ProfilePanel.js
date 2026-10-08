@@ -401,9 +401,12 @@ export default function ProfilePanel({
         visible={Boolean(editing)}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={cancel}
+        onRequestClose={() => (section ? setSection('') : cancel())}
       >
-        <SafeAreaView style={[styles.modal, { backgroundColor: colors.background }]}>
+        <SafeAreaView
+          accessibilityViewIsModal
+          style={[styles.modal, { backgroundColor: colors.background }]}
+        >
           <View style={styles.toolbar}>
             <View style={styles.label}>
               <Button
@@ -416,13 +419,17 @@ export default function ProfilePanel({
               <Button title="Save profile" disabled={disabled} onPress={() => void run(save)} />
             </View>
           </View>
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.editorError}>
+              {error}
+            </Text>
+          ) : null}
           {section === 'data' ? (
             <ProfileDataEditor
               types={types}
               selection={selection}
               onSelection={setSelection}
               disabled={disabled}
-              error={error}
             />
           ) : (
             <Screen>
@@ -499,7 +506,6 @@ export default function ProfilePanel({
                 Edits to the active profile apply when saved. Activate a new profile when ready to
                 use it.
               </Text>
-              {error ? <Text accessibilityRole="alert">{error}</Text> : null}
             </Screen>
           )}
         </SafeAreaView>
@@ -509,13 +515,14 @@ export default function ProfilePanel({
           {shareLink}
         </Text>
       ) : null}
-      {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+      {error && !editing ? <Text accessibilityRole="alert">{error}</Text> : null}
     </View>
   );
 }
 const styles = StyleSheet.create({
   container: { gap: 16 },
   modal: { flex: 1 },
+  editorError: { paddingHorizontal: 24, paddingBottom: 12 },
   toolbar: { flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingVertical: 12 },
   card: {
     gap: 12,

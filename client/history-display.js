@@ -1,7 +1,7 @@
 /** @typedef {import('../core/history.js').HistoryEvent} Event */
 /** @param {Event} event */
 export function historyTitle(event) {
-  return event.kind === 'access' ? 'Agent data access' : event.profile.name;
+  return event.profile.name;
 }
 /** @param {Event} event */
 export function historyOutcome(event) {

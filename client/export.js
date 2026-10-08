@@ -95,6 +95,9 @@ export async function shareDomain(context, grants, domain, profile, days, progre
     event.recordCount = count;
     event.status = event.warnings.length ? 'partial' : 'complete';
     event.warnings.push(
+      `This export includes only ${domain === 'time' ? 'screen time' : domain} data from the profile.`,
+    );
+    event.warnings.push(
       'The share sheet opened. The receiving app and final delivery cannot be confirmed. This temporary file is not retained.',
     );
     await Sharing.shareAsync(file.uri, {

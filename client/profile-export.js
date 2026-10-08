@@ -35,6 +35,7 @@ export async function exportProfileDay(
     return { format, target, stage };
   });
   let count = 0;
+  const coverage = new Set();
   /** @type {unknown[]} */ const captures = [];
   /** @type {{domain:import('../core/data.js').Domain,type:string,source:string,message:string,recordCount:number}[]} */
   const failures = [];
@@ -99,6 +100,8 @@ export async function exportProfileDay(
             count++;
           }
           captures.push({ domain, type, source, capture: page.capture, warnings: page.warnings });
+          for (const warning of page.warnings)
+            coverage.add(`${interval.day}: ${type} · ${warning}`.slice(0, 2000));
           cursor = page.nextCursor ?? '';
         } while (cursor);
         if (!failed) completedSources++;
@@ -117,6 +120,9 @@ export async function exportProfileDay(
       failures,
       exportedAt: new Date().toISOString(),
     };
+    for (const failure of failures)
+      coverage.add(`${interval.day}: ${failure.type} · Source could not be fully read.`);
+    const warnings = [...coverage].slice(0, 100);
     const saved = [];
     for (const f of files) {
       f.stage.write(fileFooter(f.format, manifest), { append: true });
@@ -142,6 +148,7 @@ export async function exportProfileDay(
           cloudId: delivered?.id ?? null,
           checksum: null,
           partial: failures.length > 0,
+          warnings,
         });
         f.target.delete();
         continue;
@@ -167,6 +174,7 @@ export async function exportProfileDay(
         cloudId: null,
         checksum: f.target.md5,
         partial: failures.length > 0,
+        warnings,
       });
     }
     return { count, files: saved, failedSources: failures.length };

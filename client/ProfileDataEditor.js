@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { FlashList } from '@shopify/flash-list';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Copy, Group, Row, Notice, Button } from '../src/components/ui';
 import { Switch } from './Terminal.js';
 import { useTheme } from '../src/lib/theme';
 import { domains } from '../core/data.js';
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void,disabled:boolean,error:string}} props */
-export default function ProfileDataEditor({ types, selection, onSelection, disabled, error }) {
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void,disabled:boolean}} props */
+export default function ProfileDataEditor({ types, selection, onSelection, disabled }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
@@ -29,6 +29,7 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
       data={data}
       keyExtractor={(item) => `${item.domain}:${item.key}`}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
       ListHeaderComponent={
         <View style={styles.header}>
@@ -40,6 +41,10 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
             value={search}
             onChangeText={setSearch}
             editable={!disabled}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            onSubmitEditing={Keyboard.dismiss}
             style={[
               styles.input,
               { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
@@ -58,52 +63,54 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
               }
             />
           </Group>
-          {domains.map((domain) => (
-            <View key={domain} style={styles.header}>
-              <Copy variant="heading">
-                {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'} ·{' '}
-                {selection[domain].length} selected
-              </Copy>
-              <View style={styles.actions}>
-                <View style={styles.flex}>
-                  <Button
-                    label="Clear"
-                    secondary
-                    disabled={disabled || !selection[domain].length}
-                    onPress={() => onSelection({ ...selection, [domain]: [] })}
-                  />
-                </View>
-                <View style={styles.flex}>
-                  <Button
-                    label="Select available"
-                    secondary
-                    disabled={disabled || !types[domain].length}
-                    onPress={() =>
-                      onSelection({
-                        ...selection,
-                        [domain]: [
-                          ...new Set([
-                            ...selection[domain],
-                            ...types[domain].filter((key) => key !== 'imported:archive'),
-                          ]),
-                        ],
-                      })
-                    }
-                  />
-                </View>
-              </View>
-              {!types[domain].length && (
-                <Copy variant="caption" muted>
-                  No available types. Review source permissions or import data.
+          {!search &&
+            domains.map((domain) => (
+              <View key={domain} style={styles.header}>
+                <Copy variant="heading">
+                  {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'}{' '}
+                  · {selection[domain].length} selected
                 </Copy>
-              )}
-            </View>
-          ))}
-          <Notice
-            title="Explicit selections"
-            body="New types stay off. Select available excludes original archives; selecting an archive includes its complete contents. System permissions and agent domain access still apply."
-          />
-          {error ? <Copy>{error}</Copy> : null}
+                <View style={styles.actions}>
+                  <View style={styles.flex}>
+                    <Button
+                      label="Clear"
+                      secondary
+                      disabled={disabled || !selection[domain].length}
+                      onPress={() => onSelection({ ...selection, [domain]: [] })}
+                    />
+                  </View>
+                  <View style={styles.flex}>
+                    <Button
+                      label="Select available"
+                      secondary
+                      disabled={disabled || !types[domain].length}
+                      onPress={() =>
+                        onSelection({
+                          ...selection,
+                          [domain]: [
+                            ...new Set([
+                              ...selection[domain],
+                              ...types[domain].filter((key) => key !== 'imported:archive'),
+                            ]),
+                          ],
+                        })
+                      }
+                    />
+                  </View>
+                </View>
+                {!types[domain].length && (
+                  <Copy variant="caption" muted>
+                    No available types. Review source permissions or import data.
+                  </Copy>
+                )}
+              </View>
+            ))}
+          {!search && (
+            <Notice
+              title="Explicit selections"
+              body="New types stay off. Select available excludes original archives; selecting an archive includes its complete contents. System permissions and agent domain access still apply."
+            />
+          )}
         </View>
       }
       ListEmptyComponent={
