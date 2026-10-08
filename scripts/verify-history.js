@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
+import { relatedHistoryEvents, historyOutcome } from '../core/history-display.js';
 import { parseProfile } from '../core/profiles.js';
 import { CloudStore } from '../server/cloud-store.js';
 import { HistoryStore } from '../server/history-store.js';
@@ -63,6 +64,22 @@ try {
   store.record('alice', 'other-phone', { ...event, id: 'other' });
   assert.equal(store.get('bob', 'event'), null);
   assert.equal(store.list('alice', 'phone').events.length, 1);
+  assert.equal(store.list('alice', null).events.length, 2);
+  assert.equal(store.list('bob', null).events.length, 0);
+  const linked = Object.assign({}, event, { id: 'linked', relatedId: 'cloud-file' });
+  const uploaded = Object.assign({}, event, {
+    id: 'upload',
+    artifacts: [Object.assign({}, artifact, { cloudId: 'cloud-file' })],
+  });
+  assert.deepEqual(relatedHistoryEvents([uploaded, linked], uploaded), [linked]);
+  store.record('alice', 'phone', uploaded);
+  store.record('alice', 'phone', linked);
+  store.record('bob', 'phone', { ...linked, id: 'bob-linked' });
+  assert.deepEqual(
+    store.related('alice', uploaded).map((e) => e.id),
+    ['linked'],
+  );
+  assert.equal(historyOutcome({ ...event, status: 'complete' }), 'Delivered');
   const row = store.db.prepare('SELECT value FROM activity WHERE id=?').get('event');
   assert.ok(row && !Buffer.from(/** @type {Uint8Array} */ (row.value)).includes('Sleep snapshot'));
   store.update('alice', 'event', { status: 'complete' });
@@ -74,10 +91,12 @@ try {
     target: 'phone',
     status: 'ready',
   });
+  store.record('alice', 'phone', { ...event, id: 'phone-running' });
   store.db.close();
   store = new HistoryStore(path, codec);
   assert.equal(store.get('alice', 'event')?.event.status, 'complete');
   assert.equal(store.get('alice', 'pending')?.event.status, 'interrupted');
+  assert.equal(store.get('alice', 'phone-running')?.event.status, 'running');
   store.record('alice', 'phone', {
     ...event,
     id: 'old',

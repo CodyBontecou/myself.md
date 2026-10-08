@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import { cloud } from './cloud.js';
+import { cloud, history } from './cloud.js';
 import { devices, PairingError } from './store.js';
 import { cancelAgent } from './data.js';
 import { explore, recordDetail } from './explorer.js';
@@ -42,6 +42,21 @@ export function dashboardApi(subject, account, path, method, query, body) {
       agents: cloud.agents(subject),
       devices: devices(subject),
     };
+  }
+  if (path === '/api/dashboard/history' && method === 'GET') {
+    const offset = z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(50000)
+      .parse(query.get('offset') ?? 0);
+    return history.list(subject, null, offset);
+  }
+  if (path === '/api/dashboard/history/entry' && method === 'GET') {
+    const id = z.string().min(1).max(2000).parse(query.get('id'));
+    const stored = history.get(subject, id);
+    if (!stored) throw new PairingError(404, 'Activity not found.');
+    return { event: stored.event, related: history.related(subject, stored.event) };
   }
   if (path === '/api/dashboard/explore' && method === 'POST') return explore(subject, body);
   if (path === '/api/dashboard/record' && method === 'GET') return recordDetail(subject, query);

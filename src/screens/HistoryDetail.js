@@ -6,7 +6,7 @@ import { Copy, Empty, Group, Row, Screen, SectionHeader, Notice } from '../compo
 import { usePhoneData } from '../../client/DataPanel.js';
 import { useHistory } from '../../client/useHistory.js';
 import { historyEntry, relatedHistory } from '../../client/history.js';
-import { historyTitle, historyOutcome, historyRoute } from '../../client/history-display.js';
+import { historyTitle, historyOutcome, historyRoute } from '../../core/history-display.js';
 /** @param {import('../../core/history.js').HistoryArtifact} artifact */
 async function shareFile(artifact) {
   try {

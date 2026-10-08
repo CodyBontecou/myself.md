@@ -1,3 +1,4 @@
+import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
@@ -261,6 +262,33 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
           body,
         ),
       );
+      return;
+    }
+    if (url.pathname === '/api/history' && req.method === 'POST') {
+      if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+      const input = z
+        .object({ deviceId: z.string().uuid(), events: z.array(z.unknown()).max(50) })
+        .parse(JSON.parse((await bodyBytes(req, 1024 * 1024)).toString()));
+      ownCloudDevice(subject, input.deviceId);
+      const events = input.events.map(parseHistoryEvent);
+      for (const event of events) {
+        const previous = history.get(subject, event.id);
+        if (
+          event.kind !== 'export' ||
+          event.actor === 'agent' ||
+          (previous && (previous.device !== input.deviceId || previous.event.kind !== 'export'))
+        )
+          throw new PairingError(400, 'Invalid phone export history.');
+      }
+      for (const event of events) {
+        const previous = history.get(subject, event.id);
+        if (!previous || Date.parse(event.updatedAt) >= Date.parse(previous.event.updatedAt))
+          history.record(subject, input.deviceId, {
+            ...event,
+            artifacts: event.artifacts.map((a) => Object.assign({}, a, { uri: null })),
+          });
+      }
+      json(res, 200, { ok: true });
       return;
     }
     if (url.pathname === '/api/history' && req.method === 'GET') {

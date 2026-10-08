@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { parseHistoryEvent } from '../core/history.js';
+import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -398,7 +398,87 @@ try {
   });
   assert.equal((await readHistory()).find((event) => event.id === requestId)?.status, 'complete');
   assert.equal((await request(`/api/cloud/exports/${id}`, bobToken, 'DELETE')).status, 404);
+  const stamp = new Date().toISOString();
+  const synced = {
+    ...addArtifact(
+      exportEvent({
+        id: 'phone-export',
+        profile,
+        actor: 'schedule',
+        interval: { start: stamp, end: stamp },
+        stamp,
+        timezone: 'UTC',
+      }),
+      {
+        day: stamp.slice(0, 10),
+        name: 'history.json',
+        format: 'json',
+        recordCount: 2,
+        bytes: 42,
+        uri: 'file:///private/history.json',
+        cloudId: id,
+        checksum: null,
+        partial: true,
+      },
+      stamp,
+    ),
+    status: 'partial',
+  };
+  const syncBody = { deviceId, events: [synced] };
+  assert.equal((await request('/api/history', dashboardToken, 'POST', syncBody)).status, 403);
+  assert.equal((await request('/api/history', bobToken, 'POST', syncBody)).status, 404);
+  assert.equal((await request('/api/history', phoneToken, 'POST', syncBody)).status, 200);
+  assert.equal(
+    (
+      await request('/api/history', phoneToken, 'POST', {
+        deviceId,
+        events: [{ ...synced, kind: 'access', actor: 'agent' }],
+      })
+    ).status,
+    400,
+  );
+  assert.equal((await request('/api/dashboard/history', null)).status, 401);
+  assert.equal((await request('/api/dashboard/history', phoneToken)).status, 403);
+  assert.equal((await request('/api/dashboard/history?offset=-1', dashboardToken)).status, 400);
+  const audit = z
+    .object({ events: z.array(z.unknown()) })
+    .parse((await request('/api/dashboard/history', dashboardToken)).value)
+    .events.map(parseHistoryEvent);
+  assert.equal(audit.find((e) => e.id === synced.id)?.status, 'partial');
+  assert.equal(audit.find((e) => e.id === synced.id)?.artifacts[0]?.uri, null);
+  const entryPath = '/api/dashboard/history/entry?id=phone-export';
+  assert.equal((await request(entryPath, bobDashboardToken)).status, 404);
+  assert.equal((await request(entryPath, dashboardToken)).status, 200);
+  assert.equal(
+    z
+      .object({ events: z.array(z.unknown()) })
+      .parse((await request('/api/dashboard/history', bobDashboardToken)).value).events.length,
+    0,
+  );
+  assert.equal(
+    (
+      await request('/api/history', phoneToken, 'POST', {
+        deviceId,
+        events: [
+          {
+            ...synced,
+            status: 'running',
+            updatedAt: new Date(Date.parse(stamp) - 1000).toISOString(),
+          },
+        ],
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    parseHistoryEvent(
+      z.object({ event: z.unknown() }).parse((await request(entryPath, dashboardToken)).value)
+        .event,
+    ).status,
+    'partial',
+  );
   assert.equal((await request(`/api/devices/${deviceId}`, phoneToken, 'DELETE')).status, 200);
+  assert.equal((await request(entryPath, dashboardToken)).status, 200);
   const revoked = await fetch(`${origin}/api/cloud/uploads`, {
     method: 'POST',
     headers: {

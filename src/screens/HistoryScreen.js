@@ -12,7 +12,7 @@ import {
   historyTitle,
   historyOutcome,
   historyRoute,
-} from '../../client/history-display.js';
+} from '../../core/history-display.js';
 /** @typedef {import('../../core/history.js').HistoryEvent} Event */
 /** @typedef {{kind:'heading',id:string,title:string}|{kind:'event',id:string,event:Event,first:boolean,last:boolean}} Item */
 export default function HistoryScreen() {

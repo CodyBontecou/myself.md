@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { DatabaseSync } from 'node:sqlite';
+import { relatedHistoryEvents } from '../core/history-display.js';
 import { parseHistoryEvent } from '../core/history.js';
 /** @typedef {import('../core/history.js').HistoryEvent} HistoryEvent */
 /** Encrypted audit metadata has an independent lifetime from export files and ephemeral responses. */
@@ -16,7 +17,7 @@ export class HistoryStore {
       const subject = String(row.subject),
         id = String(row.id);
       const event = this.get(subject, id)?.event;
-      if (event?.status === 'running' || event?.status === 'ready')
+      if (event?.kind === 'access' && (event.status === 'running' || event.status === 'ready'))
         this.update(subject, id, {
           status: 'interrupted',
           error: 'The service restarted before this access finished.',
@@ -62,7 +63,22 @@ export class HistoryStore {
         updatedAt: new Date().toISOString(),
       });
   }
-  /** @param {string} subject @param {string} device @param {number} [offset] */
+  /** @param {string} subject @param {HistoryEvent} event */
+  related(subject, event) {
+    if (!event.relatedId && !event.artifacts.some((a) => a.cloudId)) return [];
+    const rows = this.db
+      .prepare(
+        'SELECT id FROM activity WHERE subject=? AND started>=? ORDER BY started DESC,id DESC',
+      )
+      .all(subject, new Date(Date.now() - 90 * 86400000).toISOString());
+    return relatedHistoryEvents(
+      rows
+        .map((row) => this.get(subject, String(row.id))?.event)
+        .filter((item) => item !== undefined),
+      event,
+    );
+  }
+  /** @param {string} subject @param {string|null} device @param {number} [offset] */
   list(subject, device, offset = 0) {
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid history offset.');
     this.db
@@ -70,9 +86,9 @@ export class HistoryStore {
       .run(new Date(Date.now() - 90 * 86400000).toISOString());
     const rows = this.db
       .prepare(
-        'SELECT id FROM activity WHERE subject=? AND device=? ORDER BY started DESC,id DESC LIMIT 51 OFFSET ?',
+        'SELECT id FROM activity WHERE subject=? AND (? IS NULL OR device=?) ORDER BY started DESC,id DESC LIMIT 51 OFFSET ?',
       )
-      .all(subject, device, offset);
+      .all(subject, device, device, offset);
     return {
       events: rows
         .slice(0, 50)

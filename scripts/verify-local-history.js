@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
 import * as core from '../core/history.js';
+import * as display from '../core/history-display.js';
 import { parseProfile } from '../core/profiles.js';
 const db = new DatabaseSync(':memory:');
 const sqlite = {
@@ -18,14 +19,33 @@ const sqlite = {
   }),
 };
 /** @type {import('../core/history.js').HistoryEvent[]} */ let remote = [];
-const session = { api: async () => ({ events: remote, hasMore: false }) };
+/** @type {unknown[]} */ const published = [];
+const session = {
+  api: async (
+    /** @type {unknown} */ _session,
+    /** @type {string} */ _path,
+    /** @type {RequestInit|undefined} */ options,
+  ) => {
+    if (options?.method === 'POST') {
+      published.push(JSON.parse(String(options.body)));
+      return { ok: true };
+    }
+    return { events: remote, hasMore: false };
+  },
+};
 async function load() {
   const module = new SourceTextModule(
     await readFile(new URL('../client/history.js', import.meta.url), 'utf8'),
   );
   await module.link((specifier) => {
     const values =
-      specifier === 'expo-sqlite' ? sqlite : specifier === './session.js' ? session : core;
+      specifier === 'expo-sqlite'
+        ? sqlite
+        : specifier === './session.js'
+          ? session
+          : specifier === '../core/history-display.js'
+            ? display
+            : core;
     return new SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
     });
@@ -102,7 +122,19 @@ try {
     expires: 0,
     account: 'alice',
   };
+  const localEvent = journal.historyEntry(context, '', id);
+  assert.ok(localEvent);
+  remote.push({
+    ...localEvent,
+    artifacts: localEvent.artifacts.map((a) => Object.assign({}, a, { uri: null })),
+  });
   await journal.syncHistory(paired);
+  assert.ok(published.length > 0);
+  assert.ok(!JSON.stringify(published).includes('file:///'));
+  assert.equal(
+    journal.historyPage(context, paired.server).filter((event) => event.id === id).length,
+    1,
+  );
   assert.ok(journal.historyEntry(context, paired.server, 'remote'));
   assert.equal(journal.historyEntry(context, 'https://other.test', 'remote'), null);
   assert.equal(journal.historyEntry(other, paired.server, 'remote'), null);

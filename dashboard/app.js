@@ -39,6 +39,7 @@ import {
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Explorer } from './explorer.js';
+import { HistoryView } from './history.js';
 import { ExportActivity } from './export-activity.js';
 import { subscribeRoute, routeSnapshot, navigateRoute } from './navigation.js';
 import { recordRoute } from './explorer-route.js';
@@ -90,10 +91,11 @@ import {
 } from './components/ui/dropdown-menu.js';
 /** @typedef {import('./session.js').Workspace} Workspace */
 /** @typedef {import('./session.js').StoredExport} StoredExport */
-/** @typedef {'exports'|'explore'|'profiles'|'agents'} View */
+/** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'} View */
 /** @typedef {{title:string,description:string,label:string,action:()=>Promise<void>}} Confirmation */
 const views = [
   { id: /** @type {const} */ ('exports'), title: 'Stored data', icon: IconDatabase },
+  { id: /** @type {const} */ ('history'), title: 'History', icon: IconListDetails },
   { id: /** @type {const} */ ('explore'), title: 'Explore data', icon: IconChartBar },
   { id: /** @type {const} */ ('profiles'), title: 'Profiles & permissions', icon: IconListDetails },
   { id: /** @type {const} */ ('agents'), title: 'Connected agents', icon: IconRobot },
@@ -727,9 +729,10 @@ function LoginCard({ ready }) {
 }
 function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
-  const [view, setView] = useState(/** @type {View} */ ('exports'));
+  const [selectedView, setView] = useState(/** @type {View} */ ('exports'));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
   const query = new URLSearchParams(search);
+  const view = query.has('history') ? 'history' : selectedView;
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
   const [confirmation, setConfirmation] = useState(/** @type {Confirmation|null} */ (null));
@@ -796,8 +799,8 @@ function App() {
       <AppSidebar
         view={exploring ? 'explore' : view}
         onNavigate={(next) => {
-          navigateRoute(next === 'explore' ? '?explore=1' : '');
-          setView(next);
+          navigateRoute(next === 'explore' ? '?explore=1' : next === 'history' ? '?history=1' : '');
+          setView(next === 'history' ? 'exports' : next);
         }}
         workspace={workspace}
         busy={busy}
@@ -831,7 +834,14 @@ function App() {
                   ) : (
                     <>
                       <SectionCards workspace={workspace} />
-                      {view === 'exports' ? (
+                      {view === 'history' ? (
+                        <HistoryView
+                          workspace={workspace}
+                          search={search}
+                          updated={updated}
+                          onExpired={expire}
+                        />
+                      ) : view === 'exports' ? (
                         <>
                           <div className="px-4 lg:px-6">
                             <ExportActivity workspace={workspace} asOf={updated} />

@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
+import { relatedHistoryEvents } from '../core/history-display.js';
 import { api } from './session.js';
 /** @typedef {import('../core/history.js').HistoryEvent} HistoryEvent */
 /** @typedef {import('./export-context.js').ExportContext} Context */
@@ -107,9 +108,34 @@ export function historyPage(context, server, limit = 50, offset = 0) {
   );
   return rows.map((row) => parseHistoryEvent(JSON.parse(row.value)));
 }
-/** Fetch server-owned metadata only; cached entries remain available while offline.
+/** Sync metadata in bounded batches; local file paths never leave the phone.
+ * @param {import('./session.js').Session} session @param {number} [offset] */
+async function publishHistory(session, offset = 0) {
+  const rows = /** @type {{value:string}[]} */ (
+    db.getAllSync(
+      "SELECT value FROM activity_history WHERE owner=? AND device=? AND origin='local' AND started>=? ORDER BY started DESC,id DESC LIMIT 50 OFFSET ?",
+      session.owner,
+      session.deviceId,
+      new Date(Date.now() - 90 * 86400000).toISOString(),
+      offset,
+    )
+  );
+  if (!rows.length) return;
+  const events = rows.map((row) => {
+    const event = parseHistoryEvent(JSON.parse(row.value));
+    for (const artifact of event.artifacts) artifact.uri = null;
+    return event;
+  });
+  await api(session, '/api/history', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId: session.deviceId, events }),
+  });
+  if (rows.length === 50) await publishHistory(session, offset + rows.length);
+}
+/** Publish phone export metadata and fetch server history; cached entries remain available offline.
  * @param {import('./session.js').Session} session @param {number} [offset] */
 export async function syncHistory(session, offset = 0) {
+  if (offset === 0) await publishHistory(session);
   const result = /** @type {{events:unknown[],hasMore:boolean}} */ (
     await api(
       session,
@@ -119,7 +145,9 @@ export async function syncHistory(session, offset = 0) {
   if (!Array.isArray(result.events)) throw new Error('Invalid history response.');
   const events = result.events.map(parseHistoryEvent);
   db.withTransactionSync(() => {
-    for (const event of events) save(session, event, session.server);
+    for (const event of events) {
+      if (!get(session, event.id)) save(session, event, session.server);
+    }
   });
   return { count: events.length, hasMore: result.hasMore === true };
 }
@@ -153,12 +181,8 @@ export function relatedHistory(context, server, event) {
       event.id,
     )
   );
-  return rows
-    .map((row) => parseHistoryEvent(JSON.parse(row.value)))
-    .filter((item) =>
-      item.relatedId
-        ? cloudIds.includes(item.relatedId)
-        : item.artifacts.some((a) => a.cloudId && cloudIds.includes(a.cloudId)),
-    )
-    .slice(0, 10);
+  return relatedHistoryEvents(
+    rows.map((row) => parseHistoryEvent(JSON.parse(row.value))),
+    event,
+  );
 }

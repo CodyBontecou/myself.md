@@ -1,4 +1,4 @@
-/** @typedef {import('../core/history.js').HistoryEvent} Event */
+/** @typedef {import('./history.js').HistoryEvent} Event */
 /** @param {Event} event */
 export function historyTitle(event) {
   return event.profile.name;
@@ -37,4 +37,20 @@ export function historyDay(stamp) {
   today.setDate(today.getDate() - 1);
   if (date.toDateString() === today.toDateString()) return 'Yesterday';
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** @param {Event[]} events @param {Event} event */
+export function relatedHistoryEvents(events, event) {
+  const ids = event.relatedId
+    ? [event.relatedId]
+    : event.artifacts.map((a) => a.cloudId).filter((id) => id !== null);
+  return events
+    .filter(
+      (item) =>
+        item.id !== event.id &&
+        (item.relatedId
+          ? ids.includes(item.relatedId)
+          : item.artifacts.some((a) => a.cloudId && ids.includes(a.cloudId))),
+    )
+    .slice(0, 10);
 }
