@@ -899,11 +899,11 @@ export function Explorer({ workspace, search, updated, onExpired }) {
                           </TableCell>
                         ))}
                         <TableCell>
-                          <details>
+                          <details className="w-48">
                             <summary className="cursor-pointer whitespace-nowrap text-xs">
                               {row.provenance.length} export{row.provenance.length === 1 ? '' : 's'}
                             </summary>
-                            <div className="mt-2 min-w-48 space-y-2">
+                            <div className="mt-2 space-y-2 whitespace-normal wrap-anywhere">
                               {row.provenance.map((p) => (
                                 <button
                                   key={`${p.exportId}:${p.index}`}
