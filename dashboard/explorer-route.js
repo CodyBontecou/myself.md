@@ -1,16 +1,4 @@
 /** @typedef {import('../core/explorer.js').ExplorerQuery} ExplorerQuery */
-export function subscribeRoute(/** @type {()=>void} */ listener) {
-  window.addEventListener('popstate', listener);
-  return () => window.removeEventListener('popstate', listener);
-}
-export function routeSnapshot() {
-  return location.search;
-}
-/** @param {string} search */
-export function navigateRoute(search) {
-  history.pushState(null, '', `/dashboard${search}`);
-  window.dispatchEvent(new Event('popstate'));
-}
 /** @param {string} id @param {number} [offset] */
 export function recordRoute(id, offset = 0) {
   return `?${new URLSearchParams({ export: id, offset: String(offset) })}`;
@@ -32,7 +20,18 @@ export function readExplorerRoute(search) {
   let filters = [];
   try {
     const parsed = JSON.parse(params.get('where') ?? '[]');
-    if (Array.isArray(parsed)) filters = parsed;
+    if (Array.isArray(parsed))
+      filters = parsed
+        .filter(
+          (f) =>
+            f &&
+            typeof f.field === 'string' &&
+            typeof f.value === 'string' &&
+            ['eq', 'ne', 'contains', 'gt', 'gte', 'lt', 'lte', 'exists', 'missing'].includes(
+              f.operator,
+            ),
+        )
+        .slice(0, 12);
   } catch {}
   /** @type {ExplorerQuery} */
   const query = {
@@ -60,7 +59,15 @@ export function readExplorerRoute(search) {
   return {
     query,
     chart: params.get('chart') ?? 'auto',
-    columns: list('columns').length ? list('columns') : defaultColumns,
+    columns: list('columns').length
+      ? list('columns')
+      : query.domain === 'location'
+        ? ['start', 'latitude', 'longitude', 'accuracy', 'source']
+        : query.domain === 'time'
+          ? ['application', 'duration', 'start', 'end', 'source']
+          : /sleep/i.test(query.metric)
+            ? ['metric', 'category', 'duration', 'start', 'end', 'source']
+            : defaultColumns,
     record: params.get('record') ?? '',
   };
 }

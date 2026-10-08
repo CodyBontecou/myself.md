@@ -38,6 +38,7 @@ function flatten(value, prefix, output, depth = 0) {
   for (const [key, child] of Object.entries(object(value))) {
     if (Object.keys(output).length >= 96) return;
     const path = `${prefix}.${key}`;
+    if (path.length > 200) continue;
     if (
       child === null ||
       typeof child === 'string' ||
@@ -50,6 +51,14 @@ function flatten(value, prefix, output, depth = 0) {
 }
 /** @param {import('./data.js').DataRecord} record @param {Provenance} provenance @param {string} id @returns {ExplorerRow} */
 export function normalizeRecord(record, provenance, id) {
+  const start =
+    record.start && Number.isFinite(Date.parse(record.start))
+      ? new Date(record.start).toISOString()
+      : null;
+  const end =
+    record.end && Number.isFinite(Date.parse(record.end))
+      ? new Date(record.end).toISOString()
+      : null;
   const native = object(record.native),
     coords = object(native.coords);
   const quantity = object(native.quantity),
@@ -58,8 +67,8 @@ export function normalizeRecord(record, provenance, id) {
   const duration =
     durationMs !== null
       ? durationMs / 1000
-      : record.start && record.end && Date.parse(record.end) >= Date.parse(record.start)
-        ? (Date.parse(record.end) - Date.parse(record.start)) / 1000
+      : start && end && Date.parse(end) >= Date.parse(start)
+        ? (Date.parse(end) - Date.parse(start)) / 1000
         : null;
   let value = firstNumber([
     native.quantity,
@@ -88,21 +97,44 @@ export function normalizeRecord(record, provenance, id) {
     value = durationMs / 1000;
     unit = 's';
   }
+  const categorical = record.type.startsWith('HKCategoryTypeIdentifier');
   const sleep = /sleep/i.test(record.type);
-  if (sleep && value === null && duration !== null) {
+  if (categorical && !sleep) {
+    value = null;
+    unit = null;
+  }
+  if (sleep) {
     value = duration;
-    unit = 's';
+    unit = duration !== null ? 's' : null;
   }
   const metric = metricLabel(record.type);
-  const category = firstString([native.category, native.categoryValue, native.value]);
+  const rawCategory =
+    native.category ?? native.categoryValue ?? (sleep || categorical ? native.value : null);
+  const category =
+    typeof rawCategory === 'string'
+      ? rawCategory
+      : typeof rawCategory === 'number' && sleep && record.source === 'healthkit'
+        ? ({
+            0: 'In bed',
+            1: 'Asleep (unspecified)',
+            2: 'Awake',
+            3: 'Asleep (core)',
+            4: 'Asleep (deep)',
+            5: 'Asleep (REM)',
+          }[rawCategory] ?? `Category ${rawCategory}`)
+        : rawCategory === null
+          ? null
+          : String(rawCategory);
   const summary =
-    latitude !== null && longitude !== null
-      ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
-      : value !== null
-        ? `${value}${unit ? ` ${unit}` : ''}${application && record.domain === 'time' ? ` · ${application}` : ''}`
-        : typeof category === 'string'
-          ? category
-          : (application ?? metric);
+    sleep && category
+      ? `${category}${duration !== null ? ` · ${(duration / 3600).toFixed(2)} h` : ''}`
+      : latitude !== null && longitude !== null
+        ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+        : value !== null
+          ? `${value}${unit ? ` ${unit}` : ''}${application && record.domain === 'time' ? ` · ${application}` : ''}`
+          : typeof category === 'string'
+            ? category
+            : (application ?? metric);
   const archive = record.type === 'archive' || record.source === 'imported-original';
   /** @type {Record<string,Scalar>} */
   const fields = {
@@ -110,8 +142,8 @@ export function normalizeRecord(record, provenance, id) {
     type: record.type,
     metric,
     source: record.source,
-    start: record.start,
-    end: record.end,
+    start: start,
+    end: end,
     value,
     unit,
     duration,
@@ -119,6 +151,8 @@ export function normalizeRecord(record, provenance, id) {
     latitude,
     longitude,
     accuracy,
+    category,
+    summary,
   };
   flatten(record.native, 'native', fields);
   return {
@@ -127,8 +161,8 @@ export function normalizeRecord(record, provenance, id) {
     type: record.type,
     metric,
     source: record.source,
-    start: record.start,
-    end: record.end,
+    start: start,
+    end: end,
     value,
     unit,
     duration,
@@ -161,6 +195,16 @@ function matchesFilter(actual, filter) {
   }
   if (filter.operator === 'eq') return actual === expected;
   if (filter.operator === 'ne') return actual !== expected;
+  if (
+    typeof actual === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T/.test(actual) &&
+    typeof expected === 'string' &&
+    Number.isFinite(Date.parse(actual)) &&
+    Number.isFinite(Date.parse(expected))
+  ) {
+    actual = Date.parse(actual);
+    expected = Date.parse(expected);
+  }
   if (typeof actual !== 'number' || typeof expected !== 'number') return false;
   switch (filter.operator) {
     case 'gt':
@@ -205,10 +249,27 @@ export function sortRecords(rows, query) {
 function additive(row) {
   return (
     row.domain === 'time' ||
-    /(?:ActiveEnergyBurned|BasalEnergyBurned|StepCount|Distance|FlightsClimbed|Dietary|ExerciseTime|MoveTime)$/.test(
+    /^HKQuantityTypeIdentifier(?:Distance|Dietary)/.test(row.type) ||
+    /(?:ActiveEnergyBurned|BasalEnergyBurned|StepCount|FlightsClimbed|ExerciseTime|MoveTime)$/.test(
       row.type,
     )
   );
+}
+/** @param {string} timezone @param {'day'|'hour'} bucket */
+export function createBucketKey(timezone, bucket) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    ...(bucket === 'hour' ? { hour: '2-digit', hourCycle: 'h23' } : {}),
+  });
+  return (/** @type {string|null} */ start) => {
+    if (!start || !Number.isFinite(Date.parse(start))) return null;
+    const parts = formatter.formatToParts(new Date(start));
+    const part = (/** @type {string} */ name) => parts.find((p) => p.type === name)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}${bucket === 'hour' ? `T${part('hour')}:00` : ''}`;
+  };
 }
 /** @param {ExplorerRow[]} rows @param {ExplorerQuery} query */
 export function visualizeRecords(rows, query) {
@@ -224,20 +285,13 @@ export function visualizeRecords(rows, query) {
           : 'mean'
         : query.aggregation;
   const unit = aggregation === 'count' ? 'records' : (numeric[0]?.unit ?? 'value');
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: query.timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    ...(query.bucket === 'hour' ? { hour: '2-digit', hourCycle: 'h23' } : {}),
-  });
+  const bucketKey = createBucketKey(query.timezone, query.bucket);
   /** @type {Map<string,{sum:number,count:number,records:number,min:number,max:number}>} */
   const buckets = new Map();
   for (const row of rows) {
     if (!row.start || !Number.isFinite(Date.parse(row.start))) continue;
-    const parts = formatter.formatToParts(new Date(row.start));
-    const part = (/** @type {string} */ name) => parts.find((p) => p.type === name)?.value ?? '';
-    const key = `${part('year')}-${part('month')}-${part('day')}${query.bucket === 'hour' ? `T${part('hour')}:00` : ''}`;
+    const key = bucketKey(row.start);
+    if (!key) continue;
     const bucket = buckets.get(key) ?? {
       sum: 0,
       count: 0,
@@ -285,24 +339,35 @@ export function visualizeRecords(rows, query) {
       distribution[Math.min(distribution.length - 1, Math.floor((value - minimum) / width))];
     if (bin) bin.count++;
   }
-  /** @type {Map<string,{value:number,count:number}>} */
+  /** @type {Map<string,{label:string,field:string,value:number,count:number}>} */
   const rankingMap = new Map();
   for (const row of rows) {
     const label = row.application ?? row.metric,
-      entry = rankingMap.get(label) ?? { value: 0, count: 0 };
+      field = row.application ? 'application' : 'metric',
+      key = `${field}:${label}`;
+    const entry = rankingMap.get(key) ?? { label, field, value: 0, count: 0 };
     entry.value += aggregation === 'count' ? 1 : (row.value ?? 0);
     entry.count += row.value !== null ? 1 : 0;
-    rankingMap.set(label, entry);
+    rankingMap.set(key, entry);
   }
   const ranking = sorted(
-    [...rankingMap].map(([label, v]) => ({
-      label,
+    [...rankingMap.values()].map((v) => ({
+      label: v.label,
+      field: v.field,
       value: aggregation === 'mean' && v.count ? v.value / v.count : v.value,
     })),
     (a, b) => b.value - a.value,
   ).slice(0, 20);
   const intervals = rows
-    .filter((row) => row.start && row.end && row.duration !== null && row.duration > 0)
+    .filter(
+      (row) =>
+        row.start &&
+        row.end &&
+        Number.isFinite(Date.parse(row.start)) &&
+        Number.isFinite(Date.parse(row.end)) &&
+        row.duration !== null &&
+        row.duration > 0,
+    )
     .slice(0, 200)
     .map((row) => ({
       id: row.id,

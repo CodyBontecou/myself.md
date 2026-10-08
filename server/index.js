@@ -246,7 +246,9 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       if (payload.azp !== 'qr-dashboard')
         throw new PairingError(403, 'Dashboard OAuth client required.');
       const body =
-        req.method === 'PUT' ? JSON.parse((await bodyBytes(req, 4096)).toString()) : null;
+        req.method === 'PUT' || req.method === 'POST'
+          ? JSON.parse((await bodyBytes(req, 16384)).toString())
+          : null;
       json(
         res,
         200,

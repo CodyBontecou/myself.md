@@ -8,8 +8,10 @@ import {
   IconLink,
   IconPlus,
 } from '@tabler/icons-react';
+import { normalizeRecord } from '../core/explorer.js';
 import { api, hasSession } from './session.js';
-import { navigateRoute, readExplorerRoute, explorerRoute } from './explorer-route.js';
+import { navigateRoute } from './navigation.js';
+import { readExplorerRoute, explorerRoute } from './explorer-route.js';
 import { Button } from './components/ui/button.js';
 import { Input } from './components/ui/input.js';
 import { Badge } from './components/ui/badge.js';
@@ -41,6 +43,7 @@ const emptyFacets = { metrics: [], sources: [], fields: [] };
 const knownColumns = [
   ['metric', 'Metric'],
   ['summary', 'Summary'],
+  ['category', 'Category'],
   ['value', 'Value'],
   ['unit', 'Unit'],
   ['start', 'Started'],
@@ -231,7 +234,7 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
             {filters.map((filter, index) => {
               const type = fields.find((f) => f.field === filter.field)?.type ?? 'string';
               const operators =
-                type === 'number'
+                type === 'number' || type === 'date'
                   ? ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'exists', 'missing']
                   : ['eq', 'ne', 'contains', 'exists', 'missing'];
               return (
@@ -297,7 +300,13 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
                     step="any"
                     value={filter.value}
                     disabled={filter.operator === 'missing' || filter.operator === 'exists'}
-                    placeholder={type === 'boolean' ? 'true or false' : 'Value'}
+                    placeholder={
+                      type === 'boolean'
+                        ? 'true or false'
+                        : type === 'date'
+                          ? '2026-10-08T00:00:00.000Z'
+                          : 'Value'
+                    }
                     onChange={(e) =>
                       setFilters((current) =>
                         current.map((f, i) => (i === index ? { ...f, value: e.target.value } : f)),
@@ -323,7 +332,12 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
               onClick={() =>
                 setFilters((current) => [
                   ...current,
-                  { key: crypto.randomUUID(), field: 'value', operator: 'gt', value: '' },
+                  {
+                    key: crypto.randomUUID(),
+                    field: 'value',
+                    operator: /** @type {const} */ ('gt'),
+                    value: '',
+                  },
                 ])
               }
             >
@@ -402,6 +416,20 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
   const [error, setError] = useState('');
   const [exportId, index] = id.split(':');
   const item = workspace.exports.find((e) => e.id === exportId);
+  const normalized = result
+    ? normalizeRecord(
+        result.record,
+        {
+          exportId: exportId ?? '',
+          index: Number(index),
+          profileId: item?.profileId ?? '',
+          profileName: item?.profileName ?? '',
+          deviceId: item?.deviceId ?? '',
+          day: item?.day ?? '',
+        },
+        id,
+      )
+    : null;
   useEffect(() => {
     let active = true;
     async function read() {
@@ -457,7 +485,7 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
                 variant={tab === name ? 'secondary' : 'ghost'}
                 onClick={() => setTab(name)}
               >
-                {name === 'raw' ? 'Raw JSON' : name}
+                {name === 'raw' ? 'Raw JSON' : name === 'summary' ? 'Summary' : 'Metadata'}
               </Button>
             ))}
           </div>
@@ -473,7 +501,15 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-4 text-sm">
               {Object.entries({
                 Domain: result.record.domain,
-                Metric: result.record.type,
+                Metric: normalized?.metric,
+                Value: normalized?.value,
+                Unit: normalized?.unit,
+                Category: normalized?.fields.category,
+                'Duration (seconds)': normalized?.duration,
+                Application: normalized?.application,
+                Latitude: normalized?.latitude,
+                Longitude: normalized?.longitude,
+                'Accuracy (metres)': normalized?.accuracy,
                 Source: result.record.source,
                 Started: display(result.record.start, 'start', timezone),
                 Ended: display(result.record.end, 'end', timezone),
@@ -481,12 +517,14 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
                 Export: exportId,
                 Device:
                   workspace.devices.find((d) => d.id === item?.deviceId)?.name ?? item?.deviceId,
-              }).map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="break-all">{value ?? '—'}</dd>
-                </div>
-              ))}
+              })
+                .filter(([_label, value]) => value !== null && value !== undefined)
+                .map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="break-all">{value ?? '—'}</dd>
+                  </div>
+                ))}
             </dl>
           ) : (
             <FieldTree value={result.record.native} />
@@ -579,6 +617,10 @@ export function Explorer({ workspace, search, updated, onExpired }) {
   }, [storageKey]);
   /** @param {Partial<ExplorerQuery>} patch @param {{chart?:string,columns?:string[],record?:string}} [view] */
   function change(patch, view = {}) {
+    if (patch.filters && patch.filters.length > 12) {
+      setNotice('Remove a condition before adding another filter (maximum 12).');
+      return;
+    }
     navigateRoute(
       explorerRoute(
         { ...query, ...patch },
@@ -607,7 +649,9 @@ export function Explorer({ workspace, search, updated, onExpired }) {
     ...knownColumns,
     ...facets.fields.filter((f) => f.field.startsWith('native.')).map((f) => [f.field, f.field]),
   ];
-  const columns = dynamicColumns.filter(([field]) => field && route.columns.includes(field));
+  const columns = route.columns.flatMap((field) =>
+    dynamicColumns.filter(([candidate]) => candidate === field),
+  );
   const validColumns = columns.length ? columns : knownColumns.slice(0, 5);
   return (
     <div className="space-y-6 px-4 lg:px-6">
@@ -704,11 +748,20 @@ export function Explorer({ workspace, search, updated, onExpired }) {
         </p>
       )}
       <QueryBuilder
-        key={request}
+        key={`${request}:${facets.metrics.map((metric) => metric.type).join(',')}`}
         query={query}
         facets={facets}
         workspace={workspace}
-        onApply={(next) => change(next)}
+        onApply={(next) =>
+          change(next, {
+            columns:
+              next.domain !== query.domain || next.metric !== query.metric
+                ? readExplorerRoute(
+                    `?domain=${encodeURIComponent(next.domain)}&metric=${encodeURIComponent(next.metric)}`,
+                  ).columns
+                : route.columns,
+          })
+        }
       />
       {loading && (
         <div role="status" className="rounded-lg border p-8 text-center text-muted-foreground">

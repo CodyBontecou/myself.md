@@ -3,7 +3,13 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { cloud } from './cloud.js';
 import { PairingError } from './store.js';
-import { normalizeRecord, matchesQuery, sortRecords, visualizeRecords } from '../core/explorer.js';
+import {
+  createBucketKey,
+  normalizeRecord,
+  matchesQuery,
+  sortRecords,
+  visualizeRecords,
+} from '../core/explorer.js';
 const filterSchema = z.object({
   field: z.string().min(1).max(200),
   operator: z.enum(['eq', 'ne', 'contains', 'gt', 'gte', 'lt', 'lte', 'exists', 'missing']),
@@ -67,6 +73,7 @@ function canonical(value) {
  * @param {string} subject @param {unknown} input */
 export function explore(subject, input) {
   const query = schema.parse(input);
+  const bucketKey = createBucketKey(query.timezone, query.bucket);
   cloud.cleanup();
   const exports = cloud.list(subject);
   for (const id of query.exportIds)
@@ -107,6 +114,7 @@ export function explore(subject, input) {
         day: item.day,
       };
       const row = normalizeRecord(record, provenance, `${item.id}:${index}`);
+      row.fields.bucket = bucketKey(row.start);
       if (row.archive && !query.includeArchives) {
         archives++;
         continue;
@@ -139,7 +147,14 @@ export function explore(subject, input) {
     for (const [field, value] of Object.entries(row.fields)) {
       if (discovered.size >= 256 && !discovered.has(field)) continue;
       const types = discovered.get(field) ?? new Set();
-      if (value !== null) types.add(typeof value);
+      if (value !== null)
+        types.add(
+          typeof value === 'string' &&
+            /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+            Number.isFinite(Date.parse(value))
+            ? 'date'
+            : typeof value,
+        );
       discovered.set(field, types);
     }
   const fields = sorted(
@@ -156,7 +171,17 @@ export function explore(subject, input) {
   const visuals = visualizeRecords(matched, query);
   return {
     query,
-    rows: matched.slice(query.offset, query.offset + query.limit),
+    rows: matched.slice(query.offset, query.offset + query.limit).map((row) =>
+      Object.assign({}, row, {
+        summary: row.summary.length > 256 ? `${row.summary.slice(0, 256)}…` : row.summary,
+        fields: Object.fromEntries(
+          Object.entries(row.fields).map(([field, value]) => [
+            field,
+            typeof value === 'string' && value.length > 256 ? `${value.slice(0, 256)}…` : value,
+          ]),
+        ),
+      }),
+    ),
     total: matched.length,
     scanned,
     duplicates,
@@ -179,6 +204,7 @@ export function explore(subject, input) {
             `${visuals.undated} records have no valid start time and are excluded from the time chart.`,
           ]
         : []),
+      'Field discovery includes up to 256 scalar paths (five nested levels). Table text previews are capped at 256 characters; record details retain the complete original payload.',
       'Totals describe stored samples. Source aggregates may overlap; only exact duplicate records are collapsed. Sleep intervals can overlap and are not added into nightly totals.',
     ],
   };

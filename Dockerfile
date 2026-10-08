@@ -2,6 +2,8 @@ FROM node:24-bookworm-slim AS dashboard-build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
+COPY jsconfig.json ./
+COPY core ./core
 COPY dashboard ./dashboard
 COPY scripts/build-dashboard.js ./scripts/build-dashboard.js
 RUN npm run dashboard:build

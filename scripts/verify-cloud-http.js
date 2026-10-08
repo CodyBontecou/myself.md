@@ -208,6 +208,28 @@ try {
       .length,
     0,
   );
+  assert.equal((await request('/api/dashboard/explore', null, 'POST', {})).status, 401);
+  assert.equal((await request('/api/dashboard/explore', phoneToken, 'POST', {})).status, 403);
+  assert.equal((await request('/api/dashboard/explore', chatToken, 'POST', {})).status, 403);
+  assert.equal((await request('/api/dashboard/explore', dashboardToken, 'POST', {})).status, 200);
+  assert.equal(
+    (await request('/api/dashboard/explore', dashboardToken, 'POST', { timezone: 'invalid' }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await request('/api/dashboard/explore', bobDashboardToken, 'POST', { exportIds: [id] }))
+      .status,
+    404,
+  );
+  const detailPath = `/api/dashboard/record?export=${id}&index=0`;
+  assert.equal((await request(detailPath, bobDashboardToken)).status, 404);
+  assert.equal((await request(detailPath, chatToken)).status, 403);
+  assert.deepEqual(
+    z.object({ record: z.unknown() }).parse((await request(detailPath, dashboardToken)).value)
+      .record,
+    record,
+  );
   const recordsPath = `/api/dashboard/exports/${id}`;
   assert.deepEqual(
     z

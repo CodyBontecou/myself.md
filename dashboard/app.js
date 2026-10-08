@@ -40,7 +40,8 @@ import {
 import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Explorer } from './explorer.js';
 import { ExportActivity } from './export-activity.js';
-import { subscribeRoute, routeSnapshot, navigateRoute, recordRoute } from './explorer-route.js';
+import { subscribeRoute, routeSnapshot, navigateRoute } from './navigation.js';
+import { recordRoute } from './explorer-route.js';
 import { Button } from './components/ui/button.js';
 import { Badge } from './components/ui/badge.js';
 import {
