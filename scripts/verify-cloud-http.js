@@ -40,7 +40,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     OAUTH_ISSUER: issuer,
     ALLOW_HTTP_DEV: '1',
     AUTH_PROXY: '0',
-    IOS_APP_ID: '67KC823C9A.com.codybontecou.sharedjsapp',
+    IOS_APP_ID: '67KC823C9A.com.myself.md',
     HOST: '127.0.0.1',
     PORT: String(port),
   },
@@ -120,7 +120,7 @@ try {
     applinks: {
       details: [
         {
-          appIDs: ['67KC823C9A.com.codybontecou.sharedjsapp'],
+          appIDs: ['67KC823C9A.com.myself.md'],
           components: [{ '/': '/pair' }],
         },
       ],

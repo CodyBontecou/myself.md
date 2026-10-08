@@ -45,6 +45,8 @@ This is public access to the local development Keycloak runtime, with the same g
 
 ## GitHub and Apple sign-in
 
+iOS uses bundle ID `com.myself.md`; Universal Links use `67KC823C9A.com.myself.md`. This installs separately from the previous iOS identity, so existing app data does not migrate automatically. The new Apple App ID needs the app’s capabilities and signing profiles configured before a signed device build.
+
 The web dashboard and the iOS/Android pairing screen offer **Sign in with Apple** and **Continue with GitHub** buttons that open the existing Keycloak browser flow with the matching `kc_idp_hint`. The phone still requires a pairing link and the same account as the agent. Configure the Apple provider below before using these buttons.
 
 Provider provisioning is ready; a provider appears on Keycloak's login page only after its real credentials have been configured. Both mobile and MCP clients keep using the same Keycloak OAuth flow. No mobile rebuild is needed.
@@ -56,7 +58,7 @@ npm run auth:social          # Apply credentials from ignored .env to the existi
 
 GitHub: register a new OAuth app named **QR Connect**, with homepage `${PUBLIC_URL}/pair` and callback `${OAUTH_ISSUER}/broker/github/endpoint`. Keep wildcard redirects and device flow off. Set `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` in `.env`. Keycloak requests `read:user user:email`, and does not request repository access or retain upstream tokens.
 
-Apple: enable Sign in with Apple on the primary App ID `com.codybontecou.sharedjsapp`. Register a web Services ID such as `com.codybontecou.qrconnect.login`, associate it with that primary App ID, and configure the Funnel hostname and exact return URL `${OAUTH_ISSUER}/broker/apple/endpoint`. Create a dedicated Sign in with Apple key, download its `.p8` file into `.local/apple/`, and record its Key ID. Set `APPLE_SERVICE_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY_PATH` in `.env`. The provisioning script validates a P-256 private key and sends it only to the loopback Keycloak admin API; it is stored in the ignored local Keycloak database and realm import. Keep the original key and credentials private.
+Apple: enable Sign in with Apple on the primary App ID `com.myself.md`. Register a web Services ID `com.myself.md.login`, associate it with that primary App ID, and configure the Funnel hostname and exact return URL `${OAUTH_ISSUER}/broker/apple/endpoint`. Create a dedicated Sign in with Apple key, download its `.p8` file into `.local/apple/`, and record its Key ID. Set `APPLE_SERVICE_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY_PATH` in `.env`. The provisioning script validates a P-256 private key and sends it only to the loopback Keycloak admin API; it is stored in the ignored local Keycloak database and realm import. Keep the original key and credentials private.
 
 For this checkout, the callbacks are:
 

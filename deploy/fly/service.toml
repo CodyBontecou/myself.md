@@ -10,7 +10,7 @@ primary_region = "cdg"
   OAUTH_ISSUER = "https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect"
   AUTH_PROXY = "1"
   KEYCLOAK_INTERNAL_HOST = "qr-connect-cloud-cody-auth.internal"
-  IOS_APP_ID = "67KC823C9A.com.codybontecou.sharedjsapp"
+  IOS_APP_ID = "67KC823C9A.com.myself.md"
 [[mounts]]
   source = "cloud_data"
   destination = "/data"

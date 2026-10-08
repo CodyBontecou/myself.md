@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.codybontecou.sharedjsapp",
+      "bundleIdentifier": "com.myself.md",
       "associatedDomains": ["applinks:qr-connect-cloud-cody.fly.dev"],
       "infoPlist": {
         "NSAppTransportSecurity": {

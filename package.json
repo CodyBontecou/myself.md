@@ -72,7 +72,7 @@
     "auth:social": "node --env-file=.env scripts/setup-social.js",
     "verify:exports": "node scripts/verify-profile-exports.js && node --experimental-vm-modules scripts/verify-export-resilience.js",
     "build:android": "cd android && ./gradlew :app:assembleDebug",
-    "build:ios": "xcodebuild -workspace ios/QRConnect.xcworkspace -scheme QRConnect -configuration Release -destination generic/platform=iOS -allowProvisioningUpdates",
+    "build:ios": "xcodebuild -workspace ios/AgentBridge.xcworkspace -scheme AgentBridge -configuration Release -destination generic/platform=iOS -allowProvisioningUpdates",
     "cloud:setup": "node scripts/setup-cloud.js",
     "cloud:start": "docker compose --env-file .env.cloud -f compose.cloud.yaml up -d --build",
     "verify:cloud": "npm run dashboard:build && node scripts/verify-cloud.js && node scripts/verify-cloud-http.js",
