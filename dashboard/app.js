@@ -150,12 +150,6 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupLabel>Your cloud account</SidebarGroupLabel>
-          <p className="px-2 text-xs leading-relaxed text-muted-foreground">
-            The same data and permissions as QR Connect on your phone.
-          </p>
-        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
