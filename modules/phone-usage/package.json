@@ -1,0 +1,6 @@
+{
+  "name": "phone-usage",
+  "version": "1.0.0",
+  "description": "Read-only native Screen Time and Usage Access bridge",
+  "license": "MIT"
+}

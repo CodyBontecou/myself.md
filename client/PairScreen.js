@@ -1,0 +1,36 @@
+import { Alert, TextInput, View } from 'react-native';
+import { CameraView } from 'expo-camera';
+import { Stack } from 'expo-router';
+import { Screen, Copy, Group, Row, Button, Notice } from '../src/components/ui';
+import { useTheme } from '../src/lib/theme';
+import { usePhone } from './PhoneProvider';
+import { Linking } from 'react-native';
+export default function PairScreen() {
+  const { colors } = useTheme();
+  const { session, connected, permission, requestPermission, pairing, busy, error, link, setLink, scan, confirm, refresh, disconnect, run, reset, useAnotherAccount, switchConnection, signIn } = usePhone();
+  return <Screen>
+    <Stack.Screen options={{ title:connected ? 'Your agent' : 'Connect agent' }} />
+    {connected ? <>
+      <Copy variant="heading">Your phone is connected</Copy>
+      <Group><Row title="Account" subtitle={session.account} /><Row title="Server" subtitle={session.server} /></Group>
+      <Button label="Check connection" secondary disabled={busy} onPress={() => void run(refresh)} />
+      <Notice title="Access is yours to manage" body="Choose permissions on each data source and select individual types in Profiles & exports. Keep this app open for live agent queries." />
+      <Button label="Disconnect agent" secondary disabled={busy} onPress={() => Alert.alert('Disconnect this phone?', 'Agent queries and scheduled exports stop. Imported data stays on this phone.', [{ text:'Cancel',style:'cancel' },{text:'Disconnect',style:'destructive',onPress:() => void run(disconnect)}])} />
+      {pairing && <><Copy>A new pairing link was received. You can switch to this server after disconnecting your current agent.</Copy><Button label="Switch connection" secondary disabled={busy} onPress={() => void run(switchConnection)} /><Button label="Dismiss pairing link" secondary onPress={reset} /></>}
+    </> : pairing ? <>
+      <Copy variant="heading">Confirm your connection</Copy>
+      <Copy selectable>{pairing.server}</Copy>
+      <Notice title="Pair with your agent" body="Continue with the same account used by your MCP client. Your data permissions remain under your control." />
+      {session ? <><Copy>{session.account}</Copy><Button label="Confirm connection" disabled={busy} onPress={() => void run(confirm)} /></> : <Button label="Sign in" disabled={busy} onPress={() => void run(signIn)} />}
+      <Button label="Use another account" secondary disabled={busy || !session} onPress={useAnotherAccount} /><Button label="Scan another code" secondary disabled={busy} onPress={() => { useAnotherAccount(); reset(); }} />
+    </> : <>
+      <Copy variant="heading">Connect your chat to this phone</Copy>
+      <Copy muted>Generate a pairing QR code in your agent, then scan it here or paste its link.</Copy>
+      {permission?.granted ? <CameraView style={{ height:240,borderRadius:20,overflow:'hidden' }} facing="back" barcodeScannerSettings={{ barcodeTypes:['qr'] }} onBarcodeScanned={({data}) => scan(data)} /> : <Button label={permission?.canAskAgain === false ? 'Open camera settings' : 'Allow camera access'} secondary onPress={() => { if (permission?.canAskAgain === false) void Linking.openSettings(); else void requestPermission(); }} />}
+      <View style={{ gap:12 }}><Copy variant="caption" muted>Pairing link</Copy><TextInput accessibilityLabel="Pairing link" autoCapitalize="none" autoCorrect={false} placeholder="https://server/pair#code" placeholderTextColor={colors.secondary} style={{ padding:16,borderRadius:14,backgroundColor:colors.surface,color:colors.text,minHeight:52 }} value={link} onChangeText={setLink} onSubmitEditing={() => scan(link)} /><Button label="Use pairing link" disabled={!link.trim() || busy} onPress={() => scan(link)} /></View>
+      <Copy variant="caption" muted>Pairing codes expire after five minutes.</Copy>
+    </>}
+    {busy && <Copy>Connecting…</Copy>}
+    {error && <Notice title="Connection needs attention" body={error} />}
+  </Screen>;
+}
