@@ -110,7 +110,7 @@ export function ExportActivity({ workspace, asOf }) {
               ? `${dateLabel(selectedDay.day)} · ${selectedDay.count} stored ${selectedDay.count === 1 ? 'export' : 'exports'}`
               : total === 0
                 ? 'Your cloud exports will appear here. Select a date to see its count.'
-                : 'Select a date to see its export count.'}
+                : ''}
           </p>
           <div
             className="flex items-center gap-1.5"
