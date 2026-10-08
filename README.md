@@ -17,7 +17,7 @@ npm run pair        # Terminal 4: browser OAuth, MCP-generated QR
 npm run pair -- list # Browser OAuth, list your connected phones
 ```
 
-`auth:setup` has already been run in this checkout. `.local/dev-credentials.json` contains the generated password for local accounts `alice` and `bob`; `.env` contains the development admin credentials. These files, SQLite data, and downloaded Keycloak are ignored by Git. A fresh local setup binds to the chosen LAN address and requires the same Wi-Fi network. This checkout now uses the public Funnel setup below. For LAN mode, edit `.env` if your computer's address changes and update the realm audience before issuing new tokens.
+`auth:setup` creates the local realm and development admin credentials in `.env`. User sign-in requires Apple or GitHub; no development passwords are generated. Environment files, SQLite data, and downloaded Keycloak are ignored by Git. Configure a public HTTPS issuer and the social providers below before signing in.
 
 On the hosted domain, the iPhone Camera opens pairing QRs in QR Connect through Universal Links. If Safari opens, tap **Open in QR Connect**. Custom `qrconnect://pair?url=…` links use the same pairing parser; incoming links during an existing session offer **Switch to this connection**, without signing out automatically.
 
@@ -45,7 +45,7 @@ This is public access to the local development Keycloak runtime, with the same g
 
 ## GitHub and Apple sign-in
 
-The web dashboard and the iOS/Android pairing screen include a **Sign in with Apple** button that opens the existing Keycloak browser flow with `kc_idp_hint=apple`. The phone still requires a pairing link and the same account as the agent. Configure the Apple provider below before using these buttons.
+The web dashboard and the iOS/Android pairing screen offer **Sign in with Apple** and **Continue with GitHub** buttons that open the existing Keycloak browser flow with the matching `kc_idp_hint`. The phone still requires a pairing link and the same account as the agent. Configure the Apple provider below before using these buttons.
 
 Provider provisioning is ready; a provider appears on Keycloak's login page only after its real credentials have been configured. Both mobile and MCP clients keep using the same Keycloak OAuth flow. No mobile rebuild is needed.
 
@@ -63,7 +63,7 @@ For this checkout, the callbacks are:
 - GitHub: `https://macbook-pro.tail5cf333.ts.net/auth/realms/qr-connect/broker/github/endpoint`
 - Apple: `https://macbook-pro.tail5cf333.ts.net/auth/realms/qr-connect/broker/apple/endpoint`
 
-The scripts update only these provider configurations. Missing credentials leave existing providers unchanged. Password login remains available as the development fallback. First-time social sign-in creates or explicitly links a Keycloak account through the standard broker flow; accounts are not automatically merged by matching email addresses. To use both GitHub and Apple for one account, link the second identity while authenticated through Keycloak's account console. The Apple adapter's separate token-exchange account-linking feature stays off.
+The scripts update provider configurations and authentication policy. Missing credentials leave existing providers unchanged. The scripts also enforce Apple/GitHub-only browser authentication, disable password grants, password reset and local registration, and disable other identity providers. Requests without a provider hint (including MCP connectors) go to GitHub. Run `npm run auth:social` or `npm run cloud:auth:social` to apply this policy to an existing realm. Existing users and data ownership are preserved, but password-only accounts must have a social identity linked before applying the policy. First-time social sign-in creates a Keycloak account; accounts are not automatically merged by matching email addresses. To use both GitHub and Apple for one account, link the second identity while authenticated through Keycloak's account console. The Apple adapter's separate token-exchange account-linking feature stays off.
 
 A QR belongs to the Keycloak account that requested it. Generate it after signing into the MCP client with the same social account you will use on the phone. An `alice` demo QR cannot be claimed by a newly created GitHub/Apple account. The Apple provider uses browser Sign in with Apple, including its POST callback and dynamically signed client-secret JWT; this is not a native Apple token exchange.
 
@@ -274,6 +274,6 @@ Local file actions verify the original checksum before opening the system share 
 
 ## Cloud dashboard
 
-Open `https://qr-connect-cloud-cody.fly.dev/dashboard` with the same cloud account as the phone to browse stored exports and records, delete cloud files, toggle profile sharing, and block or allow MCP agents. See [dashboard authentication, permissions and setup](docs/cloud-service.md#account-dashboard). The sign-in form and enabled OAuth providers appear directly on the dashboard. `npm run verify:dashboard` builds it and verifies the login relay, invalid-password handling, and callback validation. The browser JavaScript has its own strict DOM type check in the aggregate static gate.
+Open `https://qr-connect-cloud-cody.fly.dev/dashboard` with the same cloud account as the phone to browse stored exports and records, delete cloud files, toggle profile sharing, and block or allow MCP agents. See [dashboard authentication, permissions and setup](docs/cloud-service.md#account-dashboard). The dashboard offers Apple and GitHub sign-in only. `npm run verify:dashboard` builds it and verifies provider redirects, PKCE, and callback validation. The browser JavaScript has its own strict DOM type check in the aggregate static gate.
 
 The cloud dashboard uses the [shadcn `dashboard-01` block](https://ui.shadcn.com/blocks#dashboard-01), generated with `npx shadcn@latest add dashboard-01` and adapted to JavaScript with JSDoc. Its sidebar, cards, table and UI primitives live in `dashboard/`. `npm run dashboard:build` bundles React with esbuild and compiles Tailwind into ignored `dashboard/dist/`; run this before starting the server locally. Docker builds these files in a separate build stage. `npm run verify:cloud` builds the dashboard before its integration checks. Browser code and CSS are included in the aggregate checks; generated bundles are excluded. React Native text/style lint rules apply to the native source, while the web dashboard retains the other lint and type checks. The web UI uses scoped CSS variables and dynamic positioning styles: CSP allows style attributes, with a per-response nonce for Radix’s injected scroll-lock styles; inline scripts remain prohibited.

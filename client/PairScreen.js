@@ -107,10 +107,10 @@ export default function PairScreen() {
                 <Copy style={styles.appleLabel}>Sign in with Apple</Copy>
               </Pressable>
               <Button
-                label="Sign in another way"
+                label="Continue with GitHub"
                 secondary
                 disabled={busy}
-                onPress={() => void run(() => signIn())}
+                onPress={() => void run(() => signIn('github'))}
               />
             </>
           )}

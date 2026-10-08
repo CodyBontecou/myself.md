@@ -1,120 +1,86 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { once } from 'node:events';
-import { dashboardLogin } from '../server/dashboard-login.js';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { Buffer } from 'node:buffer';
+import { webcrypto } from 'node:crypto';
+import { transform } from 'esbuild';
 
-const callback = 'http://localhost:3000/dashboard/callback';
-const state = 's'.repeat(43);
-let origin = '';
-const identity = createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', origin);
-  if (url.pathname.endsWith('/auth')) {
-    res.setHeader('Set-Cookie', 'AUTH_SESSION_ID=fixture; Path=/realm; HttpOnly');
-    res.end(
-      '<form id="kc-form-login" action="/realm/login-actions/authenticate?client_id=qr-dashboard"></form>',
+const source = await transform(readFileSync('dashboard/session.js', 'utf8'), { format: 'cjs' });
+const storage = new Map();
+const location = {
+  origin: 'https://workspace.example',
+  pathname: '/dashboard',
+  search: '?view=explorer',
+  assign: (/** @type {URL} */ url) => {
+    destination = new URL(url);
+  },
+};
+let destination = new URL(location.origin);
+const exports = { exports: {} };
+let exchangeCount = 0;
+const context = {
+  module: exports,
+  crypto: webcrypto,
+  btoa,
+  URL,
+  URLSearchParams,
+  TextEncoder,
+  Uint8Array,
+  location,
+  sessionStorage: {
+    setItem: (/** @type {string} */ key, /** @type {string} */ value) => storage.set(key, value),
+    getItem: (/** @type {string} */ key) => storage.get(key) ?? null,
+    removeItem: (/** @type {string} */ key) => storage.delete(key),
+  },
+  history: { replaceState: () => {} },
+  window: { dispatchEvent: () => {} },
+  Event,
+  fetch: async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
+    if (url === '/dashboard/config')
+      return Response.json({ issuer: 'https://identity.example/realm', clientId: 'qr-dashboard' });
+    assert.equal(url, 'https://identity.example/realm/protocol/openid-connect/token');
+    const body = new URLSearchParams(String(options.body));
+    assert.equal(body.get('grant_type'), 'authorization_code');
+    const digest = await webcrypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(body.get('code_verifier') ?? ''),
     );
-    return;
-  }
-  assert.equal(req.headers.cookie, 'AUTH_SESSION_ID=fixture');
-  assert.equal(req.headers['content-type'], 'application/x-www-form-urlencoded');
-  let body = '';
-  for await (const chunk of req) body += chunk;
-  const fields = new URLSearchParams(body);
-  assert.equal(fields.get('username'), 'fixture');
-  if (fields.get('password') === 'incorrect') {
-    res.end('<form id="kc-form-login"></form><span id="input-error">Invalid credentials</span>');
-    return;
-  }
-  res.writeHead(302, {
-    Location:
-      fields.get('password') === 'unsafe'
-        ? 'https://example.com/steal'
-        : `${callback}?code=fixture&state=${state}`,
-  });
-  res.end();
-});
-identity.listen(0, '127.0.0.1');
-await once(identity, 'listening');
-const address = identity.address();
-assert.ok(address && typeof address !== 'string');
-origin = `http://127.0.0.1:${address.port}`;
-const issuer = `${origin}/realm`;
-const authorization = new URL(`${issuer}/protocol/openid-connect/auth`);
-authorization.search = new URLSearchParams({
-  client_id: 'qr-dashboard',
-  redirect_uri: callback,
-  response_type: 'code',
-  code_challenge_method: 'S256',
-  code_challenge: 'c'.repeat(43),
-  state,
-}).toString();
-const action = `${issuer}/login-actions/authenticate?client_id=qr-dashboard`;
-try {
-  const initial = await dashboardLogin(
-    { url: authorization.href },
-    issuer,
-    'http://localhost:3000',
+    assert.equal(
+      Buffer.from(digest).toString('base64url'),
+      destination.searchParams.get('code_challenge'),
+    );
+    exchangeCount++;
+    return Response.json({ access_token: 'fixture', expires_in: 300 });
+  },
+};
+runInNewContext(source.code, context);
+const session =
+  /** @type {{initializeSession:()=>Promise<boolean>,signIn:(provider:'apple'|'github')=>Promise<void>,hasSession:()=>boolean}} */ (
+    exports.exports
   );
-  assert.ok(initial.html.includes('kc-form-login'));
-  const invalid = await dashboardLogin(
-    {
-      url: action,
-      attempt: initial.attempt,
-      fields: { username: 'fixture', password: 'incorrect' },
-    },
-    issuer,
-    'http://localhost:3000',
-  );
-  assert.ok(invalid.html.includes('Invalid credentials'));
-  assert.equal(invalid.attempt, initial.attempt);
-  const success = await dashboardLogin(
-    {
-      url: action,
-      attempt: initial.attempt,
-      fields: { username: 'fixture', password: 'correct' },
-    },
-    issuer,
-    'http://localhost:3000',
-  );
-  assert.equal(success.redirect, `${callback}?code=fixture&state=${state}`);
-  await assert.rejects(
-    dashboardLogin(
-      {
-        url: action,
-        attempt: initial.attempt,
-        fields: { username: 'fixture', password: 'correct' },
-      },
-      issuer,
-      'http://localhost:3000',
-    ),
-    /expired/,
-  );
-  const unsafe = await dashboardLogin({ url: authorization.href }, issuer, 'http://localhost:3000');
-  await assert.rejects(
-    dashboardLogin(
-      {
-        url: action,
-        attempt: unsafe.attempt,
-        fields: { username: 'fixture', password: 'unsafe' },
-      },
-      issuer,
-      'http://localhost:3000',
-    ),
-    /additional sign-in step/,
-  );
-  await assert.rejects(
-    dashboardLogin({ url: 'http://example.com/auth' }, issuer, 'http://localhost:3000'),
-    /destination/,
-  );
-  const wrongClient = new URL(authorization);
-  wrongClient.searchParams.set('client_id', 'qr-phone');
-  await assert.rejects(
-    dashboardLogin({ url: wrongClient.href }, issuer, 'http://localhost:3000'),
-    /Invalid sign-in/,
-  );
-  console.log(
-    'Dashboard login: cookie continuity, invalid credentials, callback, single-use attempts and destination/client validation passed.',
-  );
-} finally {
-  await new Promise((resolve) => identity.close(resolve));
+await session.initializeSession();
+/** @param {'apple'|'github'} provider */
+async function verifyProvider(provider) {
+  await session.signIn(provider);
+  assert.equal(destination.searchParams.get('kc_idp_hint'), provider);
+  assert.equal(destination.searchParams.get('code_challenge_method'), 'S256');
+  const state = destination.searchParams.get('state');
+  location.pathname = '/dashboard/callback';
+  location.search = `?code=fixture&state=${state}`;
+  assert.equal(await session.initializeSession(), true);
+  assert.equal(session.hasSession(), true);
+  // A callback cannot reuse a consumed login attempt.
+  await assert.rejects(session.initializeSession(), /could not be verified/);
+  location.pathname = '/dashboard';
 }
+await verifyProvider('apple');
+await verifyProvider('github');
+assert.equal(exchangeCount, 2);
+await session.signIn('github');
+location.pathname = '/dashboard/callback';
+location.search = '?code=fixture&state=wrong';
+await assert.rejects(session.initializeSession(), /could not be verified/);
+assert.equal(exchangeCount, 2);
+console.log(
+  'Dashboard OAuth: Apple/GitHub redirects, PKCE exchange, callback state and single-use attempts passed.',
+);

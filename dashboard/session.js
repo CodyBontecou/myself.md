@@ -103,56 +103,11 @@ async function authorizationUrl() {
   }).toString();
   return url;
 }
-/** @param {string} [provider] */
+/** @param {'apple'|'github'} provider */
 export async function signIn(provider) {
   const url = await authorizationUrl();
-  if (provider) url.searchParams.set('kc_idp_hint', provider);
+  url.searchParams.set('kc_idp_hint', provider);
   location.assign(url);
-}
-/** @typedef {{attempt:string,action:string,providers:{id:string,label:string}[],error:string}} LoginForm */
-/** @param {string} url @param {string} [attempt] @param {Record<string,string>} [fields] @returns {Promise<LoginForm|null>} */
-async function loginRequest(url, attempt, fields) {
-  const response = await fetch('/dashboard/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, attempt, fields }),
-    cache: 'no-store',
-  });
-  const data = /** @type {{html:string,attempt:string,redirect:string|null,error?:string}} */ (
-    await response.json()
-  );
-  if (!response.ok) throw new Error(data.error ?? 'Sign-in could not be completed.');
-  if (data.redirect) {
-    location.assign(data.redirect);
-    return null;
-  }
-  const page = new DOMParser().parseFromString(data.html, 'text/html');
-  const form = page.querySelector('form#kc-form-login');
-  const action = form?.getAttribute('action');
-  if (!action)
-    throw new Error(
-      'This account needs an additional sign-in step. Use secure sign-in to continue.',
-    );
-  const providers = [...page.querySelectorAll('#kc-social-providers a')].flatMap((link) => {
-    const href = link.getAttribute('href');
-    const match = href && new URL(href, url).pathname.match(/\/broker\/([^/]+)\/login$/);
-    return match?.[1]
-      ? [{ id: decodeURIComponent(match[1]), label: link.textContent?.trim() ?? match[1] }]
-      : [];
-  });
-  return {
-    attempt: data.attempt,
-    action: new URL(action, url).href,
-    providers,
-    error: page.querySelector('#input-error, .kc-feedback-text')?.textContent?.trim() ?? '',
-  };
-}
-export async function loadLoginForm() {
-  return loginRequest((await authorizationUrl()).href);
-}
-/** @param {LoginForm} form @param {string} username @param {string} password */
-export async function submitLogin(form, username, password) {
-  return loginRequest(form.action, form.attempt, { username, password, credentialId: '' });
 }
 export async function initializeSession() {
   const response = await fetch('/dashboard/config', { cache: 'no-store' });

@@ -10,7 +10,6 @@ import { cloud, history, registerCloudTools, ownCloudDevice } from './cloud.js';
 import { parseProfile } from '../core/profiles.js';
 import { dashboardAsset, dashboardApi } from './dashboard.js';
 import { proxyAuth } from './auth-proxy.js';
-import { dashboardLogin } from './dashboard-login.js';
 import { createPairingUrl, createPairingDeepLink } from '../core/index.js';
 import {
   claim,
@@ -145,13 +144,6 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       dashboardAsset(url.pathname, res, issuer)
     )
       return;
-    if (url.pathname === '/dashboard/login' && req.method === 'POST') {
-      if (req.headers.origin !== new URL(publicUrl).origin)
-        throw new PairingError(403, 'Invalid sign-in origin.');
-      const body = JSON.parse((await bodyBytes(req, 16384)).toString());
-      json(res, 200, await dashboardLogin(body, issuer, publicUrl));
-      return;
-    }
     if (url.pathname === '/dashboard/config') {
       json(res, 200, { issuer, clientId: 'qr-dashboard' });
       return;

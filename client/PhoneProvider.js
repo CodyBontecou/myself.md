@@ -196,7 +196,7 @@ function usePhoneState() {
       setPairing(next);
       locked.current = true;
     },
-    /** @param {string} [provider] */
+    /** @param {'apple'|'github'} provider */
     signIn: async (provider) => setSession(await signIn(pairing?.server ?? '', provider)),
   };
 }

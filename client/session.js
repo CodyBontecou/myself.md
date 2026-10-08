@@ -66,7 +66,7 @@ function trustedUrl(value) {
   if (url.username || url.password) throw new Error('Invalid server URL.');
   return url;
 }
-/** @param {string} server @param {string} [provider] @returns {Promise<Session>} */
+/** @param {string} server @param {'apple'|'github'} provider @returns {Promise<Session>} */
 export async function signIn(server, provider) {
   trustedUrl(server);
   const config = await request(/** @type {string} */ (`${server}/config`));
@@ -86,7 +86,7 @@ export async function signIn(server, provider) {
     extraParams: {
       resource: checked.resource,
       prompt: 'select_account',
-      ...(provider ? { kc_idp_hint: provider } : {}),
+      kc_idp_hint: provider,
     },
   });
   const result = await auth.promptAsync(discovery);

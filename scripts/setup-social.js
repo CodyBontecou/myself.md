@@ -1,3 +1,4 @@
+import { socialAuth } from './social-auth.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createPrivateKey } from 'node:crypto';
 const cloud = process.argv.includes('--cloud');
@@ -64,7 +65,7 @@ async function upsert(alias, displayName, config) {
     enabled: true,
     trustEmail: false,
     storeToken: false,
-    firstBrokerLoginFlowAlias: 'first broker login',
+    firstBrokerLoginFlowAlias: 'social first login',
     config: { ...old?.config, ...config, hideOnLoginPage: 'false' },
   };
   await admin(
@@ -80,6 +81,53 @@ async function upsert(alias, displayName, config) {
   if (!cloud) writeFileSync(realmPath, JSON.stringify(imported, null, 2), { mode: 0o600 });
   console.log(`${displayName} enabled. Callback: ${issuer}/broker/${alias}/endpoint`);
 }
+// Install the same flows for existing realms without replacing users or their subjects.
+const flows = /** @type {{id:string,alias:string}[]} */ (await admin('/authentication/flows'));
+await Promise.all(
+  socialAuth.authenticationFlows.map(async (flow) => {
+    if (!flows.some((item) => item.alias === flow.alias)) {
+      await admin('/authentication/flows', 'POST', {
+        alias: flow.alias,
+        description: flow.description,
+        providerId: flow.providerId,
+        topLevel: true,
+        builtIn: false,
+      });
+    }
+    const path = `/authentication/flows/${flow.alias}`;
+    const installed = /** @type {{providerId:string}[]} */ (await admin(`${path}/executions`));
+    await flow.authenticationExecutions.reduce(async (previous, execution) => {
+      await previous;
+      if (!installed.some((item) => item.providerId === execution.authenticator))
+        await admin(`${path}/executions/execution`, 'POST', {
+          provider: execution.authenticator,
+        });
+    }, Promise.resolve());
+    const executions =
+      /** @type {{id:string,providerId:string,requirement:string,authenticationConfig?:string}[]} */ (
+        await admin(`${path}/executions`)
+      );
+    await executions.reduce(async (previous, execution) => {
+      await previous;
+      const desired = flow.authenticationExecutions.find(
+        (item) => item.authenticator === execution.providerId,
+      );
+      if (!desired)
+        throw new Error(`Unexpected execution in ${flow.alias}: ${execution.providerId}`);
+      await admin(`/authentication/flows/${flow.alias}/executions`, 'PUT', {
+        ...execution,
+        requirement: desired.requirement,
+      });
+      if (execution.providerId === 'identity-provider-redirector') {
+        const config = socialAuth.authenticatorConfig[0];
+        if (execution.authenticationConfig)
+          await admin(`/authentication/config/${execution.authenticationConfig}`, 'PUT', config);
+        else await admin(`/authentication/executions/${execution.id}/config`, 'POST', config);
+      }
+    }, Promise.resolve());
+  }),
+);
+
 const githubId = process.env.GITHUB_OAUTH_CLIENT_ID,
   githubSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
 if (githubId && githubSecret)
@@ -118,3 +166,55 @@ if (serviceId && teamId && keyId && keyPath) {
   console.log(
     'Apple pending: set APPLE_SERVICE_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY_PATH. Existing provider unchanged.',
   );
+
+const providers = /** @type {Provider[]} */ (await admin('/identity-provider/instances'));
+await Promise.all(
+  providers.map(async (provider) => {
+    await admin(`/identity-provider/instances/${provider.alias}`, 'PUT', {
+      ...provider,
+      enabled: ['apple', 'github'].includes(provider.alias) && provider.enabled,
+      firstBrokerLoginFlowAlias: 'social first login',
+    });
+  }),
+);
+const clients =
+  /** @type {{id:string,authenticationFlowBindingOverrides?:Record<string,string>}[]} */ (
+    await admin('/clients')
+  );
+await Promise.all(
+  clients.map(async (client) => {
+    const overrides = { ...client.authenticationFlowBindingOverrides };
+    delete overrides.browser;
+    delete overrides.direct_grant;
+    await admin(`/clients/${client.id}`, 'PUT', {
+      ...client,
+      directAccessGrantsEnabled: false,
+      authenticationFlowBindingOverrides: overrides,
+    });
+  }),
+);
+const settings = {
+  browserFlow: socialAuth.browserFlow,
+  directGrantFlow: socialAuth.directGrantFlow,
+  registrationAllowed: false,
+  resetPasswordAllowed: false,
+};
+await admin('', 'PUT', settings);
+Object.assign(imported, socialAuth);
+imported.identityProviders = providers.map((provider) =>
+  Object.assign(provider, {
+    enabled: ['apple', 'github'].includes(provider.alias) && provider.enabled,
+    firstBrokerLoginFlowAlias: 'social first login',
+  }),
+);
+// Persist policy without copying production provider secrets into the realm seed.
+if (cloud) delete imported.identityProviders;
+for (const client of imported.clients ?? []) {
+  client.directAccessGrantsEnabled = false;
+  delete client.authenticationFlowBindingOverrides?.browser;
+  delete client.authenticationFlowBindingOverrides?.direct_grant;
+}
+writeFileSync(realmPath, JSON.stringify(imported, null, 2), { mode: cloud ? 0o644 : 0o600 });
+console.log(
+  'Apple/GitHub-only authentication enabled. Password login, registration and reset are disabled.',
+);

@@ -11,6 +11,7 @@ import { setNonce } from 'get-nonce';
 import { Dialog } from 'radix-ui';
 import {
   IconBrandApple,
+  IconBrandGithub,
   IconDatabase,
   IconChartBar,
   IconListDetails,
@@ -37,15 +38,7 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import {
-  api,
-  initializeSession,
-  hasSession,
-  signIn,
-  signOut,
-  loadLoginForm,
-  submitLogin,
-} from './session.js';
+import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Explorer } from './explorer.js';
 import { subscribeRoute, routeSnapshot, navigateRoute, recordRoute } from './explorer-route.js';
 import { Button } from './components/ui/button.js';
@@ -771,43 +764,16 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
 }
 /** @param {{ready:boolean}} props */
 function LoginCard({ ready }) {
-  const [form, setForm] = useState(/** @type {import('./session.js').LoginForm|null} */ (null));
-  const [busy, setBusy] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  useEffect(() => {
-    if (!ready) return;
-    let active = true;
-    async function load() {
-      try {
-        const next = await loadLoginForm();
-        if (active) setForm(next);
-      } catch (reason) {
-        if (active) setError(reason instanceof Error ? reason.message : 'Could not load sign-in.');
-      } finally {
-        if (active) setBusy(false);
-      }
-    }
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [ready]);
-  async function submit() {
-    if (!form) return;
+  /** @param {'apple'|'github'} provider */
+  async function login(provider) {
     setBusy(true);
     setError('');
     try {
-      const next = await submitLogin(form, username, password);
-      setForm(next);
-      setPassword('');
-      setError(next?.error ?? '');
+      await signIn(provider);
     } catch (reason) {
-      setPassword('');
       setError(reason instanceof Error ? reason.message : 'Sign-in failed. Please try again.');
-      setForm(null);
-    } finally {
       setBusy(false);
     }
   }
@@ -822,112 +788,30 @@ function LoginCard({ ready }) {
           <CardDescription>Use the same account as QR Connect on your phone.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-          >
-            <div className="space-y-2">
-              <label htmlFor="login-username" className="text-sm font-medium">
-                Email or username
-              </label>
-              <Input
-                id="login-username"
-                name="username"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                disabled={busy}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="login-password" className="text-sm font-medium">
-                Password
-              </label>
-              <Input
-                id="login-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={busy}
-              />
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <Button type="submit" className="w-full" disabled={!ready || busy || !form}>
-              {busy ? 'Connecting…' : 'Sign in'}
-            </Button>
-          </form>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <Button
             type="button"
             className="min-h-11 w-full border border-white bg-black text-white hover:bg-black/90"
             disabled={!ready || busy}
-            onClick={() => {
-              setBusy(true);
-              setError('');
-              void signIn('apple').catch((reason) => {
-                setError(reason instanceof Error ? reason.message : 'Sign-in failed.');
-                setBusy(false);
-              });
-            }}
+            onClick={() => void login('apple')}
           >
             <IconBrandApple aria-hidden="true" className="size-5" />
             Sign in with Apple
           </Button>
-          {Boolean(form?.providers.some((provider) => provider.id !== 'apple')) && (
-            <>
-              <div className="flex items-center gap-3">
-                <Separator className="flex-1" />
-                <span className="text-xs text-muted-foreground">or continue with</span>
-                <Separator className="flex-1" />
-              </div>
-              <div className="grid gap-2">
-                {form?.providers
-                  .filter((provider) => provider.id !== 'apple')
-                  .map((provider) => (
-                    <Button
-                      key={provider.id}
-                      variant="outline"
-                      className="w-full"
-                      disabled={busy}
-                      onClick={() => {
-                        setBusy(true);
-                        void signIn(provider.id).catch((reason) => {
-                          setError(reason instanceof Error ? reason.message : 'Sign-in failed.');
-                          setBusy(false);
-                        });
-                      }}
-                    >
-                      {provider.label}
-                    </Button>
-                  ))}
-              </div>
-            </>
-          )}
-          {!busy && !form && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setBusy(true);
-                void signIn().catch((reason) => {
-                  setError(reason instanceof Error ? reason.message : 'Sign-in failed.');
-                  setBusy(false);
-                });
-              }}
-            >
-              Continue with secure sign-in
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            disabled={!ready || busy}
+            onClick={() => void login('github')}
+          >
+            <IconBrandGithub aria-hidden="true" className="size-5" />
+            Continue with GitHub
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -19,7 +19,7 @@ try {
   const realm = JSON.parse(readFileSync(join(temporary, '.local/realm/qr-connect.json'), 'utf8'));
   realm.users = [];
   realm.sslRequired = 'all';
-  realm.registrationAllowed = true;
+  realm.registrationAllowed = false;
   const resource = `https://${domain}/mcp`;
   for (const scope of realm.clientScopes)
     for (const mapper of scope.protocolMappers ?? [])

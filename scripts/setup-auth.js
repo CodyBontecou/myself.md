@@ -1,3 +1,4 @@
+import { socialAuth } from './social-auth.js';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
@@ -8,14 +9,13 @@ const ip =
     .flat()
     .find((item) => item?.family === 'IPv4' && !item.internal)?.address ?? 'localhost';
 const origin = `http://${ip}:3000`;
-const password = randomBytes(18).toString('base64url');
 const adminPassword = randomBytes(18).toString('base64url');
 mkdirSync('.local/realm', { recursive: true });
 const realm = {
   realm: 'qr-connect',
   enabled: true,
   sslRequired: 'none',
-  registrationAllowed: false,
+  ...socialAuth,
   defaultDefaultClientScopes: ['profile', 'qr-connect'],
   clientProfiles: {
     profiles: [
@@ -112,15 +112,7 @@ const realm = {
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
   ],
-  users: ['alice', 'bob'].map((username) => ({
-    username,
-    enabled: true,
-    email: `${username}@example.com`,
-    emailVerified: true,
-    firstName: username,
-    lastName: 'Development',
-    credentials: [{ type: 'password', value: password, temporary: false }],
-  })),
+  users: [],
   components: {
     'org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy': [
       {
@@ -154,11 +146,6 @@ writeFileSync(
   `PUBLIC_URL=${origin}\nOAUTH_ISSUER=http://${ip}:8080/realms/qr-connect\nALLOW_HTTP_DEV=1\nDEV_HOST=${ip}\nKEYCLOAK_URL=http://${ip}:8080\nEXPO_PUBLIC_ALLOW_HTTP=1\nKC_BOOTSTRAP_ADMIN_USERNAME=admin\nKC_BOOTSTRAP_ADMIN_PASSWORD=${adminPassword}\n`,
   { mode: 0o600 },
 );
-writeFileSync(
-  '.local/dev-credentials.json',
-  JSON.stringify({ users: ['alice', 'bob'], password }, null, 2),
-  { mode: 0o600 },
-);
 console.log(
-  'Created .env, local realm, and .local/dev-credentials.json. Start npm run auth:start.',
+  'Created .env and social-only realm. Start npm run auth:start and configure Apple/GitHub.',
 );
