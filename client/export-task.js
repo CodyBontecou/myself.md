@@ -107,6 +107,7 @@ export async function exportNow(session, profile, progress) {
     ) === true;
   try {
     state.files = [];
+    let failedSources = 0;
     for (const d of dates) {
       // Daily output must be written sequentially.
       // oxlint-disable-next-line eslint/no-await-in-loop
@@ -122,8 +123,9 @@ export async function exportNow(session, profile, progress) {
         progress,
       );
       state.files.push(...result.files);
+      failedSources += result.failedSources;
     }
-    state.message = `Exported ${dates.length} days.`;
+    state.message = `Exported ${dates.length} days.${failedSources ? ` Partial export: ${failedSources} source failures across these days. See file metadata for details.` : ''}`;
     if (!valid()) throw new Error('Export cancelled: profile changed.');
     const latest = scheduleState(session.deviceId, profile);
     latest.files = state.files;
@@ -178,7 +180,7 @@ export async function runScheduledExports() {
           if (!valid()) break;
           job.days.shift();
           state.files = result.files;
-          state.message = `Saved ${day.day} · ${result.count} records`;
+          state.message = `Saved ${day.day} · ${result.count} records${result.failedSources ? ` · Partial export: ${result.failedSources} source failures. See file metadata for details.` : ''}`;
           store(session.deviceId, profile.id, state);
         }
         if (valid() && !job.days.length) {
