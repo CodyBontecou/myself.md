@@ -3,7 +3,7 @@ primary_region = "cdg"
 [build]
   dockerfile = "Identity.Dockerfile"
 [env]
-  KC_HOSTNAME = "https://qr-connect-cloud-cody.fly.dev/auth"
+  KC_HOSTNAME = "https://myself.md/auth"
   KC_HTTP_HOST = "::"
   KC_HTTP_ENABLED = "true"
   KC_HTTP_RELATIVE_PATH = "/auth"

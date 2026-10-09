@@ -23,6 +23,7 @@ await once(identity, 'listening');
 const identityAddress = identity.address();
 assert.ok(identityAddress && typeof identityAddress !== 'string');
 const issuer = `http://127.0.0.1:${identityAddress.port}/realms/test`;
+const accountNamespace = 'https://previous.example/auth/realms/test';
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
 await once(reservation, 'listening');
@@ -39,6 +40,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     PUBLIC_URL: origin,
     PUBLIC_URL_ALIASES: 'https://legacy.example',
     OAUTH_ISSUER: issuer,
+    ACCOUNT_NAMESPACE: accountNamespace,
     ALLOW_HTTP_DEV: '1',
     AUTH_PROXY: '0',
     IOS_APP_ID: '67KC823C9A.com.myself.md',
@@ -176,8 +178,16 @@ try {
   assert.equal(legacyIdentity.status, 200);
   assert.equal(
     z.object({ subject: z.string() }).parse(legacyIdentity.value).subject,
-    `${issuer}|alice`,
+    `${accountNamespace}|alice`,
   );
+  const previousIssuerToken = await new SignJWT({ scope: 'qr-connect', azp: 'qr-phone' })
+    .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
+    .setIssuer(accountNamespace)
+    .setAudience(`${origin}/mcp`)
+    .setSubject('alice')
+    .setExpirationTime('5m')
+    .sign(privateKey);
+  assert.equal((await request('/api/devices', previousIssuerToken)).status, 401);
   const unrelatedToken = await token('alice', 'qr-phone', 'https://untrusted.example/mcp');
   assert.equal((await request('/api/devices', unrelatedToken)).status, 401);
   const favicon = await fetch(`${origin}/dashboard/favicon.svg`);

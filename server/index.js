@@ -24,6 +24,10 @@ import {
 const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:3000';
 const issuer = process.env.OAUTH_ISSUER;
 if (!issuer) throw new Error('Run npm run auth:setup, then start Keycloak.');
+// A hostname migration keeps the same realm users and encrypted account partitions.
+const accountNamespace = process.env.ACCOUNT_NAMESPACE ?? issuer;
+if (!accountNamespace || accountNamespace.includes('|'))
+  throw new Error('Account namespace must be a nonempty value without a subject delimiter.');
 if (
   process.env.ALLOW_HTTP_DEV !== '1' &&
   (!publicUrl.startsWith('https://') || !issuer.startsWith('https://'))
@@ -266,7 +270,7 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       json(res, 403, { error: 'qr-connect scope required.' });
       return;
     }
-    const subject = `${issuer}|${payload.sub}`;
+    const subject = `${accountNamespace}|${payload.sub}`;
     if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {
       if (payload.azp !== 'qr-dashboard')
         throw new PairingError(403, 'Dashboard OAuth client required.');

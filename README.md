@@ -1,6 +1,6 @@
 # myself.md
 
-The app name and primary domain are **myself.md**. The domain is registered through 14 August 2027 and uses Cloudflare nameservers (`bill.ns.cloudflare.com`, `naya.ns.cloudflare.com`), verified in the registrar account on 9 October 2026. The app is live at [myself.md](https://myself.md/dashboard), with DNS, TLS and OAuth cutover completed on 9 October 2026. The existing Fly origin remains available for identity and older connections; see the [deployment configuration](docs/cloud-service.md#myselfmd-domain-cutover).
+The app name and primary domain are **myself.md**. The domain is registered through 14 August 2027 and uses Cloudflare nameservers (`bill.ns.cloudflare.com`, `naya.ns.cloudflare.com`), verified in the registrar account on 9 October 2026. The app is live at [myself.md](https://myself.md/dashboard), with DNS, TLS and OAuth cutover completed on 9 October 2026. Authentication, including sign-out, uses myself.md. The existing Fly origin remains available for older service links; see the [deployment configuration](docs/cloud-service.md#myselfmd-domain-cutover).
 
 Branding uses a lowercase `myself.md` wordmark and an `m.` app mark on the existing warm neutral palette. Native icons are configured in `app.json`; run `npm run prebuild` after changing them. The generated iOS project and build scheme are `myselfmd`.
 
