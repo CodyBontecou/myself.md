@@ -139,9 +139,8 @@ export function DatasetDocumentation({ dataset }) {
                 Individual dataset types
               </h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Try the checkboxes to update the export JSON preview. These are documentation
-                controls; they do not change your phone, permissions, or account. Disabling a type
-                excludes it from subsequent reads and exports; it does not delete existing files.
+                Explore the data points you can access through the app. Select a type to see sample
+                values and the JSON structure it provides in an export.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Input
