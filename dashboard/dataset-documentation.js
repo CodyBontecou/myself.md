@@ -29,26 +29,22 @@ function JsonExample({ title, value }) {
 }
 /** @param {{dataset:string}} props */
 export function DatasetDocumentation({ dataset }) {
-  const included =
-    dataset === 'all'
-      ? Object.values(datasets)
-      : [datasets[/** @type {keyof typeof datasets} */ (dataset)]];
-  const data =
-    dataset === 'all'
-      ? {
-          ...datasets.health,
-          title: 'All data',
-          introduction:
-            'Configure health, screen time, and location together in one profile. Choose individual types across all datasets and see their combined export JSON.',
-          sources: included.map((item) => `${item.title}: ${item.sources}`).join(' '),
-          limitations: included.flatMap((item) => item.limitations),
-        }
-      : (included[0] ?? datasets.health);
-  const groups = included.flatMap((item) =>
+  const [filter, setFilter] = useState(dataset);
+  const included = Object.values(datasets);
+  const data = {
+    ...datasets.health,
+    sources: included.map((item) => `${item.title}: ${item.sources}`).join(' '),
+    limitations: included.flatMap((item) => item.limitations),
+  };
+  const selectable =
+    filter === 'all'
+      ? included
+      : included.filter((item) => datasets[/** @type {keyof typeof datasets} */ (filter)] === item);
+  const groups = selectable.flatMap((item) =>
     item.groups.map((group) => ({
       ...group,
       domain: item.domain,
-      title: dataset === 'all' ? `${item.title} · ${group.title}` : group.title,
+      title: `${item.title} · ${group.title}`,
     })),
   );
   const [search, setSearch] = useState('');
@@ -122,39 +118,23 @@ export function DatasetDocumentation({ dataset }) {
                 </p>
                 <DownloadBadges />
               </section>
-              <nav aria-label="Dataset documentation" className="flex flex-wrap gap-2">
+              <div aria-label="Filter dataset types" className="flex flex-wrap gap-2">
                 {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (
                   <Button
                     key={key}
-                    variant={key === dataset ? 'secondary' : 'ghost'}
-                    asChild
+                    type="button"
+                    variant={key === filter ? 'secondary' : 'ghost'}
                     size="sm"
+                    aria-pressed={key === filter}
+                    aria-controls="dataset-types"
+                    onClick={() => setFilter(key)}
                   >
-                    <a
-                      href={`/datasets/${key}`}
-                      aria-current={key === dataset ? 'page' : undefined}
-                      onClick={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return;
-                        event.preventDefault();
-                        if (key === dataset) return;
-                        history.pushState(null, '', `/datasets/${key}`);
-                        window.dispatchEvent(new Event('popstate'));
-                      }}
-                    >
-                      {item.title}
-                    </a>
+                    {item.title}
                   </Button>
                 ))}
-              </nav>
+              </div>
             </div>
-            <section className="min-w-0 space-y-5" aria-labelledby="types-title">
+            <section id="dataset-types" className="min-w-0 space-y-5" aria-labelledby="types-title">
               <h2 id="types-title" className="text-xl font-semibold">
                 Individual dataset types
               </h2>
@@ -288,7 +268,7 @@ export function DatasetDocumentation({ dataset }) {
                   value={examples[index]}
                 />
               ))}
-              {data.domain === 'time' && (
+              {included.some((item) => item.domain === 'time') && (
                 <JsonExample
                   title="Android application record"
                   value={record('time', 'applications', 'native-usage', {
@@ -301,7 +281,7 @@ export function DatasetDocumentation({ dataset }) {
                   })}
                 />
               )}
-              {data.domain === 'health' && (
+              {included.some((item) => item.domain === 'health') && (
                 <JsonExample
                   title="Android Health Connect record · Steps"
                   value={record('health', 'Steps', 'health-connect', {
