@@ -1139,7 +1139,7 @@ function App() {
               {isDemo && !exploring && view === 'exports' && (
                 <DemoIntroduction onNavigate={navigateRoute} />
               )}
-              {isDemo && currentView && (
+              {isDemo && currentView && currentView.id !== 'exports' && (
                 <header className="space-y-2 px-4 lg:px-6">
                   <h2 className="text-2xl font-semibold tracking-tight">{currentView.title}</h2>
                   <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
