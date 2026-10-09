@@ -106,11 +106,6 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
               }
             />
           </Group>
-          {!search && (
-            <Copy variant="caption" muted>
-              New types stay off. Source permissions still apply.
-            </Copy>
-          )}
         </View>
       }
       ListEmptyComponent={
