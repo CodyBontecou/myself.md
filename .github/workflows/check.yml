@@ -1,4 +1,4 @@
-name: Checks and deployment
+name: Checks
 on:
   push:
   pull_request:
@@ -15,19 +15,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-  deploy:
-    name: Deploy website
-    needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    concurrency:
-      group: fly-website-production
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-      - name: Deploy website and dashboard
-        run: flyctl deploy --config deploy/fly/service.toml --remote-only --ha=false --yes
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
