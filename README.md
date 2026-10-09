@@ -24,6 +24,10 @@ Self-hosting currently retains the app's usage allowance and purchase verificati
 
 The landing page links to [the GitHub repository](https://github.com/CodyBontecou/agent-bridge). App Store, Google Play, and F-Droid badges show “Coming soon” until the myself.md listings are available. Badge markup lives in `dashboard/download-badges.js`; the App Store and Play artwork and dimensions match the [healthmd.app](https://healthmd.app/) reference.
 
+## Remote phone updates
+
+See [remote mobile updates](docs/mobile-updates.md) for EAS account linking, iPhone enrollment, preview builds, over-the-air updates and unattended GitHub releases. Native changes require another installed build.
+
 ## Run locally
 
 Requires Node 22.13+, Java 21+, and the native platform toolchain. In this directory:

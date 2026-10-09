@@ -15,7 +15,8 @@
           "NSAllowsLocalNetworking": true
         },
         "UIFileSharingEnabled": true,
-        "LSSupportsOpeningDocumentsInPlace": true
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.family-controls": true,
@@ -117,8 +118,19 @@
     ],
     "scheme": ["qrconnect", "agentbridge"],
     "updates": {
-      "enabled": false
+      "enabled": true,
+      "url": "https://u.expo.dev/17768428-9e08-4033-9e72-2f630bbaa9aa"
     },
-    "description": "Your data, with context. Choose what to share with your agents."
+    "description": "Your data, with context. Choose what to share with your agents.",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "17768428-9e08-4033-9e72-2f630bbaa9aa"
+      }
+    },
+    "owner": "codybontecou"
   }
 }
