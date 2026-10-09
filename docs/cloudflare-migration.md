@@ -70,7 +70,7 @@ Recovery backups stay private in .local/identity-migration and .local/worker-cut
 
 ## Final production verification
 
-Identity is live in Worker version `fcf6888e-c391-41ed-bcaa-440f41d35dee` on the `myself.md` custom domain. The final stopped-Keycloak PostgreSQL rows matched the D1 import: two users and two provider links. The complete final PostgreSQL recovery dump passed its format check. Live GitHub sign-in completed and the authenticated dashboard displayed all seven original exports. Apple credentials and callback URLs passed provider/protocol checks; a real Apple account login and physical-device sign-in remain release checks. Native iOS, Android and web bundles passed.
+Identity cutover was verified in Worker version `fcf6888e-c391-41ed-bcaa-440f41d35dee` on the `myself.md` custom domain. The final stopped-Keycloak PostgreSQL rows matched the D1 import: two users and two provider links. The complete final PostgreSQL recovery dump passed its format check. Live GitHub sign-in completed and the authenticated dashboard displayed all seven original exports. Apple credentials and callback URLs passed provider/protocol checks; a real Apple account login and physical-device sign-in remain release checks. Native iOS, Android and web bundles passed.
 
 Workers and Account objects obtain hosted signing keys directly through the shared identity handler, avoiding a network round trip to the public hostname. JWT issuer, audience, signature, scope and account ownership checks remain enforced at both boundaries. Local workerd integration covers native PKCE, refresh retries and isolation, agent consent, MCP calls and first-party authorization.
 
