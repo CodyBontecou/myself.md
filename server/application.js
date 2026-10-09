@@ -2,7 +2,7 @@ import { accountDeletionNotice } from '../core/account-deletion.js';
 import { existingCustomerGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { z } from 'zod';
@@ -30,6 +30,7 @@ async function bodyBytes(req, limit) {
 /** @typedef {{accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
+ * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
  * @returns {import('node:http').RequestListener} */
 export function createApplication(
   config,
@@ -60,6 +61,7 @@ export function createApplication(
     pending,
     status,
   },
+  options = {},
 ) {
   const publicUrl = config.PUBLIC_URL ?? 'http://localhost:3000';
   const issuer = config.OAUTH_ISSUER;
@@ -90,7 +92,10 @@ export function createApplication(
   const iosAppId = config.IOS_APP_ID;
   if (iosAppId && !/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/.test(iosAppId))
     throw new Error('Invalid IOS_APP_ID for Universal Links.');
-  const jwks = createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`));
+  const jwks = createRemoteJWKSet(
+    new URL(`${issuer}/protocol/openid-connect/certs`),
+    options.jwksFetch ? { [customFetch]: options.jwksFetch } : {},
+  );
   const metadata = {
     resource,
     authorization_servers: [issuer],
@@ -143,6 +148,26 @@ export function createApplication(
       );
     }
 
+    mcp.registerTool(
+      'delete_account',
+      {
+        description:
+          'Permanently delete the authenticated myself.md account and associated cloud data. Obtain the user’s explicit deletion confirmation first; inspect get_account_deletion for the effects and exact subject. Account-linked lifetime access is lost. Safe to retry with the same subject. Completion requires all cleanup to succeed; the receipt verifies pending cleanup after tokens are revoked.',
+        inputSchema: z
+          .object({ subject: z.literal(subject), confirmation: z.literal('DELETE') })
+          .strict(),
+        annotations: { destructiveHint: true, idempotentHint: true },
+      },
+      async () => {
+        if (!accountApi)
+          throw new PairingError(503, 'Account deletion requires the hosted identity service.');
+        const result = await accountApi(subject, 'delete');
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: { ...result },
+        };
+      },
+    );
     if (!['active', 'unavailable'].includes((await deletionStatus(subject)).state)) return mcp;
     mcp.registerTool(
       'get_lifetime_access',

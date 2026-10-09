@@ -562,7 +562,28 @@ try {
     ).status,
     400,
   );
-  const removed = await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' });
+  const unconfirmedDelete = await client.callTool({
+    name: 'delete_account',
+    arguments: { subject, confirmation: 'delete' },
+  });
+  assert.equal(unconfirmedDelete.isError, true);
+  const wrongAccountDelete = await client.callTool({
+    name: 'delete_account',
+    arguments: { subject: 'other-account', confirmation: 'DELETE' },
+  });
+  assert.equal(wrongAccountDelete.isError, true);
+  const [removed, concurrentRemoval, agentRemoval] = await Promise.all([
+    ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
+    ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
+    client.callTool({ name: 'delete_account', arguments: { subject, confirmation: 'DELETE' } }),
+  ]);
+  assert.ok(removed);
+  assert.equal(concurrentRemoval?.status, 200);
+  assert.equal(agentRemoval?.isError, undefined);
+  assert.equal(
+    z.object({ state: z.string() }).parse(agentRemoval?.structuredContent).state,
+    'completed',
+  );
   assert.equal(removed.status, 200, await removed.clone().text());
   const deletion = z
     .object({ state: z.literal('completed'), statusUrl: z.string() })

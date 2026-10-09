@@ -1,6 +1,7 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { accountDeletionNotice } from '../core/account-deletion.js';
-import { deleteIdentity } from './identity.js';
+import { deleteIdentity, identityRequest } from './identity.js';
 import { DurableObject } from 'cloudflare:workers';
 import { handleAsNodeRequest } from 'cloudflare:node';
 import { createServer } from 'node:http';
@@ -32,8 +33,12 @@ export class Account extends DurableObject {
     super(ctx, env);
     /** @type {Promise<import('../core/account-deletion.js').DeletionStatus>|null} */
     this.deleting = null;
-    /** @type {Set<Promise<void>>} */
+    /** @type {Set<object>} */
     this.activeRequests = new Set();
+    /** @type {AsyncLocalStorage<object>} */
+    this.requestContext = new AsyncLocalStorage();
+    /** @type {Set<()=>void>} */
+    this.drainers = new Set();
     this.db = objectDatabase(this.ctx.storage);
     this.billing = new BillingStore(this.db);
     this.pairing = new PairingStore(this.db);
@@ -149,6 +154,9 @@ export class Account extends DurableObject {
         proxyAuth,
         dashboardAsset: () => false,
       },
+      this.env.IDENTITY_ENABLED === '1'
+        ? { jwksFetch: (url, options) => identityRequest(new Request(url, options), this.env) }
+        : {},
     );
   }
   /** @param {string} subject */
@@ -187,6 +195,8 @@ export class Account extends DurableObject {
   }
   /** @param {string} subject */
   async deleteAccount(subject) {
+    const initiatingRequest = this.requestContext.getStore();
+    if (initiatingRequest) this.releaseRequest(initiatingRequest);
     if (this.deleting) return this.deleting;
     if (this.deletionStatus(subject).state === 'completed') return this.deletionStatus(subject);
     if (this.env.IDENTITY_ENABLED !== '1')
@@ -196,7 +206,8 @@ export class Account extends DurableObject {
       .setAlarm(Date.now() + 60000)
       .then(async () => {
         // Previously admitted uploads/purchase verification must settle before their records are erased.
-        await Promise.all(this.activeRequests);
+        if (this.activeRequests.size)
+          await new Promise((resolve) => this.drainers.add(() => resolve(undefined)));
         return this.purgeAccount(subject);
       })
       .finally(() => {
@@ -285,20 +296,23 @@ export class Account extends DurableObject {
   async fetch(request) {
     const ownerDelete =
       new URL(request.url).pathname === '/api/account' && request.method === 'DELETE';
-    /** @type {(()=>void)|undefined} */
-    let finish;
-    /** @type {Promise<void>} */
-    const active = new Promise((resolve) => {
-      finish = () => resolve(undefined);
-    });
+    const active = {};
     if (!ownerDelete) this.activeRequests.add(active);
     try {
-      return await this.serve(request);
+      return await this.requestContext.run(active, () => this.serve(request));
     } finally {
-      finish?.();
-      this.activeRequests.delete(active);
+      this.releaseRequest(active);
     }
   }
+  /** @param {object} active */
+  releaseRequest(active) {
+    this.activeRequests.delete(active);
+    if (!this.activeRequests.size) {
+      for (const done of this.drainers) done();
+      this.drainers.clear();
+    }
+  }
+
   /** @param {Request} request */
   async serve(request) {
     const path = new URL(request.url).pathname;

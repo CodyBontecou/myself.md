@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
 import { verifyMigrationPurchase } from '../server/migration-purchases.js';
 import { PairingError } from '../server/errors.js';
@@ -163,6 +163,12 @@ export default {
       try {
         const jwks = createRemoteJWKSet(
           new URL(`${env.OAUTH_ISSUER}/protocol/openid-connect/certs`),
+          env.IDENTITY_ENABLED === '1'
+            ? {
+                [customFetch]: (keyUrl, options) =>
+                  identityRequest(new Request(keyUrl, options), env),
+              }
+            : {},
         );
         ({ payload } = await jwtVerify(token, jwks, {
           issuer: env.OAUTH_ISSUER,
