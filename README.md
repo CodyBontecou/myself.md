@@ -12,6 +12,12 @@ Plain JavaScript Expo/React Native app for iOS and Android, dependency-free shar
 
 Project code is licensed under [AGPL-3.0-only](LICENSE). Existing third-party licenses and store artwork notices are preserved in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
+## Self hosting
+
+myself.md is open source so you can run your own instance and control where your data is stored. Follow the [self-hosting guide](docs/self-hosting.md) to deploy on your own infrastructure, configure sign-in, connect your phone and MCP clients, and maintain backups and upgrades. The guide uses the portable deployment files in this repository and does not require a particular hosting provider.
+
+Self-hosting currently retains the app's usage allowance and purchase verification. See the guide's [billing and mobile build requirements](docs/self-hosting.md#billing-and-mobile-builds) before deploying.
+
 The landing page links to [the GitHub repository](https://github.com/CodyBontecou/agent-bridge). App Store, Google Play, and F-Droid badges show “Coming soon” until the myself.md listings are available. Badge markup lives in `dashboard/download-badges.js`; the App Store and Play artwork and dimensions match the [healthmd.app](https://healthmd.app/) reference.
 
 ## Run locally

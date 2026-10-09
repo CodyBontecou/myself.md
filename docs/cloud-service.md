@@ -28,11 +28,13 @@ Enter an HTTPS endpoint and optionally save a bearer credential on the profile c
 
 ## Deployment
 
+For a new instance on your own infrastructure, follow the platform-neutral [self-hosting guide](self-hosting.md), including social sign-in provisioning, backups, and billing requirements. The provider-specific notes below describe the project's existing hosted deployment.
+
 The service is a single Node instance with a persistent SQLite volume; live phone requests remain transient and must return to that instance. Cloud content and pairing metadata survive restarts. This configuration supports one replica; horizontal replication requires migrating persistence and transient phone queues to shared services.
 
 1. Run `npm run cloud:setup -- exports.your-domain.example` on the deployment host. This creates ignored `.env.cloud` secrets and a production realm without development users; it does not overwrite existing configuration. Back up the encryption key, realm and volumes. Existing local accounts are separate from this new production realm.
 2. Point that domain at the host and make ports 80/443 reachable. Install Docker Engine and the Compose plugin.
-3. Run `npm run cloud:start`. `compose.cloud.yaml` starts the service, production Keycloak with PostgreSQL, and Caddy with automatic HTTPS. Only Caddy exposes host ports. Keycloak self-registration is enabled; configure registration policy, email and abuse controls for your audience before opening enrollment.
+3. Run `npm run cloud:start`. `compose.cloud.yaml` starts the service, production Keycloak with PostgreSQL, and Caddy with automatic HTTPS. Only Caddy exposes host ports. Password sign-in and local registration are disabled; [configure GitHub sign-in](self-hosting.md#4-configure-github-sign-in) before users can authenticate. Apple requires an additional provider adapter and credentials.
 4. Check `https://<domain>/health`, `/config`, the protected-resource metadata URL, and OAuth discovery at `/auth/realms/qr-connect/.well-known/openid-configuration`.
 5. Pair the phone with the hosted account, review a cloud profile, authorize uploads, export, then enable cloud MCP access.
 
