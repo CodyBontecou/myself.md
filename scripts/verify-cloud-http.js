@@ -12,6 +12,8 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
+import { privacyPolicy } from '../core/privacy.js';
+import { chromium } from 'playwright';
 const queryId = (/** @type {unknown} */ value) =>
   z.object({ requestId: z.string() }).parse(value).requestId;
 const r2 = process.argv.includes('--r2') ? await r2Fixture() : null;
@@ -195,6 +197,37 @@ try {
   assert.ok((await home.text()).includes('datasets and example exports'));
   assert.equal((await fetch(`${origin}/demo`)).status, 200);
   assert.equal((await fetch(`${origin}/demo/`)).status, 200);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    await Promise.all(
+      ['/privacy', '/privacy/', '/support', '/support/'].map(async (path) => {
+        const page = await browser.newPage();
+        const response = await page.goto(`${origin}${path}`);
+        assert.equal(response?.status(), 200);
+        await page
+          .getByRole('heading', {
+            name: path.startsWith('/privacy') ? privacyPolicy.title : 'Contact support',
+            exact: true,
+          })
+          .waitFor();
+        assert.equal(
+          await page
+            .getByRole('link', { name: privacyPolicy.supportEmail, exact: true })
+            .getAttribute('href'),
+          `mailto:${privacyPolicy.supportEmail}`,
+        );
+        assert.equal(
+          await page
+            .getByRole('link', { name: 'GitHub issues (public)', exact: true })
+            .getAttribute('href'),
+          privacyPolicy.issuesUrl,
+        );
+        await page.close();
+      }),
+    );
+  } finally {
+    await browser.close();
+  }
   const appStoreBadge = await fetch(`${origin}/dashboard/store-badges/app-store.svg`);
   assert.equal(appStoreBadge.status, 200);
   assert.match(appStoreBadge.headers.get('content-type') ?? '', /image\/svg\+xml/);
@@ -269,6 +302,14 @@ try {
   const tools = await client.listTools();
   assert.ok(tools.tools.some((t) => t.name === 'read_cloud_export'));
   assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
+  assert.ok(tools.tools.some((t) => t.name === 'get_privacy_policy'));
+  const policyResult = await client.callTool({ name: 'get_privacy_policy', arguments: {} });
+  assert.equal(policyResult.isError, undefined);
+  assert.deepEqual(policyResult.structuredContent, privacyPolicy);
+  assert.equal(
+    (await client.callTool({ name: 'get_privacy_policy', arguments: { subject: 'bob' } })).isError,
+    true,
+  );
   const accessSchema = z.object({
     allowance: z.object({
       unlocked: z.boolean(),

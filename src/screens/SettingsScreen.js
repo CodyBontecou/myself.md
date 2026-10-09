@@ -4,6 +4,7 @@ import { openFeedback } from '../../client/gripe.js';
 import { useBilling } from '../../client/BillingPaywalls';
 import { router } from 'expo-router';
 import { Screen, Copy, Group, Row, Divider, SectionHeader } from '../components/ui';
+import PrivacyLinks from '../components/PrivacyLinks';
 export default function SettingsScreen() {
   const billing = useBilling();
   return (
@@ -48,6 +49,10 @@ export default function SettingsScreen() {
           subtitle="Pair, check connection, or disconnect"
           onPress={() => router.push('/pair')}
         />
+      </Group>
+      <SectionHeader title="Privacy & support" />
+      <Group>
+        <PrivacyLinks />
       </Group>
       <Copy variant="caption" muted>
         myself.md · You choose which data your agents can access.

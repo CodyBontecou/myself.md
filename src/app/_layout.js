@@ -71,6 +71,7 @@ function RootStack() {
             <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
             <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
+            <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
           </Stack>
         </Provider>
       </ThemeProvider>

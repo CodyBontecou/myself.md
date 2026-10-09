@@ -1,4 +1,5 @@
 import { accountDeletionNotice } from '../core/account-deletion.js';
+import { privacyPolicy } from '../core/privacy.js';
 import { existingCustomerGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
@@ -169,6 +170,19 @@ export function createApplication(
       },
     );
     if (!['active', 'unavailable'].includes((await deletionStatus(subject)).state)) return mcp;
+    mcp.registerTool(
+      'get_privacy_policy',
+      {
+        description:
+          'Read the public privacy policy and support contact, including health/location collection, cloud retention, deletion and copies held by AI providers. No data grant or user data is needed.',
+        inputSchema: z.object({}).strict(),
+        annotations: { readOnlyHint: true },
+      },
+      async () => ({
+        content: [{ type: 'text', text: JSON.stringify(privacyPolicy) }],
+        structuredContent: privacyPolicy,
+      }),
+    );
     mcp.registerTool(
       'get_lifetime_access',
       {

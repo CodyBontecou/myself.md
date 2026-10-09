@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { View } from 'react-native';
 import OnboardingFrame, { OnboardingButton } from '../../components/OnboardingFrame';
 import { Row } from '../../components/ui';
+import PrivacyLinks from '../../components/PrivacyLinks';
 
 export default function Privacy() {
   return (
@@ -30,6 +31,11 @@ export default function Privacy() {
           title="Disconnect anytime"
           subtitle="Agent access and scheduled exports stop. Previously shared files stay at their destination."
         />
+        <Row
+          title="AI providers keep their own copies"
+          subtitle="Revoking access cannot recall shared results. Provider retention and training depend on its policy and your settings."
+        />
+        <PrivacyLinks />
       </View>
     </OnboardingFrame>
   );

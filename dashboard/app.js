@@ -45,6 +45,7 @@ import {
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
 import { AccountDeletion } from './account-deletion.js';
+import { PrivacyPage } from './privacy.js';
 import { MigrationClaim } from './migration-claim.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
@@ -191,6 +192,10 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy and support">
+          <a href="/privacy">Privacy policy</a>
+          <a href="/support">Support</a>
+        </nav>
         <SidebarMenu>
           <SidebarMenuItem>
             {isDemo ? (
@@ -1274,7 +1279,9 @@ function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
   const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return pathname === '/delete-account' ||
+  return /^\/(privacy|support)\/?$/.test(pathname) ? (
+    <PrivacyPage support={pathname.startsWith('/support')} />
+  ) : pathname === '/delete-account' ||
     (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
     <AccountDeletion />
   ) : pathname === '/claim' ||

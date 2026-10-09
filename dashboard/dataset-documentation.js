@@ -7,6 +7,7 @@ import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
 import { DownloadBadges } from './download-badges.js';
 import { Button } from './components/ui/button.js';
+import { privacyPolicy } from '../core/privacy.js';
 import { Input } from './components/ui/input.js';
 
 /** @param {string} key */
@@ -117,6 +118,10 @@ export function DatasetDocumentation({ dataset }) {
                   Choose what to keep. See exactly what’s in your files.
                 </p>
                 <DownloadBadges />
+                <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
+                  <a href={privacyPolicy.url}>Privacy policy</a>
+                  <a href={privacyPolicy.supportUrl}>Support</a>
+                </nav>
               </section>
               <div aria-label="Filter dataset types" className="flex flex-wrap gap-2">
                 {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (
