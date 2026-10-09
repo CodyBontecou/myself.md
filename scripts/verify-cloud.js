@@ -13,7 +13,7 @@ const path = join(directory, 'exports.sqlite'),
 let store = new CloudStore(path, key);
 const profile = {
   ...parseProfile({
-    schema: 'qr-connect.profile.v1',
+    schema: 'myself.md.profile.v1',
     name: 'Synthetic',
     selection: { health: ['imported:sleep'], time: [], location: [] },
   }),
@@ -105,7 +105,7 @@ try {
     profile.id,
     json.id,
     Buffer.from(
-      JSON.stringify({ schema: 'qr-connect.export.v1', records: [records[0], records[0]] }),
+      JSON.stringify({ schema: 'myself.md.export.v1', records: [records[0], records[0]] }),
     ),
   );
   assert.equal(store.page('alice', json.id, 0, 1).nextCursor, '1');

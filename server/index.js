@@ -1,3 +1,4 @@
+import { billing, billingApi } from './billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
@@ -211,7 +212,16 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
         req,
         url.pathname === '/api/cloud/uploads' ? 1024 * 1024 : 16 * 1024 * 1024,
       );
-      if (url.pathname === '/api/cloud/uploads' && req.method === 'POST')
+      if (url.pathname === '/api/cloud/uploads' && req.method === 'POST') {
+        const input = JSON.parse(bytes.toString());
+        const operationId = z.string().min(1).max(200).parse(input.manifest?.billingOperationId);
+        billing.requireUpload(
+          credential.subject,
+          operationId,
+          credential.profile,
+          input.day,
+          input.format,
+        );
         json(
           res,
           200,
@@ -222,7 +232,22 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
             JSON.parse(bytes.toString()),
           ),
         );
-      else if (/^\/api\/cloud\/uploads\/[a-f0-9-]+$/.test(url.pathname) && req.method === 'PUT')
+      } else if (/^\/api\/cloud\/uploads\/[a-f0-9-]+$/.test(url.pathname) && req.method === 'PUT') {
+        const uploadId = url.pathname.slice('/api/cloud/uploads/'.length);
+        const uploadMetadata = cloud.metadata(cloud.row(credential.subject, uploadId));
+        const operationId = z
+          .string()
+          .min(1)
+          .max(200)
+          .parse(uploadMetadata.manifest.billingOperationId);
+        const row = cloud.row(credential.subject, uploadId);
+        billing.requireUpload(
+          credential.subject,
+          operationId,
+          credential.profile,
+          row.day,
+          row.format,
+        );
         json(
           res,
           200,
@@ -234,7 +259,8 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
             bytes,
           ),
         );
-      else json(res, 404, { error: 'Not found.' });
+        billing.complete(credential.subject, operationId);
+      } else json(res, 404, { error: 'Not found.' });
       return;
     }
     const token = req.headers.authorization?.match(/^Bearer (.+)$/i)?.[1];
@@ -266,6 +292,15 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     const subject = `${accountNamespace}|${payload.sub}`;
+    if (url.pathname === '/api/billing' && req.method === 'POST') {
+      if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+      json(
+        res,
+        200,
+        await billingApi(subject, JSON.parse((await bodyBytes(req, 40000)).toString())),
+      );
+      return;
+    }
     if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {
       if (payload.azp !== 'qr-dashboard')
         throw new PairingError(403, 'Dashboard OAuth client required.');

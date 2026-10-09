@@ -1,3 +1,4 @@
+import { BillingStore } from '../server/billing-store.js';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
@@ -24,6 +25,13 @@ const identityAddress = identity.address();
 assert.ok(identityAddress && typeof identityAddress !== 'string');
 const issuer = `http://127.0.0.1:${identityAddress.port}/realms/test`;
 const accountNamespace = 'https://previous.example/auth/realms/test';
+const billingFixture = new BillingStore(join(directory, 'billing.sqlite'));
+billingFixture.unlock(`${accountNamespace}|alice`, {
+  store: 'ios',
+  id: 'http-fixture-paid',
+  proof: 'fixture-only',
+});
+billingFixture.db.close();
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
 await once(reservation, 'listening');
@@ -119,7 +127,7 @@ try {
     dashboardPage.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"),
   );
   const dashboardHtml = await dashboardPage.text();
-  assert.ok(dashboardHtml.includes('Stored data'));
+  assert.ok(dashboardHtml.includes('Your data, on your terms'));
   assert.ok(!dashboardHtml.includes('__STYLE_NONCE__'));
   const nonce = dashboardHtml.match(/name="style-nonce" content="([^"]+)"/)?.[1];
   assert.ok(nonce);
@@ -152,8 +160,12 @@ try {
   assert.ok((await landing.text()).includes('Open in myself.md'));
   const home = await fetch(origin, { redirect: 'manual' });
   assert.equal(home.status, 200);
-  assert.ok((await home.text()).includes('interactive demo'));
+  assert.ok((await home.text()).includes('datasets and example exports'));
+  assert.equal((await fetch(`${origin}/demo`)).status, 200);
+  assert.equal((await fetch(`${origin}/demo/`)).status, 200);
   assert.equal((await fetch(`${origin}/login`)).status, 200);
+  assert.equal((await fetch(`${origin}/datasets`)).status, 200);
+  assert.equal((await fetch(`${origin}/datasets/`)).status, 200);
   await Promise.all(
     ['health', 'screen-time', 'location', 'all'].flatMap((dataset) =>
       ['', '/'].map(async (suffix) => {
@@ -223,7 +235,7 @@ try {
   const deviceId = z.object({ id: z.string() }).parse(claimed.value).id;
   const profile = {
     ...parseProfile({
-      schema: 'qr-connect.profile.v1',
+      schema: 'myself.md.profile.v1',
       name: 'Synthetic',
       selection: { health: ['imported:sleep'], time: [], location: [] },
     }),
@@ -242,6 +254,21 @@ try {
     profile,
   });
   assert.equal(credential.status, 200);
+  assert.equal(
+    (await request('/api/billing', chatToken, 'POST', { action: 'reserve', id: 'denied' })).status,
+    403,
+  );
+  const operationId = 'http-profile-export';
+  assert.equal(
+    (
+      await request('/api/billing', phoneToken, 'POST', {
+        action: 'reserve',
+        id: operationId,
+        scope: { profileId: profile.id, days: ['2026-10-07', '2026-10-08'], formats: ['jsonl'] },
+      })
+    ).status,
+    200,
+  );
   const begin = await fetch(`${origin}/api/cloud/uploads`, {
     method: 'POST',
     headers: {
@@ -252,7 +279,7 @@ try {
       profile,
       day: '2026-10-08',
       format: 'jsonl',
-      manifest: { profileId: profile.id, recordCount: 1 },
+      manifest: { profileId: profile.id, recordCount: 1, billingOperationId: operationId },
     }),
   });
   assert.equal(begin.status, 200);
@@ -331,7 +358,7 @@ try {
       profile,
       day: '2026-10-07',
       format: 'jsonl',
-      manifest: { profileId: profile.id, recordCount: 55 },
+      manifest: { profileId: profile.id, recordCount: 55, billingOperationId: operationId },
     }),
   });
   const multipleId = z.object({ id: z.string() }).parse(await multiple.json()).id;

@@ -110,7 +110,7 @@ const session = { owner: 'owner', deviceId: 'phone', server: 'https://example.te
 const interval = { day: '2026-10-07', start: '2026-10-07T00:00:00Z', end: '2026-10-08T00:00:00Z' };
 /** @type {import('../core/profiles.js').ExportProfile} */
 const profile = {
-  schema: 'qr-connect.profile.v1',
+  schema: 'myself.md.profile.v1',
   id: 'default',
   name: 'Default',
   schedule: {

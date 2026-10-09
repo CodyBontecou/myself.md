@@ -16,7 +16,7 @@ let store = new HistoryStore(path, codec);
 const stamp = new Date().toISOString();
 const profile = {
   ...parseProfile({
-    schema: 'qr-connect.profile.v1',
+    schema: 'myself.md.profile.v1',
     name: 'Sleep snapshot',
     selection: { health: ['imported:sleep'], time: [], location: [] },
     export: { destination: 'http', httpUrl: 'https://example.com/private?token=secret' },

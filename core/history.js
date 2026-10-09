@@ -105,7 +105,7 @@ export function parseHistoryEvent(value) {
   const p = /** @type {Record<string,unknown>} */ (v.profile),
     interval = /** @type {Record<string,unknown>} */ (v.interval);
   const profile = parseProfile({
-    schema: 'qr-connect.profile.v1',
+    schema: 'myself.md.profile.v1',
     name: p.name,
     selection: p.selection,
   });

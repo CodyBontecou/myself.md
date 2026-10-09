@@ -24,7 +24,7 @@ const selection = {
 };
 /** @param {string} name */
 function profile(name) {
-  return { ...parseProfile({ schema: 'qr-connect.profile.v1', name, selection }), id: name };
+  return { ...parseProfile({ schema: 'myself.md.profile.v1', name, selection }), id: name };
 }
 /** @param {string} owner @param {string} name @param {string} day @param {import('../core/data.js').DataRecord[]} records */
 function upload(owner, name, day, records) {

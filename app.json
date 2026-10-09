@@ -111,7 +111,8 @@
       "expo-background-task",
       "expo-router",
       "expo-status-bar",
-      "@react-native-vector-icons/ionicons"
+      "@react-native-vector-icons/ionicons",
+      "expo-iap"
     ],
     "scheme": ["qrconnect", "agentbridge"],
     "updates": {

@@ -5,7 +5,7 @@ import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] */
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] */
 export async function exportProfileDay(
   session,
   profile,
@@ -13,6 +13,7 @@ export async function exportProfileDay(
   valid,
   progress,
   onArtifact = () => {},
+  billingOperationId = '',
 ) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
@@ -110,7 +111,8 @@ export async function exportProfileDay(
     if (!completedSources && !count)
       throw new Error('No selected sources could be read. Review permissions or edit the profile.');
     const manifest = {
-      schema: 'qr-connect.export.v1',
+      schema: 'myself.md.export.v1',
+      billingOperationId,
       profileId: profile.id,
       profileName: profile.name,
       interval,

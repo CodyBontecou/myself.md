@@ -85,7 +85,7 @@ export default function ProfilePanel({
   }
   async function save() {
     const parsed = parseProfile({
-      schema: 'qr-connect.profile.v1',
+      schema: 'myself.md.profile.v1',
       name,
       selection,
       export: exportSettings,
@@ -415,7 +415,7 @@ export default function ProfilePanel({
           disabled={disabled}
           onPress={() =>
             edit({
-              schema: 'qr-connect.profile.v1',
+              schema: 'myself.md.profile.v1',
               name: 'Profile',
               selection: { health: [], time: [], location: [] },
             })

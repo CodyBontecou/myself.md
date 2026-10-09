@@ -225,3 +225,40 @@ select:not([multiple]):not([size]) {
 .demo-introduction {
   background: var(--card);
 }
+
+/* Brief feedback behind new readings; never animate or move the JSON text. */
+.export-json-pane {
+  max-height: min(36rem, 65dvh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+@media (min-width: 64rem) {
+  aside .export-json-pane {
+    height: var(--export-json-height, calc(100dvh - 7rem));
+    max-height: none;
+  }
+}
+.export-json-record {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.export-json-highlight {
+  position: absolute;
+  inset: 0 -0.5rem;
+  border-radius: 0.25rem;
+  background: oklch(0.82 0.13 85 / 24%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.export-json-record[data-highlighted='true'] > .export-json-highlight {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .export-json-highlight {
+    transition-duration: 125ms;
+  }
+}

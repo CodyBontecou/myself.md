@@ -7,6 +7,10 @@ export function routeSnapshot() {
 }
 /** @param {string} search */
 export function navigateRoute(search) {
-  history.pushState(null, '', `${location.pathname === '/' ? '/' : '/dashboard'}${search}`);
+  history.pushState(
+    null,
+    '',
+    `${/^\/demo\/?$/.test(location.pathname) ? '/demo' : '/dashboard'}${search}`,
+  );
   window.dispatchEvent(new Event('popstate'));
 }

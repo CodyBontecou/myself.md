@@ -96,6 +96,6 @@ export function importRecords(domain, archive) {
 }
 /** @param {DataPage} page @param {DataQuery['format']} format */
 export function exportPage(page, format) {
-  if (format === 'json') return JSON.stringify({ schema: 'qr-connect.export.v1', ...page });
+  if (format === 'json') return JSON.stringify({ schema: 'myself.md.export.v1', ...page });
   return page.records.map((r) => JSON.stringify(r)).join('\n') + (page.records.length ? '\n' : '');
 }

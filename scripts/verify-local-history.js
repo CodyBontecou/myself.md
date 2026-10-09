@@ -60,7 +60,7 @@ const context = { owner: 'alice', deviceId: 'phone' },
   other = { owner: 'bob', deviceId: 'phone' };
 const profile = {
   ...parseProfile({
-    schema: 'qr-connect.profile.v1',
+    schema: 'myself.md.profile.v1',
     name: 'Synthetic sleep',
     selection: { health: ['imported:sleep'], time: [], location: [] },
   }),

@@ -936,7 +936,7 @@ function LoginCard({ ready }) {
             href="/"
             className="block text-center text-sm text-muted-foreground hover:text-foreground"
           >
-            Back to the interactive demo
+            Back to myself.md
           </a>
         </CardContent>
       </Card>
@@ -1268,5 +1268,13 @@ const nonce = document.querySelector('meta[name="style-nonce"]')?.getAttribute('
 if (nonce) setNonce(nonce);
 const root = document.getElementById('root');
 if (!root) throw new Error('Dashboard root is missing.');
-const dataset = location.pathname.match(/^\/datasets\/(health|screen-time|location|all)\/?$/)?.[1];
-createRoot(root).render(dataset ? <DatasetDocumentation dataset={dataset} /> : <App />);
+function pageSnapshot() {
+  return location.pathname;
+}
+function Page() {
+  const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
+  const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
+  const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
+  return dataset ? <DatasetDocumentation key={dataset} dataset={dataset} /> : <App />;
+}
+createRoot(root).render(<Page />);

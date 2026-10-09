@@ -28,7 +28,9 @@ export async function clearSession(session) {
 /** @param {Session} session */
 export async function saveSession(session) {
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
-  await SecureStore.setItemAsync(key, JSON.stringify(session));
+  await SecureStore.setItemAsync(key, JSON.stringify(session), {
+    keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  });
   saveExportContext(session);
 }
 /** Revoke with the existing token; sign-out must not refresh or persist the old session.

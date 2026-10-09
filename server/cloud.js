@@ -1,3 +1,4 @@
+import { billing, refreshEntitlement } from './billing.js';
 import { Buffer } from 'node:buffer';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -90,7 +91,10 @@ export function registerCloudTools(mcp, subject, client = null) {
       };
       history.record(subject, row.device, event);
       try {
+        await refreshEntitlement(subject);
+        billing.reserve(subject, id);
         const page = cloud.page(subject, exportId, Number(cursor || 0), limit, true);
+        billing.complete(subject, id);
         history.update(subject, id, {
           status: 'complete',
           recordCount: page.records.length,
@@ -98,6 +102,7 @@ export function registerCloudTools(mcp, subject, client = null) {
         });
         return content(page);
       } catch (error) {
+        billing.release(subject, id);
         history.update(subject, id, {
           status: 'failed',
           error: 'Cloud access was denied or the export could not be read.',

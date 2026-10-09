@@ -1,3 +1,4 @@
+import BillingPaywalls from '../../client/BillingPaywalls';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -33,6 +34,7 @@ function RootStack() {
       >
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <PhoneProvider>
+          <BillingPaywalls />
           <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
@@ -53,6 +55,10 @@ function RootStack() {
               <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
               <Stack.Screen name="manage" options={{ headerShown: false }} />
             </Stack.Protected>
+            <Stack.Screen
+              name="unlock"
+              options={{ title: 'Lifetime unlock', presentation: 'modal' }}
+            />
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
           </Stack>
         </PhoneProvider>

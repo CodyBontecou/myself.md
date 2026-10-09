@@ -1,3 +1,4 @@
+import { acceptAllowance } from './billing.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, StyleSheet, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -72,7 +73,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         profiles: [
           {
             ...parseProfile({
-              schema: 'qr-connect.profile.v1',
+              schema: 'myself.md.profile.v1',
               name: 'Default',
               selection: Object.fromEntries(
                 raw.domains.map((d) => [d.domain, allowed.current[d.domain] ? d.types : []]),
@@ -194,13 +195,14 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null}} */ (
+          /** @type {{request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
             })
           );
         if (active) {
+          acceptAllowance(response.allowance);
           setNotes(
             Object.fromEntries(
               info.domains.map((d) => [

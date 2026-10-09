@@ -1,3 +1,4 @@
+import { reserveExport, settleExport } from './billing.js';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { saveShareEvent } from './history.js';
@@ -13,7 +14,7 @@ export async function shareDomain(context, grants, domain, profile, days, progre
     );
   const file = new File(Paths.cache, `qr-connect-${domain}-${Date.now()}.json`);
   file.create();
-  file.write('{"schema":"qr-connect.export.v1","records":[');
+  file.write('{"schema":"myself.md.export.v1","records":[');
   /** @type {unknown[]} */ const manifest = [];
   let count = 0;
   const end = new Date().toISOString(),
@@ -44,7 +45,9 @@ export async function shareDomain(context, grants, domain, profile, days, progre
     error: null,
   };
   saveShareEvent(context, event);
+  let produced = false;
   try {
+    await reserveExport(context, event.id);
     for (const key of types) {
       const source = key.startsWith('native:') ? 'native' : 'imported',
         type = key.slice(key.indexOf(':') + 1);
@@ -104,9 +107,12 @@ export async function shareDomain(context, grants, domain, profile, days, progre
       mimeType: 'application/json',
       dialogTitle: `Export ${domain} data`,
     });
+    produced = true;
+    await settleExport(context, event.id, true);
     saveShareEvent(context, { ...event, updatedAt: new Date().toISOString() });
     return count;
   } catch (error) {
+    await settleExport(context, event.id, produced).catch(() => {});
     saveShareEvent(context, {
       ...event,
       status: 'failed',

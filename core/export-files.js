@@ -75,7 +75,7 @@ export function exportBasename(settings, day) {
 }
 /** @param {ExportFormat} format */
 export function fileHeader(format) {
-  return format === 'json' ? '{"schema":"qr-connect.export.v1","records":[' : '';
+  return format === 'json' ? '{"schema":"myself.md.export.v1","records":[' : '';
 }
 /** @param {ExportFormat} format @param {import('./data.js').DataRecord} record @param {number} count */
 export function recordChunk(format, record, count) {

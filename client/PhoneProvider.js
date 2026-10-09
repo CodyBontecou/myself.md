@@ -1,3 +1,4 @@
+import { syncBilling } from './billing.js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Linking, Platform } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
@@ -137,6 +138,7 @@ function usePhoneState() {
       }),
     });
     const connected = { ...session, deviceId: /** @type {{id:string}} */ (device).id };
+    await syncBilling(connected);
     await saveSession(connected);
     setSession(connected);
     reset();

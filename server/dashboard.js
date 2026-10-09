@@ -8,6 +8,10 @@ import { explore, recordDetail } from './explorer.js';
 /** @type {Map<string, [string, string]>} */
 const assets = new Map([
   ['/', ['index.html', 'text/html']],
+  ['/demo', ['index.html', 'text/html']],
+  ['/demo/', ['index.html', 'text/html']],
+  ['/datasets', ['index.html', 'text/html']],
+  ['/datasets/', ['index.html', 'text/html']],
   ...['health', 'screen-time', 'location', 'all'].flatMap(
     (dataset) =>
       /** @type {[string, [string, string]][]} */ ([

@@ -1,3 +1,4 @@
+import { reserveExport, settleExport } from './billing.js';
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import * as SQLite from 'expo-sqlite';
@@ -39,8 +40,10 @@ export function scheduleState(device, profile) {
   if (state.fingerprint !== fingerprint(profile)) {
     if (state.job?.historyId) {
       const context = loadExportContext();
-      if (context?.deviceId === device)
+      if (context?.deviceId === device) {
         finishExport(context, state.job.historyId, 'cancelled', 'The profile changed.');
+        void settleExport(context, state.job.historyId, false).catch(() => {});
+      }
     }
     state.fingerprint = fingerprint(profile);
     state.job = null;
@@ -66,8 +69,10 @@ export async function setScheduleEnabled(device, profile, enabled) {
   const state = scheduleState(device, profile);
   if (state.job?.historyId) {
     const context = loadExportContext();
-    if (context?.deviceId === device)
+    if (context?.deviceId === device) {
       finishExport(context, state.job.historyId, 'cancelled', 'Automatic exports were changed.');
+      await settleExport(context, state.job.historyId, false).catch(() => {});
+    }
   }
   state.progress = {
     enabled,
@@ -117,10 +122,16 @@ export async function exportNow(session, profile, progress) {
       (p) => p.id === profile.id && fingerprint(p) === fingerprint(profile),
     ) === true;
   let historyId = '';
+  let produced = false;
   try {
     historyId = beginExport(session, profile, 'manual', {
       start: localCalendar.instant(dates[0] ?? day, 0, 0),
       end: profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0),
+    });
+    await reserveExport(session, historyId, {
+      profileId: profile.id,
+      days: dates,
+      formats: profile.export.formats,
     });
     state.files = [];
     let failedSources = 0;
@@ -137,7 +148,11 @@ export async function exportNow(session, profile, progress) {
         },
         valid,
         progress,
-        (artifact) => recordArtifact(session, historyId, artifact),
+        (artifact) => {
+          produced = true;
+          recordArtifact(session, historyId, artifact);
+        },
+        historyId,
       );
       state.files.push(...result.files);
       failedSources += result.failedSources;
@@ -148,8 +163,10 @@ export async function exportNow(session, profile, progress) {
     latest.files = state.files;
     latest.message = state.message;
     store(session.deviceId, profile.id, latest);
+    await settleExport(session, historyId, true);
     finishExport(session, historyId, 'complete');
   } catch (error) {
+    if (historyId) await settleExport(session, historyId, produced).catch(() => {});
     if (historyId)
       finishExport(
         session,
@@ -209,6 +226,13 @@ export async function runScheduledExports() {
         return s.progress.enabled && s.progress.enabledAt === state.progress.enabledAt;
       };
       try {
+        // Reuse the occurrence ID across OS restarts and retries.
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        await reserveExport(session, historyId, {
+          profileId: profile.id,
+          days: job.days.map((day) => day.day),
+          formats: profile.export.formats,
+        });
         if (state.retryAt)
           beginExport(
             session,
@@ -229,6 +253,7 @@ export async function runScheduledExports() {
             valid,
             () => {},
             (artifact) => recordArtifact(session, historyId, artifact),
+            historyId,
           );
           if (!valid()) {
             finishExport(
@@ -239,6 +264,9 @@ export async function runScheduledExports() {
             );
             break;
           }
+          // Count the occurrence once as soon as it has produced output.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          await settleExport(session, historyId, true);
           job.days.shift();
           state.files = result.files;
           state.message = `Saved ${day.day} · ${result.count} records${result.failedSources ? ` · Partial export: ${result.failedSources} source failures. See file metadata for details.` : ''}`;

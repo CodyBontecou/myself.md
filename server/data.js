@@ -1,3 +1,4 @@
+import { billing, refreshEntitlement } from './billing.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { devices, PairingError } from './store.js';
@@ -26,7 +27,7 @@ const querySchema = z
     { message: 'Use a positive range of at most 31 days; paginate longer exports.' },
   );
 const profileSchema = z.object({
-  schema: z.literal('qr-connect.profile.v1'),
+  schema: z.enum(['myself.md.profile.v1', 'qr-connect.profile.v1']),
   name: z.string().min(1).max(80),
   export: z
     .object({
@@ -100,6 +101,7 @@ const cleanup = setInterval(() => {
           status: 'expired',
           error: 'The request expired before the agent retrieved its response.',
         });
+      billing.release(job.subject, id);
       jobs.delete(id);
     }
   for (const [id, phone] of phones) if (phone.seen + ttl <= Date.now()) phones.delete(id);
@@ -119,6 +121,7 @@ export function cancelPhone(deviceId, subject) {
     if (job.deviceId === deviceId && job.subject === subject) {
       if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
         history.update(subject, id, { status: 'cancelled', error: 'Phone disconnected.' });
+      billing.release(job.subject, id);
       jobs.delete(id);
     }
 }
@@ -129,6 +132,7 @@ export function cancelAgent(subject, client) {
     if (job.subject === subject && job.client === client) {
       if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
         history.update(subject, id, { status: 'cancelled', error: 'Agent access was revoked.' });
+      billing.release(job.subject, id);
       jobs.delete(id);
     }
   }
@@ -254,6 +258,8 @@ export function registerDataTools(mcp, subject, client = null) {
           );
         if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
           throw new PairingError(429, 'Read or forget existing requests first.');
+        await refreshEntitlement(subject);
+        billing.reserve(subject, id);
         const expires = Date.now() + ttl;
         jobs.set(id, {
           id,
@@ -311,6 +317,7 @@ export function registerDataTools(mcp, subject, client = null) {
             status: 'cancelled',
             error: 'The agent discarded this request.',
           });
+        billing.release(subject, requestId);
         jobs.delete(requestId);
       }
       return content({ forgotten: true });
@@ -358,6 +365,7 @@ export function phoneApi(path, method, subject, body) {
       ) {
         if (history.get(subject, id)?.event.status !== 'complete' && j.state !== 'failed')
           history.update(subject, id, { status: 'cancelled', error: 'Phone access was revoked.' });
+        billing.release(j.subject, id);
         jobs.delete(id);
       }
     const job = catalog.dispatch
@@ -386,6 +394,7 @@ export function phoneApi(path, method, subject, body) {
     return {
       request: job ? { id: job.id, query: job.query } : null,
       profile: proposal ? { id: proposal.id, profile: proposal.profile } : null,
+      allowance: billing.snapshot(subject),
     };
   }
   const input = z
@@ -415,6 +424,7 @@ export function phoneApi(path, method, subject, body) {
   if (!allowed || phones.get(deviceId)?.catalog.activeProfileId !== job.query.profileId)
     throw new PairingError(403, 'Permission revoked.');
   if (input.error) {
+    billing.release(subject, input.id);
     job.error = input.error;
     job.state = 'failed';
     history.update(subject, input.id, {
@@ -424,6 +434,7 @@ export function phoneApi(path, method, subject, body) {
   } else if (input.page) {
     if (input.page.records.some((r) => r.domain !== job.query.domain || r.type !== job.query.type))
       throw new PairingError(400, 'Response does not match the query.');
+    billing.complete(subject, input.id);
     job.result = {
       format: job.query.format,
       page: input.page,

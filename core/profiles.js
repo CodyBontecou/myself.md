@@ -1,7 +1,7 @@
 import { parseSchedule } from './schedules.js';
 import { parseExportSettings } from './export-files.js';
 import { domains } from './data.js';
-/** @typedef {{schema:'qr-connect.profile.v1',name:string,selection:Record<import('./data.js').Domain,string[]>,export?:import('./export-files.js').ExportSettings,schedule?:import('./schedules.js').ScheduleConfig}} ProfileDraft */
+/** @typedef {{schema:'myself.md.profile.v1'|'qr-connect.profile.v1',name:string,selection:Record<import('./data.js').Domain,string[]>,export?:import('./export-files.js').ExportSettings,schedule?:import('./schedules.js').ScheduleConfig}} ProfileDraft */
 /** @typedef {ProfileDraft & {export:import('./export-files.js').ExportSettings,schedule:import('./schedules.js').ScheduleConfig}} ResolvedDraft */
 /** @typedef {ResolvedDraft & {id:string}} ExportProfile */
 /** @typedef {{activeId:string,profiles:ExportProfile[]}} ProfileState */
@@ -12,7 +12,7 @@ export function parseProfile(value) {
   if (!value || typeof value !== 'object') throw new Error('Invalid export profile.');
   const p = /** @type {Record<string,unknown>} */ (value);
   if (
-    p.schema !== 'qr-connect.profile.v1' ||
+    (p.schema !== 'myself.md.profile.v1' && p.schema !== 'qr-connect.profile.v1') ||
     typeof p.name !== 'string' ||
     !p.name.trim() ||
     p.name.trim().length > 80 ||
@@ -41,7 +41,7 @@ export function parseProfile(value) {
     selection[domain] = [...new Set(/** @type {string[]} */ (keys))];
   }
   return {
-    schema: 'qr-connect.profile.v1',
+    schema: 'myself.md.profile.v1',
     name: p.name.trim(),
     selection,
     export: parseExportSettings(p.export),

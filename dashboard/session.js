@@ -1,5 +1,5 @@
 import { demoApi } from './demo.js';
-export const isDemo = location.pathname === '/';
+export const isDemo = /^\/demo\/?$/.test(location.pathname);
 /** @type {{issuer:string,clientId:string}|null} */ let config = null;
 /** @type {{access_token:string,refresh_token?:string,id_token?:string,expires_in:number}|null} */ let tokens =
   null;
