@@ -1,3 +1,4 @@
+import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
@@ -6,13 +7,20 @@ import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
 import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
+import { shareDomain } from './export.js';
+import { domains } from '../core/data.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
 /** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean}} props */
-export default function ProfileExports({ session, profile, disabled }) {
+export default function ProfileExports(props) {
+  return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
+}
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean}} props */
+function ProfileExportControls({ session, profile, disabled }) {
   const { colors } = useTheme();
   const running = useRef(false);
   const [bearer, setBearer] = useState('');
+  const [days, setDays] = useState('7');
   const [shared, setShared] = useState(false);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [state, setState] = useState(() => scheduleState(session.deviceId, profile));
@@ -50,21 +58,28 @@ export default function ProfileExports({ session, profile, disabled }) {
     }
   }
   useEffect(() => {
-    if (profile.export.destination === 'cloud')
+    if (!qaEnabled && profile.export.destination === 'cloud')
       void cloudAccess(session, profile)
         .then((r) => setShared(r.shared))
         .catch(() => {});
   }, [session, profile]);
   const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
   return (
-    <View style={styles.container}>
+    <View testID="profile-exports" accessibilityState={{ busy }} style={styles.container}>
       <SectionHeader compact title="Exports" />
+      {qaEnabled && (
+        <Copy testID="qa-integration-handoff" variant="caption">
+          Exports, scheduling, credentials and sharing require a normal build for integration QA.
+        </Copy>
+      )}
       <Group compact>
         <Row
           compact
+          testID="export-automatic-exports"
           title="Automatic exports"
           trailing={
             <Switch
+              testID="export-automatic"
               accessibilityLabel={`Automatic exports for ${profile.name}`}
               disabled={disabled || busy}
               value={state.progress.enabled}
@@ -74,15 +89,69 @@ export default function ProfileExports({ session, profile, disabled }) {
             />
           }
         />
-        <Row compact title="Next eligible" value={next ? new Date(next).toLocaleString() : 'Off'} />
-        {state.job && <Row compact title="Pending" value={`${state.job.days.length} days`} />}
         <Row
           compact
+          testID="export-next-eligible"
+          title="Next eligible"
+          value={next ? new Date(next).toLocaleString() : 'Off'}
+        />
+        {state.job && (
+          <Row
+            compact
+            testID="export-pending"
+            title="Pending"
+            value={`${state.job.days.length} days`}
+          />
+        )}
+        <Row
+          compact
+          testID="export-now"
           title={busy ? 'Exporting…' : 'Export profile now'}
           disabled={disabled || busy}
           onPress={() => void run(() => exportNow(session, profile, setMessage))}
         />
-        <Row compact title="Files" value={String(state.files.length)} />
+        <Row
+          compact
+          testID="export-days-to-share-1-31"
+          title="Days to share (1–31)"
+          trailing={
+            <TextInput
+              testID="export-share-days-input"
+              accessibilityLabel="Days to share"
+              keyboardType="number-pad"
+              value={days}
+              onChangeText={setDays}
+              editable={!disabled && !busy}
+              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+            />
+          }
+        />
+        {domains
+          .filter((d) => profile.selection[d].length > 0)
+          .map((domain) => (
+            <Row
+              key={domain}
+              compact
+              title={`Share ${domain === 'time' ? 'screen time' : domain} JSON`}
+              disabled={disabled || busy}
+              onPress={() =>
+                void run(async () => {
+                  const range = Number(days);
+                  if (!Number.isInteger(range) || range < 1 || range > 31)
+                    throw new Error('Choose 1–31 days.');
+                  await shareDomain(
+                    session,
+                    { health: true, time: true, location: true },
+                    domain,
+                    profile,
+                    range,
+                    setMessage,
+                  );
+                })
+              }
+            />
+          ))}
+        <Row compact testID="export-files" title="Files" value={String(state.files.length)} />
         {state.files.map((uri) => (
           <Row
             compact
@@ -99,7 +168,7 @@ export default function ProfileExports({ session, profile, disabled }) {
         ))}
       </Group>
       {message || state.message ? (
-        <Copy variant="caption" selectable>
+        <Copy testID="export-status" accessibilityRole="alert" variant="caption" selectable>
           {message || state.message}
         </Copy>
       ) : null}
@@ -109,6 +178,7 @@ export default function ProfileExports({ session, profile, disabled }) {
       {profile.export.destination === 'http' ? (
         <>
           <TextInput
+            testID="export-http-credential-input"
             accessibilityLabel="HTTP bearer token"
             placeholder="Optional HTTP bearer token"
             value={bearer}
@@ -125,6 +195,7 @@ export default function ProfileExports({ session, profile, disabled }) {
           />
           <Row
             compact
+            testID="export-save-http-credential"
             title="Save HTTP credential"
             disabled={disabled || busy}
             onPress={() =>
@@ -144,6 +215,7 @@ export default function ProfileExports({ session, profile, disabled }) {
           <SectionHeader compact title="Cloud access" />
           <Row
             compact
+            testID="export-authorize-cloud-uploads"
             title="Authorize cloud uploads"
             disabled={disabled || busy}
             onPress={() =>
@@ -162,9 +234,11 @@ export default function ProfileExports({ session, profile, disabled }) {
           </Copy>
           <Row
             compact
+            testID="export-allow-stored-data-in-connectors"
             title="Allow stored data in connectors"
             trailing={
               <Switch
+                testID="export-cloud-access"
                 accessibilityLabel={`Cloud MCP access for ${profile.name}`}
                 value={shared}
                 disabled={disabled || busy}
@@ -180,6 +254,7 @@ export default function ProfileExports({ session, profile, disabled }) {
           <Row
             compact
             destructive
+            testID="export-delete-this-profile-s-cloud-exports"
             title="Delete this profile’s cloud exports"
             disabled={disabled || busy}
             onPress={() =>

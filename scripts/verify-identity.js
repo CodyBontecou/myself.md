@@ -20,6 +20,17 @@ assert.ok(address && typeof address !== 'string');
 const port = String(address.port);
 await new Promise((done) => reservation.close(done));
 const origin = `http://127.0.0.1:${port}`;
+let callbackReferrer = false;
+const callbackServer = createServer((request, response) => {
+  callbackReferrer ||= Boolean(request.headers.referer);
+  response.writeHead(200, { 'Content-Type': 'text/html' });
+  response.end('OAuth callback received');
+});
+callbackServer.listen(0, '127.0.0.1');
+await once(callbackServer, 'listening');
+const callbackAddress = callbackServer.address();
+assert.ok(callbackAddress && typeof callbackAddress !== 'string');
+const callbackURL = `http://127.0.0.1:${callbackAddress.port}/callback`;
 const issuer = `${origin}/auth/realms/qr-connect`;
 const secret = randomBytes(32).toString('hex');
 const directory = mkdtempSync(resolve('.local/identity-test-'));
@@ -68,7 +79,11 @@ await Promise.all(
         clientId,
         name: 'Fixture client',
         redirectUris: [
-          clientId === 'qr-phone' ? 'qrconnect://oauth' : `${origin}/dashboard/callback`,
+          clientId === 'qr-phone'
+            ? 'qrconnect://oauth'
+            : clientId === 'qr-mcp'
+              ? callbackURL
+              : `${origin}/dashboard/callback`,
         ],
         postLogoutRedirectUris: [`${origin}/dashboard`],
         tokenEndpointAuthMethod: 'none',
@@ -193,7 +208,12 @@ function post(path, body, sessionCookie = '') {
 /** @param {string} clientId @param {boolean} loggedIn */
 async function authorize(clientId, loggedIn) {
   const verifier = randomBytes(32).toString('base64url');
-  const redirect = clientId === 'qr-phone' ? 'qrconnect://oauth' : `${origin}/dashboard/callback`;
+  const redirect =
+    clientId === 'qr-phone'
+      ? 'qrconnect://oauth'
+      : clientId === 'qr-mcp'
+        ? callbackURL
+        : `${origin}/dashboard/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: 'code',
@@ -355,16 +375,82 @@ try {
   });
   assert.equal(retryRefresh.status, 200, await retryRefresh.clone().text());
   assert.deepEqual(await retryRefresh.json(), await refresh.clone().json());
-  const mcp = await authorize('qr-mcp', true);
+  let mcp = await authorize('qr-mcp', true);
   const consentURL = new URL(mcp.response.headers.get('location') ?? '');
   assert.equal(consentURL.pathname, '/auth/realms/qr-connect/consent');
-  const accept = await post(
-    '/consent',
-    { accept: 'true', oauth_query: consentURL.search.slice(1) },
-    cookie,
+  const consentPage = await fetch(consentURL);
+  assert.equal(consentPage.headers.get('referrer-policy'), 'same-origin');
+  assert.ok(
+    consentPage.headers.get('content-security-policy')?.includes(new URL(mcp.redirect).origin),
   );
-  assert.equal(accept.status, 302, await accept.clone().text());
-  const mcpCode = new URL(accept.headers.get('location') ?? '').searchParams.get('code');
+  const invalidCallback = new URL(consentURL);
+  invalidCallback.searchParams.set('redirect_uri', 'https://untrusted.example/callback');
+  assert.ok(
+    !(await fetch(invalidCallback)).headers
+      .get('content-security-policy')
+      ?.includes('untrusted.example'),
+  );
+  await Promise.all(
+    ['null', 'https://untrusted.example'].map(async (requestOrigin) => {
+      const denied = await fetch(`${issuer}/consent`, {
+        method: 'POST',
+        headers: { Origin: requestOrigin, Cookie: cookie },
+        body: new URLSearchParams({ accept: 'true', oauth_query: consentURL.search.slice(1) }),
+      });
+      assert.equal(denied.status, 403);
+    }),
+  );
+  let mcpCode;
+  if (process.argv.includes('--browser')) {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    try {
+      const browserContext = await browser.newContext();
+      const [cookieName, ...cookieValue] = cookie.split('=');
+      assert.ok(cookieName);
+      await browserContext.addCookies([
+        { name: cookieName, value: cookieValue.join('='), url: origin },
+      ]);
+      const tab = await browserContext.newPage();
+      const callbackOrigin = new URL(mcp.redirect).origin;
+      await tab.goto(consentURL.href);
+      await tab.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await tab.waitForURL((url) => url.origin === callbackOrigin && url.searchParams.has('error'));
+      assert.equal(new URL(tab.url()).searchParams.get('error'), 'access_denied');
+      assert.equal(new URL(tab.url()).searchParams.get('code'), null);
+      mcp = await authorize('qr-mcp', true);
+      await tab.goto(mcp.response.headers.get('location') ?? '');
+      await tab.getByRole('button', { name: 'Allow access', exact: true }).click();
+      await tab.waitForURL((url) => url.origin === callbackOrigin && url.searchParams.has('code'));
+      mcpCode = new URL(tab.url()).searchParams.get('code');
+      assert.equal(new URL(tab.url()).searchParams.get('state'), 'fixture-state');
+      assert.equal(callbackReferrer, false);
+      // The legacy login form also redirects to an external social provider.
+      await tab.route(
+        (url) => url.hostname === 'github.com',
+        (route) => route.fulfill({ contentType: 'text/html', body: 'Social provider received' }),
+      );
+      const browserLogin = await authorize('qr-phone', false);
+      const browserLoginURL = new URL(browserLogin.response.headers.get('location') ?? '');
+      await browserContext.clearCookies();
+      // Isolate this fixture from the earlier social API rate-limit bucket in local workerd.
+      await browserContext.setExtraHTTPHeaders({ 'cf-connecting-ip': '192.0.2.2' });
+      await tab.goto(`${issuer}/login${browserLoginURL.search}`);
+      await tab.getByRole('button', { name: 'Continue with GitHub', exact: true }).click();
+      await tab.waitForURL((url) => url.hostname === 'github.com');
+      console.log('Browser OAuth verified: cancel, accept, external callback and social sign-in.');
+    } finally {
+      await browser.close();
+    }
+  } else {
+    const accept = await post(
+      '/consent',
+      { accept: 'true', oauth_query: consentURL.search.slice(1) },
+      cookie,
+    );
+    assert.equal(accept.status, 302, await accept.clone().text());
+    mcpCode = new URL(accept.headers.get('location') ?? '').searchParams.get('code');
+  }
   assert.ok(mcpCode);
   const mcpTokensResponse = await post('/protocol/openid-connect/token', {
     grant_type: 'authorization_code',
@@ -641,6 +727,7 @@ try {
   passed = true;
 } finally {
   await client.close();
+  await new Promise((done) => callbackServer.close(done));
   if (child) {
     child.kill('SIGTERM');
     await once(child, 'exit');

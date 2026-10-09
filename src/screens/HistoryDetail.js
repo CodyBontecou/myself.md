@@ -36,7 +36,7 @@ export default function HistoryDetail() {
     historyEntry(session, session.server, typeof id === 'string' ? id : '');
   if (!event)
     return (
-      <Screen>
+      <Screen testID="history-detail-screen">
         <Stack.Screen options={{ title: 'Activity details' }} />
         <Empty
           title={loading ? 'Loading activity…' : 'Activity unavailable'}
@@ -48,7 +48,7 @@ export default function HistoryDetail() {
   const related = relatedHistory(session, session.server, event);
   const selected = Object.entries(event.profile.selection).filter(([, types]) => types.length);
   return (
-    <Screen>
+    <Screen testID="history-detail-screen">
       <Stack.Screen
         options={{ title: event.kind === 'access' ? 'Agent access' : 'Export details' }}
       />

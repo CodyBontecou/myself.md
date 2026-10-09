@@ -108,7 +108,9 @@
     "verify:identity": "npm run dashboard:build && node scripts/verify-identity.js",
     "identity:prepare": "node --env-file=.env.cloud scripts/migrate-identity.js",
     "identity:snapshot": "node --env-file=.env.cloud scripts/snapshot-identity.js",
-    "verify:account-deletion": "npm run verify:identity && node --experimental-vm-modules scripts/verify-account-deletion.js"
+    "verify:account-deletion": "npm run verify:identity && node --experimental-vm-modules scripts/verify-account-deletion.js",
+    "verify:qa": "node --experimental-vm-modules scripts/verify-qa.js",
+    "start:qa": "EXPO_PUBLIC_QA=1 expo start --port 8082"
   },
   "private": true,
   "type": "module",
@@ -128,6 +130,7 @@
     "eslint-plugin-react-native": "^5.0.0",
     "knip": "^6.40.0",
     "oxlint": "^1.87.0",
+    "playwright": "^1.64.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",

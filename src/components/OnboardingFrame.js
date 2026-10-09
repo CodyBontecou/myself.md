@@ -7,18 +7,27 @@ import { Copy } from './ui';
 
 function SkipButton() {
   const { finish } = useOnboarding();
-  return <OnboardingButton label="Skip" secondary onPress={() => finish('/profiles')} />;
+  return (
+    <OnboardingButton
+      testID="onboarding-skip"
+      label="Skip"
+      secondary
+      onPress={() => finish('/profiles')}
+    />
+  );
 }
 
 function renderSkipButton() {
   return <SkipButton />;
 }
 
-/** @param {{label:string,onPress:()=>void,secondary?:boolean}} props */
-export function OnboardingButton({ label, onPress, secondary = false }) {
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,testID?:string}} props */
+export function OnboardingButton({ label, onPress, secondary = false, testID }) {
   const { colors } = useTheme();
   return (
     <Pressable
+      testID={testID}
+      accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
@@ -35,13 +44,17 @@ export function OnboardingButton({ label, onPress, secondary = false }) {
   );
 }
 
-/** @param {{title:string,body:string,children:import('react').ReactNode,footer:import('react').ReactNode}} props */
-export default function OnboardingFrame({ title, body, children, footer }) {
+/** @param {{title:string,body:string,children:import('react').ReactNode,footer:import('react').ReactNode,testID:string}} props */
+export default function OnboardingFrame({ title, body, children, footer, testID }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { error } = useOnboarding();
   return (
-    <View style={[styles.fill, { backgroundColor: colors.background }]}>
+    <View
+      testID={testID}
+      collapsable={false}
+      style={[styles.fill, { backgroundColor: colors.background }]}
+    >
       <Stack.Screen options={{ headerRight: renderSkipButton }} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -63,7 +76,7 @@ export default function OnboardingFrame({ title, body, children, footer }) {
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.actions}>
           {error ? (
-            <View accessibilityRole="alert" style={styles.error}>
+            <View testID="onboarding-error" accessibilityRole="alert" style={styles.error}>
               <Copy style={styles.errorTitle}>Setup could not be saved</Copy>
               <Copy muted style={styles.body}>
                 {error}

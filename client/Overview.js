@@ -38,9 +38,8 @@ export const phoneSources = [
 ];
 /** @param {{icon:import('../src/components/ui.js').IconName}} props */
 export function SourceIcon({ icon }) {
-  const { colors } = useTheme();
   return (
-    <View style={[styles.sourceIcon, { backgroundColor: colors.subtle }]}>
+    <View style={styles.sourceIcon}>
       <Icon name={icon} />
     </View>
   );
@@ -50,7 +49,7 @@ export default function Overview() {
   const { connected, session } = usePhone();
   const { grants, isTracking, types, message } = usePhoneData();
   return (
-    <Screen>
+    <Screen testID="connections-screen">
       <Stack.Screen
         options={{
           title: 'Connections',
@@ -66,6 +65,7 @@ export default function Overview() {
         />
         <Group>
           <Row
+            testID="connections-agent"
             title={connected ? 'MCP connection' : 'Connect your agent'}
             subtitle={connected ? session?.account : 'Scan a pairing code from your chat'}
             icon={<SourceIcon icon="link-outline" />}
@@ -87,6 +87,7 @@ export default function Overview() {
             <View key={source.id}>
               {index > 0 && <Divider />}
               <Row
+                testID={`connections-source-${source.id}`}
                 title={source.name}
                 subtitle={
                   source.id === 'location'
@@ -106,6 +107,7 @@ export default function Overview() {
         <SectionHeader title="Data management" />
         <Group>
           <Row
+            testID="connections-profiles-exports"
             title="Profiles & exports"
             subtitle="Choose data types, destinations, and schedules"
             icon={<SourceIcon icon="folder-outline" />}
@@ -115,6 +117,7 @@ export default function Overview() {
       </View>
       <Group>
         <Row
+          testID="connections-history"
           title="History"
           subtitle="Past exports and agent access"
           icon={<SourceIcon icon="time-outline" />}
@@ -122,6 +125,7 @@ export default function Overview() {
         />
       </Group>
       <Button
+        testID="connections-pair"
         label={connected ? 'Manage agent connection' : 'Connect agent'}
         icon="add"
         onPress={() => router.push('/pair')}

@@ -1,6 +1,6 @@
 import { acceptAllowance } from './billing.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Linking, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, AppState, Linking, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
 import { Button, Switch, Text } from './Terminal.js';
@@ -8,16 +8,14 @@ import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
 import { loadGrants, saveGrants } from './library.js';
-import { authorizeHealth } from './health.js';
-import { authorizeUsage } from './usage.js';
+import { requestSourceAccess } from './source-access.js';
 import { captureLocation, startTracking, stopTracking, locationStatus } from './location-task.js';
 import { cloudAccess } from './destinations.js';
 import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
 import { loadProfiles, saveProfiles } from './profiles.js';
-import { parseProfile, profileAllows } from '../core/profiles.js';
-import { shareDomain } from './export.js';
+import { parseProfile, parseProfileState, agentProfileAllows } from '../core/profiles.js';
 /** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
 const PhoneDataContext = createContext(
   /** @type {ReturnType<typeof usePhoneDataState>|null} */ (null),
@@ -26,6 +24,10 @@ export function usePhoneData() {
   const value = useContext(PhoneDataContext);
   if (!value) throw new Error('Phone data provider is required.');
   return value;
+}
+/** @param {{value:ReturnType<typeof usePhoneDataState>,children:import('react').ReactNode}} props */
+export function PhoneDataStateProvider({ value, children }) {
+  return <PhoneDataContext.Provider value={value}>{children}</PhoneDataContext.Provider>;
 }
 /** @param {DataProviderProps} props */
 export function PhoneDataProvider(props) {
@@ -72,22 +74,21 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   useEffect(() => {
     reviewing.current = Boolean(proposal || incoming);
   }, [proposal, incoming]);
-  const activeProfile = useCallback(
-    () => profileState.current?.profiles.find((p) => p.id === profileState.current?.activeId),
-    [],
+  const [sourcePermissions, setSourcePermissions] = useState(
+    /** @type {Record<string,string>} */ ({}),
   );
   const [sourceNotes, setSourceNotes] = useState(/** @type {Record<string,string>} */ ({}));
   const phoneCatalog = useCallback(async () => {
     const raw = await catalog(session.owner, allowed.current);
+    setSourcePermissions(Object.fromEntries(raw.domains.map((d) => [d.domain, d.permission])));
     setSourceNotes(Object.fromEntries(raw.domains.map((d) => [d.domain, d.notes.join(' ')])));
     setTypes({
-      health: raw.domains.find((d) => d.domain === 'health')?.types ?? [],
-      time: raw.domains.find((d) => d.domain === 'time')?.types ?? [],
-      location: raw.domains.find((d) => d.domain === 'location')?.types ?? [],
+      health: raw.domains.find((d) => d.domain === 'health')?.selectableTypes ?? [],
+      time: raw.domains.find((d) => d.domain === 'time')?.selectableTypes ?? [],
+      location: raw.domains.find((d) => d.domain === 'location')?.selectableTypes ?? [],
     });
     if (!profileState.current) {
       const initial = {
-        activeId: 'default',
         profiles: [
           {
             ...parseProfile({
@@ -98,6 +99,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
               ),
             }),
             id: 'default',
+            agentAccess: false,
           },
         ],
       };
@@ -105,13 +107,8 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       profileState.current = initial;
       setProfiles(initial);
     }
-    const profile = profileState.current.profiles.find(
-      (p) => p.id === profileState.current?.activeId,
-    );
-    if (!profile) throw new Error('Choose an active profile.');
     return {
       ...raw,
-      activeProfileId: profile.id,
       profiles: profileState.current.profiles,
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
@@ -119,7 +116,11 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         Object.assign({}, d, {
           enabled: allowed.current[d.domain],
           availableTypes: d.types,
-          types: d.types.filter((key) => profile.selection[d.domain].includes(key)),
+          types: d.types.filter((key) =>
+            profileState.current?.profiles.some(
+              (p) => p.agentAccess === true && p.selection[d.domain].includes(key),
+            ),
+          ),
         }),
       ),
     };
@@ -131,11 +132,9 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         ? 'Ready for agent queries while this app is open.'
         : 'Your data stays on this phone until you pair an agent.',
     );
-  const [isTracking, setTracking] = useState(false),
-    [days, setDays] = useState('7');
+  const [isTracking, setTracking] = useState(false);
   const [notes, setNotes] = useState(/** @type {Record<string,string>} */ ({}));
   const version = useRef(0);
-  const [filesOpen, setFilesOpen] = useState(false);
   const resumeFromSettings = useRef(false);
   const [locationInfo, setLocationInfo] = useState('Checking location permissions…');
   const refreshLocation = useCallback(async () => {
@@ -193,6 +192,12 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     });
   }, [session, phoneCatalog]);
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void publish().catch((error) => setMessage(String(error)));
+    });
+    return () => subscription.remove();
+  }, [publish]);
+  useEffect(() => {
     if (!session.server) {
       void Promise.resolve()
         .then(publish)
@@ -236,14 +241,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           setProposal({ ...response.profile, profile: parseProfile(response.profile.profile) });
         }
         const request = response.request;
-        const profile = activeProfile();
+        const profile = profileState.current?.profiles.find(
+          (p) => p.id === request?.query.profileId,
+        );
         if (
           request &&
           active &&
           profile &&
-          request.query.profileId === profile.id &&
           allowed.current[request.query.domain] &&
-          profileAllows(profile, request.query)
+          agentProfileAllows(profile, request.query)
         ) {
           setMessage(`Your chat requested ${request.query.domain} data.`);
           let body;
@@ -276,7 +282,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [session, phoneCatalog, activeProfile, publish]);
+  }, [session, phoneCatalog, publish]);
   /** @param {()=>Promise<void>} action */
   async function run(action) {
     setBusy(true);
@@ -309,6 +315,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         : 'Use Location permissions to allow Always/background access and precise location, then return. Recording will start when access is granted.',
     );
   }
+  /** Request device access without expanding agent grants or starting recording.
+   * @param {import('../core/data.js').Domain} domain */
+  async function reviewSourceAccess(domain) {
+    try {
+      return await requestSourceAccess(domain);
+    } finally {
+      await publish();
+    }
+  }
   /** @param {import('../core/data.js').Domain} domain @param {boolean} enabled */
   async function changeGrant(domain, enabled) {
     version.current++;
@@ -318,34 +333,20 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     setGrants(next);
     await publish();
     if (enabled) {
-      if (domain === 'health') await authorizeHealth();
-      if (domain === 'time') await authorizeUsage();
+      if (domain !== 'location') await reviewSourceAccess(domain);
       await publish();
     }
   }
-  /** @param {import('../core/data.js').Domain} domain */
-  async function exportFile(domain) {
-    const range = Number(days);
-    if (!Number.isInteger(range) || range < 1 || range > 31)
-      throw new Error('Choose 1–31 days. Repeat for older date windows through your chat.');
-    const profile = activeProfile();
-    if (!profile) throw new Error('Choose an active profile.');
-    const count = await shareDomain(session, allowed.current, domain, profile, range, setMessage);
-    setMessage(
-      `Exported ${count} records. Check the file manifest for unreadable or partial sources.`,
-    );
-  }
   /** @param {import('../core/profiles.js').ProfileState} next */
   async function changeProfiles(next) {
-    if (!next.profiles.length || !next.profiles.some((p) => p.id === next.activeId))
-      throw new Error('Keep at least one active profile.');
-    for (const p of next.profiles) parseProfile(p);
+    next = parseProfileState(next);
     for (const previous of profiles?.profiles ?? []) {
       const changed = next.profiles.find((p) => p.id === previous.id);
       if (
         session.server &&
         previous.export.destination === 'cloud' &&
-        JSON.stringify(changed) !== JSON.stringify(previous)
+        (!changed ||
+          JSON.stringify(parseProfile(changed)) !== JSON.stringify(parseProfile(previous)))
       ) {
         // Revoke stored-data sharing before accepting changed profile permissions.
         // oxlint-disable-next-line eslint/no-await-in-loop
@@ -377,15 +378,12 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     locationInfo,
     notes,
     sourceNotes,
+    sourcePermissions,
+    reviewSourceAccess,
     message,
-    filesOpen,
-    setFilesOpen,
-    days,
-    setDays,
     run,
     changeGrant,
     changeRecording,
-    exportFile,
     changeProfiles,
     setMessage,
     setTracking,
@@ -402,6 +400,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     onDismiss,
     profiles,
     types,
+    sourcePermissions,
     busy,
     proposal,
     setProposal,
@@ -410,26 +409,29 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     locationInfo,
     notes,
     sourceNotes,
+    reviewSourceAccess,
     message,
-    days,
-    setDays,
     run,
     changeGrant,
     changeRecording,
-    exportFile,
     changeProfiles,
     setMessage,
     publish,
     refreshLocation,
   } = usePhoneData();
-  const [filesOpen, setFilesOpen] = useState(false);
   return (
-    <View style={management ? styles.management : styles.container}>
+    <View
+      testID={management ? 'profiles-screen' : `source-${selectedDomain}-screen`}
+      collapsable={false}
+      style={management ? styles.management : styles.container}
+    >
       {management && profiles ? (
         <ProfilePanel
           session={session}
           state={profiles}
           types={types}
+          permissions={sourcePermissions}
+          onAuthorize={reviewSourceAccess}
           busy={busy}
           draft={incoming ?? proposal?.profile ?? null}
           onDismiss={() => {
@@ -439,7 +441,9 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           onChange={changeProfiles}
         />
       ) : management ? (
-        <Text>Loading export profiles…</Text>
+        <Text testID="profiles-loading" accessibilityState={{ busy: true }}>
+          Loading export profiles…
+        </Text>
       ) : null}
       {!management && (
         <Text style={styles.description}>
@@ -459,6 +463,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
             <View style={styles.row}>
               <Text style={styles.description}>Background recording</Text>
               <Switch
+                testID="source-location-recording"
                 accessibilityLabel="Record location in background"
                 value={isTracking}
                 disabled={busy}
@@ -469,6 +474,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           <View style={styles.row}>
             <Text style={styles.description}>Agent access</Text>
             <Switch
+              testID={`source-grant-${domain}`}
               accessibilityLabel={`Allow chat to read ${domain} data`}
               value={grants[domain]}
               disabled={busy || !session.server}
@@ -487,30 +493,28 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
               disabled={busy}
               onPress={() =>
                 void run(async () => {
-                  if (domain === 'health') {
-                    await authorizeHealth();
-                    setMessage(
-                      'Health permissions reviewed. Choose which data types to include in your profile.',
-                    );
-                  } else {
-                    const status = await authorizeUsage();
-                    setMessage(`Screen time access: ${status}.`);
-                  }
-                  await publish();
+                  const result = await reviewSourceAccess(domain);
+                  setMessage(result.message);
                 })
               }
             />
           )}
-          <Button title="Choose data types" onPress={() => router.navigate('/profiles')} />
+          <Button
+            testID={`source-${domain}-choose-types`}
+            title="Choose data types"
+            onPress={() => router.navigate('/profiles')}
+          />
           {domain === 'location' ? (
             <>
               <Text style={styles.description}>{locationInfo}</Text>
               <Button
+                testID={`source-${domain}-location-permissions`}
                 title="Location permissions"
                 disabled={busy}
                 onPress={() => void run(() => Linking.openSettings())}
               />
               <Button
+                testID={`source-${domain}-location-capture`}
                 title="Save location point"
                 disabled={busy}
                 onPress={() =>
@@ -525,38 +529,17 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
             </>
           ) : null}
           <Button
-            title={filesOpen ? 'Hide file tools' : 'Export files'}
-            onPress={() => setFilesOpen(!filesOpen)}
+            testID={`source-${domain}-exports`}
+            title="Export files"
+            onPress={() => router.navigate('/profiles')}
           />
-          {filesOpen ? (
-            <>
-              <Text>Days to export (1–31)</Text>
-              <TextInput
-                accessibilityLabel="Days to export"
-                keyboardType="number-pad"
-                value={days}
-                onChangeText={setDays}
-                style={[
-                  styles.input,
-                  {
-                    borderColor: colors.border,
-                    color: colors.text,
-                    backgroundColor: colors.surface,
-                  },
-                ]}
-              />
-              <Button
-                title={`Export ${domain}`}
-                disabled={busy}
-                onPress={() => void run(() => exportFile(domain))}
-              />
-            </>
-          ) : null}
         </View>
       ))}
       {!management && <Text style={styles.description}>{sourceNotes[selectedDomain ?? '']}</Text>}
       {!management && (
         <Text
+          testID="source-status"
+          accessibilityState={{ busy }}
           accessibilityLiveRegion="polite"
           style={[styles.status, { backgroundColor: colors.subtle, borderColor: colors.border }]}
         >
@@ -573,7 +556,7 @@ const styles = StyleSheet.create({
   card: {
     padding: 16,
     gap: 12,
-    borderRadius: 20,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
   row: {
@@ -584,17 +567,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   title: { fontSize: 19, lineHeight: 27 },
-  input: {
-    borderRadius: 14,
-    fontSize: 17,
-    borderWidth: 1,
-
-    padding: 12,
-  },
   status: {
     fontSize: 15,
     lineHeight: 24,
-    borderRadius: 14,
+    borderRadius: 12,
 
     padding: 16,
 

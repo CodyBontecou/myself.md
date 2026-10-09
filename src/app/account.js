@@ -20,7 +20,7 @@ export default function AccountScreen() {
   const current = useBilling();
   const guide = existingCustomerGuide();
   return (
-    <Screen>
+    <Screen testID="account-screen">
       <Stack.Screen options={{ title: 'Account' }} />
       <Copy variant="heading">Your myself.md account</Copy>
       <Copy muted>
@@ -45,8 +45,9 @@ export default function AccountScreen() {
       {session?.owner ? (
         <>
           <Group>
-            <Row title="Account" subtitle={session.account} />
+            <Row testID="account-account" title="Account" subtitle={session.account} />
             <Row
+              testID="account-lifetime-access"
               title="Lifetime access"
               subtitle={
                 current.unlocked
@@ -63,6 +64,7 @@ export default function AccountScreen() {
           <Copy variant="heading">Delete account</Copy>
           <Copy muted>{accountDeletionNotice}</Copy>
           <Button
+            testID="account-delete-account"
             label="Delete account"
             secondary
             disabled={busy}
@@ -77,16 +79,24 @@ export default function AccountScreen() {
               ]);
             }}
           />
-          <Button label="Sign out" secondary disabled={busy} onPress={() => void run(disconnect)} />
+          <Button
+            testID="account-sign-out"
+            label="Sign out"
+            secondary
+            disabled={busy}
+            onPress={() => void run(disconnect)}
+          />
         </>
       ) : (
         <>
           <Button
+            testID="account-sign-in-with-apple"
             label="Sign in with Apple"
             disabled={busy}
             onPress={() => void run(() => signInAccount('apple'))}
           />
           <Button
+            testID="account-continue-with-github"
             label="Continue with GitHub"
             secondary
             disabled={busy}
@@ -96,6 +106,7 @@ export default function AccountScreen() {
       )}
       {deletionStatusUrl && (
         <Button
+          testID="account-view-account-deletion-status"
           label="View account deletion status"
           secondary
           onPress={() => void Linking.openURL(deletionStatusUrl)}

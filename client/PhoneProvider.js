@@ -36,6 +36,10 @@ export function usePhone() {
   if (!value) throw new Error('Phone provider is required.');
   return value;
 }
+/** @param {{value:ReturnType<typeof usePhoneState>,children:import('react').ReactNode}} props */
+export function PhoneStateProvider({ value, children }) {
+  return <PhoneContext.Provider value={value}>{children}</PhoneContext.Provider>;
+}
 const localSession = {
   server: '',
   issuer: '',

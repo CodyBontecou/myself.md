@@ -1,3 +1,4 @@
+import { qaEnabled, qaSnapshot } from './qa-runtime.js';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { usePhoneData } from './DataPanel.js';
@@ -5,8 +6,10 @@ import { historyPage, syncHistory } from './history.js';
 /** Fetch and cache account/device-scoped history while the route is visible. */
 export function useHistory() {
   const { session } = usePhoneData();
-  const [events, setEvents] = useState(() => historyPage(session, session.server, 50));
-  const [loading, setLoading] = useState(false),
+  const [events, setEvents] = useState(
+    /** @type {import('../core/history.js').HistoryEvent[]} */ ([]),
+  );
+  const [loading, setLoading] = useState(true),
     [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(''),
     [hasMore, setHasMore] = useState(events.length === 50);
@@ -19,8 +22,21 @@ export function useHistory() {
     async (showIndicator = true) => {
       const epoch = ++revision.current;
       setRefreshing(showIndicator);
+      if (qaEnabled && qaSnapshot().scenario === 'loading') {
+        setRefreshing(false);
+        setLoading(true);
+        return;
+      }
+      const pageAt = () =>
+        qaEnabled
+          ? qaSnapshot().events.slice(0, limit.current)
+          : historyPage(session, session.server, limit.current);
       try {
-        const local = historyPage(session, session.server, limit.current);
+        const local = pageAt();
+        if (qaEnabled && qaSnapshot().scenario === 'history-error') {
+          setEvents(local);
+          throw new Error('Synthetic history refresh failed. Saved entries are still available.');
+        }
         setEvents(local);
         setHasMore(local.length === limit.current);
         setLoading(false);
@@ -31,7 +47,9 @@ export function useHistory() {
           remoteMore.current = result.hasMore;
         }
         if (epoch !== revision.current) return;
-        const page = historyPage(session, session.server, limit.current);
+        const page = qaEnabled
+          ? qaSnapshot().events.slice(0, limit.current)
+          : historyPage(session, session.server, limit.current);
         setEvents(page);
         setHasMore(page.length === limit.current || remoteMore.current);
         setError('');
@@ -79,7 +97,9 @@ export function useHistory() {
       }
       if (epoch !== revision.current) return;
       limit.current += 50;
-      const page = historyPage(session, session.server, limit.current);
+      const page = qaEnabled
+        ? qaSnapshot().events.slice(0, limit.current)
+        : historyPage(session, session.server, limit.current);
       setEvents(page);
       setHasMore(page.length === limit.current || remoteMore.current);
     } catch {

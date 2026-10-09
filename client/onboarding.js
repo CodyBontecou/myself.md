@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { qaEnabled, qaSnapshot, updateQa } from './qa-runtime.js';
 import Storage from 'expo-sqlite/kv-store';
 
 const key = 'agent-bridge-onboarding-v1';
@@ -10,6 +11,7 @@ const Context = createContext(
 );
 
 function readStatus() {
+  if (qaEnabled) return { complete: qaSnapshot().onboarding, error: '' };
   try {
     return { complete: Storage.getItemSync(key) === 'complete', error: '' };
   } catch {
@@ -26,7 +28,8 @@ export function OnboardingProvider({ children }) {
   const [destination, setDestination] = useState(/** @type {Destination} */ ('/profiles'));
   const finish = useCallback((/** @type {Destination} */ target) => {
     try {
-      Storage.setItemSync(key, 'complete');
+      if (qaEnabled) updateQa({ onboarding: true });
+      else Storage.setItemSync(key, 'complete');
       setDestination(target);
       setStatus({ complete: true, error: '' });
     } catch {

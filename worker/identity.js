@@ -41,18 +41,18 @@ function escape(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
 }
-/** @param {string} title @param {string} content */
-function page(title, content) {
+/** @param {string} title @param {string} content @param {string[]} [formDestinations] */
+function page(title, content, formDestinations = []) {
   return new Response(
     `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · myself.md</title><body><main><h1>${escape(title)}</h1>${content}</main></body></html>`,
     {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        'Referrer-Policy': 'no-referrer',
+        // Keep the Origin header on same-origin form POSTs without leaking OAuth queries externally.
+        'Referrer-Policy': 'same-origin',
         'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy':
-          "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        'Content-Security-Policy': `default-src 'none'; form-action 'self' ${formDestinations.join(' ')}; base-uri 'none'; frame-ancestors 'none'`,
       },
     },
   );
@@ -70,13 +70,23 @@ export async function identityRequest(request, env) {
         return page(
           'Sign in to myself.md',
           `<p>Use your existing Apple or GitHub account to keep your exports and purchases.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><button name="provider" value="apple">Continue with Apple</button><button name="provider" value="github">Continue with GitHub</button></form>`,
+          ['https://appleid.apple.com', 'https://github.com'],
         );
-      const client = await env.IDENTITY.prepare('SELECT name FROM oauthClient WHERE clientId=?')
+      const client = await env.IDENTITY.prepare(
+        'SELECT name, redirectUris FROM oauthClient WHERE clientId=?',
+      )
         .bind(url.searchParams.get('client_id') ?? '')
-        .first('name');
+        .first();
+      const redirect = url.searchParams.get('redirect_uri');
+      const registered = z
+        .array(z.string())
+        .parse(JSON.parse(String(client?.redirectUris ?? '[]')));
+      // Chromium checks the form's redirect too. Trust registered callbacks, never query text alone.
+      const callback = redirect && registered.includes(redirect) ? new URL(redirect) : null;
       return page(
         'Connect this application?',
-        `<p>${escape(typeof client === 'string' ? client : 'This application')} requests access to your myself.md account.</p><p>Requested permissions: ${escape(url.searchParams.get('scope') ?? '')}. Your existing device selections and data grants still apply. Agent queries count toward your export allowance.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><button name="accept" value="true">Allow access</button><button name="accept" value="false">Cancel</button></form>`,
+        `<p>${escape(typeof client?.name === 'string' ? client.name : 'This application')} requests access to your myself.md account.</p><p>Requested permissions: ${escape(url.searchParams.get('scope') ?? '')}. Your existing device selections and data grants still apply. Agent queries count toward your export allowance.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><button name="accept" value="true">Allow access</button><button name="accept" value="false">Cancel</button></form>`,
+        callback ? [callback.origin === 'null' ? callback.protocol : callback.origin] : [],
       );
     }
     if (

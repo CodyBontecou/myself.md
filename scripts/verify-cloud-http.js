@@ -12,6 +12,8 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
+const queryId = (/** @type {unknown} */ value) =>
+  z.object({ requestId: z.string() }).parse(value).requestId;
 const r2 = process.argv.includes('--r2') ? await r2Fixture() : null;
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -589,11 +591,18 @@ try {
   );
   assert.ok(!JSON.stringify(cloudHistory.value).includes('"native":'));
   const catalog = {
-    activeProfileId: profile.id,
-    profiles: [profile],
+    profiles: [{ ...profile, agentAccess: true }],
     domains: ['health', 'time', 'location'].map((domain) => ({
       domain,
       enabled: domain === 'health',
+      selectableTypes:
+        domain === 'health'
+          ? ['native:sleep']
+          : domain === 'time'
+            ? ['native:applications', 'native:websites']
+            : ['native:points'],
+      permission: domain === 'health' ? 'system-managed' : 'required',
+      permissionHandoff: `qrconnect://data/${domain}`,
       availableTypes: domain === 'health' ? ['native:sleep'] : [],
       types: domain === 'health' ? ['native:sleep'] : [],
       notes: [],
@@ -620,6 +629,217 @@ try {
     ).isError,
     true,
   );
+  const discovery = await client.callTool({
+    name: 'get_phone_data_catalog',
+    arguments: { deviceId },
+  });
+  const discovered = z
+    .object({
+      catalog: z.object({
+        domains: z.array(
+          z.object({
+            domain: z.string(),
+            selectableTypes: z.array(z.string()),
+            types: z.array(z.string()),
+            permission: z.string(),
+            permissionHandoff: z.string(),
+          }),
+        ),
+      }),
+    })
+    .parse(discovery.structuredContent);
+  assert.deepEqual(
+    discovered.catalog.domains.find((domain) => domain.domain === 'time')?.selectableTypes,
+    ['native:applications', 'native:websites'],
+  );
+  assert.equal(
+    discovered.catalog.domains.find((domain) => domain.domain === 'location')?.permissionHandoff,
+    'qrconnect://data/location',
+  );
+  assert.deepEqual(
+    discovered.catalog.domains.find((domain) => domain.domain === 'time')?.types,
+    [],
+  );
+  const deniedUsage = await client.callTool({
+    name: 'query_phone_data',
+    arguments: {
+      deviceId,
+      profileId: profile.id,
+      domain: 'time',
+      type: 'applications',
+      start: '2026-10-08T00:00:00.000Z',
+      end: '2026-10-09T00:00:00.000Z',
+    },
+  });
+  assert.equal(deniedUsage.isError, true, 'Discovery of selectable types never grants read access');
+  // Agents choose independently among approved profiles; selection in another profile never grants access.
+  const secondary = { ...profile, id: 'secondary', name: 'Secondary', agentAccess: true };
+  const privateProfile = { ...profile, id: 'private', name: 'Private', agentAccess: false };
+  const excluded = {
+    ...profile,
+    id: 'excluded',
+    name: 'Excluded',
+    agentAccess: true,
+    selection: { health: [], time: [], location: [] },
+  };
+  const multiCatalog = {
+    ...catalog,
+    profiles: [...catalog.profiles, secondary, privateProfile, excluded],
+  };
+  const pollPhone = async (/** @type {typeof multiCatalog} */ value) => {
+    const response = await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', value);
+    assert.equal(response.status, 200);
+    return response;
+  };
+  const queryProfile = (/** @type {string} */ profileId) =>
+    client.callTool({
+      name: 'query_phone_data',
+      arguments: {
+        deviceId,
+        profileId,
+        domain: 'health',
+        type: 'sleep',
+        start: '2026-10-08T00:00:00.000Z',
+        end: '2026-10-09T00:00:00.000Z',
+      },
+    });
+  await pollPhone(multiCatalog);
+  for (const deniedResponse of await Promise.all(
+    ['private', 'excluded', 'missing'].map(queryProfile),
+  ))
+    assert.equal(deniedResponse.isError, true);
+  const handoff = await client.callTool({
+    name: 'request_phone_profile_agent_access',
+    arguments: { deviceId, profileId: 'private', enabled: true },
+  });
+  const approval = z
+    .object({
+      status: z.string(),
+      agentAccess: z.boolean(),
+      handoff: z.object({ deepLink: z.string() }),
+    })
+    .parse(handoff.structuredContent);
+  assert.equal(approval.status, 'awaiting_user');
+  assert.equal(approval.agentAccess, false);
+  assert.equal(approval.handoff.deepLink, 'qrconnect://profiles/private');
+  assert.equal(
+    (await queryProfile('private')).isError,
+    true,
+    'An agent handoff cannot approve its own access',
+  );
+  assert.equal(
+    (
+      await client.callTool({
+        name: 'request_phone_profile_agent_access',
+        arguments: { deviceId, profileId: 'missing', enabled: true },
+      })
+    ).isError,
+    true,
+  );
+  const grantedCatalog = {
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.map((p) => Object.assign({}, p, { agentAccess: true })),
+  };
+  await pollPhone(grantedCatalog);
+  const approved = await client.callTool({
+    name: 'request_phone_profile_agent_access',
+    arguments: { deviceId, profileId: 'private', enabled: true },
+  });
+  assert.equal(
+    z.object({ status: z.string() }).parse(approved.structuredContent).status,
+    'completed',
+  );
+  const newlyApproved = await queryProfile('private');
+  assert.ok(!newlyApproved.isError);
+  await client.callTool({
+    name: 'forget_phone_request',
+    arguments: { requestId: queryId(newlyApproved.structuredContent) },
+  });
+  await pollPhone(multiCatalog);
+  // The first profile is unrelated to an explicitly chosen second profile.
+  const chosen = await queryProfile('secondary');
+  assert.ok(!chosen.isError);
+  const chosenId = queryId(chosen.structuredContent);
+  await pollPhone(multiCatalog);
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
+        id: chosenId,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    200,
+  );
+  const retained = await client.callTool({
+    name: 'get_phone_request',
+    arguments: { requestId: chosenId },
+  });
+  assert.equal(
+    z.object({ status: z.string() }).parse(retained.structuredContent).status,
+    'complete',
+  );
+  const runningId = queryId((await queryProfile('secondary')).structuredContent);
+  await pollPhone(multiCatalog);
+  const queuedId = queryId((await queryProfile('secondary')).structuredContent);
+  const unaffectedId = queryId((await queryProfile(profile.id)).structuredContent);
+  await pollPhone({
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.map((p) =>
+      Object.assign({}, p, { agentAccess: p.id === 'secondary' ? false : p.agentAccess }),
+    ),
+  });
+  const revokedQueries = await Promise.all(
+    [chosenId, runningId, queuedId].map((revokedId) =>
+      client.callTool({ name: 'get_phone_request', arguments: { requestId: revokedId } }),
+    ),
+  );
+  for (const revokedResponse of revokedQueries)
+    assert.equal(
+      revokedResponse.isError,
+      true,
+      'Revocation discards queued, running and retained responses',
+    );
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
+        id: runningId,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    404,
+    'Late responses cannot resurrect revoked work',
+  );
+  assert.ok(
+    !(await client.callTool({ name: 'get_phone_request', arguments: { requestId: unaffectedId } }))
+      .isError,
+    'Another approved profile remains usable',
+  );
+  await client.callTool({ name: 'forget_phone_request', arguments: { requestId: unaffectedId } });
+  await pollPhone(multiCatalog);
+  const removedId = queryId((await queryProfile('secondary')).structuredContent);
+  await pollPhone({
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.filter((p) => p.id !== 'secondary'),
+  });
+  assert.equal(
+    (await client.callTool({ name: 'get_phone_request', arguments: { requestId: removedId } }))
+      .isError,
+    true,
+  );
+  await pollPhone(multiCatalog);
+  const editedId = queryId((await queryProfile('secondary')).structuredContent);
+  await pollPhone({
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.map((p) =>
+      p.id === 'secondary' ? Object.assign({}, p, { selection: excluded.selection }) : p,
+    ),
+  });
+  assert.equal(
+    (await client.callTool({ name: 'get_phone_request', arguments: { requestId: editedId } }))
+      .isError,
+    true,
+  );
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
   const queried = await client.callTool({
     name: 'query_phone_data',
     arguments: {
@@ -799,6 +1019,29 @@ try {
         await otherAgent.callTool({
           name: 'diagnose_phone_export',
           arguments: { deviceId, eventId: synced.id },
+        })
+      ).isError,
+    );
+    assert.ok(
+      (
+        await otherAgent.callTool({
+          name: 'request_phone_profile_agent_access',
+          arguments: { deviceId, profileId: profile.id, enabled: true },
+        })
+      ).isError,
+    );
+    assert.ok(
+      (
+        await otherAgent.callTool({
+          name: 'query_phone_data',
+          arguments: {
+            deviceId,
+            profileId: profile.id,
+            domain: 'health',
+            type: 'sleep',
+            start: '2026-10-08T00:00:00.000Z',
+            end: '2026-10-09T00:00:00.000Z',
+          },
         })
       ).isError,
     );

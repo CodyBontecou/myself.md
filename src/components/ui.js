@@ -12,12 +12,24 @@ export function Icon({ name, size = 22, color }) {
     </View>
   );
 }
-/** @param {{children:import('react').ReactNode,variant?:'body'|'title'|'caption'|'heading',muted?:boolean,style?:import('react-native').StyleProp<import('react-native').TextStyle>,selectable?:boolean}} props */
-export function Copy({ children, variant = 'body', muted = false, style, selectable = false }) {
+/** @param {{children:import('react').ReactNode,variant?:'body'|'title'|'caption'|'heading',muted?:boolean,style?:import('react-native').StyleProp<import('react-native').TextStyle>,selectable?:boolean,testID?:string,accessibilityRole?:import('react-native').TextProps['accessibilityRole'],accessibilityState?:import('react-native').TextProps['accessibilityState']}} props */
+export function Copy({
+  children,
+  variant = 'body',
+  muted = false,
+  style,
+  selectable = false,
+  testID,
+  accessibilityRole,
+  accessibilityState,
+}) {
   const { colors } = useTheme();
   const { fontScale } = useWindowDimensions();
   return (
     <Text
+      testID={testID}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={accessibilityState}
       key={fontScale}
       selectable={selectable}
       style={[
@@ -35,13 +47,15 @@ export function Copy({ children, variant = 'body', muted = false, style, selecta
     </Text>
   );
 }
-/** @param {{children:import('react').ReactNode,compact?:boolean}} props */
-export function Screen({ children, compact = false }) {
+/** @param {{children:import('react').ReactNode,compact?:boolean,testID?:string}} props */
+export function Screen({ children, compact = false, testID }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
+      testID={testID}
       style={[styles.fill, { backgroundColor: colors.background }]}
+      automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       contentInsetAdjustmentBehavior="automatic"
@@ -55,11 +69,12 @@ export function Screen({ children, compact = false }) {
     </ScrollView>
   );
 }
-/** @param {{icon:IconName,label:string,onPress:()=>void}} props */
-export function IconButton({ icon, label, onPress }) {
+/** @param {{icon:IconName,label:string,onPress:()=>void,testID?:string}} props */
+export function IconButton({ icon, label, onPress, testID }) {
   const { colors } = useTheme();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
@@ -72,21 +87,31 @@ export function IconButton({ icon, label, onPress }) {
     </Pressable>
   );
 }
-/** @param {{label:string,onPress:()=>void,secondary?:boolean,disabled?:boolean,icon?:IconName}} props */
-export function Button({ label, onPress, secondary = false, disabled = false, icon }) {
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
+export function Button({
+  label,
+  onPress,
+  secondary = false,
+  disabled = false,
+  busy = false,
+  testID,
+  icon,
+}) {
   const { colors } = useTheme();
   const color = secondary ? colors.text : colors.onAccent;
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, busy }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: secondary ? colors.subtle : colors.accent,
+          backgroundColor: secondary ? colors.surface : colors.accent,
+          borderColor: secondary ? colors.border : colors.accent,
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
       ]}
@@ -115,7 +140,7 @@ export function Divider() {
   const { colors } = useTheme();
   return <View style={[styles.divider, { backgroundColor: colors.border }]} />;
 }
-/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,selected?:boolean,compact?:boolean,value?:string,disabled?:boolean,destructive?:boolean}} props */
+/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,selected?:boolean,compact?:boolean,value?:string,disabled?:boolean,destructive?:boolean,testID?:string}} props */
 export function Row({
   title,
   subtitle,
@@ -127,6 +152,7 @@ export function Row({
   value,
   disabled = false,
   destructive = false,
+  testID,
 }) {
   const { colors } = useTheme();
   const content = (
@@ -161,6 +187,7 @@ export function Row({
   );
   return onPress ? (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       disabled={disabled}
       accessibilityState={{ disabled, ...(selected === undefined ? {} : { selected }) }}
@@ -177,14 +204,15 @@ export function Row({
     </Pressable>
   ) : (
     <View
+      testID={testID}
       style={[styles.row, compact && [styles.compactRow, { borderBottomColor: colors.border }]]}
     >
       {content}
     </View>
   );
 }
-/** @param {{title:string,count?:number,action?:string,onPress?:()=>void,compact?:boolean}} props */
-export function SectionHeader({ title, count, action, onPress, compact = false }) {
+/** @param {{title:string,count?:number,action?:string,onPress?:()=>void,compact?:boolean,testID?:string}} props */
+export function SectionHeader({ title, count, action, onPress, compact = false, testID }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.sectionHeader, compact && styles.compactSectionHeader]}>
@@ -199,7 +227,13 @@ export function SectionHeader({ title, count, action, onPress, compact = false }
         )}
       </View>
       {action && (
-        <Pressable accessibilityRole="button" onPress={onPress} style={styles.textButton}>
+        <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel={action}
+          onPress={onPress}
+          style={styles.textButton}
+        >
           <Copy variant="caption" style={[styles.semibold, { color: colors.accent }]}>
             {action}
           </Copy>
@@ -225,11 +259,11 @@ export function Notice({ title, body, icon = 'information-circle-outline' }) {
     </View>
   );
 }
-/** @param {{title:string,body:string,action?:string,onPress?:()=>void,icon?:IconName}} props */
-export function Empty({ title, body, action, onPress, icon = 'link-outline' }) {
+/** @param {{title:string,body:string,action?:string,onPress?:()=>void,icon?:IconName,testID?:string}} props */
+export function Empty({ title, body, action, onPress, icon = 'link-outline', testID }) {
   const { colors } = useTheme();
   return (
-    <View style={styles.empty}>
+    <View testID={testID} style={styles.empty}>
       <View style={[styles.providerIcon, styles.largeIcon, { backgroundColor: colors.subtle }]}>
         <Icon name={icon} size={32} color={colors.secondary} />
       </View>
@@ -250,7 +284,7 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline' }) {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   compactScreen: { paddingHorizontal: 16, paddingTop: 8 },
-  compactColumn: { gap: 12 },
+  compactColumn: { gap: 16 },
   compactGroup: { borderRadius: 12 },
   compactRow: {
     minHeight: 44,
@@ -264,7 +298,7 @@ const styles = StyleSheet.create({
   compactSectionHeader: { minHeight: 32 },
   disabled: { opacity: 0.45 },
   buttonLabel: { fontWeight: '600', textAlign: 'center' },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: 72 },
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
   rowText: { flex: 1, gap: 4 },
   rowTitle: { fontWeight: '500' },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -273,33 +307,35 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   emptyBody: { textAlign: 'center', maxWidth: 280 },
   emptyAction: { alignSelf: 'stretch', marginTop: 12 },
-  screen: { paddingHorizontal: 24, paddingTop: 16, alignItems: 'center' },
+  screen: { paddingHorizontal: 16, paddingTop: 24, alignItems: 'center' },
   column: { width: '100%', maxWidth: 560, gap: 24 },
-  body: { fontSize: 16, lineHeight: 23 },
+  body: { fontSize: 15, lineHeight: 22 },
   caption: { fontSize: 13, lineHeight: 19 },
-  heading: { fontSize: 18, lineHeight: 25, fontWeight: '600', letterSpacing: -0.3 },
+  heading: { fontSize: 16, lineHeight: 24, fontWeight: '600', letterSpacing: -0.3 },
   title: { fontSize: 28, lineHeight: 35, fontWeight: '600', letterSpacing: -0.7 },
   providerIcon: {
-    width: 42,
-    height: 42,
+    width: 32,
+    height: 32,
     borderRadius: 12,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  largeIcon: { width: 76, height: 76, borderRadius: 24 },
+  largeIcon: { width: 48, height: 48, borderRadius: 12 },
   iconButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 12,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
   button: {
-    minHeight: 54,
+    borderWidth: 1,
+    minHeight: 48,
     paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderCurve: 'continuous',
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,18 +343,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   group: {
-    borderRadius: 20,
+    borderRadius: 12,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   row: {
-    minHeight: 80,
-    paddingVertical: 16,
+    minHeight: 64,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   sectionHeader: {
     minHeight: 44,
@@ -332,7 +368,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     borderCurve: 'continuous',
   },
   empty: { paddingVertical: 32, paddingHorizontal: 12, alignItems: 'center', gap: 12 },

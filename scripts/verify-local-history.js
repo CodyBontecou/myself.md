@@ -81,15 +81,47 @@ try {
     checksum: 'checksum',
     partial: true,
   });
+  const beforeInvalid = journal.historyEntry(context, '', id);
+  const invalidArtifact = JSON.parse(JSON.stringify(beforeInvalid?.artifacts[0]));
+  invalidArtifact.bytes = null;
+  assert.throws(
+    () => journal.recordArtifact(context, id, invalidArtifact),
+    /Invalid history count/,
+  );
+  assert.deepEqual(journal.historyEntry(context, '', id), beforeInvalid);
   journal.finishExport(context, id, 'complete');
   assert.equal(journal.historyEntry(context, '', id)?.status, 'partial');
   assert.equal(journal.historyPage(other, '').length, 0);
   assert.equal(journal.historyPage({ ...context, deviceId: 'other' }, '').length, 0);
   const pending = journal.beginExport(context, profile, 'manual', interval);
   const scheduled = journal.beginExport(context, profile, 'schedule', interval);
+  const malformed = {
+    ...core.exportEvent({
+      id: 'malformed',
+      profile,
+      actor: 'manual',
+      interval,
+      stamp,
+      timezone: 'UTC',
+    }),
+    recordCount: -1,
+  };
+  db.prepare('INSERT INTO activity_history VALUES (?,?,?,?,?,?)').run(
+    context.owner,
+    context.deviceId,
+    'local',
+    malformed.id,
+    stamp,
+    JSON.stringify(malformed),
+  );
   journal = await load();
   assert.equal(journal.historyEntry(context, '', pending)?.status, 'interrupted');
   assert.equal(journal.historyEntry(context, '', scheduled)?.status, 'running');
+  assert.equal(
+    db.prepare('SELECT value FROM activity_history WHERE id=?').get('malformed'),
+    undefined,
+  );
+  assert.equal(journal.historyEntry(context, '', 'malformed'), null);
   journal.beginExport(context, profile, 'schedule', interval, scheduled);
   assert.equal(
     journal.historyPage(context, '').filter((event) => event.id === scheduled).length,

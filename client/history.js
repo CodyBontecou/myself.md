@@ -11,7 +11,20 @@ CREATE INDEX IF NOT EXISTS activity_order ON activity_history(owner,device,start
 for (const row of /** @type {{owner:string,device:string,id:string,value:string}[]} */ (
   db.getAllSync("SELECT owner,device,id,value FROM activity_history WHERE origin='local'")
 )) {
-  const event = parseHistoryEvent(JSON.parse(row.value));
+  let event;
+  try {
+    event = parseHistoryEvent(JSON.parse(row.value));
+  } catch {
+    // Discard corrupt local metadata; it cannot be read or published as valid history.
+    db.runSync(
+      "DELETE FROM activity_history WHERE owner=? AND device=? AND origin='local' AND id=?",
+      row.owner,
+      row.device,
+      row.id,
+    );
+    console.warn('An invalid saved history entry was removed.');
+    continue;
+  }
   if (event.actor === 'manual' && event.status === 'running')
     db.runSync(
       "UPDATE activity_history SET value=? WHERE owner=? AND device=? AND origin='local' AND id=?",
@@ -28,6 +41,7 @@ for (const row of /** @type {{owner:string,device:string,id:string,value:string}
 }
 /** @param {Context} context @param {HistoryEvent} event @param {string} [origin] */
 function save(context, event, origin = 'local') {
+  const validated = parseHistoryEvent(event);
   db.runSync(
     'INSERT OR REPLACE INTO activity_history VALUES (?,?,?,?,?,?)',
     context.owner,
@@ -35,7 +49,7 @@ function save(context, event, origin = 'local') {
     origin,
     event.id,
     event.startedAt,
-    JSON.stringify(event),
+    JSON.stringify(validated),
   );
 }
 /** @param {Context} context @param {string} id @returns {HistoryEvent|null} */

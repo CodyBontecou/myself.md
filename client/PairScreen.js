@@ -27,22 +27,24 @@ export default function PairScreen() {
     signIn,
   } = usePhone();
   return (
-    <Screen>
+    <Screen testID="pair-screen">
       <Stack.Screen options={{ title: connected ? 'Your agent' : 'Connect agent' }} />
       {connected ? (
         <>
           <Copy variant="heading">Your phone is connected</Copy>
           <Group>
-            <Row title="Account" subtitle={session?.account} />
-            <Row title="Server" subtitle={session?.server} />
+            <Row testID="pair-account" title="Account" subtitle={session?.account} />
+            <Row testID="pair-server" title="Server" subtitle={session?.server} />
           </Group>
           <Button
+            testID="pair-check-connection"
             label="Check connection"
             secondary
             disabled={busy}
             onPress={() => void run(refresh)}
           />
           <Button
+            testID="pair-disconnect-agent"
             label="Disconnect agent"
             secondary
             disabled={busy}
@@ -64,12 +66,18 @@ export default function PairScreen() {
                 your current agent.
               </Copy>
               <Button
+                testID="pair-switch-connection"
                 label="Switch connection"
                 secondary
                 disabled={busy}
                 onPress={() => void run(switchConnection)}
               />
-              <Button label="Dismiss pairing link" secondary onPress={reset} />
+              <Button
+                testID="pair-dismiss-pairing-link"
+                label="Dismiss pairing link"
+                secondary
+                onPress={reset}
+              />
             </>
           )}
         </>
@@ -85,6 +93,7 @@ export default function PairScreen() {
             <>
               <Copy>{session?.account}</Copy>
               <Button
+                testID="pair-confirm-connection"
                 label="Confirm connection"
                 disabled={busy}
                 onPress={() => void run(confirm)}
@@ -94,6 +103,7 @@ export default function PairScreen() {
             <>
               <Pressable
                 accessibilityRole="button"
+                testID="pair-sign-in-with-apple"
                 accessibilityLabel="Sign in with Apple"
                 accessibilityState={{ disabled: busy }}
                 disabled={busy}
@@ -107,6 +117,7 @@ export default function PairScreen() {
                 <Copy style={styles.appleLabel}>Sign in with Apple</Copy>
               </Pressable>
               <Button
+                testID="pair-continue-with-github"
                 label="Continue with GitHub"
                 secondary
                 disabled={busy}
@@ -115,12 +126,14 @@ export default function PairScreen() {
             </>
           )}
           <Button
+            testID="pair-use-another-account"
             label="Use another account"
             secondary
             disabled={busy || !session}
             onPress={changeAccount}
           />
           <Button
+            testID="pair-scan-another-code"
             label="Scan another code"
             secondary
             disabled={busy}
@@ -160,6 +173,7 @@ export default function PairScreen() {
               Pairing link
             </Copy>
             <TextInput
+              testID="pair-link-input"
               accessibilityLabel="Pairing link"
               autoCapitalize="none"
               autoCorrect={false}
@@ -171,6 +185,7 @@ export default function PairScreen() {
               onSubmitEditing={() => scan(link)}
             />
             <Button
+              testID="pair-use-pairing-link"
               label="Use pairing link"
               disabled={!link.trim() || busy}
               onPress={() => scan(link)}
@@ -181,7 +196,11 @@ export default function PairScreen() {
           </Copy>
         </>
       )}
-      {busy && <Copy>Connecting…</Copy>}
+      {busy && (
+        <Copy testID="pair-loading" accessibilityState={{ busy: true }}>
+          Connecting…
+        </Copy>
+      )}
       {error && <Notice title="Connection needs attention" body={error} />}
     </Screen>
   );
@@ -192,7 +211,7 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: 16,
+    borderRadius: 12,
     borderCurve: 'continuous',
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,7 +222,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   appleLabel: { color: '#fff', fontWeight: '600', textAlign: 'center' },
-  camera: { height: 240, borderRadius: 20, overflow: 'hidden' },
+  camera: { height: 240, borderRadius: 12, overflow: 'hidden' },
   fields: { gap: 12 },
-  input: { padding: 16, borderRadius: 14, minHeight: 52 },
+  input: { padding: 16, borderRadius: 12, minHeight: 52 },
 });

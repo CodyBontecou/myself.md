@@ -29,14 +29,16 @@ class File {
     files.set(this.uri, (options?.append ? (files.get(this.uri) ?? '') : '') + value);
   }
   /** @param {File} target */
-  move(target) {
+  async move(target) {
+    await Promise.resolve();
+    if (failMove) throw new Error('Move failed');
     files.set(target.uri, files.get(this.uri) ?? '');
     files.delete(this.uri);
     this.uri = target.uri;
     this.name = target.name;
   }
   get size() {
-    return (files.get(this.uri) ?? '').length;
+    return files.has(this.uri) ? files.get(this.uri)?.length : null;
   }
   get md5() {
     return 'synthetic-checksum';
@@ -48,7 +50,8 @@ class File {
     files.delete(this.uri);
   }
 }
-let failWrite = false,
+let failMove = false,
+  failWrite = false,
   failDelivery = false;
 const mocks = {
   Directory,
@@ -198,6 +201,21 @@ await assert.rejects(
   /Disk full/,
 );
 failWrite = false;
+failMove = true;
+artifacts.length = 0;
+await assert.rejects(
+  exportProfileDay(
+    session,
+    profile,
+    interval,
+    () => true,
+    () => {},
+    (artifact) => artifacts.push(artifact),
+  ),
+  /Move failed/,
+);
+assert.equal(artifacts.length, 0);
+failMove = false;
 failDelivery = true;
 artifacts.length = 0;
 await assert.rejects(

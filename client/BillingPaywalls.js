@@ -53,7 +53,7 @@ export default function BillingPaywalls() {
       .catch(() => {});
   }, [active]);
   useEffect(() => {
-    // Wait for the entry redirect before presenting a milestone modal.
+    // Wait for the entry redirect before opening a milestone screen.
     if (
       !active ||
       !complete ||

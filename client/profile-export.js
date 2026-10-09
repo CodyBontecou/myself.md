@@ -128,7 +128,12 @@ export async function exportProfileDay(
     const saved = [];
     for (const f of files) {
       f.stage.write(fileFooter(f.format, manifest), { append: true });
-      f.stage.move(f.target, { overwrite: true });
+      // Expo 57 moves asynchronously; metadata and delivery require the committed file.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      await f.stage.move(f.target, { overwrite: true });
+      const bytes = f.target.size;
+      if (!Number.isSafeInteger(bytes) || bytes < 0)
+        throw new Error('Could not read export file size.');
       if (settings.destination !== 'local') {
         // Destinations acknowledge each complete daily file before progress advances.
         // oxlint-disable-next-line eslint/no-await-in-loop
@@ -145,7 +150,7 @@ export async function exportProfileDay(
           name: f.target.name,
           format: f.format,
           recordCount: count,
-          bytes: f.target.size,
+          bytes,
           uri: null,
           cloudId: delivered?.id ?? null,
           checksum: null,
@@ -163,7 +168,8 @@ export async function exportProfileDay(
         );
         const stagedMetadata = new File(metadata.parentDirectory, `${metadata.name}.partial`);
         stagedMetadata.write(JSON.stringify(manifest));
-        stagedMetadata.move(metadata, { overwrite: true });
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        await stagedMetadata.move(metadata, { overwrite: true });
         saved.push(metadata.uri);
       }
       onArtifact({
@@ -171,7 +177,7 @@ export async function exportProfileDay(
         name: f.target.name,
         format: f.format,
         recordCount: count,
-        bytes: f.target.size,
+        bytes,
         uri: f.target.uri,
         cloudId: null,
         checksum: f.target.md5,

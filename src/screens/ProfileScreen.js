@@ -4,11 +4,12 @@ import { usePhoneData } from '../../client/DataPanel';
 import ProfilePanel from '../../client/ProfilePanel';
 export default function ProfileScreen() {
   const { id } = useLocalSearchParams();
-  const { session, profiles, types, busy, changeProfiles } = usePhoneData();
+  const { session, profiles, types, sourcePermissions, reviewSourceAccess, busy, changeProfiles } =
+    usePhoneData();
   const profileId = typeof id === 'string' ? id : '';
   const profile = profiles?.profiles.find((p) => p.id === profileId);
   return (
-    <Screen compact>
+    <Screen testID="profile-detail-screen" compact>
       <Stack.Screen options={{ title: profile?.name ?? 'Profile' }} />
       {profiles ? (
         <ProfilePanel
@@ -17,13 +18,17 @@ export default function ProfileScreen() {
           session={session}
           state={profiles}
           types={types}
+          permissions={sourcePermissions}
+          onAuthorize={reviewSourceAccess}
           busy={busy}
           onChange={changeProfiles}
           draft={null}
           onDismiss={() => {}}
         />
       ) : (
-        <Copy>Loading profile…</Copy>
+        <Copy testID="profile-loading" accessibilityState={{ busy: true }}>
+          Loading profile…
+        </Copy>
       )}
     </Screen>
   );

@@ -2,9 +2,28 @@ import { useTheme } from '../src/lib/theme';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Switch } from './Terminal.js';
 import { Group, Row, Icon, Copy, SectionHeader } from '../src/components/ui';
-/** @param {{section?:string,settings:import('../core/export-files.js').ExportSettings,schedule:import('../core/schedules.js').ScheduleConfig,onSettings:(value:import('../core/export-files.js').ExportSettings)=>void,onSchedule:(value:import('../core/schedules.js').ScheduleConfig)=>void,disabled:boolean}} props */
+/** @type {Record<string, string>} */
+/** @type {Record<string,string>} */
+const fieldIds = {
+  JSON: 'export-format-json',
+  JSONL: 'export-format-jsonl',
+  'Completed days (1–30)': 'export-lookback-input',
+  'Include today in manual exports': 'export-include-today',
+  'Documents folder': 'export-folder-input',
+  'Separate folders for JSON and JSONL': 'export-format-folders',
+  'Daily filename template': 'export-filename-input',
+  'Local hour (0–23)': 'schedule-hour-input',
+  'Minute (0–59)': 'schedule-minute-input',
+  'Today Refresh': 'schedule-today-refresh',
+  'HTTPS endpoint': 'export-http-url-input',
+  'Weekday (1 Monday – 7 Sunday)': 'schedule-weekday-input',
+  'Every (1–365)': 'schedule-interval-input',
+  'Anchor date (YYYY-MM-DD; blank uses opt-in day)': 'schedule-anchor-input',
+};
+/** @param {{section?:string,field?:string,settings:import('../core/export-files.js').ExportSettings,schedule:import('../core/schedules.js').ScheduleConfig,onSettings:(value:import('../core/export-files.js').ExportSettings)=>void,onSchedule:(value:import('../core/schedules.js').ScheduleConfig)=>void,disabled:boolean}} props */
 export default function ExportSettingsEditor({
   section,
+  field,
   settings,
   schedule,
   onSettings,
@@ -12,14 +31,34 @@ export default function ExportSettingsEditor({
   disabled,
 }) {
   const { colors } = useTheme();
+  /** @param {string} label */
+  function visible(label) {
+    if (!field) return true;
+    const group =
+      {
+        JSON: 'formats',
+        JSONL: 'formats',
+        'Completed days (1–30)': 'window',
+        'Include today in manual exports': 'window',
+        'Documents folder': 'folders',
+        'Separate folders for JSON and JSONL': 'folders',
+        'Daily filename template': 'filename',
+        'Local hour (0–23)': 'time',
+        'Minute (0–59)': 'time',
+        'Today Refresh': 'refresh',
+      }[label] ?? 'cadence';
+    return field === group;
+  }
   /** @param {string} label @param {string} value @param {(value:string)=>void} change @param {boolean} [numeric] */
   function input(label, value, change, numeric = false) {
+    if (!visible(label)) return null;
     return (
       <View style={styles.field}>
         <Copy variant="caption" muted>
           {label}
         </Copy>
         <TextInput
+          testID={fieldIds[label]}
           accessibilityLabel={label}
           editable={!disabled}
           value={value}
@@ -37,12 +76,15 @@ export default function ExportSettingsEditor({
   }
   /** @param {string} label @param {boolean} value @param {(value:boolean)=>void} change */
   function toggle(label, value, change) {
+    if (!visible(label)) return null;
     return (
       <Row
+        key={label}
         compact
         title={label}
         trailing={
           <Switch
+            testID={fieldIds[label]}
             accessibilityLabel={label}
             disabled={disabled}
             value={value}
@@ -61,6 +103,7 @@ export default function ExportSettingsEditor({
             {['local', 'http', 'cloud'].map((destination) => (
               <Choice
                 key={destination}
+                testID={`export-destination-${destination}`}
                 selected={settings.destination === destination}
                 title={
                   destination === 'local'
@@ -129,10 +172,12 @@ export default function ExportSettingsEditor({
           {input('Daily filename template', settings.filenameTemplate, (v) =>
             onSettings({ ...settings, filenameTemplate: v }),
           )}
-          <Copy variant="caption" muted>
-            Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files are
-            replaced.
-          </Copy>
+          {(!field || field === 'filename') && (
+            <Copy variant="caption" muted>
+              Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files
+              are replaced.
+            </Copy>
+          )}
           {toggle('Separate folders for JSON and JSONL', settings.formatFolders, (v) =>
             onSettings({ ...settings, formatFolders: v }),
           )}
@@ -141,31 +186,34 @@ export default function ExportSettingsEditor({
       {(!section || section === 'schedule') && (
         <>
           {!section && <SectionHeader compact title="Schedule" />}
-          <Group compact>
-            {['daily', 'weekly', 'custom'].map((frequency) => (
-              <Choice
-                key={frequency}
-                selected={schedule.frequency === frequency}
-                title={
-                  frequency === 'daily'
-                    ? 'Daily'
-                    : frequency === 'weekly'
-                      ? 'Weekly'
-                      : 'Custom interval'
-                }
-                disabled={disabled}
-                onPress={() =>
-                  onSchedule({
-                    ...schedule,
-                    frequency:
-                      /** @type {import('../core/schedules.js').ScheduleConfig['frequency']} */ (
-                        frequency
-                      ),
-                  })
-                }
-              />
-            ))}
-          </Group>
+          {(!field || field === 'cadence') && (
+            <Group compact>
+              {['daily', 'weekly', 'custom'].map((frequency) => (
+                <Choice
+                  key={frequency}
+                  testID={`schedule-frequency-${frequency}`}
+                  selected={schedule.frequency === frequency}
+                  title={
+                    frequency === 'daily'
+                      ? 'Daily'
+                      : frequency === 'weekly'
+                        ? 'Weekly'
+                        : 'Custom interval'
+                  }
+                  disabled={disabled}
+                  onPress={() =>
+                    onSchedule({
+                      ...schedule,
+                      frequency:
+                        /** @type {import('../core/schedules.js').ScheduleConfig['frequency']} */ (
+                          frequency
+                        ),
+                    })
+                  }
+                />
+              ))}
+            </Group>
+          )}
           {input(
             'Local hour (0–23)',
             String(schedule.hour),
@@ -186,7 +234,7 @@ export default function ExportSettingsEditor({
                 true,
               )
             : null}
-          {schedule.frequency === 'custom' ? (
+          {schedule.frequency === 'custom' && (!field || field === 'cadence') ? (
             <>
               {input(
                 'Every (1–365)',
@@ -197,6 +245,7 @@ export default function ExportSettingsEditor({
               {['day', 'week', 'month'].map((unit) => (
                 <Choice
                   key={unit}
+                  testID={`schedule-unit-${unit}`}
                   selected={schedule.unit === unit}
                   title={unit === 'day' ? 'Days' : unit === 'week' ? 'Weeks' : 'Months'}
                   disabled={disabled}
@@ -220,10 +269,11 @@ export default function ExportSettingsEditor({
           {toggle('Today Refresh', schedule.todayRefresh, (v) =>
             onSchedule({ ...schedule, todayRefresh: v }),
           )}
-          {schedule.todayRefresh
+          {schedule.todayRefresh && (!field || field === 'refresh')
             ? [3, 6, 12].map((hours) => (
                 <Choice
                   key={hours}
+                  testID={`schedule-refresh-${hours}`}
                   selected={schedule.refreshHours === hours}
                   title={`Every ${hours} hours`}
                   disabled={disabled}
@@ -233,19 +283,22 @@ export default function ExportSettingsEditor({
                 />
               ))
             : null}
-          <Copy variant="caption" muted>
-            Today Refresh rewrites the current day independently of completed-day runs. Save, then
-            enable automatic exports on the profile detail screen.
-          </Copy>
+          {(!field || field === 'refresh') && (
+            <Copy variant="caption" muted>
+              Today Refresh rewrites the current day independently of completed-day runs. Save, then
+              enable automatic exports on this profile.
+            </Copy>
+          )}
         </>
       )}
     </View>
   );
 }
-/** @param {{title:string,selected:boolean,disabled:boolean,onPress:()=>void}} props */
-function Choice({ title, selected, disabled, onPress }) {
+/** @param {{title:string,selected:boolean,disabled:boolean,onPress:()=>void,testID:string}} props */
+function Choice({ title, selected, disabled, onPress, testID }) {
   return (
     <Row
+      testID={testID}
       compact
       title={title}
       selected={selected}

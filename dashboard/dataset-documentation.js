@@ -105,7 +105,7 @@ export function DatasetDocumentation({ dataset }) {
                   id="landing-title"
                   className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
                 >
-                  Your life, in files.
+                  File over app.
                   <br />
                   Yours to keep.
                 </h1>

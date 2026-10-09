@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
-import { parseProfile, profileLink } from '../core/profiles.js';
+import { parseProfile, profileLink, agentProfileAllows } from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
 const ttl = 300000;
@@ -64,9 +64,13 @@ const profileSchema = z.object({
 });
 const catalogSchema = z.object({
   dispatch: z.boolean().default(true),
-  activeProfileId: z.string().min(1).max(100),
   profiles: z
-    .array(profileSchema.extend({ id: z.string().min(1).max(100) }))
+    .array(
+      profileSchema.extend({
+        id: z.string().min(1).max(100),
+        agentAccess: z.boolean().default(false),
+      }),
+    )
     .min(1)
     .max(50),
   acceptProfiles: z.boolean().default(false),
@@ -76,6 +80,12 @@ const catalogSchema = z.object({
       z.object({
         domain: domainSchema,
         enabled: z.boolean(),
+        selectableTypes: z.array(z.string().max(160)).max(300).optional(),
+        permission: z.string().max(100).optional(),
+        permissionHandoff: z
+          .string()
+          .regex(/^qrconnect:\/\/data\/(health|time|location)$/)
+          .optional(),
         availableTypes: z.array(z.string().max(160)).max(300),
         types: z.array(z.string().max(160)).max(300),
         notes: z.array(z.string().max(1000)).max(10),
@@ -92,6 +102,14 @@ const content = (value) => ({
 /** @typedef {{subject:string,deviceId:string,seen:number,catalog:z.infer<typeof catalogSchema>}} Phone */
 /** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:unknown,error?:string}} Job */
 /** @typedef {{id:string,subject:string,deviceId:string,profile:import('../core/profiles.js').ProfileDraft,expires:number,state:'queued'|'delivered'}} Proposal */
+/** @param {z.infer<typeof catalogSchema>|undefined} catalog @param {Query} query */
+function catalogAllows(catalog, query) {
+  const profile = catalog?.profiles.find((p) => p.id === query.profileId);
+  return agentProfileAllows(
+    profile && { ...parseProfile(profile), id: profile.id, agentAccess: profile.agentAccess },
+    query,
+  );
+}
 /** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>}} dependencies */
 export function createDataService({
   billing,
@@ -214,7 +232,7 @@ export function createDataService({
       'create_phone_export_profile',
       {
         description:
-          'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use availableTypes from get_phone_data_catalog. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not activate a profile or grant access. The user reviews, saves and activates on the phone.',
+          'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
         inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
       },
       async ({ profile, deviceId }) => {
@@ -241,7 +259,7 @@ export function createDataService({
       'get_phone_profile_delivery',
       {
         description:
-          'Check whether a generated profile was received for review on the phone. Delivered does not mean saved, activated or granted. Pending deliveries expire after five minutes.',
+          'Check whether a generated profile was received for review on the phone. Delivered does not mean saved or granted. Pending deliveries expire after five minutes.',
         inputSchema: z.object({ deliveryId: z.string().uuid() }),
         annotations: { readOnlyHint: true },
       },
@@ -257,7 +275,7 @@ export function createDataService({
       'get_phone_data_catalog',
       {
         description:
-          'Discover phone data types, explicit phone-side grants and collection limits before querying. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
+          'Discover phone data types, profiles with agentAccess approval, explicit domain grants and collection limits before querying. Select an approved profile and intersect its selections with domain types. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
         inputSchema: z.object({ deviceId: z.string().uuid() }),
         annotations: { readOnlyHint: true },
       },
@@ -273,10 +291,45 @@ export function createDataService({
       },
     );
     mcp.registerTool(
+      'request_phone_profile_agent_access',
+      {
+        description:
+          'Initiate a user approval handoff for an existing owned phone profile. Open the returned profile link on the phone and have the user set Allow agent access. This tool never changes consent. Verify the saved outcome with get_phone_data_catalog; an offline catalog may be stale.',
+        inputSchema: z.object({
+          deviceId: z.string().uuid(),
+          profileId: z.string().min(1).max(100),
+          enabled: z.boolean(),
+        }),
+      },
+      async ({ deviceId, profileId, enabled }) => {
+        own(deviceId, subject);
+        const phone = phones.get(deviceId);
+        if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
+          throw new PairingError(409, 'Phone is offline. Open myself.md first.');
+        const profile = phone.catalog.profiles.find((p) => p.id === profileId);
+        if (!profile) throw new PairingError(404, 'Phone profile not found.');
+        return content({
+          deviceId,
+          profileId,
+          enabled,
+          agentAccess: profile.agentAccess,
+          status: profile.agentAccess === enabled ? 'completed' : 'awaiting_user',
+          lastSeen: phone.seen,
+          handoff:
+            profile.agentAccess === enabled
+              ? null
+              : {
+                  deepLink: `qrconnect://profiles/${encodeURIComponent(profileId)}`,
+                  instruction: `On the phone, ${enabled ? 'enable' : 'disable'} Allow agent access for ${profile.name}${enabled ? ' and confirm Allow' : ''}.`,
+                },
+        });
+      },
+    );
+    mcp.registerTool(
       'query_phone_data',
       {
         description:
-          'Ask the connected phone to read one discovered data type in a UTC interval under the active profileId from the catalog. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization.',
+          'Ask the connected phone to read one discovered data type in a UTC interval under any catalog profileId with agentAccess true. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization.',
         inputSchema: querySchema,
         annotations: { readOnlyHint: true },
       },
@@ -315,13 +368,13 @@ export function createDataService({
         try {
           if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
             throw new PairingError(409, 'Phone is offline. Open myself.md first.');
-          if (phone.catalog.activeProfileId !== query.profileId)
-            throw new PairingError(403, 'Choose the active profile ID from the phone catalog.');
-          if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))
+          if (!catalogAllows(phone.catalog, query))
             throw new PairingError(
               403,
-              'Enable this domain and data type in the active phone profile.',
+              'Choose an approved profile and a data type selected in that profile.',
             );
+          if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))
+            throw new PairingError(403, 'Enable this domain and source permission on the phone.');
           if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
             throw new PairingError(429, 'Read or forget existing requests first.');
           await refreshEntitlement(subject);
@@ -425,7 +478,7 @@ export function createDataService({
       for (const [id, j] of jobs)
         if (
           j.deviceId === deviceId &&
-          (catalog.activeProfileId !== j.query.profileId ||
+          (!catalogAllows(catalog, j.query) ||
             !catalog.domains.some(
               (d) =>
                 d.domain === j.query.domain &&
@@ -499,7 +552,7 @@ export function createDataService({
           d.enabled &&
           d.types.includes(`${job.query.source}:${job.query.type}`),
       );
-    if (!allowed || phones.get(deviceId)?.catalog.activeProfileId !== job.query.profileId)
+    if (!allowed || !catalogAllows(phones.get(deviceId)?.catalog, job.query))
       throw new PairingError(403, 'Permission revoked.');
     if (input.error) {
       billing.release(subject, input.id);

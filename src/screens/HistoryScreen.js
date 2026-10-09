@@ -18,7 +18,7 @@ import {
 export default function HistoryScreen() {
   const { colors, isDark } = useTheme(),
     insets = useSafeAreaInsets();
-  const { events, loading, refreshing, hasMore, refresh, loadMore } = useHistory();
+  const { events, loading, refreshing, error, hasMore, refresh, loadMore } = useHistory();
   const [filter, setFilter] = useState(0);
   const { profileId } = useLocalSearchParams();
   const profileScoped = usePathname().startsWith('/profiles/history');
@@ -46,9 +46,14 @@ export default function HistoryScreen() {
     return result;
   }, [events, filter, profileId]);
   return (
-    <View collapsable={false} style={[styles.fill, { backgroundColor: colors.background }]}>
+    <View
+      testID="history-screen"
+      collapsable={false}
+      style={[styles.fill, { backgroundColor: colors.background }]}
+    >
       <Stack.Screen options={{ title: profileId ? 'Profile history' : 'History' }} />
       <FlashList
+        testID="history-list"
         data={items}
         keyExtractor={(item) => item.id}
         getItemType={(item) => item.kind}
@@ -56,11 +61,17 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.header}>
+            <Copy muted>Review exports and agent access to your data.</Copy>
             {profileId ? (
               <Copy variant="heading">
                 {events.find((event) => event.profile.id === profileId)?.profile.name ??
                   'This profile'}
               </Copy>
+            ) : null}
+            {error ? (
+              <View testID="history-error" accessibilityRole="alert">
+                <Copy>{error}</Copy>
+              </View>
             ) : null}
             <SegmentedControl
               style={styles.segment}
@@ -68,17 +79,30 @@ export default function HistoryScreen() {
               selectedIndex={filter}
               onChange={(event) => setFilter(event.nativeEvent.selectedSegmentIndex)}
               appearance={isDark ? 'dark' : 'light'}
+              testID="history-filter"
               accessibilityLabel="History type"
             />
           </View>
         }
         ListEmptyComponent={
           loading ? (
-            <View style={styles.loading}>
+            <View
+              testID="history-loading"
+              accessibilityState={{ busy: true }}
+              style={styles.loading}
+            >
               <Copy muted>Loading history…</Copy>
             </View>
+          ) : error ? (
+            <Empty
+              testID="history-empty"
+              icon="alert-circle-outline"
+              title="History could not be loaded"
+              body="Saved entries have been retained. Pull down to retry."
+            />
           ) : (
             <Empty
+              testID="history-empty"
               icon="time-outline"
               title={
                 filter === 2
@@ -113,7 +137,9 @@ export default function HistoryScreen() {
         renderItem={({ item }) =>
           item.kind === 'heading' ? (
             <View style={styles.day}>
-              <Copy variant="heading">{item.title}</Copy>
+              <Copy variant="caption" muted>
+                {item.title}
+              </Copy>
             </View>
           ) : (
             <HistoryRow item={item} profileScoped={profileScoped} />
@@ -130,6 +156,7 @@ function HistoryRow({ item, profileScoped }) {
   const outcome = historyOutcome(event);
   return (
     <Pressable
+      testID={`history-event-${event.id}`}
       accessibilityRole="button"
       accessibilityLabel={[
         historyTitle(event),
@@ -154,7 +181,7 @@ function HistoryRow({ item, profileScoped }) {
         },
       ]}
     >
-      <View style={[styles.icon, { backgroundColor: colors.subtle }]}>
+      <View style={styles.icon}>
         <Icon
           name={
             event.kind === 'access'
@@ -194,21 +221,21 @@ function HistoryRow({ item, profileScoped }) {
 }
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  list: { paddingHorizontal: 24, paddingTop: 16 },
-  header: { gap: 20, paddingBottom: 8 },
+  list: { paddingHorizontal: 16, paddingTop: 24 },
+  header: { gap: 16, paddingBottom: 8 },
   segment: { height: 44 },
   loading: { paddingVertical: 40, alignItems: 'center' },
   footer: { paddingTop: 24 },
   day: { paddingTop: 20, paddingBottom: 12 },
-  row: { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 100 },
-  first: { borderTopLeftRadius: 20, borderTopRightRadius: 20, borderCurve: 'continuous' },
+  row: { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 88 },
+  first: { borderTopLeftRadius: 12, borderTopRightRadius: 12, borderCurve: 'continuous' },
   last: {
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
     borderCurve: 'continuous',
     marginBottom: 4,
   },
-  icon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  icon: { width: 24, height: 32, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1, gap: 4 },
   title: { fontWeight: '500' },
   metadata: {

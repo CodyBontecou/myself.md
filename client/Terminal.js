@@ -6,9 +6,18 @@ export function Text({ style, ...props }) {
   const { colors } = useTheme();
   return <NativeText {...props} style={[styles.text, { color: colors.text }, style]} />;
 }
-/** @param {{title:string,onPress:()=>void,disabled?:boolean}} props */
-export function Button({ title, onPress, disabled = false }) {
-  return <BridgeButton label={title} onPress={onPress} disabled={disabled} secondary />;
+/** @param {{title:string,onPress:()=>void,disabled?:boolean,busy?:boolean,testID?:string}} props */
+export function Button({ title, onPress, disabled = false, busy = false, testID }) {
+  return (
+    <BridgeButton
+      {...(testID ? { testID } : {})}
+      busy={busy}
+      label={title}
+      onPress={onPress}
+      disabled={disabled}
+      secondary
+    />
+  );
 }
 /** @param {import('react-native').SwitchProps} props */
 export function Switch(props) {

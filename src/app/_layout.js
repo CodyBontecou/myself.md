@@ -1,3 +1,6 @@
+import { useSyncExternalStore } from 'react';
+import QaPhoneProvider from '../../client/QaPhoneProvider.js';
+import { qaEnabled, qaSnapshot, subscribeQa } from '../../client/qa-runtime.js';
 import BillingPaywalls from '../../client/BillingPaywalls';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -7,8 +10,9 @@ import PhoneProvider from '../../client/PhoneProvider';
 import { OnboardingProvider, useOnboarding } from '../../client/onboarding';
 export const unstable_settings = { initialRouteName: 'index' };
 export default function RootLayout() {
+  const fixture = useSyncExternalStore(subscribeQa, qaSnapshot);
   return (
-    <OnboardingProvider>
+    <OnboardingProvider key={qaEnabled ? fixture.revision : 0}>
       <RootStack />
     </OnboardingProvider>
   );
@@ -16,6 +20,7 @@ export default function RootLayout() {
 function RootStack() {
   const { colors, isDark } = useTheme();
   const { complete } = useOnboarding();
+  const Provider = qaEnabled ? QaPhoneProvider : PhoneProvider;
   const base = isDark ? DarkTheme : DefaultTheme;
   return (
     <SafeAreaProvider>
@@ -33,8 +38,8 @@ function RootStack() {
         }}
       >
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <PhoneProvider>
-          <BillingPaywalls />
+        <Provider>
+          {!qaEnabled && <BillingPaywalls />}
           <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
@@ -46,6 +51,9 @@ function RootStack() {
               headerBackButtonDisplayMode: 'minimal',
             }}
           >
+            <Stack.Protected guard={qaEnabled}>
+              <Stack.Screen name="qa" options={{ title: 'QA fixtures' }} />
+            </Stack.Protected>
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Protected guard={!complete}>
               <Stack.Screen name="onboarding" options={{ headerShown: false }} />
@@ -55,14 +63,11 @@ function RootStack() {
               <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
               <Stack.Screen name="manage" options={{ headerShown: false }} />
             </Stack.Protected>
-            <Stack.Screen
-              name="unlock"
-              options={{ title: 'Lifetime unlock', presentation: 'modal' }}
-            />
+            <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
             <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
           </Stack>
-        </PhoneProvider>
+        </Provider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

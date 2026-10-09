@@ -1,22 +1,31 @@
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
+import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
 import { useRef, useState } from 'react';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Copy, Group, Row, SectionHeader, Icon, Screen } from '../src/components/ui';
-import { Alert, Modal, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Text } from './Terminal.js';
+import {
+  Copy,
+  Icon,
+  Group,
+  Row,
+  SectionHeader,
+  Button as BridgeButton,
+  Screen,
+} from '../src/components/ui';
+import { Alert, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
+import { Button, Switch, Text } from './Terminal.js';
+import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
-import ExportSettingsEditor from './ExportSettingsEditor.js';
 import ProfileExports from './ProfileExports.js';
-import { parseExportSettings } from '../core/export-files.js';
-import { parseSchedule } from '../core/schedules.js';
+import ExportSettingsEditor from './ExportSettingsEditor.js';
 import { domains } from '../core/data.js';
-import { parseProfile, profileLink, profileFromLink, uniqueProfileName } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,busy:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+import { parseProfile, profileLink, uniqueProfileName } from '../core/profiles.js';
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
   types,
+  permissions,
+  onAuthorize,
   busy,
   onChange,
   draft,
@@ -24,49 +33,176 @@ export default function ProfilePanel({
   profileId,
 }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const [exportSettings, setExportSettings] = useState(() => parseExportSettings(undefined));
-  const [scheduleSettings, setScheduleSettings] = useState(() => parseSchedule(undefined));
-  const [editing, setEditing] = useState('');
-  const [section, setSection] = useState('');
-  const originalDraft = useRef('');
+  const { start } = useProfileEditor();
   const actionRunning = useRef(false);
   const [deletingProfile, setDeletingProfile] = useState(
     /** @type {import('../core/profiles.js').ExportProfile|null} */ (null),
   );
   const profile = state.profiles.find((p) => p.id === profileId) ?? deletingProfile;
-  const [name, setName] = useState('');
-  const [selection, setSelection] = useState(
-    /** @type {import('../core/profiles.js').ProfileDraft['selection']} */ ({
-      health: [],
-      time: [],
-      location: [],
-    }),
-  );
-  const [importText, setImportText] = useState('');
   const [error, setError] = useState('');
   const [shareLink, setShareLink] = useState('');
-  const [review, setReview] = useState(false);
   const [working, setWorking] = useState(false);
   const disabled = busy || working;
+  const navigation = useNavigation();
+  const [editing, setEditing] = useState(
+    /** @type {{key:string,original:import('../core/profiles.js').ResolvedDraft,draft:import('../core/profiles.js').ResolvedDraft}|null} */ (
+      null
+    ),
+  );
+  const dirty = Boolean(
+    editing && JSON.stringify(editing.draft) !== JSON.stringify(editing.original),
+  );
+  usePreventRemove(dirty && !deletingProfile, ({ data }) => {
+    if (working) return;
+    Alert.alert('Discard changes?', 'Your unsaved profile changes will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(data.action) },
+    ]);
+  });
+  /** @param {()=>void} action */
+  function leaveForm(action) {
+    if (!dirty) return action();
+    Alert.alert('Discard changes?', 'Your unsaved profile changes will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: action },
+    ]);
+  }
+  /** @param {string} title @param {string} value @param {string} section @param {string} [field] */
+  function setting(title, value, section, field = '') {
+    if (!profile) return null;
+    const key = field || section;
+    const open = editing?.key === key;
+    return (
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          testID={`profile-setting-${key}`}
+          accessibilityLabel={[title, value].filter(Boolean).join(', ')}
+          accessibilityState={{ expanded: open, disabled }}
+          disabled={disabled}
+          onPress={() =>
+            leaveForm(() => {
+              setError('');
+              setEditing(open ? null : { key, original: profile, draft: profile });
+            })
+          }
+          style={({ pressed }) => [
+            styles.settingRow,
+            {
+              borderBottomColor: colors.border,
+              backgroundColor: pressed ? colors.subtle : 'transparent',
+            },
+          ]}
+        >
+          <Icon
+            name={open ? 'chevron-down' : 'chevron-forward'}
+            size={17}
+            color={colors.secondary}
+          />
+          <View style={styles.settingTitle}>
+            <Copy>{title}</Copy>
+          </View>
+          <Copy variant="caption" muted style={styles.settingValue}>
+            {value}
+          </Copy>
+        </Pressable>
+        {open && editing && (
+          <View style={styles.form}>
+            {section === 'name' ? (
+              <TextInput
+                testID="profile-name-input"
+                accessibilityLabel="Profile name"
+                value={editing.draft.name}
+                editable={!disabled}
+                onChangeText={(name) =>
+                  setEditing({ ...editing, draft: { ...editing.draft, name } })
+                }
+                style={[styles.nameInput, { color: colors.text, borderColor: colors.border }]}
+              />
+            ) : (
+              <ExportSettingsEditor
+                section={section}
+                field={field}
+                settings={editing.draft.export}
+                schedule={editing.draft.schedule}
+                onSettings={(settings) =>
+                  setEditing({ ...editing, draft: { ...editing.draft, export: settings } })
+                }
+                onSchedule={(schedule) =>
+                  setEditing({ ...editing, draft: { ...editing.draft, schedule } })
+                }
+                disabled={disabled}
+              />
+            )}
+            {error ? <Copy>{error}</Copy> : null}
+            {dirty && (
+              <View style={styles.formActions}>
+                <View style={styles.settingTitle}>
+                  <BridgeButton
+                    testID="profile-inline-save"
+                    busy={working}
+                    label="Save"
+                    disabled={disabled}
+                    onPress={() =>
+                      void run(async () => {
+                        const updated = parseProfile({
+                          ...profile,
+                          name: section === 'name' ? editing.draft.name : profile.name,
+                          export: {
+                            ...profile.export,
+                            ...changedFields(editing.original.export, editing.draft.export),
+                          },
+                          schedule: {
+                            ...profile.schedule,
+                            ...changedFields(editing.original.schedule, editing.draft.schedule),
+                          },
+                        });
+                        if (section === 'name')
+                          updated.name = uniqueProfileName(
+                            updated.name,
+                            state.profiles.filter((p) => p.id !== profile.id),
+                          );
+                        await onChange({
+                          ...state,
+                          profiles: state.profiles.map((p) =>
+                            p.id === profile.id
+                              ? {
+                                  ...updated,
+                                  id: profile.id,
+                                  agentAccess: profile.agentAccess === true,
+                                }
+                              : p,
+                          ),
+                        });
+                        setEditing(null);
+                      })
+                    }
+                  />
+                </View>
+                <View style={styles.settingTitle}>
+                  <BridgeButton
+                    testID="profile-inline-cancel"
+                    label="Cancel"
+                    secondary
+                    disabled={disabled}
+                    onPress={() => {
+                      setEditing(null);
+                      setError('');
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }
   /** @param {import('../core/profiles.js').ProfileDraft} p @param {string} [id] */
-  function edit(p, id = '') {
+  function edit(p, id = '', section = '', field = '', domain = '') {
     if (disabled) return;
-    originalDraft.current = JSON.stringify({
-      name: p.name,
-      selection: p.selection,
-      export: parseExportSettings(p.export),
-      schedule: parseSchedule(p.schedule),
-    });
-    setSection('');
-    setImportText('');
-    setEditing(id || 'new');
-    setName(p.name);
-    setSelection(p.selection);
-    setExportSettings(parseExportSettings(p.export));
-    setScheduleSettings(parseSchedule(p.schedule));
-    setError('');
-    setShareLink('');
+    start(p, id, p === draft ? onDismiss : undefined);
+    router.push({ pathname: '/profiles/editor', params: { section, field, domain } });
   }
   /** @param {()=>Promise<void>|void} action */
   async function run(action) {
@@ -83,187 +219,164 @@ export default function ProfilePanel({
       setWorking(false);
     }
   }
-  async function save() {
-    const parsed = parseProfile({
-      schema: 'myself.md.profile.v1',
-      name,
-      selection,
-      export: exportSettings,
-      schedule: scheduleSettings,
-    });
-    const id = editing === 'new' ? `${Date.now()}-${Math.random().toString(36).slice(2)}` : editing;
-    if (editing !== 'new' && !state.profiles.some((p) => p.id === id))
-      throw new Error('This profile no longer exists. Cancel to return.');
-    const others = state.profiles.filter((p) => p.id !== id);
-    const savedProfile = { ...parsed, id, name: uniqueProfileName(parsed.name, others) };
-    if (others.length >= 50) throw new Error('Keep at most 50 profiles.');
-    await onChange({
-      ...state,
-      profiles:
-        editing === 'new'
-          ? [...state.profiles, savedProfile]
-          : state.profiles.map((p) => (p.id === id ? savedProfile : p)),
-    });
-    setEditing('');
-    if (editing === 'new') router.push({ pathname: '/profiles/[id]', params: { id } });
-    if (review) {
-      setReview(false);
-      onDismiss();
-    }
-  }
-  function closeEditor() {
-    setEditing('');
-    setReview(false);
-    setError('');
-  }
-  function cancel() {
-    if (disabled) return;
-    if (
-      JSON.stringify({ name, selection, export: exportSettings, schedule: scheduleSettings }) ===
-      originalDraft.current
-    )
-      closeEditor();
-    else
-      Alert.alert('Discard changes?', 'Your unsaved profile changes will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: closeEditor },
-      ]);
-  }
   const content = (
-    <View
-      style={styles.container}
-      accessibilityElementsHidden={Boolean(editing)}
-      importantForAccessibility={editing ? 'no-hide-descendants' : 'auto'}
-    >
-      {profileId && !profile && <Text>This profile no longer exists.</Text>}
+    <View testID={profile ? 'profile-content' : 'profiles-list'} style={styles.container}>
+      {profileId && !profile && (
+        <Text testID="profile-unavailable">This profile no longer exists.</Text>
+      )}
       {profile && (
         <>
           <Group compact>
             <Row
               compact
-              title={profile.id === state.activeId ? 'Active profile' : 'Saved profile'}
-              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)} selected · ${profile.export.formats.join(' + ').toUpperCase()}`}
-            />
-            <Row
-              compact
-              title="Customize profile"
-              onPress={() => edit(profile, profile.id)}
-              disabled={disabled}
+              testID="profile-saved-profile"
+              title="Saved profile"
+              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${profile.export.formats.join(' + ').toUpperCase()}`}
             />
           </Group>
           <Copy variant="caption" muted>
-            {profile.id === state.activeId
-              ? 'Saved selections apply to live agent access. Source permissions still apply.'
-              : 'Schedules run independently. Activate to use this profile for live agent access.'}
+            Agents can choose any approved profile. Source permissions and domain grants still
+            apply.
           </Copy>
-          <SectionHeader
-            compact
-            title="Data selection"
-            action="Edit"
-            onPress={() => {
-              edit(profile, profile.id);
-              setSection('data');
-            }}
-          />
           <Group compact>
-            {domains.map((domain) => (
-              <Row
-                compact
-                key={domain}
-                title={
-                  domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'
+            <Row
+              compact
+              testID="profile-allow-agent-access"
+              title="Allow agent access"
+              trailing={
+                <Switch
+                  testID="profile-agent-access"
+                  accessibilityLabel={`Allow agent access for ${profile.name}`}
+                  value={profile.agentAccess === true}
+                  disabled={disabled}
+                  onValueChange={(enabled) => {
+                    const save = () =>
+                      void run(() =>
+                        onChange({
+                          ...state,
+                          profiles: state.profiles.map((p) =>
+                            p.id === profile.id ? { ...p, agentAccess: enabled } : p,
+                          ),
+                        }),
+                      );
+                    if (!enabled) return save();
+                    Alert.alert(
+                      'Allow agent access?',
+                      `Paired agents can read the selected data in ${profile.name}, subject to domain grants and source permissions.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Allow', onPress: save },
+                      ],
+                    );
+                  }}
+                />
+              }
+            />
+          </Group>
+          <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
+          <SectionHeader compact title="Data selection" />
+          <Group compact>
+            <ProfileDataEditor
+              key={profile.id}
+              inline
+              types={types}
+              permissions={permissions}
+              onAuthorize={onAuthorize}
+              onOpenLocation={() => router.push('/data/location')}
+              selection={profile.selection}
+              onSelection={async (selection) => {
+                if (actionRunning.current)
+                  throw new Error('Wait for the current profile action to finish.');
+                actionRunning.current = true;
+                setWorking(true);
+                try {
+                  const updated = parseProfile({ ...profile, selection });
+                  await onChange({
+                    ...state,
+                    profiles: state.profiles.map((p) =>
+                      p.id === profile.id
+                        ? { ...updated, id: profile.id, agentAccess: profile.agentAccess === true }
+                        : p,
+                    ),
+                  });
+                } finally {
+                  actionRunning.current = false;
+                  setWorking(false);
                 }
-                value={`${profile.selection[domain].length} selected`}
-              />
-            ))}
-          </Group>
-          <SectionHeader
-            compact
-            title="Destination"
-            action="Edit"
-            onPress={() => {
-              edit(profile, profile.id);
-              setSection('destination');
-            }}
-          />
-          <Group compact>
-            <Row
-              compact
-              title={
-                profile.export.destination === 'local'
-                  ? 'On this phone'
-                  : profile.export.destination === 'http'
-                    ? 'HTTPS endpoint'
-                    : 'Cloud service'
-              }
-              value={
-                profile.export.destination === 'local'
-                  ? `Documents/${profile.export.folderName}`
-                  : profile.export.destination === 'http'
-                    ? (profile.export.httpUrl ?? '')
-                    : session.server || 'Connect an agent to use cloud exports'
-              }
+              }}
+              disabled={disabled}
             />
           </Group>
-          <SectionHeader
-            compact
-            title="Output"
-            action="Edit"
-            onPress={() => {
-              edit(profile, profile.id);
-              setSection('output');
-            }}
-          />
+          <SectionHeader compact title="Destination" />
           <Group compact>
-            <Row compact title="Formats" value={profile.export.formats.join(' + ').toUpperCase()} />
-            <Row
-              compact
-              title="Export window"
-              value={`${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`}
-            />
-            <Row compact title="Filename" value={profile.export.filenameTemplate} />
-            <Row
-              compact
-              title="Folders"
-              value={`${profile.export.folderName}${profile.export.formatFolders ? ' · separate format folders' : ''}`}
-            />
-            <Row compact title="When files exist" value="Replace matching daily files" />
+            {setting(
+              profile.export.destination === 'local'
+                ? 'On this phone'
+                : profile.export.destination === 'http'
+                  ? 'HTTPS endpoint'
+                  : 'Cloud service',
+              profile.export.destination === 'local'
+                ? `Documents/${profile.export.folderName}`
+                : profile.export.destination === 'http'
+                  ? (profile.export.httpUrl ?? '')
+                  : session.server || 'Connect an agent to use cloud exports',
+              'destination',
+            )}
           </Group>
-          <SectionHeader
-            compact
-            title="Schedule"
-            action="Edit"
-            onPress={() => {
-              edit(profile, profile.id);
-              setSection('schedule');
-            }}
-          />
+          <SectionHeader compact title="Output" />
           <Group compact>
+            {setting(
+              'Formats',
+              profile.export.formats.join(' + ').toUpperCase(),
+              'output',
+              'formats',
+            )}
+            {setting(
+              'Export window',
+              `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
+              'output',
+              'window',
+            )}
+            {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+            {setting(
+              'Folders',
+              `${profile.export.folderName}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
+              'output',
+              'folders',
+            )}
             <Row
               compact
-              title="Cadence"
-              value={
-                profile.schedule.frequency === 'custom'
-                  ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
-                  : profile.schedule.frequency === 'weekly'
-                    ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
-                    : 'Daily'
-              }
+              testID="profile-when-files-exist"
+              title="When files exist"
+              value="Replace matching daily files"
             />
-            <Row
-              compact
-              title="Preferred time"
-              value={`${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`}
-            />
-            <Row
-              compact
-              title="Today Refresh"
-              value={
-                profile.schedule.todayRefresh
-                  ? `Every ${profile.schedule.refreshHours} hours`
-                  : 'Off'
-              }
-            />
+          </Group>
+          <SectionHeader compact title="Schedule" />
+          <Group compact>
+            {setting(
+              'Cadence',
+              profile.schedule.frequency === 'custom'
+                ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
+                : profile.schedule.frequency === 'weekly'
+                  ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
+                  : 'Daily',
+              'schedule',
+              'cadence',
+            )}
+            {setting(
+              'Preferred time',
+              `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
+              'schedule',
+              'time',
+            )}
+            {setting(
+              'Today Refresh',
+              profile.schedule.todayRefresh
+                ? `Every ${profile.schedule.refreshHours} hours`
+                : 'Off',
+              'schedule',
+              'refresh',
+            )}
           </Group>
           <ProfileExports
             key={profile.id}
@@ -274,6 +387,7 @@ export default function ProfilePanel({
           <Group compact>
             <Row
               compact
+              testID="profile-view-history"
               title="View history"
               subtitle="Exports and agent access for this profile"
               onPress={() =>
@@ -294,18 +408,7 @@ export default function ProfilePanel({
           <Group compact>
             <Row
               compact
-              title="Rename profile"
-              disabled={disabled}
-              onPress={() => edit(profile, profile.id)}
-            />
-            <Row
-              compact
-              title="Make active"
-              disabled={disabled || profile.id === state.activeId}
-              onPress={() => void run(() => onChange({ ...state, activeId: profile.id }))}
-            />
-            <Row
-              compact
+              testID="profile-duplicate-profile"
               title="Duplicate profile"
               disabled={disabled}
               onPress={() =>
@@ -314,6 +417,7 @@ export default function ProfilePanel({
             />
             <Row
               compact
+              testID="profile-share-profile-link"
               title="Share profile link"
               disabled={disabled}
               onPress={() =>
@@ -327,6 +431,7 @@ export default function ProfilePanel({
             <Row
               compact
               destructive
+              testID="profile-delete-profile"
               title="Delete profile"
               disabled={disabled || state.profiles.length === 1}
               onPress={() =>
@@ -342,13 +447,7 @@ export default function ProfilePanel({
                         void run(async () => {
                           setDeletingProfile(profile);
                           const profiles = state.profiles.filter((p) => p.id !== profile.id);
-                          await onChange({
-                            profiles,
-                            activeId:
-                              state.activeId === profile.id
-                                ? (profiles[0]?.id ?? state.activeId)
-                                : state.activeId,
-                          });
+                          await onChange({ profiles });
                           router.back();
                         }),
                     },
@@ -359,7 +458,7 @@ export default function ProfilePanel({
           </Group>
         </>
       )}
-      {draft && !review ? (
+      {draft ? (
         <View
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
@@ -369,26 +468,51 @@ export default function ProfilePanel({
             Review before saving; access stays unchanged.
           </Text>
           <Button
+            testID="profile-review-generated-profile"
             title="Review generated profile"
             disabled={disabled}
             onPress={() => {
-              setReview(true);
               edit(draft);
             }}
           />
-          <Button title="Dismiss generated profile" onPress={onDismiss} />
+          <Button
+            testID="profile-dismiss-generated-profile"
+            title="Dismiss generated profile"
+            onPress={onDismiss}
+          />
         </View>
       ) : null}
       {!profileId && (
         <>
-          <SectionHeader compact title="Your profiles" />
+          <View style={styles.intro}>
+            <Copy variant="heading">Choose what goes into your exports.</Copy>
+            <Copy muted>
+              Profiles keep your data selection, destination, and schedule together.
+            </Copy>
+          </View>
+          <BridgeButton
+            testID="profile-new-profile"
+            label="New profile"
+            icon="add"
+            disabled={disabled}
+            onPress={() =>
+              edit({
+                schema: 'myself.md.profile.v1',
+                name: 'Profile',
+                selection: { health: [], time: [], location: [] },
+              })
+            }
+          />
+          <SectionHeader title="Saved profiles" count={state.profiles.length} />
           <Group compact>
             {state.profiles.map((p) => (
               <Row
                 compact
                 key={p.id}
+                testID={`profile-row-${p.id}`}
                 title={p.name}
-                subtitle={`${p.id === state.activeId ? 'Active · ' : ''}${domains.reduce((n, d) => n + p.selection[d].length, 0)} types · ${p.export.formats.join(' + ').toUpperCase()} · ${p.export.destination === 'local' ? 'On this phone' : p.export.destination === 'http' ? 'HTTPS' : 'Cloud'}`}
+                subtitle={`${domains.reduce((n, d) => n + p.selection[d].length, 0)} data types · ${p.export.formats.join(' + ').toUpperCase()} · ${p.export.destination === 'local' ? 'On this phone' : p.export.destination === 'http' ? 'HTTPS' : 'Cloud'}`}
+                value={p.agentAccess ? 'Agent access' : 'Private'}
                 onPress={() => router.push({ pathname: '/profiles/[id]', params: { id: p.id } })}
               />
             ))}
@@ -399,218 +523,52 @@ export default function ProfilePanel({
   );
   return (
     <View style={!profileId && styles.feed}>
-      {profileId ? (
-        content
-      ) : (
-        <Screen>
-          {content}
-          <View style={styles.feedClearance} />
-        </Screen>
-      )}
-      {!profileId && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="New profile"
-          accessibilityState={{ disabled }}
-          disabled={disabled}
-          onPress={() =>
-            edit({
-              schema: 'myself.md.profile.v1',
-              name: 'Profile',
-              selection: { health: [], time: [], location: [] },
-            })
-          }
-          style={({ pressed }) => [
-            styles.floatingAction,
-            {
-              bottom: insets.bottom + 16,
-              backgroundColor: colors.accent,
-              opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <Icon name="add" size={30} color={colors.onAccent} />
-        </Pressable>
-      )}
-      <Modal
-        visible={Boolean(editing)}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => (section ? setSection('') : cancel())}
-      >
-        <SafeAreaView
-          accessibilityViewIsModal
-          style={[styles.modal, { backgroundColor: colors.background }]}
-        >
-          <View style={styles.toolbar}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={disabled}
-              accessibilityState={{ disabled }}
-              onPress={() => (section ? setSection('') : cancel())}
-              style={({ pressed }) => [
-                styles.toolbarAction,
-                { backgroundColor: colors.subtle, opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Copy style={styles.toolbarLabel}>{section ? 'All settings' : 'Cancel'}</Copy>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={disabled}
-              accessibilityState={{ disabled }}
-              onPress={() => void run(save)}
-              style={({ pressed }) => [
-                styles.toolbarAction,
-                { backgroundColor: colors.accent, opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Copy style={[styles.toolbarLabel, { color: colors.onAccent }]}>
-                {working ? 'Saving…' : 'Save profile'}
-              </Copy>
-            </Pressable>
-          </View>
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.editorError}>
-              {error}
-            </Text>
-          ) : null}
-          {section === 'data' ? (
-            <ProfileDataEditor
-              types={types}
-              selection={selection}
-              onSelection={setSelection}
-              disabled={disabled}
-            />
-          ) : (
-            <Screen compact>
-              <Copy variant="heading">
-                {section
-                  ? ({ destination: 'Destination', output: 'Output', schedule: 'Schedule' }[
-                      section
-                    ] ?? 'Customize profile')
-                  : review
-                    ? 'Review generated profile'
-                    : editing === 'new'
-                      ? 'New profile'
-                      : 'Customize profile'}
-              </Copy>
-              {!section && editing === 'new' && !review && (
-                <>
-                  <SectionHeader compact title="Import profile" />
-                  <TextInput
-                    accessibilityLabel="Profile JSON or deep link"
-                    placeholder="Paste profile JSON or qrconnect link"
-                    editable={!disabled}
-                    value={importText}
-                    onChangeText={setImportText}
-                    multiline
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                        color: colors.text,
-                      },
-                    ]}
-                  />
-                  <Button
-                    title="Review pasted profile"
-                    disabled={disabled || !importText}
-                    onPress={() =>
-                      void run(async () => {
-                        edit(
-                          importText.trim().startsWith('qrconnect:')
-                            ? profileFromLink(importText.trim())
-                            : parseProfile(JSON.parse(importText)),
-                        );
-                      })
-                    }
-                  />
-                </>
-              )}
-              {!section && (
-                <>
-                  <Copy variant="caption" muted>
-                    Profile name
-                  </Copy>
-                  <TextInput
-                    accessibilityLabel="Profile name"
-                    editable={!disabled}
-                    value={name}
-                    onChangeText={setName}
-                    maxLength={80}
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                        color: colors.text,
-                      },
-                    ]}
-                  />
-                  <Group compact>
-                    <Row
-                      compact
-                      title="Data selection"
-                      subtitle={`${domains.reduce((n, d) => n + selection[d].length, 0)} selected`}
-                      onPress={() => setSection('data')}
-                    />
-                  </Group>
-                  <Copy variant="caption" muted>
-                    Changes stay in this draft until you save.
-                  </Copy>
-                </>
-              )}
-              {(!section || ['destination', 'output', 'schedule'].includes(section)) && (
-                <ExportSettingsEditor
-                  section={section}
-                  settings={exportSettings}
-                  schedule={scheduleSettings}
-                  onSettings={setExportSettings}
-                  onSchedule={setScheduleSettings}
-                  disabled={disabled}
-                />
-              )}
-              <Copy variant="caption" muted>
-                Automatic exports and credentials are managed on the saved profile.
-              </Copy>
-            </Screen>
-          )}
-        </SafeAreaView>
-      </Modal>
+      {profileId ? content : <Screen>{content}</Screen>}
       {shareLink ? (
         <Text selectable style={styles.detail}>
           {shareLink}
         </Text>
       ) : null}
-      {error && !editing ? <Text accessibilityRole="alert">{error}</Text> : null}
+      {error && !editing ? (
+        <Text testID="profile-error" accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
+/** @param {object} before @param {object} after */
+function changedFields(before, after) {
+  const original = new Map(Object.entries(before));
+  return Object.fromEntries(
+    Object.entries(after).filter(
+      ([key, value]) => JSON.stringify(value) !== JSON.stringify(original.get(key)),
+    ),
+  );
+}
 const styles = StyleSheet.create({
-  container: { gap: 8 },
-  feed: { flex: 1 },
-  feedClearance: { height: 72 },
-  floatingAction: {
-    position: 'absolute',
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modal: { flex: 1 },
-  editorError: { paddingHorizontal: 16, paddingBottom: 12 },
-  toolbar: {
+  settingRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    gap: 8,
+    padding: 12,
+    minHeight: 44,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  settingTitle: { flex: 1 },
+  settingValue: { flexShrink: 1, maxWidth: '55%', textAlign: 'right' },
+  form: { padding: 12, gap: 12 },
+  formActions: { flexDirection: 'row', gap: 8 },
+  nameInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 44,
+    fontSize: 16,
+  },
+  container: { gap: 16 },
+  intro: { gap: 8 },
+  feed: { flex: 1 },
   card: {
     gap: 8,
     padding: 12,
@@ -618,26 +576,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderCurve: 'continuous',
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-
-    padding: 12,
-
-    fontSize: 16,
-    minHeight: 44,
-  },
-  toolbarAction: {
-    minHeight: 48,
-    flexShrink: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolbarLabel: { fontWeight: '600', textAlign: 'center' },
   detail: { fontSize: 13, lineHeight: 20 },
 });

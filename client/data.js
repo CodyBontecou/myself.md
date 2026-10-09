@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
-import { profileAllows } from '../core/profiles.js';
+import { profileAllows, agentProfileAllows } from '../core/profiles.js';
 import { domains } from '../core/data.js';
 import { localPage } from './library.js';
 import { healthTypes, healthPage } from './health.js';
@@ -13,6 +13,25 @@ export async function catalog(_owner, grants, profile) {
   return {
     domains: domains.map((domain) => ({
       domain,
+      selectableTypes: (domain === 'health'
+        ? health
+        : domain === 'time'
+          ? Platform.OS === 'ios'
+            ? ['applications', 'websites']
+            : Platform.OS === 'android'
+              ? ['applications']
+              : []
+          : ['points']
+      ).map((type) => `native:${type}`),
+      permission:
+        domain === 'health'
+          ? 'system-managed'
+          : domain === 'time'
+            ? usage
+            : location.granted
+              ? 'authorized'
+              : 'required',
+      permissionHandoff: `qrconnect://data/${domain}`,
       enabled: grants[domain] && (!profile || profile.selection[domain].length > 0),
       types: (domain === 'health'
         ? health
@@ -38,7 +57,7 @@ export async function catalog(_owner, grants, profile) {
                 `System authorization: ${usage}. iOS raw data requires iOS 26.4+, the approved Family Controls data entitlement, and EU eligibility. Android uses Usage Access. Aggregates are not sessions.`,
               ]
             : [
-                'Only locally recorded points are available. Background tracking is optional. No historical OS location archive is exposed.',
+                `Location access: ${location.granted ? 'authorized' : 'required'}. Only locally recorded points are available. Background tracking is optional. No historical OS location archive is exposed.`,
               ],
     })),
   };
@@ -56,8 +75,10 @@ function cursor(query, token) {
 }
 /** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} [forChat] @returns {Promise<import('../core/data.js').DataPage>} */
 export async function readPage(owner, query, profile, forChat = true) {
+  if (forChat && !agentProfileAllows(profile, query))
+    throw new Error('Agent access is not approved for this profile and data type.');
   if (!profileAllows(profile, query))
-    throw new Error('This data type is disabled in the active profile.');
+    throw new Error('This data type is disabled in this profile.');
   let token = '';
   if (query.cursor) {
     const value = /** @type {{token:string}} */ (JSON.parse(query.cursor));

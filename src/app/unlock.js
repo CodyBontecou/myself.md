@@ -1,3 +1,4 @@
+import { qaEnabled } from '../../client/qa-runtime.js';
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { Screen, Copy, Button, Notice } from '../components/ui';
@@ -9,8 +10,11 @@ export default function UnlockScreen() {
   const guide = existingCustomerGuide();
   const [price, setPrice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(
+    qaEnabled ? 'Purchases require a normal build for integration QA.' : '',
+  );
   useEffect(() => {
+    if (qaEnabled) return;
     void lifetimeProduct()
       .then((product) => setPrice(product.displayPrice))
       .catch((e) => setError(e instanceof Error ? e.message : 'The store is unavailable.'));
@@ -31,7 +35,7 @@ export default function UnlockScreen() {
     }
   }
   return (
-    <Screen>
+    <Screen testID="unlock-screen">
       <Copy variant="title">
         {current.used >= 5
           ? 'Your free exports are used up'
@@ -53,6 +57,7 @@ export default function UnlockScreen() {
       <Copy muted>Unlimited exports and queries, forever. No subscription.</Copy>
       <Notice title={guide.title} body={guide.summary} icon="gift-outline" />
       <Button
+        testID="unlock-claim-existing-customer-access"
         label="Claim existing-customer access"
         secondary
         disabled={busy}
@@ -65,9 +70,10 @@ export default function UnlockScreen() {
         onPress={() => void run(buyLifetime)}
       />
       <Button
+        testID="unlock-restore-purchases"
         label="Restore purchases"
         secondary
-        disabled={busy}
+        disabled={busy || qaEnabled}
         onPress={() => void run(() => restoreLifetime(true))}
       />
       <Button

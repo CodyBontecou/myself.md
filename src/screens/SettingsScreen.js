@@ -1,38 +1,55 @@
+import { qaEnabled } from '../../client/qa-runtime.js';
 import { useBilling } from '../../client/BillingPaywalls';
 import { router } from 'expo-router';
-import { Screen, Copy, Group, Row } from '../components/ui';
+import { Screen, Copy, Group, Row, Divider, SectionHeader } from '../components/ui';
 export default function SettingsScreen() {
   const billing = useBilling();
   return (
-    <Screen>
-      <Copy variant="heading">myself.md</Copy>
-      <Copy muted>Manage your phone’s data sources and choose which agents can access them.</Copy>
+    <Screen testID="settings-screen">
+      {qaEnabled && (
+        <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
+      )}
+      <Copy muted>Manage your account, data sources, and agent connections.</Copy>
+      <SectionHeader title="Account & access" />
       <Group>
         <Row
-          title={billing.unlocked ? 'Lifetime access unlocked' : 'Unlock forever · $19.99'}
+          testID="settings-lifetime-access"
+          title={billing.unlocked ? 'Lifetime access' : 'Unlock forever · $19.99'}
           subtitle={
             billing.unlocked
               ? 'Unlimited exports and queries'
               : `${billing.remaining} free exports remaining · one-time purchase`
           }
+          {...(billing.unlocked ? { value: 'Unlocked' } : {})}
           onPress={() => router.push('/unlock')}
         />
+        <Divider />
         <Row
-          title="Your myself.md account"
-          subtitle="Sign in, lifetime access, or delete your account"
+          testID="settings-your-account"
+          title="Your account"
+          subtitle="Sign in, claim existing access, or delete your account"
           onPress={() => router.push('/account')}
         />
+      </Group>
+      <SectionHeader title="Data & connections" />
+      <Group>
         <Row
-          title="Connections & data sources"
-          subtitle="Health, screen time, location, and agent access"
+          testID="settings-data-sources"
+          title="Data sources"
+          subtitle="Health, screen time, and location permissions"
           onPress={() => router.push('/settings/connections')}
         />
+        <Divider />
         <Row
+          testID="settings-agent-connection"
           title="Agent connection"
           subtitle="Pair, check connection, or disconnect"
           onPress={() => router.push('/pair')}
         />
       </Group>
+      <Copy variant="caption" muted>
+        myself.md · You choose which data your agents can access.
+      </Copy>
     </Screen>
   );
 }

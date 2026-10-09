@@ -3,8 +3,8 @@ import { parseExportSettings } from './export-files.js';
 import { domains } from './data.js';
 /** @typedef {{schema:'myself.md.profile.v1'|'qr-connect.profile.v1',name:string,selection:Record<import('./data.js').Domain,string[]>,export?:import('./export-files.js').ExportSettings,schedule?:import('./schedules.js').ScheduleConfig}} ProfileDraft */
 /** @typedef {ProfileDraft & {export:import('./export-files.js').ExportSettings,schedule:import('./schedules.js').ScheduleConfig}} ResolvedDraft */
-/** @typedef {ResolvedDraft & {id:string}} ExportProfile */
-/** @typedef {{activeId:string,profiles:ExportProfile[]}} ProfileState */
+/** @typedef {ResolvedDraft & {id:string,agentAccess?:boolean}} ExportProfile */
+/** @typedef {{profiles:ExportProfile[]}} ProfileState */
 /** Validate the same portable, explicit allowlist on the phone and MCP boundary.
  * Unknown types can be retained for another platform, but never imply authorization.
  * @param {unknown} value @param {boolean} [legacySnapshot] @returns {ResolvedDraft} */
@@ -70,6 +70,11 @@ export function profileAllows(profile, query) {
     profile.selection[query.domain].includes(`${query.source}:${query.type}`)
   );
 }
+/** Live access requires phone approval in addition to the profile selection.
+ * @param {ExportProfile|undefined} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
+export function agentProfileAllows(profile, query) {
+  return profile?.agentAccess === true && profileAllows(profile, query);
+}
 /** @param {string} name @param {ExportProfile[]} profiles */
 export function uniqueProfileName(name, profiles) {
   const base = name.trim() || 'Profile';
@@ -80,4 +85,24 @@ export function uniqueProfileName(name, profiles) {
     next = `${base.slice(0, 80 - suffix.length)}${suffix}`;
   }
   return next;
+}
+
+/** Same profile parser and minimum-count contract as the mobile save boundary.
+ * @param {import('../core/profiles.js').ProfileState} state */
+export function parseProfileState(state) {
+  if (!Array.isArray(state.profiles) || !state.profiles.length || state.profiles.length > 50)
+    throw new Error('Keep between 1 and 50 profiles.');
+  const ids = new Set();
+  return {
+    profiles: state.profiles.map((profile) => {
+      if (typeof profile.id !== 'string' || !profile.id || ids.has(profile.id))
+        throw new Error('Use unique profile IDs.');
+      ids.add(profile.id);
+      return {
+        ...parseProfile(profile),
+        id: profile.id,
+        agentAccess: profile.agentAccess === true,
+      };
+    }),
+  };
 }

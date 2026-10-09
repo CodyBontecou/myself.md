@@ -17,7 +17,9 @@ db.execSync(
 /** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{historyId?:string,profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number}} State */
 /** @param {import('../core/profiles.js').ExportProfile} profile */
 function fingerprint(profile) {
-  return JSON.stringify(profile);
+  const configuration = { ...profile };
+  delete configuration.agentAccess;
+  return JSON.stringify(configuration);
 }
 /** @param {string} device @param {import('../core/profiles.js').ExportProfile} profile @returns {State} */
 export function scheduleState(device, profile) {
