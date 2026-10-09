@@ -62,3 +62,8 @@ yarn-error.*
 
 # Generated local-module native artifacts
 modules/*/android/build/
+
+# Local Worker state and secrets
+.wrangler/
+.dev.vars
+.dev.vars.*

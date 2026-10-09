@@ -1,13 +1,13 @@
 import { Buffer } from 'node:buffer';
-import { DatabaseSync } from 'node:sqlite';
+import { database } from './database.js';
 import { relatedHistoryEvents } from '../core/history-display.js';
 import { parseHistoryEvent } from '../core/history.js';
 /** @typedef {import('../core/history.js').HistoryEvent} HistoryEvent */
 /** Encrypted audit metadata has an independent lifetime from export files and ephemeral responses. */
 export class HistoryStore {
-  /** @param {string} path @param {{seal:(plain:Uint8Array,aad:string)=>Uint8Array,open:(value:Uint8Array,aad:string)=>Uint8Array}} codec */
+  /** @param {string|import("./database.js").SqlDatabase} path @param {{seal:(plain:Uint8Array,aad:string)=>Uint8Array,open:(value:Uint8Array,aad:string)=>Uint8Array}} codec */
   constructor(path, codec) {
-    this.db = new DatabaseSync(path);
+    this.db = database(path);
     this.codec = codec;
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;
       CREATE TABLE IF NOT EXISTS activity (subject TEXT, device TEXT, id TEXT, started TEXT, value BLOB, PRIMARY KEY(subject,id));

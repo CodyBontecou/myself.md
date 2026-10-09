@@ -4,6 +4,8 @@ Existing health.md and iso.me purchasers can claim a permanent, account-based my
 
 ## Customer journey
 
+Start from myself.md’s onboarding **Claim existing-customer access** option or the same button on its paywall. The account screen explains the steps below and the manual time.md offer. These entry points do not purchase anything or claim access without verification.
+
 1. In health.md (iPhone, iPad, or Google Play Android) or iso.me (iOS), open Settings → **Claim myself.md access**.
 2. Read the disclosure and choose **Verify purchase and continue**. Only purchase evidence is sent to myself.md; no health, location, or export data is uploaded.
 3. The server verifies ownership with Apple or Google and opens a 15-minute claim link. Sign in with Apple or GitHub, check the displayed account, and explicitly claim lifetime access.
@@ -17,7 +19,7 @@ The link contains only a random ticket, never a receipt or Google purchase token
 - Health.md iOS: `com.codybontecou.obsidianhealth.unlock` or `com.codybontecou.obsidianhealth.unlock.family`.
 - iso.me iOS: `com.bontecou.isome.lifetime.individual` or `com.bontecou.isome.lifetime`.
 - Health.md Google Play: `health_md_premium_lifetime` in `com.healthmd.android`.
-- Family purchasers qualify; family-shared recipients do not qualify independently. Family upgrade products alone do not grant another claim. Pending, revoked, wrong-app, and unsupported purchases are rejected.
+- Family purchasers qualify for their own myself.md account only; family-shared recipients do not qualify independently. Customers who upgraded from Individual to Family claim through their original Individual purchase, which remains eligible. Family upgrade products alone do not grant another claim or extra accounts. This migration grants myself.md lifetime access to the purchaser, without creating a transferable family entitlement. Pending, revoked, wrong-app, and unsupported purchases are rejected.
 - Health.md F-Droid and free macOS companion access do not establish a paid purchase and do not expose this claim flow.
 
 Eligibility is verified when issuing a claim. Once redeemed, the complimentary grant is permanent and independent of ongoing source-store receipt polling. Store refunds after a completed claim do not automatically revoke the grant.
@@ -60,3 +62,9 @@ Use the same payment ID for retries; it cannot unlock a second account. This is 
 `npm run verify:migration` covers eligible products, grandfather cutoff, revoked/shared purchases, expiry, purchase reuse, and permanent manual grants. `npm run verify:billing` covers the shared quota and clearing cached account access on sign-out. `npm run verify:dashboard` exercises the claim return route through OAuth PKCE. `npm run verify:cloud` checks authenticated claim redemption and phone retrieval across real HTTP boundaries.
 
 Apple references: [App transaction information](https://developer.apple.com/documentation/appstoreserverapi/get-app-transaction-info), [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/). Google: [Purchase verification](https://developer.android.com/google/play/billing/security).
+
+Agents can use `get_lifetime_access` to inspect their authenticated account’s allowance and get the same claim guidance, account link, and remaining user steps. The read consumes no export and cannot redeem a claim or grant itself access. After the user completes the original-app/browser flow, call it again to verify the resulting entitlement.
+
+The onboarding/account guide was exercised in an iOS release simulator in light and dark appearance at large text size, including button and edge-swipe returns to the preserved onboarding step. The paywall claim entry and modal dismissal were checked with the store product unavailable. Android and web bundles pass; Android device navigation and actual store proof verification remain release checks. The HTTP/MCP suite verifies strict inputs, account isolation, no export charge for access reads, rejected agent redemption, and entitlement observation after a user-authorized browser claim.
+
+For the hosted Cloudflare deployment, add `--worker https://myself-md.costream.workers.dev` to `npm run billing:grant`. Put the private operator `IMPORT_SECRET` in ignored `.dev.vars`, temporarily enable migration mode, run the grant after verifying the payment, then disable migration mode. This updates global purchase ownership and the account object; writing Fly’s old billing database does not grant hosted access. See [Cloudflare migration](cloudflare-migration.md).

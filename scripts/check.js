@@ -9,6 +9,7 @@ const checks = [
   ['Mobile types', 'tsc', ['-p', 'jsconfig.json']],
   ['Core types', 'tsc', ['-p', 'core/jsconfig.json']],
   ['Server types', 'tsc', ['-p', 'server/jsconfig.json']],
+  ['Worker types', 'tsc', ['-p', 'worker/jsconfig.json']],
   ['Dashboard types', 'tsc', ['-p', 'dashboard/jsconfig.json']],
   ['Unused code', 'knip', ['--no-progress']],
   ['Native lint', 'eslint', ['.', '--cache', '--max-warnings', '0']],

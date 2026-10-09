@@ -1,3 +1,4 @@
+import { r2Fixture } from './r2-fixture.js';
 import { BillingStore } from '../server/billing-store.js';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
@@ -11,6 +12,7 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
+const r2 = process.argv.includes('--r2') ? await r2Fixture() : null;
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
 const jwk = await exportJWK(publicKey);
@@ -47,6 +49,7 @@ const origin = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/index.js'], {
   env: {
     ...process.env,
+    ...r2?.env,
     DATA_DIR: directory,
     CLOUD_ENCRYPTION_KEY: 'a'.repeat(64),
     PUBLIC_URL: origin,
@@ -62,6 +65,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
   stdio: 'ignore',
 });
 const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
+const accessClient = new Client({ name: 'synthetic-access-test', version: '1' });
 /** @param {string} subject @param {string} azp @param {string} [audience] */
 async function token(subject, azp, audience = `${origin}/mcp`) {
   return new SignJWT({ scope: 'qr-connect', azp })
@@ -262,6 +266,71 @@ try {
   );
   const tools = await client.listTools();
   assert.ok(tools.tools.some((t) => t.name === 'read_cloud_export'));
+  assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
+  const accessSchema = z.object({
+    allowance: z.object({
+      unlocked: z.boolean(),
+      used: z.number(),
+      complimentary: z.boolean().optional(),
+    }),
+    handoff: z.object({
+      status: z.string(),
+      accountLink: z.string(),
+      requiresUser: z.boolean(),
+      steps: z.array(z.object({ title: z.string(), body: z.string() })),
+    }),
+  });
+  const paidAccess = accessSchema.parse(
+    (await client.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
+  );
+  assert.equal(paidAccess.allowance.unlocked, true);
+  assert.equal(paidAccess.handoff.status, 'completed');
+  assert.equal(paidAccess.handoff.requiresUser, false);
+  const newBuyerToken = await token('new-buyer', 'fixture-chat');
+  await accessClient.connect(
+    new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
+      requestInit: { headers: { Authorization: `Bearer ${newBuyerToken}` } },
+    }),
+  );
+  const pendingAccess = accessSchema.parse(
+    (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
+  );
+  assert.equal(pendingAccess.allowance.unlocked, false);
+  assert.equal(pendingAccess.allowance.used, 0);
+  assert.equal(pendingAccess.handoff.status, 'awaiting_user');
+  assert.equal(pendingAccess.handoff.requiresUser, true);
+  assert.equal(pendingAccess.handoff.accountLink, 'qrconnect://account');
+  assert.equal(pendingAccess.handoff.steps.length, 3);
+  assert.ok(
+    (await accessClient.callTool({ name: 'get_lifetime_access', arguments: { subject: 'alice' } }))
+      .isError,
+  );
+  const accessTicketStore = new BillingStore(join(directory, 'billing.sqlite'));
+  const accessTicket = accessTicketStore.createClaim({
+    source: 'health.md:ios:iap',
+    reference: 'mcp-access-fixture',
+  });
+  accessTicketStore.db.close();
+  assert.equal(
+    (await request('/api/migration/claim', newBuyerToken, 'POST', { ticket: accessTicket })).status,
+    403,
+  );
+  const newBuyerDashboardToken = await token('new-buyer', 'qr-dashboard');
+  assert.equal(
+    (
+      await request('/api/migration/claim', newBuyerDashboardToken, 'POST', {
+        ticket: accessTicket,
+      })
+    ).status,
+    200,
+  );
+  const claimedAccess = accessSchema.parse(
+    (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
+  );
+  assert.equal(claimedAccess.allowance.complimentary, true);
+  assert.equal(claimedAccess.allowance.used, 0);
+  assert.equal(claimedAccess.handoff.status, 'completed');
+  assert.equal(claimedAccess.handoff.requiresUser, false);
   const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
   const pairingUrl = /** @type {{pairingUrl:string}} */ (pairing.structuredContent).pairingUrl;
   const claimed = await request('/api/claim', phoneToken, 'POST', {
@@ -329,6 +398,28 @@ try {
     end: null,
     native: { synthetic: true },
   };
+  if (r2) {
+    r2.state.failPut = true;
+    const failed = await fetch(`${origin}/api/cloud/uploads/${id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Upload ${z.object({ token: z.string() }).parse(credential.value).token}`,
+      },
+      body: JSON.stringify(record) + '\n',
+    });
+    assert.equal(failed.status, 503);
+    assert.equal(
+      dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
+      0,
+    );
+    const bill = new BillingStore(join(directory, 'billing.sqlite'));
+    assert.equal(
+      bill.db.prepare('SELECT state FROM billing_uses WHERE id=?').get(operationId)?.state,
+      'reserved',
+    );
+    bill.db.close();
+    r2.state.failPut = false;
+  }
   const committed = await fetch(`${origin}/api/cloud/uploads/${id}`, {
     method: 'PUT',
     headers: {
@@ -337,6 +428,10 @@ try {
     body: JSON.stringify(record) + '\n',
   });
   assert.equal(committed.status, 200);
+  if (r2) {
+    assert.equal(r2.files.size, 1);
+    assert.ok([...r2.files.values()].every((bytes) => !bytes.includes(JSON.stringify(record))));
+  }
   const dashboard = dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value);
   assert.equal(dashboard.exports.length, 1);
   assert.equal(dashboard.profiles.length, 1);
@@ -429,6 +524,19 @@ try {
       .status,
     200,
   );
+  if (r2) {
+    const bill = new BillingStore(join(directory, 'billing.sqlite'));
+    const before = bill.snapshot(`${accountNamespace}|alice`);
+    r2.state.failGet = true;
+    assert.ok(
+      (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    );
+    const after = bill.snapshot(`${accountNamespace}|alice`);
+    assert.equal(after.used, before.used);
+    assert.equal(after.reserved, before.reserved);
+    r2.state.failGet = false;
+    bill.db.close();
+  }
   const result = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
   assert.ok(!result.isError);
   assert.ok(JSON.stringify(result).includes('synthetic'));
@@ -441,7 +549,7 @@ try {
     .object({ events: z.array(z.unknown()) })
     .parse(cloudHistory.value)
     .events.map(parseHistoryEvent);
-  assert.equal(historyEvents.length, 2);
+  assert.equal(historyEvents.length, r2 ? 3 : 2);
   assert.ok(
     historyEvents.some(
       (event) =>
@@ -804,19 +912,28 @@ try {
     200,
   );
   assert.ok(!(await client.callTool({ name: 'list_cloud_exports', arguments: {} })).isError);
+  if (r2) {
+    r2.state.failDelete = true;
+    assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 503);
+    r2.state.failDelete = false;
+    assert.equal((await request(recordsPath, dashboardToken)).status, 200);
+  }
   assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 200);
   assert.equal((await request(recordsPath, dashboardToken)).status, 404);
+  if (r2) assert.equal(r2.files.size, 0);
   assert.equal(
     dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
     0,
   );
   console.log(
-    'HTTP/MCP: OAuth resource metadata, real SDK transport, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
+    'HTTP/MCP: OAuth resource metadata, real SDK transport, lifetime-access handoff and verified claim completion, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
   );
 } finally {
+  await accessClient.close();
   await client.close();
   child.kill('SIGTERM');
   await once(child, 'exit');
   await new Promise((resolve) => identity.close(resolve));
+  if (r2) await new Promise((resolve) => r2.server.close(resolve));
   rmSync(directory, { recursive: true, force: true });
 }

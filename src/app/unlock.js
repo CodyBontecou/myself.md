@@ -3,8 +3,10 @@ import { router } from 'expo-router';
 import { Screen, Copy, Button, Notice } from '../components/ui';
 import { useBilling } from '../../client/BillingPaywalls';
 import { buyLifetime, restoreLifetime, lifetimeProduct } from '../../client/store-purchases';
+import { existingCustomerGuide } from '../../core/billing';
 export default function UnlockScreen() {
   const current = useBilling();
+  const guide = existingCustomerGuide();
   const [price, setPrice] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -49,6 +51,13 @@ export default function UnlockScreen() {
       />
       <Copy variant="heading">{price || '$19.99'} · one-time purchase</Copy>
       <Copy muted>Unlimited exports and queries, forever. No subscription.</Copy>
+      <Notice title={guide.title} body={guide.summary} icon="gift-outline" />
+      <Button
+        label="Claim existing-customer access"
+        secondary
+        disabled={busy}
+        onPress={() => router.push('/account')}
+      />
       {error ? <Notice title="Purchase unavailable" body={error} /> : null}
       <Button
         label={busy ? 'Please wait…' : `Unlock forever${price ? ` · ${price}` : ''}`}
@@ -60,12 +69,6 @@ export default function UnlockScreen() {
         secondary
         disabled={busy}
         onPress={() => void run(() => restoreLifetime(true))}
-      />
-      <Button
-        label="Already own health.md, iso.me, or time.md?"
-        secondary
-        disabled={busy}
-        onPress={() => router.push('/account')}
       />
       <Button
         label={current.used >= 5 ? 'Close' : 'Maybe later'}

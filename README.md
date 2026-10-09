@@ -289,7 +289,9 @@ Run `npm run verify:exports` for calendar, opt-in, DST and JSON/JSONL business r
 
 ## Hosted cloud exports
 
-Profiles can now export to local files, an HTTPS endpoint or the paired cloud service. Cloud uploads are encrypted and persist independently of the phone. A separate cloud MCP switch controls stored-data access. See [cloud-service setup, API, limits and connector guide](docs/cloud-service.md). Run `npm run verify:cloud` for storage and HTTP/MCP isolation checks; `npm run cloud:setup -- <domain>` and `npm run cloud:start` prepare and start the container deployment.
+The hosted API, MCP and dashboard now run on Cloudflare, with private R2 files and account-scoped Durable Objects. Existing sign-in remains on Fly during the identity transition. See [deployment and recovery](docs/cloudflare-migration.md). Run `npm run verify:worker` before `npm run worker:deploy`.
+
+Profiles can now export to local files, an HTTPS endpoint or the paired cloud service. Cloud uploads are encrypted and persist independently of the phone. A separate cloud MCP switch controls stored-data access. See [cloud-service setup, API, limits and connector guide](docs/cloud-service.md). Run `npm run verify:cloud` for storage and HTTP/MCP isolation checks, and `npm run verify:r2` for the private R2 backend, resumable migration and rollback; `npm run cloud:setup -- <domain>` and `npm run cloud:start` prepare and start the container deployment.
 
 The redesigned Expo Router routes and UI in `src/` remain plain JavaScript and are included in all source checks. Native text lint recognizes `Copy`, the shared wrapper that renders React Native `Text`, and `NativeTabs.Trigger.Label`, which accepts a string to configure a native tab item. The entry file has one documented side-effect import for Expo Router registration. Router peer dependencies (`expo-constants`, `expo-linking`, `react-native-screens`, `react-native-reanimated`, `react-native-worklets`) are required by the navigator even where application source does not import them directly.
 
@@ -322,3 +324,5 @@ The dashboard’s **History** page shares outcome labels and related-activity ma
 The free iOS and Android apps include five exports/agent queries across manual, scheduled, and cloud activity. Native StoreKit or Google Play Billing offers a $19.99 US non-consumable lifetime unlock, with reminder paywalls after uses two and five. Store product creation, verification credentials, counting rules, offline limits, and sandbox testing are documented in [Lifetime unlock](docs/lifetime-unlock.md). Run `npm run verify:billing` to verify the quota and purchase-ownership business rules.
 
 Existing customers can claim complimentary lifetime access from health.md or iso.me, with manual grants for verified time.md buyers. See [customer migration](docs/customer-migration.md) for eligibility, deployment configuration, and the operator grant command.
+
+Worker source is checked by the aggregate static gate with Wrangler-generated runtime and binding types. ESLint treats `cloudflare:workers` and `cloudflare:node` as platform modules; these imports are resolved by Wrangler. Generated `worker/worker-configuration.d.ts` is excluded from source lint because Wrangler includes its own lint directives. Regenerate it with `npm run worker:types` after configuration changes.

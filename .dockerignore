@@ -10,5 +10,8 @@
 !dashboard/**
 !scripts/
 !scripts/build-dashboard.js
+!scripts/cloud-storage.js
 !client/
 !client/health-types.js
+
+!scripts/worker-snapshot.js

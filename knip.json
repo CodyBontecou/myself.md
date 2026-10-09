@@ -11,9 +11,10 @@
     "src/**/*.js",
     "dashboard/**/*.js",
     "!dashboard/dist/**",
-    "dashboard/**/*.css"
+    "dashboard/**/*.css",
+    "worker/**/*.js"
   ],
-  "ignoreDependencies": ["@types/punycode"],
+  "ignoreDependencies": ["@types/punycode", "cloudflare"],
   "ignoreBinaries": ["fly"],
   "entry": [
     "scripts/*.js",
@@ -21,6 +22,7 @@
     "index.js",
     "src/app/**/*.js",
     "dashboard/app.js",
-    "dashboard/style.css"
+    "dashboard/style.css",
+    "worker/index.js"
   ]
 }

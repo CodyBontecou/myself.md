@@ -31,6 +31,34 @@ try {
       /qualifying/,
     );
   }
+  for (const app of ['health.md', 'iso.me']) {
+    const sourceApp = /** @type {'health.md'|'iso.me'} */ (app);
+    const baseProduct =
+      sourceApp === 'health.md'
+        ? 'com.codybontecou.obsidianhealth.unlock'
+        : 'com.bontecou.isome.lifetime.individual';
+    const upgradeProduct =
+      sourceApp === 'health.md'
+        ? 'com.codybontecou.obsidianhealth.unlock.family.upgrade'
+        : 'com.bontecou.isome.lifetime.family.upgrade';
+    const evidence = {
+      type: 'Non-Consumable',
+      inAppOwnershipType: 'PURCHASED',
+      originalTransactionId: `${sourceApp}-upgraded-purchaser`,
+    };
+    // Upgrading preserves eligibility through the original Individual purchase.
+    const proof = migrationEligibility(sourceApp, 'iap', {
+      ...evidence,
+      productId: baseProduct,
+    });
+    assert.equal(store.claim('upgraded-owner', store.createClaim(proof)).complimentary, true);
+    assert.throws(
+      () => migrationEligibility(sourceApp, 'iap', { ...evidence, productId: upgradeProduct }),
+      /qualifying/,
+    );
+    // The upgrade cannot be used as a second, separately redeemable purchase.
+    assert.throws(() => store.claim('another-owner', store.createClaim(proof)), /another account/);
+  }
   assert.throws(
     () =>
       migrationEligibility('health.md', 'iap', {

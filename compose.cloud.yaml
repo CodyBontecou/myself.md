@@ -7,6 +7,10 @@ services:
       OAUTH_ISSUER: https://${SERVICE_DOMAIN}/auth/realms/qr-connect
       ACCOUNT_NAMESPACE: ${ACCOUNT_NAMESPACE:-https://${SERVICE_DOMAIN}/auth/realms/qr-connect}
       CLOUD_ENCRYPTION_KEY: ${CLOUD_ENCRYPTION_KEY:?Set a persistent 64-character hex key}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       AUTH_PROXY: '1'
       KEYCLOAK_INTERNAL_HOST: identity
       IOS_APP_ID: ${IOS_APP_ID:-}

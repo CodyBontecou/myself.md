@@ -1,0 +1,68 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myself-md",
+  "main": "worker/index.js",
+  "account_id": "e4265f322e6380ee832b83ad45e3e8c0",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": { "crons": ["17 3 * * *"] },
+  "routes": [{ "pattern": "myself.md/*", "zone_name": "myself.md" }],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false,
+    },
+  },
+  "assets": {
+    "directory": "dashboard/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+  },
+  "r2_buckets": [
+    {
+      "binding": "EXPORTS",
+      "bucket_name": "myself-md-exports",
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DIRECTORY",
+      "database_name": "myself-md-directory",
+      "database_id": "9b949e26-bf7e-43de-b797-9d60fbb7cde8",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ACCOUNTS",
+        "class_name": "Account",
+      },
+      {
+        "name": "PURCHASES",
+        "class_name": "Purchase",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Account", "Purchase"],
+    },
+  ],
+  "vars": {
+    "PUBLIC_URL": "https://myself.md",
+    "PUBLIC_URL_ALIASES": "https://qr-connect-cloud-cody.fly.dev",
+    "OAUTH_ISSUER": "https://myself.md/auth/realms/qr-connect",
+    "ACCOUNT_NAMESPACE": "https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect",
+    "AUTH_ORIGIN": "https://qr-connect-cloud-cody.fly.dev",
+    "IOS_APP_ID": "67KC823C9A.com.myself.md",
+    "ALLOW_HTTP_DEV": "0",
+    "MIGRATION_ENABLED": "0",
+  },
+  "secrets": {
+    "required": ["CLOUD_ENCRYPTION_KEY", "IMPORT_SECRET"],
+  },
+}

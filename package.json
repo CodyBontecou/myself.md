@@ -4,6 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",
+    "@aws-sdk/client-s3": "^3.1148.0",
     "@kingstinct/react-native-healthkit": "^16.1.0",
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.3.1",
@@ -64,7 +65,7 @@
     "lint:expo": "eslint . --cache --max-warnings 0",
     "format": "prettier --write --cache .",
     "format:check": "prettier --check --cache .",
-    "typecheck": "tsc -p jsconfig.json && tsc -p core/jsconfig.json && tsc -p server/jsconfig.json && tsc -p dashboard/jsconfig.json",
+    "typecheck": "tsc -p jsconfig.json && tsc -p core/jsconfig.json && tsc -p server/jsconfig.json && tsc -p dashboard/jsconfig.json && tsc -p worker/jsconfig.json",
     "unused": "knip --no-progress",
     "auth:setup": "node scripts/setup-auth.js",
     "auth:start": "node --env-file=.env scripts/start-auth.js",
@@ -94,11 +95,19 @@
     "verify:billing": "node scripts/verify-billing.js && node --experimental-vm-modules scripts/verify-local-billing.js",
     "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js",
     "verify:migration": "node scripts/verify-migration.js",
-    "billing:grant": "node --env-file-if-exists=.env scripts/grant-lifetime.js"
+    "billing:grant": "node --env-file-if-exists=.env scripts/grant-lifetime.js",
+    "cloud:storage": "node --env-file-if-exists=.env.cloud scripts/cloud-storage.js",
+    "verify:r2": "npm run dashboard:build && node scripts/verify-r2.js && node scripts/verify-cloud-http.js --r2",
+    "worker:types": "wrangler types worker/worker-configuration.d.ts --strict-vars=false",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "npm run dashboard:build && wrangler deploy",
+    "worker:check": "tsc -p worker/jsconfig.json",
+    "verify:worker": "npm run dashboard:build && node scripts/verify-worker.js"
   },
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261009.1",
     "@modelcontextprotocol/client": "^2.3.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/node": "^22",
@@ -115,7 +124,8 @@
     "oxlint": "^1.87.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "wrangler": "^4.149.0"
   },
   "engines": {
     "node": ">=22.13.0"

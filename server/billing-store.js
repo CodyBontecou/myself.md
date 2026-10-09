@@ -1,11 +1,11 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { database, transaction } from './database.js';
 import { exportAllowance, freeExports } from '../core/billing.js';
-import { PairingError } from './store.js';
+import { PairingError } from './errors.js';
 export class BillingStore {
-  /** @param {string} path */
+  /** @param {string|import("./database.js").SqlDatabase} path */
   constructor(path) {
-    this.db = new DatabaseSync(path);
+    this.db = database(path);
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS billing_uses (subject TEXT, id TEXT, state TEXT, scope TEXT, PRIMARY KEY(subject,id));
       CREATE TABLE IF NOT EXISTS billing_purchases (store TEXT, id TEXT, subject TEXT, proof TEXT, verified INTEGER, PRIMARY KEY(store,id));
@@ -134,8 +134,7 @@ export class BillingStore {
   /** @param {string} subject @param {string} ticket */
   claim(subject, ticket) {
     const digest = createHash('sha256').update(ticket).digest('hex');
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    return transaction(this.db, () => {
       const row = this.db
         .prepare('SELECT source,reference,expires,subject FROM billing_claims WHERE ticket=?')
         .get(digest);
@@ -145,12 +144,8 @@ export class BillingStore {
         throw new PairingError(409, 'This claim was already used by another account.');
       this.grant(subject, String(row.source), String(row.reference));
       this.db.prepare('UPDATE billing_claims SET subject=? WHERE ticket=?').run(subject, digest);
-      this.db.exec('COMMIT');
       return this.snapshot(subject);
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
   /** @param {string} subject */
   purchase(subject) {

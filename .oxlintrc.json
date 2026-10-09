@@ -16,7 +16,9 @@
     "dist/**",
     ".expo/**",
     ".local/**",
-    "dashboard/dist/**"
+    "dashboard/dist/**",
+    "worker/worker-configuration.d.ts",
+    ".wrangler/**"
   ],
   "rules": {
     "eslint/no-debugger": "error",
@@ -69,7 +71,7 @@
       }
     },
     {
-      "files": ["server/**/*.js", "scripts/**/*.js", "*.cjs", "plugins/**/*.cjs"],
+      "files": ["server/**/*.js", "scripts/**/*.js", "*.cjs", "plugins/**/*.cjs", "worker/**/*.js"],
       "env": {
         "node": true
       },

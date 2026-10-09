@@ -1,14 +1,6 @@
-import { readFileSync } from 'node:fs';
-import {
-  SignedDataVerifier,
-  AppStoreServerAPIClient,
-  Environment,
-  Type,
-  InAppOwnershipType,
-} from '@apple/app-store-server-library';
-import { GoogleAuth } from 'google-auth-library';
+import { appleRoots, appleSigningKey, googleCredentials } from './purchase-credentials.js';
 import { z } from 'zod';
-import { PairingError } from './store.js';
+import { PairingError } from './errors.js';
 const healthProducts = [
   'com.codybontecou.obsidianhealth.unlock',
   'com.codybontecou.obsidianhealth.unlock.family',
@@ -37,9 +29,9 @@ export function migrationEligibility(app, kind, evidence) {
   const products = app === 'health.md' ? healthProducts : isoProducts;
   if (
     !products.includes(evidence.productId ?? '') ||
-    evidence.type !== Type.NON_CONSUMABLE ||
+    evidence.type !== 'Non-Consumable' ||
     evidence.revocationDate ||
-    evidence.inAppOwnershipType !== InAppOwnershipType.PURCHASED ||
+    evidence.inAppOwnershipType !== 'PURCHASED' ||
     !evidence.originalTransactionId
   )
     throw new PairingError(
@@ -54,10 +46,13 @@ export async function verifyMigrationPurchase(body) {
   if (input.store === 'android') {
     if (input.app !== 'health.md' || input.kind !== 'iap')
       throw new PairingError(403, 'This Android purchase is not eligible.');
-    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS)
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
       throw new PairingError(503, 'Google purchase verification is not configured.');
+    const { GoogleAuth } = await import('google-auth-library');
+    const credentials = googleCredentials();
     const client = await new GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      ...(credentials ? { credentials } : {}),
     }).getClient();
     const { data } = await client.request({
       url: `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.healthmd.android/purchases/products/health_md_premium_lifetime/tokens/${encodeURIComponent(input.proof)}`,
@@ -67,10 +62,9 @@ export async function verifyMigrationPurchase(body) {
       throw new PairingError(403, 'A completed Health.md lifetime purchase is required.');
     return { source: 'health.md:android:iap', reference: input.proof };
   }
-  const roots = (process.env.APPLE_IAP_ROOT_CERTIFICATES ?? '')
-    .split(',')
-    .filter(Boolean)
-    .map((path) => readFileSync(path));
+  const { SignedDataVerifier, AppStoreServerAPIClient, Environment } =
+    await import('@apple/app-store-server-library');
+  const roots = appleRoots();
   const appId = Number(
     input.app === 'health.md'
       ? process.env.HEALTH_MD_APPLE_APP_ID
@@ -84,14 +78,14 @@ export async function verifyMigrationPurchase(body) {
     !roots.length ||
     !Number.isSafeInteger(appId) ||
     appId <= 0 ||
-    !process.env.APPLE_IAP_KEY_PATH ||
+    !appleSigningKey() ||
     !process.env.APPLE_IAP_KEY_ID ||
     !process.env.APPLE_IAP_ISSUER_ID
   )
     throw new PairingError(503, 'Legacy Apple purchase verification is not configured.');
   const verifier = new SignedDataVerifier(roots, true, environment, bundleId, appId);
   const client = new AppStoreServerAPIClient(
-    readFileSync(process.env.APPLE_IAP_KEY_PATH, 'utf8'),
+    appleSigningKey() ?? '',
     process.env.APPLE_IAP_KEY_ID,
     process.env.APPLE_IAP_ISSUER_ID,
     bundleId,

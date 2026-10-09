@@ -2,9 +2,11 @@ import { Stack } from 'expo-router';
 import { Screen, Copy, Button, Group, Row, Notice } from '../components/ui';
 import { usePhone } from '../../client/PhoneProvider';
 import { useBilling } from '../../client/BillingPaywalls';
+import { existingCustomerGuide } from '../../core/billing';
 export default function AccountScreen() {
   const { session, busy, error, run, signInAccount, syncAccount, disconnect } = usePhone();
   const current = useBilling();
+  const guide = existingCustomerGuide();
   return (
     <Screen>
       <Stack.Screen options={{ title: 'Lifetime access' }} />
@@ -13,6 +15,21 @@ export default function AccountScreen() {
         Already claimed access through health.md or iso.me, or received a time.md offer? Sign in
         with the account that received your lifetime access.
       </Copy>
+      {!current.unlocked && (
+        <>
+          <Copy variant="heading">Claim existing-customer access</Copy>
+          <Copy muted>{guide.summary}</Copy>
+          <Group>
+            {guide.steps.map((step) => (
+              <Row key={step.title} title={step.title} subtitle={step.body} />
+            ))}
+          </Group>
+          <Copy variant="caption" muted>
+            {guide.eligibility}
+          </Copy>
+          <Notice title="Purchased time.md?" body={guide.timeOffer} />
+        </>
+      )}
       {session?.owner ? (
         <>
           <Group>
@@ -47,12 +64,6 @@ export default function AccountScreen() {
             onPress={() => void run(() => signInAccount('github'))}
           />
         </>
-      )}
-      {!current.unlocked && (
-        <Notice
-          title="Claim from your original app"
-          body="Open Settings in health.md or iso.me and choose Claim myself.md access. We verify your purchase and link complimentary lifetime access to the account you choose. For time.md, contact the developer to activate your offer."
-        />
       )}
       {error && <Notice title="Account needs attention" body={error} />}
     </Screen>

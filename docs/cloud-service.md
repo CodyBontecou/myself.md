@@ -8,7 +8,55 @@ Authorize cloud uploads on the profile card while signed in. This creates a rand
 
 Uploading uses `POST /api/cloud/uploads` for profile/manifest metadata followed by `PUT /api/cloud/uploads/:id` for raw JSON or JSONL bytes, using `Authorization: Upload <credential>`. Only valid complete uploads become readable. Daily replacements keep the previous completed file until the new upload validates and commits. Older competing uploads cannot replace newer completed files. Failed schedules retain their original profile/date snapshots and retry; an interrupted HTTP delivery can have reached the recipient even when its acknowledgment was lost, so HTTP recipients should reconcile repeated daily exports.
 
-Cloud limits are 16 MiB and 50,000 records per file, 128 stored/staged exports and 256 MiB per account. Completed files expire after 30 days; unfinished uploads expire after one hour. Expiry is enforced when cloud operations run. Upload replacement and deletion release logical quota. JSON/JSONL content and manifests are encrypted using AES-256-GCM with account/export identity as authenticated data. Index metadata (account, device, profile ID, date, format, size, creation time) remains in SQLite. The service decrypts records for authorized requests; its encryption key must be backed up separately from data volumes.
+Cloud limits are 16 MiB and 50,000 records per file, 128 stored/staged exports and 256 MiB per account. Completed files expire after 30 days; unfinished uploads expire after one hour. Expiry is enforced when cloud operations run. Upload replacement and deletion release logical quota. JSON/JSONL content and manifests are encrypted using AES-256-GCM with account/export identity as authenticated data. With R2 configured, encrypted content is stored in a private R2 bucket; manifests and index metadata (account, device, profile ID, date, format, size, creation time) remain in SQLite. Without R2, self-hosted instances retain the encrypted SQLite content backend. The service decrypts records for authorized requests; its encryption key must be backed up separately from data volumes.
+
+### Private R2 storage
+
+The server uses Cloudflare's [S3-compatible API and official JavaScript SDK](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/). Set all four values in `.env.cloud`: `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`. Create an **Object Read & Write** [R2 API token](https://developers.cloudflare.com/r2/api/tokens/) restricted to this bucket. Leave public access disabled; do not configure a public domain, `r2.dev`, CORS, or client credentials. Object names contain random IDs, and payloads retain application encryption. The Western Europe location hint is a placement preference, not a residency guarantee.
+
+Uploads validate records before sending encrypted bytes to R2, then recheck the upload credential, connected device, billing reservation, daily replacement ordering, and current quota before committing the database reference. Network failures return a retryable error and do not complete the billing use. Identical retries remain idempotent. Mobile, dashboard and MCP keep their existing routes and identifiers; MCP sharing selections and blocked-agent status are checked again after asynchronous reads. Dashboard exploration loads one export at a time and retains its record limits.
+
+On startup, a background task backfills up to 128 existing files per minute. Each file's encrypted R2 copy is downloaded, compared byte for byte, and authenticated before its SQLite bytes are removed. Mixed SQLite/R2 reads work during migration; failures preserve the SQLite source and retry. Pending object keys are recorded before network writes. Replacement and retention expiry enqueue physical deletion durably; interrupted writes become eligible for garbage collection after one hour. A failed deletion retains its queue entry. Account-owned explicit deletion waits for R2 deletion before acknowledging success; a provider failure preserves the database entry for retry.
+
+Before enabling R2 on an existing instance, back up the encryption key separately and make a consistent database backup using the **new image** with R2 settings still absent:
+
+```sh
+# Run in the service container with its existing DATA_DIR and encryption key.
+node scripts/cloud-storage.js backup /data/cloud-pre-r2.sqlite
+# Then configure R2 credentials and restart with the same database and key.
+node scripts/cloud-storage.js status
+node scripts/cloud-storage.js migrate
+```
+
+The backup command uses SQLite's online backup API and restricts file permissions; copy the backup outside the host as part of normal backup operations. `migrate` is optional because the server resumes backfill automatically. `status` reports counts and bytes, without account identifiers or records. Run `npm run cloud:storage -- <command>` for local administration using `.env.cloud`; set `DATA_DIR` to the actual database directory. These commands are operator tools, not app/MCP capabilities.
+
+For Fly, `npm run cloud:fly:prepare` creates `.local/fly-r2.secrets` as well as the existing secret files. Import **only the R2 file** to avoid overwriting unrelated deployed secrets, then deploy:
+
+```sh
+fly secrets import --app qr-connect-cloud-cody --stage < .local/fly-r2.secrets
+npm run cloud:fly:deploy
+fly ssh console --app qr-connect-cloud-cody --command 'node scripts/cloud-storage.js status'
+```
+
+Rollback requires stopping all service writers and the background migration worker. With the same database, encryption key and R2 credentials, run `node scripts/cloud-storage.js restore` in an offline maintenance container against the mounted volume. Confirm `status` reports `r2Files: 0` before removing R2 settings and restarting. Restore downloads and authenticates objects before committing SQLite bytes; it can be retried after interruption. Use the updated image for rollback because the schema includes R2 columns; deploying an older image directly is unsafe. Restoring a pre-migration backup alone would discard exports created since that backup. Do not delete the bucket while any database or backup references its objects.
+
+SQLite retains freed disk pages after migration. After a fresh backup, stop writers and run `node scripts/cloud-storage.js compact` to reclaim database file space. This does not reduce a provisioned Fly volume or its bill: the small SQLite/identity volumes remain necessary. R2 removes growing export content from that disk; API responses still travel through Fly. Back up SQLite, the private bucket and the encryption key together; a database snapshot alone does not contain R2 files.
+
+Run `npm run verify:r2` for signed SDK requests against a synthetic local S3 endpoint, encrypted migration/rollback, interrupted uploads, concurrent retries, quota checks, retention/deletion, and authenticated HTTP/MCP access. `R2_TEST_ENDPOINT` is accepted only for a loopback HTTP endpoint with `ALLOW_HTTP_DEV=1`; it is never a production setting. Live bucket credentials are still required to verify a production deployment.
+
+### Proposed hosted storage plans
+
+Lifetime app access and hosted storage are separate entitlements. The $19.99 lifetime unlock removes export/query usage limits; it does not promise unlimited hosted storage. The proposed commercial offering is:
+
+| Plan                              | Storage capacity | Billing                                          |
+| --------------------------------- | ---------------- | ------------------------------------------------ |
+| Included with a lifetime purchase | 100 MB           | Included allowance, no storage subscription      |
+| Larger cloud plan                 | 1 GB             | Monthly or yearly subscription; prices undecided |
+| Larger cloud plan                 | 10 GB            | Monthly or yearly subscription; prices undecided |
+
+These capacities are proposals, not implemented quotas or store products. The existing 256 MiB limit and retention still apply. Before implementation, decide prices, eligibility for complimentary migration grants and trial users, whether paid capacities replace or add to the included allowance, decimal versus binary storage units, and retention for each plan. Commercial hosted plans are distinct from an operator's self-hosted server.
+
+Implementation must verify cloud subscriptions independently of permanent lifetime purchases, enforce account capacity for manual and scheduled uploads (including concurrent uploads), and expose used, reserved, and available storage to mobile, dashboard, and MCP through shared logic. Store checkout and subscription management require a user handoff; agents cannot grant themselves storage. Subscription renewal or expiry must never remove the lifetime app unlock. Proposed downgrade behavior: block uploads that exceed the reduced capacity while retaining access to download and delete existing files under the published retention policy; do not immediately delete data just because a subscription ends. This behavior needs confirmation before release.
 
 Cloud MCP access starts off. The phone's **Allow stored cloud data in MCP connectors** switch sets an independent server-side grant with a data-type selection. MCP reads apply this selection to stored records on every request. A generated profile or an upload credential cannot enable this grant. Data already sent to a connector is subject to that provider's storage policies.
 
@@ -46,9 +94,11 @@ The existing `/pair#ticket` QR is an iOS Universal Link on the hosted Fly domain
 
 The public `/.well-known/apple-app-site-association` endpoint maps only `/pair` to `IOS_APP_ID` (Apple team ID plus bundle ID). `app.json` declares the hosted associated domain; changing domains requires matching that configuration and rebuilding the app. Compose reads `IOS_APP_ID` from `.env.cloud`; Fly sets it in `deploy/fly/service.toml`. Apple caches associations, so direct opening may be delayed after deployment or affected by the user’s preference to open links in Safari. The fallback remains available. [Expo Universal Links documentation](https://docs.expo.dev/linking/ios-universal-links/).
 
-## Current Fly.io deployment
+## Retained Fly.io services and Node fallback
 
-The primary hosted endpoint is **https://myself.md/mcp**, with health at `/health`. The existing `https://qr-connect-cloud-cody.fly.dev` origin remains available. The service, private Keycloak and private PostgreSQL run in Paris (`cdg`) under `qr-connect-cloud-cody`, `qr-connect-cloud-cody-auth` and `qr-connect-cloud-cody-db`. Only the service exposes HTTPS. Separate encrypted Fly volumes hold cloud data and identity data. Each app runs one machine; this is a persistent single-instance deployment, without automatic failover.
+The primary hosted endpoint is **https://myself.md/mcp**, with health at `/health`, now served by Cloudflare Workers. The existing `https://qr-connect-cloud-cody.fly.dev` origin forwards API/MCP requests to the Worker and remains the OAuth proxy. That service, private Keycloak and private PostgreSQL run in Paris (`cdg`) under `qr-connect-cloud-cody`, `qr-connect-cloud-cody-auth` and `qr-connect-cloud-cody-db`. Only the proxy exposes HTTPS. Fly volumes retain the Node fallback snapshot and identity data. Each retained app runs one machine; account data now lives in Cloudflare Durable Objects rather than the Fly volume.
+
+Hosted export content moved to the private `myself-md-exports` R2 bucket on 2026-10-09. All seven existing exports (9,536,054 bytes) were read back from R2, compared byte for byte with the encrypted pre-migration backup, decrypted, and validated; no content files remained in SQLite. This was the initial storage stage; the later Worker cutover moved API and metadata as described below. Identity and legacy forwarding remain on Fly. The bucket has public `r2.dev` access disabled and no public custom domain. Bucket-restricted S3 credentials were created through `cf user tokens create` and saved only in the private environment file and Fly secrets. A private pre-migration backup remains on the volume and in ignored `.local/` storage outside the host.
 
 Install and authenticate the global Fly CLI before using these commands. The checked-in `deploy/fly/*.toml` files describe these existing apps. Generated realm and secret files stay ignored under `.local/` and `.env.cloud`.
 
@@ -158,3 +208,7 @@ KEYCLOAK_ADMIN_URL=http://127.0.0.1:18081/auth npm run cloud:domain:setup -- --d
 HTTPS, `/health`, `/config`, `/dashboard`, OAuth resource discovery, the protected `/mcp` response and the Apple association file were verified through Cloudflare. A real GitHub browser sign-in returned to the new dashboard and retained access to existing account exports. Apple callback registration includes myself.md; a fresh Apple sign-in requires separate verification. `npm run verify:cloud` covers both audiences, allowed-host metadata, rejection of unrelated audiences and stable namespace-based ownership and rejection of previous-issuer tokens.
 
 `.env.cloud.example` uses `SERVICE_DOMAIN=myself.md` for a new deployment. Keep the existing deployment’s identity and encryption settings when maintaining this service.
+
+## Hosted Cloudflare cutover
+
+The production API, MCP transport, dashboard and account data moved to Workers, Durable Objects, D1 and R2 on 9 October 2026. Existing OAuth remains on Fly during the identity transition. See [Cloudflare migration](cloudflare-migration.md) for deployment, shared quota/claim coordination, verification, encrypted recovery and the retained legacy URL bridge.

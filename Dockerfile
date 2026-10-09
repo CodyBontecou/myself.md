@@ -15,6 +15,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && mkdir /data && chown node:node /data
 COPY core ./core
 COPY server ./server
+COPY scripts/cloud-storage.js ./scripts/cloud-storage.js
+COPY scripts/worker-snapshot.js ./scripts/worker-snapshot.js
 COPY --from=dashboard-build /app/dashboard/dist ./dashboard/dist
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_DIR=/data
 EXPOSE 3000

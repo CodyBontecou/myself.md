@@ -60,6 +60,7 @@ function RootStack() {
               options={{ title: 'Lifetime unlock', presentation: 'modal' }}
             />
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
+            <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
           </Stack>
         </PhoneProvider>
       </ThemeProvider>

@@ -2,6 +2,8 @@
 
 The apps are free to install. The non-consumable `myself_md_lifetime` product unlocks unlimited exports and queries for a one-time US price of $19.99. Payments and restores use native StoreKit and Google Play Billing through `expo-iap`; there is no RevenueCat account or service.
 
+Lifetime app access does not include unlimited hosted cloud storage. A proposed 100 MB allowance for lifetime purchasers and larger 1 GB/10 GB plans billed monthly or yearly are tracked in [Cloud service](cloud-service.md#proposed-hosted-storage-plans). Storage subscriptions and their prices are not implemented; current technical cloud limits remain in effect.
+
 ## What counts
 
 Five free uses share one allowance. One manual profile export, one system-share export, or one scheduled occurrence consumes one use, even when it creates multiple daily files or formats. Uploading those files to cloud or HTTP does not charge again. Each `query_phone_data` or `read_cloud_export` call consumes one use, including each new pagination call. Polling the same request, retrying the same scheduled occurrence, listing metadata, browsing the owner dashboard, and changing settings do not consume uses.

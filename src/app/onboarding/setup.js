@@ -1,13 +1,16 @@
 import { useOnboarding } from '../../../client/onboarding';
+import { router } from 'expo-router';
 import OnboardingFrame, { OnboardingButton } from '../../components/OnboardingFrame';
 import { Copy, Group, Row } from '../../components/ui';
+import { existingCustomerGuide } from '../../../core/billing';
 
 export default function Setup() {
   const { finish } = useOnboarding();
+  const guide = existingCustomerGuide();
   return (
     <OnboardingFrame
       title="Where would you like to start?"
-      body="You can return to either option from Settings."
+      body="You can return to these options from Settings."
       footer={
         <OnboardingButton
           label="Explore the app first"
@@ -28,6 +31,14 @@ export default function Setup() {
           title="Connect an agent"
           subtitle="Scan a pairing code or paste its link."
           onPress={() => finish('/pair')}
+        />
+      </Group>
+      <Group compact>
+        <Row
+          compact
+          title="Claim existing-customer access"
+          subtitle={`${guide.title} ${guide.summary}`}
+          onPress={() => router.push('/account')}
         />
       </Group>
       <Copy variant="caption" muted>

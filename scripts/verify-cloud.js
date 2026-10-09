@@ -39,14 +39,21 @@ try {
   const token = store.authorize('alice', 'device', profile);
   assert.equal(store.credential(token).subject, 'alice');
   const { id } = store.begin('alice', 'device', profile.id, metadata);
-  assert.throws(() => store.page('alice', id, 0, 50));
+  await assert.rejects(async () => await store.page('alice', id, 0, 50));
   assert.throws(() => store.row('bob', id));
-  assert.throws(() =>
-    store.commit('alice', 'device', 'wrong', id, Buffer.from(JSON.stringify(records[0]) + '\n')),
+  await assert.rejects(
+    async () =>
+      await store.commit(
+        'alice',
+        'device',
+        'wrong',
+        id,
+        Buffer.from(JSON.stringify(records[0]) + '\n'),
+      ),
   );
-  assert.throws(
-    () =>
-      store.commit(
+  await assert.rejects(
+    async () =>
+      await store.commit(
         'alice',
         'device',
         profile.id,
@@ -56,13 +63,13 @@ try {
     /Imported data is no longer supported/,
   );
   const bytes = Buffer.from(JSON.stringify(records[0]) + '\n');
-  store.commit('alice', 'device', profile.id, id, bytes);
-  assert.deepEqual(store.page('alice', id, 0, 50).records, records);
+  await store.commit('alice', 'device', profile.id, id, bytes);
+  assert.deepEqual((await store.page('alice', id, 0, 50)).records, records);
   assert.equal(store.list('alice', true).length, 0);
-  assert.throws(() => store.page('alice', id, 0, 50, true));
+  await assert.rejects(async () => await store.page('alice', id, 0, 50, true));
   store.access('alice', 'device', profile, true);
   assert.equal(store.list('alice', true).length, 1);
-  assert.deepEqual(store.page('alice', id, 0, 50, true).records, records);
+  assert.deepEqual((await store.page('alice', id, 0, 50, true)).records, records);
   const encrypted = store.row('alice', id).content;
   assert.ok(encrypted);
   assert.ok(!Buffer.from(encrypted).includes('synthetic-private-value'));
@@ -77,40 +84,43 @@ try {
   store.setAgent('alice', 'test-agent', false);
   store.observeAgent('alice', 'test-agent');
 
-  assert.deepEqual(store.page('alice', id, 0, 50, true).records, records);
-  assert.throws(() => store.page('bob', id, 0, 50, true));
-  assert.throws(() => store.delete('bob', id));
+  assert.deepEqual((await store.page('alice', id, 0, 50, true)).records, records);
+  await assert.rejects(async () => await store.page('bob', id, 0, 50, true));
+  await assert.rejects(async () => await store.delete('bob', id));
   store.access(
     'alice',
     'device',
     { ...profile, selection: { health: [], time: [], location: [] } },
     true,
   );
-  assert.equal(store.page('alice', id, 0, 50, true).records.length, 0);
+  assert.equal((await store.page('alice', id, 0, 50, true)).records.length, 0);
   store.access('alice', 'device', profile, false);
-  assert.throws(() => store.page('alice', id, 0, 50, true));
+  await assert.rejects(async () => await store.page('alice', id, 0, 50, true));
   const denied = store.begin('alice', 'device', profile.id, {
     ...metadata,
     manifest: { profileId: profile.id, recordCount: 1 },
   });
-  assert.throws(() =>
-    store.commit(
-      'alice',
-      'device',
-      profile.id,
-      denied.id,
-      Buffer.from(JSON.stringify({ ...records[0], type: 'heart' }) + '\n'),
-    ),
+  await assert.rejects(
+    async () =>
+      await store.commit(
+        'alice',
+        'device',
+        profile.id,
+        denied.id,
+        Buffer.from(JSON.stringify({ ...records[0], type: 'heart' }) + '\n'),
+      ),
   );
-  assert.throws(() => store.commit('alice', 'device', profile.id, denied.id, Buffer.from('')));
-  assert.deepEqual(store.delete('alice', denied.id), { deleted: true });
+  await assert.rejects(
+    async () => await store.commit('alice', 'device', profile.id, denied.id, Buffer.from('')),
+  );
+  assert.deepEqual(await store.delete('alice', denied.id), { deleted: true });
   assert.throws(() => store.row('alice', denied.id));
   const json = store.begin('alice', 'device', profile.id, {
     ...metadata,
     format: 'json',
     manifest: { profileId: profile.id, recordCount: 2 },
   });
-  store.commit(
+  await store.commit(
     'alice',
     'device',
     profile.id,
@@ -119,8 +129,8 @@ try {
       JSON.stringify({ schema: 'myself.md.export.v1', records: [records[0], records[0]] }),
     ),
   );
-  assert.equal(store.page('alice', json.id, 0, 1).nextCursor, '1');
-  assert.equal(store.page('alice', json.id, 1, 1).nextCursor, null);
+  assert.equal((await store.page('alice', json.id, 0, 1)).nextCursor, '1');
+  assert.equal((await store.page('alice', json.id, 1, 1)).nextCursor, null);
   store.db.prepare('UPDATE exports SET created=? WHERE id=?').run(Date.now() - 31 * 86400000, id);
   store.cleanup();
   assert.throws(() => store.row('alice', id));

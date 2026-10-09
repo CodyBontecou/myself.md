@@ -13,9 +13,15 @@ module.exports = defineConfig([
       '.local/**',
       '.expo/**',
       'node_modules/**',
+      'worker/worker-configuration.d.ts',
+      '.wrangler/**',
     ],
   },
   expoConfig,
+  {
+    files: ['worker/**/*.js'],
+    settings: { 'import/core-modules': ['cloudflare:workers', 'cloudflare:node'] },
+  },
   {
     files: ['**/*.{js,jsx}'],
     ignores: ['dashboard/**'],
