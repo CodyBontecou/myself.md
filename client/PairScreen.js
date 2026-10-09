@@ -49,7 +49,7 @@ export default function PairScreen() {
             onPress={() =>
               Alert.alert(
                 'Disconnect this phone?',
-                'Agent queries and scheduled exports stop. Imported data stays on this phone.',
+                'Agent queries and scheduled exports stop. Recorded location data stays on this phone.',
                 [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Disconnect', style: 'destructive', onPress: () => void run(disconnect) },

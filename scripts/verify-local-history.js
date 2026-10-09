@@ -62,7 +62,7 @@ const profile = {
   ...parseProfile({
     schema: 'myself.md.profile.v1',
     name: 'Synthetic sleep',
-    selection: { health: ['imported:sleep'], time: [], location: [] },
+    selection: { health: ['native:sleep'], time: [], location: [] },
   }),
   id: 'sleep',
 };

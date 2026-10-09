@@ -2,11 +2,11 @@ import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import { profileAllows } from '../core/profiles.js';
 import { domains } from '../core/data.js';
-import { importedTypes, localPage } from './library.js';
+import { localPage } from './library.js';
 import { healthTypes, healthPage } from './health.js';
 import { usageStatus, usagePage } from './usage.js';
-/** @param {string} owner @param {import('./library.js').Grants} grants @param {import('../core/profiles.js').ExportProfile} [profile] */
-export async function catalog(owner, grants, profile) {
+/** @param {string} _owner @param {import('./library.js').Grants} grants @param {import('../core/profiles.js').ExportProfile} [profile] */
+export async function catalog(_owner, grants, profile) {
   const health = await healthTypes();
   const usage = await usageStatus();
   const location = await Location.getForegroundPermissionsAsync();
@@ -14,32 +14,31 @@ export async function catalog(owner, grants, profile) {
     domains: domains.map((domain) => ({
       domain,
       enabled: grants[domain] && (!profile || profile.selection[domain].length > 0),
-      types: [
-        ...importedTypes(owner, domain).map((type) => `imported:${type}`),
-        ...(domain === 'health'
-          ? health
-          : domain === 'time'
-            ? usage === 'authorized'
-              ? Platform.OS === 'ios'
-                ? ['applications', 'websites']
-                : ['applications']
-              : []
-            : location.granted
-              ? ['points']
-              : []
-        ).map((type) => `native:${type}`),
-      ].filter((key) => !profile || profile.selection[domain].includes(key)),
+      types: (domain === 'health'
+        ? health
+        : domain === 'time'
+          ? usage === 'authorized'
+            ? Platform.OS === 'ios'
+              ? ['applications', 'websites']
+              : ['applications']
+            : []
+          : location.granted
+            ? ['points']
+            : []
+      )
+        .map((type) => `native:${type}`)
+        .filter((key) => !profile || profile.selection[domain].includes(key)),
       notes:
         domain === 'health'
           ? [
-              'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions require an original archive.',
+              'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions are not captured by this adapter.',
             ]
           : domain === 'time'
             ? [
                 `System authorization: ${usage}. iOS raw data requires iOS 26.4+, the approved Family Controls data entitlement, and EU eligibility. Android uses Usage Access. Aggregates are not sessions.`,
               ]
             : [
-                'Only locally recorded points and imported history are available. Background tracking is optional. No historical OS location archive is exposed.',
+                'Only locally recorded points are available. Background tracking is optional. No historical OS location archive is exposed.',
               ],
     })),
   };
@@ -67,7 +66,7 @@ export async function readPage(owner, query, profile, forChat = true) {
     token = value.token;
   }
   let page =
-    query.source === 'imported' || query.domain === 'location'
+    query.domain === 'location'
       ? localPage(owner, query, token)
       : query.domain === 'health'
         ? await healthPage(query, token)
@@ -77,12 +76,10 @@ export async function readPage(owner, query, profile, forChat = true) {
     while (JSON.stringify(page).length > 250000) {
       limit = Math.floor(limit / 2);
       if (limit < 1)
-        throw new Error(
-          'One record exceeds the chat response limit. Use the local file export or query imported archive chunks.',
-        );
+        throw new Error('One record exceeds the chat response limit. Use the local file export.');
       const reduced = { ...query, limit };
       page =
-        query.source === 'imported' || query.domain === 'location'
+        query.domain === 'location'
           ? localPage(owner, reduced, token)
           : query.domain === 'health'
             ? // Re-read the same cursor with a smaller page to avoid skipping any records.

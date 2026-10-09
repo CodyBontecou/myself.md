@@ -18,7 +18,7 @@ const energy = 'HKQuantityTypeIdentifierActiveEnergyBurned',
   sleep = 'HKCategoryTypeIdentifierSleepAnalysis';
 const device = randomUUID();
 const selection = {
-  health: [`native:${energy}`, `native:${heart}`, `native:${sleep}`, 'imported:archive'],
+  health: [`native:${energy}`, `native:${heart}`, `native:${sleep}`],
   time: ['native:applications'],
   location: ['native:points'],
 };
@@ -77,10 +77,6 @@ const locationRecord = record('location', 'points', 'expo-location', {
   timestamp: Date.parse('2026-10-08T12:00:00.000Z'),
   coords: { latitude: 38.72, longitude: -9.14, accuracy: 8 },
 });
-const archive = record('health', 'archive', 'imported-original', {
-  privateArchive: 'fixture',
-  samples: energyRecords,
-});
 try {
   const first = upload('alice', 'Primary', '2026-10-08', [
     ...energyRecords,
@@ -88,15 +84,14 @@ try {
     sleepRecord,
     usageRecord,
     locationRecord,
-    archive,
   ]);
   const second = upload('alice', 'Overlap', '2026-10-07', energyRecords.slice(0, 30));
   const bob = upload('bob', 'Private', '2026-10-08', [metadataRecord]);
   const all = explore('alice', {});
-  assert.equal(all.scanned, 95);
+  assert.equal(all.scanned, 94);
   assert.equal(all.total, 64);
   assert.equal(all.duplicates, 30);
-  assert.equal(all.archives, 1);
+  assert.equal(all.archives, 0);
   assert.equal(all.rows.length, 50);
   assert.ok(all.rows.some((r) => r.provenance.length === 2));
   assert.equal(all.visuals.aggregation, 'count');
@@ -162,7 +157,7 @@ try {
   assert.equal(explore('alice', { profileIds: ['Overlap'] }).total, 30);
   assert.equal(explore('alice', { deviceIds: [randomUUID()] }).total, 0);
   assert.equal(explore('alice', { deduplicate: false }).total, 94);
-  assert.equal(explore('alice', { includeArchives: true }).total, 65);
+  assert.equal(explore('alice', { includeArchives: true }).total, 64);
   assert.equal(explore('alice', { source: 'native-usage' }).total, 1);
   assert.equal(
     explore('alice', {

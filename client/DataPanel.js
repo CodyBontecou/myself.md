@@ -1,15 +1,13 @@
 import { acceptAllowance } from './billing.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, StyleSheet, TextInput, View } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
 import { Button, Switch, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
-import { importArchive, loadGrants, saveGrants } from './library.js';
+import { loadGrants, saveGrants } from './library.js';
 import { authorizeHealth } from './health.js';
 import { authorizeUsage } from './usage.js';
 import { captureLocation, startTracking, stopTracking, locationStatus } from './location-task.js';
@@ -164,7 +162,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       Object.fromEntries(
         info.domains.map((d) => [
           d.domain,
-          `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
+          `${d.domain === 'health' ? 'HealthKit or Health Connect samples.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Enable usage access to read totals.') : 'Locally recorded location points.'}`,
         ]),
       ),
     );
@@ -207,7 +205,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
             Object.fromEntries(
               info.domains.map((d) => [
                 d.domain,
-                `${d.domain === 'health' ? 'HealthKit samples + imported archives.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Import time.md to add history.') : 'Recorded points + iso.me imports.'}`,
+                `${d.domain === 'health' ? 'HealthKit or Health Connect samples.' : d.domain === 'time' ? (d.availableTypes.some((t) => t.startsWith('native:')) ? 'Live usage totals available.' : 'Enable usage access to read totals.') : 'Locally recorded location points.'}`,
               ]),
             ),
           );
@@ -306,25 +304,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
   }
   /** @param {import('../core/data.js').Domain} domain */
-  async function importFile(domain) {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/json', 'text/plain'],
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (!asset) return;
-    const file = new File(asset.uri);
-    try {
-      if (file.size > 30 * 1024 * 1024) throw new Error('Choose a JSON export smaller than 30 MB.');
-      const count = importArchive(session.owner, domain, asset.name, await file.text());
-      setMessage(`Imported ${count} indexed records and preserved the complete original file.`);
-      await publish();
-    } finally {
-      file.delete();
-    }
-  }
-  /** @param {import('../core/data.js').Domain} domain */
   async function exportFile(domain) {
     const range = Number(days);
     if (!Number.isInteger(range) || range < 1 || range > 31)
@@ -386,7 +365,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     run,
     changeGrant,
     changeRecording,
-    importFile,
     exportFile,
     changeProfiles,
     setMessage,
@@ -418,7 +396,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     run,
     changeGrant,
     changeRecording,
-    importFile,
     exportFile,
     changeProfiles,
     setMessage,
@@ -528,7 +505,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
             </>
           ) : null}
           <Button
-            title={filesOpen ? 'Hide file tools' : 'Import & export files'}
+            title={filesOpen ? 'Hide file tools' : 'Export files'}
             onPress={() => setFilesOpen(!filesOpen)}
           />
           {filesOpen ? (
@@ -547,11 +524,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
                     backgroundColor: colors.surface,
                   },
                 ]}
-              />
-              <Button
-                title={`Import ${domain === 'health' ? 'health.md' : domain === 'time' ? 'time.md' : 'iso.me'} JSON`}
-                disabled={busy}
-                onPress={() => void run(() => importFile(domain))}
               />
               <Button
                 title={`Export ${domain}`}

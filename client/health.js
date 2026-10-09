@@ -135,7 +135,7 @@ export async function healthPage(query, token) {
     capture: 'native-readable-samples',
     warnings: [
       'HealthKit hides read denial. An empty result can mean no data or no authorization; it is not proof of full access.',
-      'This adapter does not capture clinical FHIR, attachments, audiograms, medications or vision prescriptions. Use original health.md archives for those fields.',
+      'This adapter does not capture clinical FHIR, attachments, audiograms, medications or vision prescriptions. Those fields are unavailable through this adapter.',
       ...(result.deletedSamples.length
         ? [`Deleted native sample IDs: ${JSON.stringify(result.deletedSamples)}`]
         : []),

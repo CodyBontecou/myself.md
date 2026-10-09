@@ -104,11 +104,14 @@ export function parseHistoryEvent(value) {
     throw new Error('Invalid history metadata.');
   const p = /** @type {Record<string,unknown>} */ (v.profile),
     interval = /** @type {Record<string,unknown>} */ (v.interval);
-  const profile = parseProfile({
-    schema: 'myself.md.profile.v1',
-    name: p.name,
-    selection: p.selection,
-  });
+  const profile = parseProfile(
+    {
+      schema: 'myself.md.profile.v1',
+      name: p.name,
+      selection: p.selection,
+    },
+    true,
+  );
   const startedAt = historyString(v.startedAt),
     updatedAt = historyString(v.updatedAt),
     start = historyString(interval.start),

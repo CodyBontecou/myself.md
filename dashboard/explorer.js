@@ -365,10 +365,6 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
               <input type="checkbox" name="deduplicate" defaultChecked={query.deduplicate} />
               Collapse exact overlaps
             </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" name="archives" defaultChecked={query.includeArchives} />
-              Include archive containers
-            </label>
             <Button type="submit" className="sm:ml-auto">
               Apply query
             </Button>

@@ -7,8 +7,8 @@ import { domains } from './data.js';
 /** @typedef {{activeId:string,profiles:ExportProfile[]}} ProfileState */
 /** Validate the same portable, explicit allowlist on the phone and MCP boundary.
  * Unknown types can be retained for another platform, but never imply authorization.
- * @param {unknown} value @returns {ResolvedDraft} */
-export function parseProfile(value) {
+ * @param {unknown} value @param {boolean} [legacySnapshot] @returns {ResolvedDraft} */
+export function parseProfile(value, legacySnapshot = false) {
   if (!value || typeof value !== 'object') throw new Error('Invalid export profile.');
   const p = /** @type {Record<string,unknown>} */ (value);
   if (
@@ -34,10 +34,12 @@ export function parseProfile(value) {
       keys.length > 300 ||
       keys.some(
         (key) =>
-          typeof key !== 'string' || key.length > 160 || !/^(native|imported):[^\s]+$/.test(key),
+          typeof key !== 'string' ||
+          key.length > 160 ||
+          !(legacySnapshot ? /^(native|imported):[^\s]+$/ : /^native:[^\s]+$/).test(key),
       )
     )
-      throw new Error('Select explicit native: or imported: data types for every domain.');
+      throw new Error('Select explicit native: data types for every domain.');
     selection[domain] = [...new Set(/** @type {string[]} */ (keys))];
   }
   return {
@@ -63,7 +65,10 @@ export function profileFromLink(link) {
 }
 /** @param {ExportProfile} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
 export function profileAllows(profile, query) {
-  return profile.selection[query.domain].includes(`${query.source}:${query.type}`);
+  return (
+    query.source === 'native' &&
+    profile.selection[query.domain].includes(`${query.source}:${query.type}`)
+  );
 }
 /** @param {string} name @param {ExportProfile[]} profiles */
 export function uniqueProfileName(name, profiles) {

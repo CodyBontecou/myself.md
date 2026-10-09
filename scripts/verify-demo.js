@@ -39,13 +39,6 @@ assert.ok(
     (row) => row.domain !== 'health',
   ),
 );
-exportProfile.selection.time = ['imported:archive'];
-const archiveRow = /** @type {import('../core/data.js').DataRecord[]} */ (
-  datasetExportPreview(exportProfile).value.records
-).find((row) => row.type === 'archive');
-assert.ok(archiveRow);
-assert.equal(archiveRow.source, 'imported-original');
-assert.ok(JSON.parse(/** @type {{text:string}} */ (archiveRow.native).text).websites.length);
 exportProfile.selection = { health: [], time: [], location: [] };
 assert.equal(datasetExportPreview(exportProfile).value.recordCount, 0);
 /** @type {Record<import('../core/data.js').Domain,string[]>} */
@@ -65,7 +58,7 @@ for (const dataset of Object.values(datasets)) {
     for (const row of rows) {
       assert.equal(row.domain, dataset.domain);
       assert.equal(row.type, key.slice(key.indexOf(':') + 1));
-      assert.equal(row.source.startsWith('imported'), key.startsWith('imported:'));
+      assert.equal(key.startsWith('native:'), true);
       assert.ok(row.native && typeof row.native === 'object');
       const payload = /** @type {Record<string,unknown>} */ (row.native);
       if (row.source === 'healthkit' && row.type.startsWith('HKQuantityType')) {
@@ -79,12 +72,11 @@ for (const dataset of Object.values(datasets)) {
       }
       if (row.source === 'health-connect') assert.equal(payload.recordType, row.type);
 
-      if (row.type !== 'archive')
-        assert.ok(
-          row.start &&
-            row.start >= '2026-10-08T00:00:00.000Z' &&
-            row.start < '2026-10-09T00:00:00.000Z',
-        );
+      assert.ok(
+        row.start &&
+          row.start >= '2026-10-08T00:00:00.000Z' &&
+          row.start < '2026-10-09T00:00:00.000Z',
+      );
     }
     coveredTypes++;
   }

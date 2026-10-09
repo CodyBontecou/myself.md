@@ -237,7 +237,7 @@ try {
     ...parseProfile({
       schema: 'myself.md.profile.v1',
       name: 'Synthetic',
-      selection: { health: ['imported:sleep'], time: [], location: [] },
+      selection: { health: ['native:sleep'], time: [], location: [] },
     }),
     id: 'synthetic',
   };
@@ -287,7 +287,7 @@ try {
   const record = {
     domain: 'health',
     type: 'sleep',
-    source: 'imported:test',
+    source: 'healthkit',
     start: null,
     end: null,
     native: { synthetic: true },
@@ -411,21 +411,38 @@ try {
         event.status === 'complete' && event.relatedId === id && event.client === 'fixture-chat',
     ),
   );
-  assert.ok(!JSON.stringify(cloudHistory.value).includes('native'));
+  assert.ok(!JSON.stringify(cloudHistory.value).includes('"native":'));
   const catalog = {
     activeProfileId: profile.id,
     profiles: [profile],
     domains: ['health', 'time', 'location'].map((domain) => ({
       domain,
       enabled: domain === 'health',
-      availableTypes: domain === 'health' ? ['imported:sleep'] : [],
-      types: domain === 'health' ? ['imported:sleep'] : [],
+      availableTypes: domain === 'health' ? ['native:sleep'] : [],
+      types: domain === 'health' ? ['native:sleep'] : [],
       notes: [],
     })),
   };
   assert.equal(
     (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
     200,
+  );
+  assert.equal(
+    (
+      await client.callTool({
+        name: 'query_phone_data',
+        arguments: {
+          deviceId,
+          profileId: profile.id,
+          domain: 'health',
+          type: 'sleep',
+          source: 'imported',
+          start: '2026-10-08T00:00:00.000Z',
+          end: '2026-10-09T00:00:00.000Z',
+        },
+      })
+    ).isError,
+    true,
   );
   const queried = await client.callTool({
     name: 'query_phone_data',
@@ -434,7 +451,7 @@ try {
       profileId: profile.id,
       domain: 'health',
       type: 'sleep',
-      source: 'imported',
+      source: 'native',
       start: '2026-10-08T00:00:00.000Z',
       end: '2026-10-09T00:00:00.000Z',
     },
@@ -469,7 +486,7 @@ try {
       profileId: profile.id,
       domain: 'health',
       type: 'sleep',
-      source: 'imported',
+      source: 'native',
       start: '2026-10-08T00:00:00.000Z',
       end: '2026-10-09T00:00:00.000Z',
     },

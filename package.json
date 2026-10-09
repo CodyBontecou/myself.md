@@ -19,7 +19,6 @@
     "expo-background-task": "~57.0.21",
     "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.21",
-    "expo-document-picker": "~57.0.3",
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
     "expo-iap": "^5.8.3",
@@ -92,7 +91,8 @@
     "verify:dashboard": "npm run dashboard:build && node scripts/verify-dashboard-login.js",
     "verify:explorer": "node scripts/verify-explorer.js",
     "verify:demo": "node scripts/verify-demo.js",
-    "verify:billing": "node scripts/verify-billing.js"
+    "verify:billing": "node scripts/verify-billing.js",
+    "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js"
   },
   "private": true,
   "type": "module",

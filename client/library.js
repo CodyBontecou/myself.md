@@ -1,5 +1,4 @@
 import * as SQLite from 'expo-sqlite';
-import { importRecords, record } from '../core/data.js';
 const db = SQLite.openDatabaseSync('phone-data.sqlite');
 db.execSync(`CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, owner TEXT, domain TEXT, type TEXT, start TEXT, end TEXT, source TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS record_query ON records(owner,domain,type,id);
@@ -32,46 +31,13 @@ export function saveRecord(owner, row) {
     JSON.stringify(row.native),
   );
 }
-/** @param {string} owner @param {import('../core/data.js').Domain} domain @param {string} name @param {string} text */
-export function importArchive(owner, domain, name, text) {
-  const rows = importRecords(domain, JSON.parse(text)).slice(1);
-  const archiveId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  db.withTransactionSync(() => {
-    const total = Math.ceil(text.length / 4096);
-    for (let index = 0; index < total; index++)
-      saveRecord(
-        owner,
-        record(domain, 'archive', 'imported-original', {
-          archiveId,
-          name,
-          index,
-          total,
-          text: text.slice(index * 4096, (index + 1) * 4096),
-        }),
-      );
-    for (const row of rows) saveRecord(owner, row);
-  });
-  return rows.length;
-}
-/** @param {string} owner @param {import('../core/data.js').Domain} domain */
-export function importedTypes(owner, domain) {
-  return db
-    .getAllSync(
-      /** @type {string} */ (
-        "SELECT DISTINCT type FROM records WHERE owner=? AND domain=? AND source LIKE 'imported%'"
-      ),
-      owner,
-      domain,
-    )
-    .map((row) => /** @type {{type:string}} */ (row).type);
-}
 /** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} token @returns {import('../core/data.js').DataPage} */
 export function localPage(owner, query, token) {
   const after = Number(token || 0);
   if (!Number.isSafeInteger(after) || after < 0) throw new Error('Invalid local cursor.');
   const rows = db.getAllSync(
     /** @type {string} */ (
-      `SELECT * FROM records WHERE owner=? AND domain=? AND type=? AND id>? AND ${query.source === 'imported' ? "source LIKE 'imported%'" : "source='expo-location'"} AND (type='archive' OR (start>=? AND start<?)) ORDER BY id LIMIT ?`
+      `SELECT * FROM records WHERE owner=? AND domain=? AND type=? AND id>? AND source='expo-location' AND start>=? AND start<? ORDER BY id LIMIT ?`
     ),
     owner,
     query.domain,
@@ -99,14 +65,10 @@ export function localPage(owner, query, token) {
       native: JSON.parse(row.payload),
     })),
     nextCursor: rows.length > query.limit ? String(selected.at(-1)?.id) : null,
-    capture: query.type === 'archive' ? 'lossless-import-chunks' : 'recorded-or-imported',
+    capture: 'recorded-location-points',
     warnings: [
-      query.type === 'archive'
-        ? 'Join each archiveId’s text chunks by index to reconstruct the original file; archives have no event date filter.'
-        : 'Only records whose start timestamp is in the UTC interval are returned. Undated imported aggregates remain in their original archive.',
-      query.source === 'imported'
-        ? 'Imported history is not a live native capture. Aggregates are not sessions. Read the original archive for its capture status and query manifest; indexed rows alone cannot establish completeness.'
-        : 'Location history contains only points explicitly recorded by myself.md; it cannot recover earlier phone history.',
+      'Only records whose start timestamp is in the UTC interval are returned.',
+      'Location history contains only points explicitly recorded by myself.md; it cannot recover earlier phone history.',
     ],
   };
 }

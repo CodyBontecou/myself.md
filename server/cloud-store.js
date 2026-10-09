@@ -249,7 +249,9 @@ export class CloudStore {
           native: z.unknown(),
         })
         .parse(r);
-      const source = record.source.startsWith('imported') ? 'imported' : 'native';
+      if (record.source.startsWith('imported') || record.type === 'archive')
+        throw new PairingError(400, 'Imported data is no longer supported.');
+      const source = /** @type {const} */ ('native');
       if (!profileAllows(profile, { domain: record.domain, type: record.type, source }))
         throw new PairingError(400, 'Record is outside the uploaded profile.');
       return record;
@@ -338,11 +340,7 @@ export class CloudStore {
       throw new PairingError(404, 'Shared cloud export not found.');
     let records = this.records(row, this.open(row.content, `${subject}|${id}`));
     if (forMcp)
-      records = records.filter((r) =>
-        permission.selection[r.domain].includes(
-          `${r.source.startsWith('imported') ? 'imported' : 'native'}:${r.type}`,
-        ),
-      );
+      records = records.filter((r) => permission.selection[r.domain].includes(`native:${r.type}`));
     const page = [];
     let size = 0;
     for (const r of records.slice(offset, offset + limit)) {

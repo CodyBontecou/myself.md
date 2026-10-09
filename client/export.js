@@ -9,9 +9,7 @@ export async function shareDomain(context, grants, domain, profile, days, progre
   const info = await catalog(owner, grants, profile);
   const types = info.domains.find((d) => d.domain === domain)?.types ?? [];
   if (!types.length)
-    throw new Error(
-      'There is no readable data source yet. Enable permissions or import an archive.',
-    );
+    throw new Error('There is no readable data source yet. Enable source permissions.');
   const file = new File(Paths.cache, `qr-connect-${domain}-${Date.now()}.json`);
   file.create();
   file.write('{"schema":"myself.md.export.v1","records":[');
@@ -49,7 +47,7 @@ export async function shareDomain(context, grants, domain, profile, days, progre
   try {
     await reserveExport(context, event.id);
     for (const key of types) {
-      const source = key.startsWith('native:') ? 'native' : 'imported',
+      const source = /** @type {const} */ ('native'),
         type = key.slice(key.indexOf(':') + 1);
       let cursor = '';
       try {

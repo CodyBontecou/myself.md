@@ -108,8 +108,7 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
           </Group>
           {!search && (
             <Copy variant="caption" muted>
-              New types stay off. Select all excludes original archives; an archive includes all its
-              data. Source permissions still apply.
+              New types stay off. Source permissions still apply.
             </Copy>
           )}
         </View>
@@ -189,10 +188,7 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
                     onSelection({
                       ...selection,
                       [item.domain]: [
-                        ...new Set([
-                          ...selection[item.domain],
-                          ...types[item.domain].filter((key) => key !== 'imported:archive'),
-                        ]),
+                        ...new Set([...selection[item.domain], ...types[item.domain]]),
                       ],
                     })
                   }
@@ -240,29 +236,22 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
                   <Copy variant="caption" muted>{`${item.selected}/${item.total} selected`}</Copy>
                 </View>
               </Pressable>
-              {item.key !== 'Imported archives' && (
-                <Switch
-                  accessibilityLabel={`Include ${item.key}`}
-                  style={styles.sectionSwitch}
-                  accessibilityValue={{ text: `${item.selected} of ${item.total} selected` }}
-                  disabled={
-                    disabled ||
-                    (!item.selected && !types.health.some((key) => healthGroup(key) === item.key))
-                  }
-                  value={item.selected > 0}
-                  onValueChange={(enabled) =>
-                    onSelection({
-                      ...selection,
-                      health: toggleHealthSection(
-                        selection.health,
-                        types.health,
-                        item.key,
-                        enabled,
-                      ),
-                    })
-                  }
-                />
-              )}
+              <Switch
+                accessibilityLabel={`Include ${item.key}`}
+                style={styles.sectionSwitch}
+                accessibilityValue={{ text: `${item.selected} of ${item.total} selected` }}
+                disabled={
+                  disabled ||
+                  (!item.selected && !types.health.some((key) => healthGroup(key) === item.key))
+                }
+                value={item.selected > 0}
+                onValueChange={(enabled) =>
+                  onSelection({
+                    ...selection,
+                    health: toggleHealthSection(selection.health, types.health, item.key, enabled),
+                  })
+                }
+              />
             </View>
           );
         }
@@ -272,13 +261,13 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
             <Row
               compact
               title={key
-                .replace(/^(native|imported):/, '')
+                .replace(/^native:/, '')
                 .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
                 .replace(/([a-z])([A-Z])/g, '$1 $2')}
               subtitle={
                 domain === 'health' && key.startsWith('native:') && types.health.includes(key)
                   ? undefined
-                  : `${domain === 'time' ? 'Screen time' : domain === 'health' ? 'Health' : 'Location'} · ${key.startsWith('imported:') ? 'Imported' : 'Native'}${!types[domain].includes(key) ? ' · unavailable on this phone' : ''}${key === 'imported:archive' ? ' · includes all imported data' : ''}`
+                  : `${domain === 'time' ? 'Screen time' : domain === 'health' ? 'Health' : 'Location'} · Native${!types[domain].includes(key) ? ' · unavailable on this phone' : ''}`
               }
               trailing={
                 <Switch
@@ -305,19 +294,13 @@ export default function ProfileDataEditor({ types, selection, onSelection, disab
 /** @param {string[]} selected @param {string[]} available @param {string} group @param {boolean} enabled */
 function toggleHealthSection(selected, available, group, enabled) {
   return enabled
-    ? [
-        ...new Set([
-          ...selected,
-          ...available.filter((key) => key !== 'imported:archive' && healthGroup(key) === group),
-        ]),
-      ]
+    ? [...new Set([...selected, ...available.filter((key) => healthGroup(key) === group)])]
     : selected.filter((key) => healthGroup(key) !== group);
 }
-/** Presentation groups cover both platforms and imported identifiers; unknown types remain visible.
+/** Presentation groups cover both platforms; unknown types remain visible.
  * @param {string} key */
 function healthGroup(key) {
-  const type = key.replace(/^(native|imported):/, '');
-  if (type === 'archive') return 'Imported archives';
+  const type = key.replace(/^native:/, '');
   if (/Sleep/i.test(type)) return 'Sleep';
   if (
     /HeartRate|HeartRhythm|Heartbeat|AtrialFibrillation|BloodPressure|Hypertension|Electrocardiogram|CardioFitness|PeripheralPerfusion/i.test(

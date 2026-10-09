@@ -1,4 +1,4 @@
-import { domains, importRecords, record } from '../core/data.js';
+import { domains, record } from '../core/data.js';
 import { fileHeader, recordChunk, fileFooter } from '../core/export-files.js';
 import { profileAllows } from '../core/profiles.js';
 import { healthMockReadings } from './health-mock-readings.js';
@@ -46,63 +46,7 @@ const nativeRecords = [
     },
   }),
 ];
-const archives = {
-  health: {
-    samples: [{ startDate: start, endDate: end, quantity: 1250, unit: 'count' }],
-    records: [{ startDate: start, endDate: end, quantity: 72, unit: 'count/min' }],
-    workouts: [{ startDate: start, endDate: end, activity: 'walking', duration: 1800 }],
-    healthkit_record_archive: {
-      records: [
-        {
-          object_type_identifier: 'HKQuantityTypeIdentifierStepCount',
-          start_date: start,
-          end_date: end,
-          quantity: 1250,
-          unit: 'count',
-        },
-      ],
-    },
-  },
-  time: {
-    rawScreenTime: [{ startMs: Date.parse(start), endMs: Date.parse(end), durationMs: 1200000 }],
-    applications: [
-      {
-        startMs: Date.parse(start),
-        endMs: Date.parse(end),
-        identifier: 'com.example.reader',
-        durationMs: 1200000,
-      },
-    ],
-    websites: [
-      {
-        startMs: Date.parse(start),
-        endMs: Date.parse(end),
-        identifier: 'example.com',
-        durationMs: 300000,
-      },
-    ],
-    dailyTrends: [{ date: interval.day, durationMs: 3600000 }],
-    hourlyActivity: [{ startMs: Date.parse(start), durationMs: 1200000 }],
-  },
-  location: {
-    points: [{ timestamp: Date.parse(start), latitude: 38.7223, longitude: -9.1393 }],
-    visits: [{ arrivedAt: start, departedAt: end, name: 'Example park' }],
-    outings: [{ startDate: start, endDate: end, distanceMeters: 950 }],
-  },
-};
-const samples = [
-  ...nativeRecords,
-  ...domains.flatMap((domain) => [
-    ...importRecords(domain, archives[domain]).slice(1),
-    record(domain, 'archive', 'imported-original', {
-      archiveId: `example-${domain}`,
-      name: `${domain}.json`,
-      index: 0,
-      total: 1,
-      text: JSON.stringify(archives[domain]),
-    }),
-  ]),
-];
+const samples = nativeRecords;
 /** Build the exact JSON file format used by daily exports, from selected mock readings.
  * @param {import('../core/profiles.js').ResolvedDraft} profile */
 export function datasetExportPreview(profile) {
@@ -111,39 +55,30 @@ export function datasetExportPreview(profile) {
     profileAllows(storedProfile, {
       domain: sample.domain,
       type: sample.type,
-      source: sample.source.startsWith('imported') ? 'imported' : 'native',
+      source: /** @type {const} */ ('native'),
     }),
   );
   const captures = domains.flatMap((domain) =>
     profile.selection[domain].map((key) => {
-      const source = key.startsWith('imported:') ? 'imported' : 'native';
+      const source = /** @type {const} */ ('native');
       const type = key.slice(key.indexOf(':') + 1);
       return {
         domain,
         type,
         source,
         capture:
-          source === 'imported'
-            ? type === 'archive'
-              ? 'lossless-import-chunks'
-              : 'recorded-or-imported'
-            : domain === 'health'
-              ? 'native-readable-samples'
-              : domain === 'location'
-                ? 'recorded-or-imported'
-                : 'native-usage-aggregates',
+          domain === 'health'
+            ? 'native-readable-samples'
+            : domain === 'location'
+              ? 'recorded-location-points'
+              : 'native-usage-aggregates',
         warnings: [],
       };
     }),
   );
   const emptyTypes = captures.filter(
-    ({ domain, type, source }) =>
-      !records.some(
-        (sample) =>
-          sample.domain === domain &&
-          sample.type === type &&
-          (sample.source.startsWith('imported') ? 'imported' : 'native') === source,
-      ),
+    ({ domain, type }) =>
+      !records.some((sample) => sample.domain === domain && sample.type === type),
   );
   const manifest = {
     schema: 'myself.md.export.v1',

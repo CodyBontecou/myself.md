@@ -15,7 +15,7 @@ const profile = {
   ...parseProfile({
     schema: 'myself.md.profile.v1',
     name: 'Synthetic',
-    selection: { health: ['imported:sleep'], time: [], location: [] },
+    selection: { health: ['native:sleep'], time: [], location: [] },
   }),
   id: 'profile',
 };
@@ -23,7 +23,7 @@ const records = [
   {
     domain: 'health',
     type: 'sleep',
-    source: 'imported:synthetic',
+    source: 'healthkit',
     start: '2026-10-08T00:00:00.000Z',
     end: null,
     native: { private: 'synthetic-private-value' },
@@ -43,6 +43,17 @@ try {
   assert.throws(() => store.row('bob', id));
   assert.throws(() =>
     store.commit('alice', 'device', 'wrong', id, Buffer.from(JSON.stringify(records[0]) + '\n')),
+  );
+  assert.throws(
+    () =>
+      store.commit(
+        'alice',
+        'device',
+        profile.id,
+        id,
+        Buffer.from(JSON.stringify({ ...records[0], source: 'imported' }) + '\n'),
+      ),
+    /Imported data is no longer supported/,
   );
   const bytes = Buffer.from(JSON.stringify(records[0]) + '\n');
   store.commit('alice', 'device', profile.id, id, bytes);

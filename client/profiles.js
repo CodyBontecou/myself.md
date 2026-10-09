@@ -17,7 +17,20 @@ export function loadProfiles(owner) {
     throw new Error('Invalid saved profiles.');
   return {
     activeId: state.activeId,
-    profiles: state.profiles.map((p) => Object.assign(parseProfile(p), { id: p.id })),
+    profiles: state.profiles.map((p) => {
+      const legacy = parseProfile(p, true);
+      return Object.assign(
+        parseProfile({
+          ...legacy,
+          selection: {
+            health: legacy.selection.health.filter((key) => key.startsWith('native:')),
+            time: legacy.selection.time.filter((key) => key.startsWith('native:')),
+            location: legacy.selection.location.filter((key) => key.startsWith('native:')),
+          },
+        }),
+        { id: p.id },
+      );
+    }),
   };
 }
 /** @param {string} owner @param {import('../core/profiles.js').ProfileState} state */

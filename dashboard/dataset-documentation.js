@@ -11,7 +11,7 @@ import { Input } from './components/ui/input.js';
 /** @param {string} key */
 function typeLabel(key) {
   return key
-    .replace(/^(native|imported):/, '')
+    .replace(/^native:/, '')
     .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }
@@ -158,9 +158,8 @@ export function DatasetDocumentation({ dataset }) {
               </h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Try the checkboxes to update the export JSON preview. These are documentation
-                controls; they do not change your phone, permissions, or account. Imported types
-                depend on the file and may include additional identifiers. Disabling a type excludes
-                it from subsequent reads and exports; it does not delete existing files.
+                controls; they do not change your phone, permissions, or account. Disabling a type
+                excludes it from subsequent reads and exports; it does not delete existing files.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Input
@@ -257,7 +256,7 @@ export function DatasetDocumentation({ dataset }) {
                   ['type', 'The source metric or collection identifier.'],
                   [
                     'source',
-                    'The adapter or import source, such as healthkit, health-connect, native-usage, or expo-location.',
+                    'The platform adapter, such as healthkit, health-connect, native-usage, or expo-location.',
                   ],
                   [
                     'start / end',
@@ -269,7 +268,7 @@ export function DatasetDocumentation({ dataset }) {
                   ],
                   [
                     'Selection keys',
-                    'Profiles use native:<type> or imported:<type>. These authorization keys differ from the source value stored on a record.',
+                    'Profiles use native:<type>. These authorization keys differ from the source value stored on a record.',
                   ],
                 ].map(([label, description]) => (
                   <div key={label}>
@@ -334,12 +333,6 @@ export function DatasetDocumentation({ dataset }) {
                 .jsonl.manifest.json file. JSON places records and metadata in one document. The
                 captures and failures arrays report source coverage; a file can have partial status
                 when some selected sources could not be read.
-              </p>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Original imported files are preserved as imported-original archive records with
-                native fields archiveId, name, index, total, and text. Join text chunks in index
-                order for each archiveId to reconstruct the original file. Archive chunks are not
-                filtered by event date and contain all data from that archive.
               </p>
             </section>
             <section className="space-y-4" aria-labelledby="limits-title">

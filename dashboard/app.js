@@ -648,7 +648,7 @@ function Modal({ children, title, description, onClose, wide = false }) {
 /** @param {string} key */
 function selectionLabel(key) {
   return key
-    .replace(/^(native|imported):/, '')
+    .replace(/^native:/, '')
     .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
     .replace(/^HK(Workout|StateOfMind)TypeIdentifier$/, '$1')
     .replace(/^HK/, '')
@@ -668,9 +668,8 @@ function ProfileSelection({ selection }) {
   return (
     <div className="grid items-start gap-3 md:grid-cols-3">
       {groups.map(({ domain, label, icon: Icon }) => {
-        const keys = selection[domain] ?? [];
+        const keys = (selection[domain] ?? []).filter((key) => key.startsWith('native:'));
         const native = keys.filter((key) => key.startsWith('native:')).length;
-        const imported = keys.length - native;
         return (
           <div key={domain} className="min-w-0 rounded-lg border bg-muted/20 p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
@@ -682,10 +681,7 @@ function ProfileSelection({ selection }) {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               {keys.length
-                ? [
-                    native ? `${native} device ${native === 1 ? 'type' : 'types'}` : '',
-                    imported ? `${imported} imported ${imported === 1 ? 'type' : 'types'}` : '',
-                  ]
+                ? [native ? `${native} device ${native === 1 ? 'type' : 'types'}` : '']
                     .filter(Boolean)
                     .join(' · ')
                 : 'No data selected'}
@@ -709,9 +705,7 @@ function ProfileSelection({ selection }) {
                   {keys.map((key) => (
                     <li key={key} className="flex items-start justify-between gap-2 text-xs">
                       <span className="min-w-0 break-words">{selectionLabel(key)}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {key.startsWith('native:') ? 'Device' : 'Import'}
-                      </span>
+                      <span className="shrink-0 text-muted-foreground">Device</span>
                     </li>
                   ))}
                 </ul>

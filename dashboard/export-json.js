@@ -76,7 +76,7 @@ export function ExportJson({ value, added }) {
         <code>
           {`{\n  "schema": ${JSON.stringify(value.schema)},\n  "records": [${records.length ? '\n' : ''}`}
           {records.map((item, index) => {
-            const selection = `${item.domain}:${item.source.startsWith('imported') ? 'imported' : 'native'}:${item.type}`;
+            const selection = `${item.domain}:native:${item.type}`;
             return (
               <span
                 key={JSON.stringify(item)}

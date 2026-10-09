@@ -44,7 +44,7 @@ export async function exportProfileDay(
   try {
     for (const domain of domains)
       for (const key of profile.selection[domain]) {
-        const source = key.startsWith('native:') ? 'native' : 'imported',
+        const source = /** @type {const} */ ('native'),
           type = key.slice(key.indexOf(':') + 1);
         if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
         if (!info.domains.find((v) => v.domain === domain)?.types.includes(key)) {

@@ -18,7 +18,7 @@ const profile = {
   ...parseProfile({
     schema: 'myself.md.profile.v1',
     name: 'Sleep snapshot',
-    selection: { health: ['imported:sleep'], time: [], location: [] },
+    selection: { health: ['native:sleep'], time: [], location: [] },
     export: { destination: 'http', httpUrl: 'https://example.com/private?token=secret' },
   }),
   id: 'profile',
@@ -47,7 +47,7 @@ try {
   profile.name = 'Renamed';
   profile.selection.health.push('native:steps');
   assert.equal(event.profile.name, 'Sleep snapshot');
-  assert.deepEqual(event.profile.selection.health, ['imported:sleep']);
+  assert.deepEqual(event.profile.selection.health, ['native:sleep']);
   event = addArtifact(event, artifact, stamp);
   event = addArtifact(event, { ...artifact, format: 'jsonl' }, stamp);
   assert.equal(event.recordCount, 12);

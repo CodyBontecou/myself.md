@@ -92,7 +92,7 @@ else process.env.TZ = originalTZ;
 const record = {
   domain: /** @type {const} */ ('health'),
   type: 'sleep',
-  source: 'imported',
+  source: 'native',
   start: null,
   end: null,
   native: { text: 'line\n"quote"', array: [1, 2] },

@@ -13,7 +13,7 @@ const querySchema = z
     profileId: z.string().min(1).max(100),
     domain: domainSchema,
     type: z.string().min(1).max(160),
-    source: z.enum(['native', 'imported']).default('native'),
+    source: z.literal('native').default('native'),
     start: z.iso.datetime(),
     end: z.iso.datetime(),
     cursor: z.string().max(16000).default(''),
@@ -148,7 +148,7 @@ export function registerDataTools(mcp, subject, client = null) {
     'create_phone_export_profile',
     {
       description:
-        'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use availableTypes from get_phone_data_catalog. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not activate a profile or grant access. The user reviews, saves and activates on the phone. Original imported:archive includes ALL imported data regardless of indexed selections.',
+        'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use availableTypes from get_phone_data_catalog. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not activate a profile or grant access. The user reviews, saves and activates on the phone.',
       inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
     },
     async ({ profile, deviceId }) => {
@@ -210,7 +210,7 @@ export function registerDataTools(mcp, subject, client = null) {
     'query_phone_data',
     {
       description:
-        'Ask the connected phone to read one discovered data type in a UTC interval under the active profileId from the catalog. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Imported archive type includes undated originals for lossless export. Empty HealthKit results do not prove read authorization.',
+        'Ask the connected phone to read one discovered data type in a UTC interval under the active profileId from the catalog. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization.',
       inputSchema: querySchema,
       annotations: { readOnlyHint: true },
     },

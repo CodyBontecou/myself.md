@@ -21,7 +21,7 @@ export const phoneSources = [
     id: 'health',
     name: 'Health',
     icon: 'heart-outline',
-    description: 'HealthKit and imported health data',
+    description: 'HealthKit and Health Connect data',
   },
   {
     id: 'time',
@@ -33,7 +33,7 @@ export const phoneSources = [
     id: 'location',
     name: 'Location',
     icon: 'location-outline',
-    description: 'Recorded points and imported history',
+    description: 'Locally recorded location points',
   },
 ];
 /** @param {{icon:import('../src/components/ui.js').IconName}} props */
