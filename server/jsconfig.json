@@ -6,5 +6,11 @@
     "types": ["node"],
     "tsBuildInfoFile": "../node_modules/.cache/server.tsbuildinfo"
   },
-  "include": ["**/*.js", "../core/**/*.js", "../scripts/**/*.js", "../plugins/**/*.cjs"]
+  "include": [
+    "**/*.js",
+    "../core/**/*.js",
+    "../scripts/**/*.js",
+    "../plugins/**/*.cjs",
+    "../fingerprint.config.cjs"
+  ]
 }

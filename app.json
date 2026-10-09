@@ -20,7 +20,8 @@
       },
       "entitlements": {
         "com.apple.developer.family-controls": true,
-        "com.apple.developer.family-controls.app-and-website-usage": true
+        "com.apple.developer.family-controls.app-and-website-usage": true,
+        "com.apple.developer.applesignin": ["Default"]
       },
       "appleTeamId": "67KC823C9A"
     },

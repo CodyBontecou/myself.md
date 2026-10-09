@@ -23,6 +23,7 @@
     "src/app/**/*.js",
     "dashboard/app.js",
     "dashboard/style.css",
-    "worker/index.js"
+    "worker/index.js",
+    "fingerprint.config.cjs"
   ]
 }
