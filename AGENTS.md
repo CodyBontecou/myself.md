@@ -12,6 +12,18 @@ Use the static check result as evidence for formatting, type compatibility, lint
 
 Keep `core/` dependency-free and independent of React Native, Node, browser APIs, and side effects. The core has its own environment-free type check and lint restrictions. Keep I/O at the client and server boundaries.
 
+## UI and MCP parity
+
+Every user-facing capability must be available to agents over MCP. When adding or changing UI actions, settings, queries, diagnostics, or workflows, read `docs/mcp-parity.md` and update its coverage inventory. Include mobile and dashboard surfaces.
+
+Expose semantic operations with validated inputs and structured results. Route UI and MCP through the same application logic so validation, side effects, billing, and history stay consistent. Discoverable reads must include the state an agent needs to choose and verify an action.
+
+Apply account/device ownership, existing data grants, and equivalent authorization and confirmation to both entry points. An agent cannot grant itself access. OS prompts, authentication, purchases, secure credential entry, and system sharing may require the user on the device; MCP must initiate or link to that step and report what remains. A deep link alone is not parity for an ordinary app action.
+
+For queued phone actions, distinguish accepted, awaiting user, running, completed, failed, cancelled, and expired outcomes. Report completion only after the effect succeeds, support safe retries, and expose actionable diagnostics without secrets or data outside the agent's grants.
+
+Before finishing, account for every affected UI capability with its MCP operation or a documented platform handoff. Verify changed authorization and end-to-end effects at runtime; an existing tool name or a queued request does not prove parity.
+
 ## Native work
 
 Read the installed Expo major in `package.json` and consult matching docs at `https://docs.expo.dev/versions/v<major>.0.0/` before changing Expo APIs or config. Use `npx expo install` for SDK-compatible dependencies. Native directories are generated from `app.json`; configure them through Expo rather than editing generated files.

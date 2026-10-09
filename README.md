@@ -198,6 +198,8 @@ For agent-assisted export debugging, pair the phone with the same MCP account an
 
 The diagnostic links use the installed `qrconnect` scheme and open the existing profile editor entry point, activity detail, or data-source permission screen. Review and save configuration changes on that phone, then retry from the profile. Links navigate; they do not change settings or grant OS permissions. `create_phone_export_profile` can deliver a proposed replacement for review. Current profile selections and unavailable types can explain what to check, but are not proof of an earlier failure; local exports do not require agent-access grants. Known destination errors (including HTTP status, cloud authorization and file-size limits) are retained in new failure history. Unknown native/network errors remain generic to avoid publishing credentials or private URLs. Older generic failure entries cannot recover details that were never saved.
 
+App-wide UI/MCP parity is the development rule in `AGENTS.md`. The [parity contract and coverage inventory](docs/mcp-parity.md) tracks current operations, platform handoffs, and missing capabilities across the phone and dashboard. Existing MCP tools cover part of the app; full parity is the target.
+
 ## Structure and builds
 
 - `App.js`: scanner, permissions, confirmation, connected status.
