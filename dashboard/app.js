@@ -17,6 +17,11 @@ import {
   IconListDetails,
   IconRobot,
   IconCloud,
+  IconHeart,
+  IconClock,
+  IconMapPin,
+  IconLock,
+  IconChevronDown,
   IconLogout,
   IconDotsVertical,
   IconRefresh,
@@ -236,7 +241,7 @@ function SectionCards({ workspace }) {
     {
       label: 'Shared profiles',
       value: String(workspace.profiles.filter((p) => p.shared).length),
-      badge: `${workspace.profiles.length} profiles`,
+      badge: `${workspace.profiles.length} ${workspace.profiles.length === 1 ? 'profile' : 'profiles'}`,
       footer: 'Available to allowed agents',
       detail: 'Your approved data selection applies',
       icon: IconShieldCheck,
@@ -547,6 +552,84 @@ function Modal({ children, title, description, onClose, wide = false }) {
     </Dialog.Root>
   );
 }
+/** @param {string} key */
+function selectionLabel(key) {
+  return key
+    .replace(/^(native|imported):/, '')
+    .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
+    .replace(/^HK(Workout|StateOfMind)TypeIdentifier$/, '$1')
+    .replace(/^HK/, '')
+    .replace(/Type$/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/[_-]/g, ' ')
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+/** @param {{selection:Record<string,string[]>}} props */
+function ProfileSelection({ selection }) {
+  const groups = [
+    { domain: 'health', label: 'Health', icon: IconHeart },
+    { domain: 'time', label: 'Time', icon: IconClock },
+    { domain: 'location', label: 'Location', icon: IconMapPin },
+  ];
+  return (
+    <div className="grid items-start gap-3 md:grid-cols-3">
+      {groups.map(({ domain, label, icon: Icon }) => {
+        const keys = selection[domain] ?? [];
+        const native = keys.filter((key) => key.startsWith('native:')).length;
+        const imported = keys.length - native;
+        return (
+          <div key={domain} className="min-w-0 rounded-lg border bg-muted/20 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+              {label}
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                {keys.length} selected
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {keys.length
+                ? [
+                    native ? `${native} device ${native === 1 ? 'type' : 'types'}` : '',
+                    imported ? `${imported} imported ${imported === 1 ? 'type' : 'types'}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'No data selected'}
+            </p>
+            {keys.length > 0 && (
+              <details className="group mt-3">
+                <summary
+                  aria-label={`View selected ${label.toLowerCase()} types`}
+                  className="flex cursor-pointer list-none items-center justify-between rounded-sm text-sm focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
+                >
+                  View selected types
+                  <IconChevronDown
+                    className="size-4 transition-transform group-open:rotate-180"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <ul
+                  aria-label={`${label} export selection`}
+                  className="mt-3 max-h-64 space-y-2 overflow-y-auto border-t pt-3"
+                >
+                  {keys.map((key) => (
+                    <li key={key} className="flex items-start justify-between gap-2 text-xs">
+                      <span className="min-w-0 break-words">{selectionLabel(key)}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {key.startsWith('native:') ? 'Device' : 'Import'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 /** @param {{workspace:Workspace,view:View,busy:boolean,onConfirm:(confirmation:Confirmation)=>void,onReload:()=>Promise<void>}} props */
 function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
   return (
@@ -558,58 +641,87 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
           </CardTitle>
           <CardDescription>
             {view === 'profiles'
-              ? 'Control access to stored cloud exports. Changes use the same permissions as the app.'
+              ? 'Choose which profiles agents can read from your stored cloud exports.'
               : 'Agents appear after their first MCP request. Block access at any time.'}
           </CardDescription>
         </CardHeader>
+        {view === 'profiles' && (
+          <div className="mx-6 flex items-start gap-3 rounded-lg border bg-muted/30 p-4">
+            <IconShieldCheck
+              className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">You control what agents can access</p>
+              <p className="text-sm text-muted-foreground">
+                Sharing applies to all allowed agents on your account. Selected types describe the
+                export profile; iPhone Health permissions are managed separately on your phone.
+              </p>
+            </div>
+          </div>
+        )}
         <CardContent className="divide-y">
           {view === 'profiles'
             ? workspace.profiles.map((profile) => (
                 <div
                   key={`${profile.deviceId}/${profile.profileId}`}
-                  className="flex flex-wrap items-center justify-between gap-4 py-5 first:pt-0"
+                  className="space-y-5 py-6 first:pt-0 last:pb-0"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-medium">{profile.name}</h2>
-                      <Badge variant="outline">{profile.shared ? 'Shared' : 'Private'}</Badge>
+                  <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="break-words text-lg font-semibold">{profile.name}</h2>
+                        <Badge variant={profile.shared ? 'secondary' : 'outline'}>
+                          {profile.shared ? (
+                            <IconCloud aria-hidden="true" />
+                          ) : (
+                            <IconLock aria-hidden="true" />
+                          )}
+                          {profile.shared ? 'Shared with agents' : 'Private'}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                        <IconDeviceMobile className="size-4" />
+                        {deviceName(workspace, profile.deviceId)}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {profile.shared
+                          ? 'Allowed agents can read this profile’s selected data from stored exports.'
+                          : 'Only you can view these stored exports. Agent access is off.'}
+                      </p>
                     </div>
-                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                      <IconDeviceMobile className="size-4" />
-                      {deviceName(workspace, profile.deviceId)}
-                    </p>
-                    <p className="mt-3 break-words text-xs text-muted-foreground">
-                      {Object.entries(profile.selection)
-                        .flatMap(([domain, keys]) => keys.map((key) => `${domain} / ${key}`))
-                        .join(' · ') || 'No data types selected'}
-                    </p>
-                    <p className="mt-1 break-all text-xs text-muted-foreground">
-                      Profile ID: {profile.profileId}
-                    </p>
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        onConfirm({
+                          title: profile.shared ? 'Revoke cloud sharing?' : 'Share this profile?',
+                          description: profile.shared
+                            ? 'Agents will lose access to this profile’s stored exports. You can still view them here.'
+                            : 'All allowed agents on your account will be able to read stored exports within the data selection shown for this profile.',
+                          label: profile.shared ? 'Revoke sharing' : 'Share with agents',
+                          action: async () => {
+                            await api('/api/dashboard/permissions', 'PUT', {
+                              deviceId: profile.deviceId,
+                              profileId: profile.profileId,
+                              shared: !profile.shared,
+                            });
+                            await onReload();
+                          },
+                        })
+                      }
+                    >
+                      {profile.shared ? 'Revoke sharing' : 'Share with agents'}
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      onConfirm({
-                        title: profile.shared ? 'Revoke cloud sharing?' : 'Share this profile?',
-                        description: profile.shared
-                          ? 'Agents will lose access to this profile’s stored exports. You can still view them here.'
-                          : 'All allowed agents on your account will be able to read stored exports within the data selection shown for this profile.',
-                        label: profile.shared ? 'Revoke sharing' : 'Allow agents',
-                        action: async () => {
-                          await api('/api/dashboard/permissions', 'PUT', {
-                            deviceId: profile.deviceId,
-                            profileId: profile.profileId,
-                            shared: !profile.shared,
-                          });
-                          await onReload();
-                        },
-                      })
-                    }
-                  >
-                    {profile.shared ? 'Revoke sharing' : 'Allow agents'}
-                  </Button>
+                  <div>
+                    <h3 className="mb-3 text-sm font-medium">Selected export data</h3>
+                    <ProfileSelection selection={profile.selection} />
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                    <p>Change selected data and device permissions in QR Connect on your phone.</p>
+                    <p className="break-all">Profile ID: {profile.profileId}</p>
+                  </div>
                 </div>
               ))
             : workspace.agents.map((agent) => (
