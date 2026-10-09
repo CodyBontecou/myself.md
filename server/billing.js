@@ -6,6 +6,8 @@ import { verifyStorePurchase } from './store-purchases.js';
 const directory = process.env.DATA_DIR ?? '.local';
 mkdirSync(directory, { recursive: true });
 export const billing = new BillingStore(join(directory, 'billing.sqlite'));
+// In-memory agent jobs cannot resume after a server restart. Completed uses survive.
+billing.db.exec("DELETE FROM billing_uses WHERE state='reserved' AND scope='agent'");
 /** @param {string} subject @param {unknown} body */
 export async function billingApi(subject, body) {
   const input = z

@@ -225,6 +225,7 @@ export async function runScheduledExports() {
         const s = scheduleState(session.deviceId, current);
         return s.progress.enabled && s.progress.enabledAt === state.progress.enabledAt;
       };
+      let produced = false;
       try {
         // Reuse the occurrence ID across OS restarts and retries.
         // oxlint-disable-next-line eslint/no-await-in-loop
@@ -252,9 +253,15 @@ export async function runScheduledExports() {
             day,
             valid,
             () => {},
-            (artifact) => recordArtifact(session, historyId, artifact),
+            (artifact) => {
+              produced = true;
+              recordArtifact(session, historyId, artifact);
+            },
             historyId,
           );
+          // Count output even if the profile changes immediately after delivery.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          await settleExport(session, historyId, true);
           if (!valid()) {
             finishExport(
               session,
@@ -264,9 +271,6 @@ export async function runScheduledExports() {
             );
             break;
           }
-          // Count the occurrence once as soon as it has produced output.
-          // oxlint-disable-next-line eslint/no-await-in-loop
-          await settleExport(session, historyId, true);
           job.days.shift();
           state.files = result.files;
           state.message = `Saved ${day.day} · ${result.count} records${result.failedSources ? ` · Partial export: ${result.failedSources} source failures. See file metadata for details.` : ''}`;
@@ -282,6 +286,11 @@ export async function runScheduledExports() {
           store(session.deviceId, profile.id, state);
         }
       } catch (e) {
+        if (produced) {
+          // Partial scheduled output still consumes this occurrence's single allowance.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          await settleExport(session, historyId, true).catch(() => {});
+        }
         finishExport(
           session,
           historyId,

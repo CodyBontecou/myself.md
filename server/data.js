@@ -259,7 +259,7 @@ export function registerDataTools(mcp, subject, client = null) {
         if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
           throw new PairingError(429, 'Read or forget existing requests first.');
         await refreshEntitlement(subject);
-        billing.reserve(subject, id);
+        billing.reserve(subject, id, 'agent');
         const expires = Date.now() + ttl;
         jobs.set(id, {
           id,

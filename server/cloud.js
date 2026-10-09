@@ -92,7 +92,7 @@ export function registerCloudTools(mcp, subject, client = null) {
       history.record(subject, row.device, event);
       try {
         await refreshEntitlement(subject);
-        billing.reserve(subject, id);
+        billing.reserve(subject, id, 'agent');
         const page = cloud.page(subject, exportId, Number(cursor || 0), limit, true);
         billing.complete(subject, id);
         history.update(subject, id, {

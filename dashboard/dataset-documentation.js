@@ -68,7 +68,7 @@ export function DatasetDocumentation({ dataset }) {
   );
   const profile = parseProfile({
     schema: 'myself.md.profile.v1',
-    name: `${data.title} example`,
+    name: 'Example export',
     selection: selected,
   });
   const preview = datasetExportPreview(profile);
@@ -100,38 +100,26 @@ export function DatasetDocumentation({ dataset }) {
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="min-w-0 space-y-10">
             <div className="space-y-4">
-              {dataset === 'all' ? (
-                <section className="space-y-6 py-6 sm:py-10" aria-labelledby="landing-title">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Apps come and go. Your data should stay.
-                  </p>
-                  <h1
-                    id="landing-title"
-                    className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-                  >
-                    Your life, in files.
-                    <br />
-                    Yours to keep.
-                  </h1>
-                  <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                    Save your health, screen time, and location as files you can read, back up, and
-                    take with you. Keep your history, even when you change apps.
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Choose what to keep. See exactly what’s in your files.
-                  </p>
-                </section>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">Dataset documentation</p>
-                  <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                    {data.title}
-                  </h1>
-                  <p className="max-w-3xl text-base leading-relaxed text-muted-foreground">
-                    {data.introduction}
-                  </p>
-                </>
-              )}
+              <section className="space-y-6 py-6 sm:py-10" aria-labelledby="landing-title">
+                <p className="text-sm font-medium text-muted-foreground">
+                  Apps come and go. Your data should stay.
+                </p>
+                <h1
+                  id="landing-title"
+                  className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
+                >
+                  Your life, in files.
+                  <br />
+                  Yours to keep.
+                </h1>
+                <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+                  Save your health, screen time, and location as files you can read, back up, and
+                  take with you. Keep your history, even when you change apps.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Choose what to keep. See exactly what’s in your files.
+                </p>
+              </section>
               <nav aria-label="Dataset documentation" className="flex flex-wrap gap-2">
                 {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (
                   <Button
