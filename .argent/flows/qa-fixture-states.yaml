@@ -1,0 +1,215 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-empty
+  - await:
+      idle: true
+  - tap:
+      id: qa-reset-empty
+  - await:
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      idle: true
+  - tap:
+      text: History
+  - await:
+      visible:
+        text: Your history starts here
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-history-error
+  - await:
+      idle: true
+  - tap:
+      id: qa-reset-history-error
+  - await:
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      idle: true
+  - tap:
+      text: History
+  - await:
+      visible:
+        text: Synthetic history refresh failed. Saved entries are still available.
+  - await:
+      idle: true
+  - await:
+      visible:
+        identifier: history-event-qa-export
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-loading
+  - await:
+      idle: true
+  - tap:
+      id: qa-reset-loading
+  - await:
+      visible:
+        text: Loading export profiles…
+  - await:
+      idle: true
+  - tap:
+      text: History
+  - await:
+      visible:
+        text: Loading history…
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-permission-denied
+  - await:
+      idle: true
+  - tap:
+      id: qa-reset-permission-denied
+  - await:
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      idle: true
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      visible:
+        identifier: profile-setting-name
+  - await:
+      idle: true
+  - tap:
+      id: selection-domain-time
+  - await:
+      visible:
+        identifier: selection-type-time-native:applications
+  - await:
+      idle: true
+  - tap:
+      id: selection-type-time-native:applications
+  - await:
+      visible:
+        text: Synthetic permission denied. Review permissions to try again.
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          identifier: selection-domain-time
+        contains: Screen time, 1 selected, 1 choice
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-populated
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: '"profileCount"'
+        contains: '"time":"denied"'
+  - await:
+      text:
+        in:
+          text: '"profileCount"'
+        contains: '"agentGrants":false,"recording":false'
+  - await:
+      visible:
+        identifier: qa-reset-save-error
+  - tap:
+      id: qa-reset-save-error
+  - await:
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      idle: true
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      visible:
+        identifier: profile-setting-name
+  - await:
+      idle: true
+  - tap:
+      id: profile-setting-name
+  - await:
+      visible:
+        identifier: profile-name-input
+  - await:
+      idle: true
+  - tap:
+      id: profile-name-input
+  - tool: keyboard
+    args:
+      text: ' failed'
+  - tool: keyboard
+    args:
+      key: enter
+  - tool: await-ui-element
+    args:
+      condition: text
+      selector:
+        identifier: profile-name-input
+      expectedText: QA profile failed
+  - tap:
+      id: profile-inline-save
+  - await:
+      visible:
+        text: Synthetic save failure. Your saved profile is unchanged.
+  - await:
+      idle: true
+  - tap:
+      id: profile-inline-cancel
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        contains: Profile name, QA profile
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      text:
+        in:
+          identifier: profile-row-qa-profile
+        contains: QA profile, Private
+  - await:
+      idle: true
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        contains: Profile name, QA profile
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml

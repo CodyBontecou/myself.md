@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfig.kt b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfig.kt
+index f9648bc..bb55d4f 100644
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfig.kt
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfig.kt
+@@ -230,7 +230,7 @@ class ScreenStackHeaderConfig(
+ 
+     fun onUpdate() {
+         val stack = screenStack
+-        val isTop = stack == null || stack.topScreen == parent
++        val isTop = stack != null && stack.topScreen == parent
+ 
+         if (!isAttachedToWindow || !isTop || isDestroyed) {
+             return

@@ -1,12 +1,17 @@
 import { useState, useSyncExternalStore } from 'react';
+import { PermissionStatus } from 'expo-camera';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import { PhoneStateProvider } from './PhoneProvider.js';
 import { PhoneDataStateProvider } from './DataPanel.js';
-import { qaSession, qaSnapshot, subscribeQa, updateQa } from './qa-runtime.js';
+import { qaEnabled, qaSession, qaSnapshot, subscribeQa, updateQa } from './qa-runtime.js';
 import { saveProfiles } from './profiles.js';
 import { Button, Copy } from '../src/components/ui.js';
+
+// Fixture runs must not lose taps to transient developer notifications.
+// Console output remains available through Metro and Argent's debugger.
+if (qaEnabled) LogBox.ignoreAllLogs();
 
 /** @returns {Promise<never>} */
 async function unavailable() {
@@ -68,7 +73,15 @@ export default function QaPhoneProvider({ children }) {
         session: null,
         connected: false,
         permission: null,
-        requestPermission: unavailable,
+        requestPermission: async () => {
+          setError('Camera access requires a normal build for integration QA.');
+          return {
+            status: PermissionStatus.UNDETERMINED,
+            granted: false,
+            canAskAgain: false,
+            expires: 'never',
+          };
+        },
         pairing: null,
         busy,
         error,

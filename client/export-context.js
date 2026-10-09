@@ -1,6 +1,6 @@
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 /** @typedef {Pick<import('./session.js').Session,'owner'|'deviceId'>} ExportContext */
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync('CREATE TABLE IF NOT EXISTS export_context (id INTEGER PRIMARY KEY, value TEXT)');
 /** Persist only the local data partition, so locked-device work never needs OAuth tokens.
  * @param {ExportContext|null} context */

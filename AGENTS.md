@@ -26,6 +26,8 @@ Before finishing, account for every affected UI capability with its MCP operatio
 
 ## Native work
 
+For Argent navigation, regression QA, or flow recording/repair in this app, read `.agents/skills/argent-myself-qa/SKILL.md` and `docs/argent-qa.md` before device interaction. Use `$argent-myself-qa` when available. Reuse its isolated fixtures, stable selectors, and recorded flows; follow its normal-build integration boundaries.
+
 Read the installed Expo major in `package.json` and consult matching docs at `https://docs.expo.dev/versions/v<major>.0.0/` before changing Expo APIs or config. Use `npx expo install` for SDK-compatible dependencies. Native directories are generated from `app.json`; configure them through Expo rather than editing generated files.
 
 For JS-only work, the static checks are the default validation. Run `npm run bundle` when Metro/module resolution changes. Compile the affected platform after native dependencies or configuration change. Run scripts from `package.json`; native builds are deliberately outside the fast static gate.

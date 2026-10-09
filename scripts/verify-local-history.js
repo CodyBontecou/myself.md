@@ -39,8 +39,8 @@ async function load() {
   );
   await module.link((specifier) => {
     const values =
-      specifier === 'expo-sqlite'
-        ? sqlite
+      specifier === './phone-database.js'
+        ? { phoneDatabase: sqlite.openDatabaseSync }
         : specifier === './session.js'
           ? session
           : specifier === '../core/history-display.js'

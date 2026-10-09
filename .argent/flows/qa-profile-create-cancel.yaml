@@ -1,0 +1,160 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - await:
+      text:
+        in:
+          identifier: profile-summary
+        equals: Saved profiles, 1
+  - await:
+      idle: true
+  - tap:
+      id: profile-new-profile
+  - await:
+      visible:
+        identifier: profile-name-input
+  - await:
+      idle: true
+  - tap:
+      id: profile-name-input
+  - tool: keyboard
+    args:
+      text: ' Argent'
+  - tool: keyboard
+    args:
+      key: enter
+  - tool: await-ui-element
+    args:
+      bundleId: com.myself.md
+      condition: text
+      selector:
+        identifier: profile-name-input
+      expectedText: Profile Argent
+  - scroll-to:
+      target:
+        id: profile-cancel
+      direction: down
+  - await:
+      visible:
+        id: profile-cancel
+  - await:
+      visible:
+        identifier: profile-save
+  - await:
+      idle: true
+  - tap:
+      id: profile-save
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        equals: Profile name, Profile Argent
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      text:
+        in:
+          identifier: profile-summary
+        equals: Saved profiles, 2
+  - await:
+      idle: true
+  - tap:
+      text: Profile Argent
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        equals: Profile name, Profile Argent
+  - await:
+      idle: true
+  - tap:
+      id: profile-setting-name
+  - await:
+      visible:
+        identifier: profile-name-input
+  - await:
+      idle: true
+  - tap:
+      id: profile-name-input
+  - tool: keyboard
+    args:
+      text: ' cancelled'
+  - tool: keyboard
+    args:
+      key: enter
+  - tool: await-ui-element
+    args:
+      bundleId: com.myself.md
+      condition: text
+      selector:
+        identifier: profile-name-input
+      expectedText: Profile Argent cancelled
+  - await:
+      visible:
+        identifier: profile-inline-cancel
+  - await:
+      idle: true
+  - tap:
+      id: profile-inline-cancel
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        equals: Profile name, Profile Argent
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      text:
+        in:
+          identifier: profile-summary
+        equals: Saved profiles, 2
+  - await:
+      idle: true
+  - tap:
+      text: Profile Argent
+  - await:
+      text:
+        in:
+          identifier: profile-setting-name
+        equals: Profile name, Profile Argent
+  - await:
+      idle: true
+  - await:
+      hidden:
+        identifier: profile-name-input
+  - run: qa-reset-populated.yaml
+  - await:
+      text:
+        in:
+          identifier: profile-summary
+        equals: Saved profiles, 1
+  - await:
+      idle: true

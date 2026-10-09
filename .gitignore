@@ -45,8 +45,18 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# Local design verification recordings
-.argent/
+# Local design recordings; keep the reviewed regression flows in Git.
+.argent/*
+!.argent/flows/
+.argent/flows/*
+!.argent/flows/qa-reset-populated.yaml
+!.argent/flows/qa-onboarding-completion.yaml
+!.argent/flows/qa-profile-edit-persistence.yaml
+!.argent/flows/qa-profile-create-cancel.yaml
+!.argent/flows/qa-source-selection.yaml
+!.argent/flows/qa-history.yaml
+!.argent/flows/qa-settings-navigation.yaml
+!.argent/flows/qa-fixture-states.yaml
 
 # generated native folders
 /ios

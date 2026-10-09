@@ -51,10 +51,10 @@ function RootStack() {
               headerBackButtonDisplayMode: 'minimal',
             }}
           >
+            <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Protected guard={qaEnabled}>
               <Stack.Screen name="qa" options={{ title: 'QA fixtures' }} />
             </Stack.Protected>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Protected guard={!complete}>
               <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             </Stack.Protected>

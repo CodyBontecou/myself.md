@@ -1,8 +1,8 @@
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 import * as SecureStore from 'expo-secure-store';
 import { exportAllowance, freeExports } from '../core/billing.js';
 import { api, loadSession } from './session.js';
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync(`CREATE TABLE IF NOT EXISTS export_allowance (id TEXT PRIMARY KEY, state TEXT, offline INTEGER);
 CREATE TABLE IF NOT EXISTS billing_cache (id INTEGER PRIMARY KEY, value TEXT);`);
 const stored = /** @type {{value:string}|null} */ (

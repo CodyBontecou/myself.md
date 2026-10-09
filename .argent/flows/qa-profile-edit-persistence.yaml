@@ -1,0 +1,78 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - echo: Open the seeded private profile and edit its name; save must persist
+      across leaving and reopening.
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      visible:
+        id: profile-setting-name
+  - await:
+      idle: true
+  - tap:
+      id: profile-setting-name
+  - await:
+      visible:
+        id: profile-name-input
+  - await:
+      idle: true
+  - tap:
+      id: profile-name-input
+  - tool: keyboard
+    args:
+      text: ' changed'
+  - tool: keyboard
+    args:
+      key: enter
+  - tool: await-ui-element
+    args:
+      condition: text
+      selector:
+        identifier: profile-name-input
+      expectedText: QA profile changed
+  - await:
+      idle: true
+  - tap:
+      id: profile-inline-save
+  - await:
+      text:
+        in:
+          id: profile-setting-name
+        contains: QA profile changed
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      text:
+        in:
+          id: profile-row-qa-profile
+        contains: QA profile changed
+  - await:
+      idle: true
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      text:
+        in:
+          id: profile-setting-name
+        contains: QA profile changed
+  - await:
+      idle: true

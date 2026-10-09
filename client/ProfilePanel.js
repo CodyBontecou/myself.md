@@ -1,4 +1,5 @@
 import { router, useNavigation } from 'expo-router';
+import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
 import { useRef, useState } from 'react';
@@ -134,7 +135,11 @@ export default function ProfilePanel({
                 disabled={disabled}
               />
             )}
-            {error ? <Copy>{error}</Copy> : null}
+            {error ? (
+              <Copy testID="profile-inline-error" accessibilityRole="alert">
+                {error}
+              </Copy>
+            ) : null}
             {dirty && (
               <View style={styles.formActions}>
                 <View style={styles.settingTitle}>
@@ -419,7 +424,7 @@ export default function ProfilePanel({
               compact
               testID="profile-share-profile-link"
               title="Share profile link"
-              disabled={disabled}
+              disabled={disabled || qaEnabled}
               onPress={() =>
                 void run(async () => {
                   const link = profileLink(profile);
@@ -503,7 +508,14 @@ export default function ProfilePanel({
               })
             }
           />
-          <SectionHeader title="Saved profiles" count={state.profiles.length} />
+          <View
+            accessible
+            testID="profile-summary"
+            accessibilityRole="header"
+            accessibilityLabel={`Saved profiles, ${state.profiles.length}`}
+          >
+            <SectionHeader title="Saved profiles" count={state.profiles.length} />
+          </View>
           <Group compact>
             {state.profiles.map((p) => (
               <Row

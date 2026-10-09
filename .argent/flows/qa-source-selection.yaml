@@ -1,0 +1,86 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      visible:
+        identifier: profile-setting-name
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          identifier: selection-domain-time
+        equals: Screen time, 0 selected, 1 choice
+  - tap:
+      id: selection-domain-time
+  - await:
+      visible:
+        identifier: selection-type-time-native:applications
+  - await:
+      idle: true
+  - tap:
+      id: selection-type-time-native:applications
+  - await:
+      visible:
+        text: Synthetic permission allowed. Recording and agent grants are unchanged.
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          identifier: selection-domain-time
+        contains: Screen time, 1 selected, 1 choice
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      text:
+        in:
+          identifier: profile-row-qa-profile
+        contains: 1 data types
+  - await:
+      idle: true
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      text:
+        in:
+          identifier: selection-domain-time
+        contains: Screen time, 1 selected, 1 choice
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-populated
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: '"profileCount"'
+        contains: '"time":"authorized"'
+  - await:
+      text:
+        in:
+          text: '"profileCount"'
+        contains: '"agentGrants":false,"recording":false'
+  - run: qa-reset-populated.yaml

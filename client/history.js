@@ -1,10 +1,10 @@
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
 import { relatedHistoryEvents } from '../core/history-display.js';
 import { api } from './session.js';
 /** @typedef {import('../core/history.js').HistoryEvent} HistoryEvent */
 /** @typedef {import('./export-context.js').ExportContext} Context */
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync(`CREATE TABLE IF NOT EXISTS activity_history (owner TEXT, device TEXT, origin TEXT, id TEXT, started TEXT, value TEXT, PRIMARY KEY(owner,device,origin,id));
 CREATE INDEX IF NOT EXISTS activity_order ON activity_history(owner,device,started,id);`);
 // Manual work cannot resume after the JS runtime restarts. Scheduled jobs retain checkpoints.

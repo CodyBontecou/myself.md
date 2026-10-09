@@ -1,5 +1,5 @@
-import * as SQLite from 'expo-sqlite';
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+import { phoneDatabase } from './phone-database.js';
+const db = phoneDatabase();
 db.execSync(`CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, owner TEXT, domain TEXT, type TEXT, start TEXT, end TEXT, source TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS record_query ON records(owner,domain,type,id);
 CREATE TABLE IF NOT EXISTS settings (owner TEXT PRIMARY KEY, value TEXT);`);

@@ -1,10 +1,10 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 import { record } from '../core/data.js';
 import { saveRecord } from './library.js';
 const locationTask = 'qr-connect-location';
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync('CREATE TABLE IF NOT EXISTS tracking (id INTEGER PRIMARY KEY, owner TEXT)');
 /** @param {string|null} owner */
 function setTrackingOwner(owner) {

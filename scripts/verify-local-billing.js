@@ -19,7 +19,7 @@ const sqlite = {
 /** @type {{owner:string,deviceId:string}|null} */
 let signedInAccount = null;
 const mocks = {
-  'expo-sqlite': sqlite,
+  './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
   'expo-secure-store': {
     AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'after-first-unlock',
     getItemAsync: async (/** @type {string} */ key) => secure.get(key) ?? null,

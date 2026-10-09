@@ -1,0 +1,150 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - tap:
+      text: History
+  - await:
+      visible:
+        identifier: history-event-qa-export
+  - await:
+      idle: true
+  - await:
+      visible:
+        identifier: history-event-qa-failed-export
+  - await:
+      visible:
+        identifier: history-event-qa-access
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          text: Exports
+          within:
+            id: history-filter
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Exports
+          within:
+            id: history-list
+  - await:
+      hidden:
+        identifier: history-event-qa-access
+  - await:
+      idle: true
+  - await:
+      visible:
+        identifier: history-event-qa-export
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          text: Agent access
+          within:
+            id: history-filter
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Agent access
+          within:
+            id: history-list
+  - await:
+      visible:
+        identifier: history-event-qa-access
+  - await:
+      idle: true
+  - await:
+      hidden:
+        identifier: history-event-qa-export
+  - await:
+      hidden:
+        identifier: history-event-qa-failed-export
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          text: All
+          within:
+            id: history-filter
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: All
+          within:
+            id: history-list
+  - await:
+      visible:
+        identifier: history-event-qa-export
+  - await:
+      idle: true
+  - await:
+      visible:
+        identifier: history-event-qa-failed-export
+  - tap:
+      id: history-event-qa-export
+  - await:
+      visible:
+        text: Export details
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: Saved
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      visible:
+        identifier: history-event-qa-failed-export
+  - await:
+      idle: true
+  - tap:
+      id: history-event-qa-failed-export
+  - await:
+      visible:
+        text: Export details
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: Failed
+  - await:
+      visible:
+        text: This activity did not finish
+  - await:
+      visible:
+        text: Synthetic export failure. No data was sent.
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      visible:
+        identifier: history-event-qa-export
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml

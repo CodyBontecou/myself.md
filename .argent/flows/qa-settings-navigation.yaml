@@ -1,0 +1,80 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml
+  - tap:
+      text: Settings
+  - await:
+      visible:
+        identifier: settings-data-sources
+  - await:
+      idle: true
+  - tap:
+      id: settings-data-sources
+  - await:
+      visible:
+        identifier: connections-source-health
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          identifier: connections-source-location
+        equals: Location, Recording off · Private
+  - await:
+      idle: true
+  - tap:
+      id: connections-agent
+  - await:
+      visible:
+        identifier: pair-link-input
+  - await:
+      idle: true
+  - await:
+      visible:
+        identifier: pair-camera-permission
+  - tap:
+      id: pair-camera-permission
+  - await:
+      visible:
+        text: Camera access requires a normal build for integration QA.
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      visible:
+        identifier: connections-source-location
+  - await:
+      idle: true
+  - when:
+      platform: ios
+    steps:
+      - tap:
+          id: chevron.backward
+  - when:
+      platform: android
+    steps:
+      - tap:
+          text: Navigate up
+  - await:
+      visible:
+        identifier: settings-data-sources
+  - await:
+      idle: true
+  - run: qa-reset-populated.yaml

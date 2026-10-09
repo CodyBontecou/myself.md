@@ -1,0 +1,26 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reset populated fixtures; expect one private QA profile and populated
+      synthetic history.
+  - tap:
+      id: qa-reset-populated
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

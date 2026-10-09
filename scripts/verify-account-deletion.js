@@ -112,7 +112,7 @@ const sqlite = {
 };
 /** @type {Record<string,Record<string,unknown>>} */
 const mocks = {
-  'expo-sqlite': sqlite,
+  './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
   'expo-file-system': {
     Directory: Entry,
     File: Entry,

@@ -35,12 +35,14 @@ async function load(path, dependencies) {
 }
 const library =
   /** @type {{saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
-    await load('../client/library.js', { 'expo-sqlite': sqlite })
+    await load('../client/library.js', {
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+    })
   );
 const storedProfiles =
   /** @type {{saveProfiles:(owner:string,state:import('../core/profiles.js').ProfileState)=>void,loadProfiles:(owner:string)=>import('../core/profiles.js').ProfileState|null}} */ (
     await load('../client/profiles.js', {
-      'expo-sqlite': sqlite,
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/profiles.js': profiles,
       './qa-runtime.js': {
         qaEnabled: false,
@@ -255,7 +257,7 @@ const exportTask =
       '../core/diagnostics.js': diagnostics,
       'expo-background-task': {},
       'expo-task-manager': { defineTask: () => {} },
-      'expo-sqlite': sqlite,
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/schedules.js': schedules,
       './export-context.js': { loadExportContext: () => null },
       './profiles.js': storedProfiles,

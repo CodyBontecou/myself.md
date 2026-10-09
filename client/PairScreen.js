@@ -158,6 +158,7 @@ export default function PairScreen() {
             />
           ) : (
             <Button
+              testID="pair-camera-permission"
               label={
                 permission?.canAskAgain === false ? 'Open camera settings' : 'Allow camera access'
               }
@@ -201,7 +202,11 @@ export default function PairScreen() {
           Connecting…
         </Copy>
       )}
-      {error && <Notice title="Connection needs attention" body={error} />}
+      {error && (
+        <View testID="pair-error" accessibilityRole="alert">
+          <Notice title="Connection needs attention" body={error} />
+        </View>
+      )}
     </Screen>
   );
 }

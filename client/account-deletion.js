@@ -1,9 +1,9 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { loadProfiles } from './profiles.js';
 import { forgetDestinationCredentials } from './destinations.js';
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 import { clearNativePurchase, clearAccountAllowance } from './billing.js';
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync(
   'CREATE TABLE IF NOT EXISTS account_cleanup (id INTEGER PRIMARY KEY,owner TEXT,device TEXT)',
 );

@@ -1,0 +1,65 @@
+steps:
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      visible:
+        identifier: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        identifier: qa-reset-onboarding
+  - await:
+      idle: true
+  - tap:
+      id: qa-reset-onboarding
+  - await:
+      visible:
+        identifier: onboarding-welcome-continue
+  - await:
+      idle: true
+  - tap:
+      id: onboarding-welcome-continue
+  - await:
+      visible:
+        identifier: onboarding-privacy-continue
+  - await:
+      idle: true
+  - tap:
+      id: onboarding-privacy-continue
+  - await:
+      visible:
+        identifier: onboarding-explore
+  - await:
+      idle: true
+  - tap:
+      id: onboarding-explore
+  - await:
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      hidden:
+        identifier: onboarding-welcome-continue
+  - await:
+      text:
+        in:
+          identifier: profile-row-qa-profile
+        contains: QA profile, Private
+  - await:
+      idle: true
+  - launch:
+      ios: com.myself.md
+      android: com.codybontecou.sharedjsapp
+  - await:
+      text:
+        in:
+          identifier: profile-row-qa-profile
+        contains: QA profile, Private
+  - await:
+      idle: true

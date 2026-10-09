@@ -2,7 +2,7 @@ import { reserveExport, settleExport } from './billing.js';
 import { exportFailureMessage } from '../core/diagnostics.js';
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
-import * as SQLite from 'expo-sqlite';
+import { phoneDatabase } from './phone-database.js';
 import { dueOccurrences, occurrenceDays, addDays } from '../core/schedules.js';
 import { loadExportContext } from './export-context.js';
 import { loadProfiles } from './profiles.js';
@@ -10,7 +10,7 @@ import { localCalendar } from './calendar.js';
 import { beginExport, recordArtifact, finishExport } from './history.js';
 import { exportProfileDay } from './profile-export.js';
 const task = 'profile-file-exports';
-const db = SQLite.openDatabaseSync('phone-data.sqlite');
+const db = phoneDatabase();
 db.execSync(
   'CREATE TABLE IF NOT EXISTS profile_schedules (device TEXT, profile TEXT, value TEXT, PRIMARY KEY(device,profile))',
 );

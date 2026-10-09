@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createContext, SourceTextModule, SyntheticModule } from 'node:vm';
+import { DatabaseSync } from 'node:sqlite';
 import * as profiles from '../core/profiles.js';
 import * as fixtures from '../client/qa-fixtures.js';
+import * as history from '../core/history.js';
+import * as display from '../core/history-display.js';
 
 /** @param {boolean} dev @param {string} flag */
 async function runtime(dev, flag) {
@@ -93,6 +96,113 @@ assert.throws(
   () => profiles.parseProfileState({ profiles: [profile, profile] }),
   /unique profile IDs/,
 );
+
+// Exercise the real database boundary and startup recovery against two distinct databases.
+// A fixture import must not recover, delete, or read another partition's history.
+/** @param {boolean} enabled */
+async function verifyDatabase(enabled) {
+  /** @type {string[]} */
+  const names = [];
+  const databases = new Map(/** @type {[string,DatabaseSync][]} */ ([]));
+  /** @param {string} name */
+  function open(name) {
+    names.push(name);
+    let database = databases.get(name);
+    if (!database) {
+      database = new DatabaseSync(':memory:');
+      databases.set(name, database);
+    }
+    const db = database;
+    return {
+      execSync: (/** @type {string} */ sql) => db.exec(sql),
+      getAllSync: (/** @type {string} */ sql) => db.prepare(sql).all(),
+      runSync: (
+        /** @type {string} */ sql,
+        /** @type {import('node:sqlite').SQLInputValue[]} */ ...args
+      ) => db.prepare(sql).run(...args),
+    };
+  }
+  const normal = open('phone-data.sqlite');
+  normal.execSync(
+    'CREATE TABLE activity_history (owner TEXT, device TEXT, origin TEXT, id TEXT, started TEXT, value TEXT, PRIMARY KEY(owner,device,origin,id))',
+  );
+  const running = JSON.stringify({
+    ...fixtures.qaFixture('populated').events[0],
+    status: 'running',
+  });
+  normal.runSync(
+    'INSERT INTO activity_history VALUES (?,?,?,?,?,?)',
+    'normal-owner',
+    'normal-device',
+    'local',
+    'running',
+    '2026-10-01',
+    running,
+  );
+  normal.runSync(
+    'INSERT INTO activity_history VALUES (?,?,?,?,?,?)',
+    'normal-owner',
+    'normal-device',
+    'local',
+    'corrupt',
+    '2026-10-01',
+    '{}',
+  );
+  names.length = 0;
+  const context = createContext({ console: { warn: () => {} } });
+  const boundary = new SourceTextModule(
+    await readFile(new URL('../client/phone-database.js', import.meta.url), 'utf8'),
+    { context },
+  );
+  await boundary.link((specifier) => {
+    const values =
+      specifier === 'expo-sqlite' ? { openDatabaseSync: open } : { qaEnabled: enabled };
+    return new SyntheticModule(
+      Object.keys(values),
+      function () {
+        for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+      },
+      { context },
+    );
+  });
+  await boundary.evaluate();
+  const journal = new SourceTextModule(
+    await readFile(new URL('../client/history.js', import.meta.url), 'utf8'),
+    { context },
+  );
+  await journal.link((specifier) => {
+    if (specifier === './phone-database.js') return boundary;
+    const values =
+      specifier === '../core/history.js'
+        ? history
+        : specifier === '../core/history-display.js'
+          ? display
+          : {
+              api: () => {
+                throw new Error('No network in QA startup.');
+              },
+            };
+    return new SyntheticModule(
+      Object.keys(values),
+      function () {
+        for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+      },
+      { context },
+    );
+  });
+  await journal.evaluate();
+  assert.deepEqual(names, [enabled ? 'argent-qa-data.sqlite' : 'phone-data.sqlite']);
+  const rows = normal.getAllSync('SELECT id,value FROM activity_history ORDER BY id');
+  if (enabled) {
+    assert.equal(rows.length, 2);
+    assert.equal(rows.find((row) => row.id === 'running')?.value, running);
+  } else {
+    assert.equal(rows.length, 1);
+    assert.equal(JSON.parse(String(rows[0]?.value)).status, 'interrupted');
+  }
+  for (const db of databases.values()) db.close();
+}
+await Promise.all([false, true].map(verifyDatabase));
 console.log(
-  'QA release gating, validated resets, persistence, isolated storage, and synthetic fixtures pass.',
+  'QA release gating, validated resets, persistence, isolated storage/startup recovery, and synthetic fixtures pass.',
 );
