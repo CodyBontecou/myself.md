@@ -151,8 +151,18 @@ try {
   assert.equal(landing.status, 200);
   assert.ok((await landing.text()).includes('Open in myself.md'));
   const home = await fetch(origin, { redirect: 'manual' });
-  assert.equal(home.status, 302);
-  assert.equal(home.headers.get('location'), '/dashboard');
+  assert.equal(home.status, 200);
+  assert.ok((await home.text()).includes('interactive demo'));
+  assert.equal((await fetch(`${origin}/login`)).status, 200);
+  await Promise.all(
+    ['health', 'screen-time', 'location', 'all'].flatMap((dataset) =>
+      ['', '/'].map(async (suffix) => {
+        const documentation = await fetch(`${origin}/datasets/${dataset}${suffix}`);
+        assert.equal(documentation.status, 200);
+        assert.match(documentation.headers.get('content-type') ?? '', /text\/html/);
+      }),
+    ),
+  );
   const hosts = /** @type {[string, string][]} */ ([
     ['legacy.example', 'https://legacy.example'],
     ['untrusted.example', origin],

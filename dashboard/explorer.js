@@ -80,7 +80,7 @@ function SelectField({ label, name, defaultValue, children }) {
     </label>
   );
 }
-/** @param {{query:ExplorerQuery,facets:Facets,workspace:import('./session.js').Workspace,onApply:(query:ExplorerQuery)=>void}} props */
+/** @param {{query:ExplorerQuery,facets:Facets,workspace:import('./workspace.js').Workspace,onApply:(query:ExplorerQuery)=>void}} props */
 function QueryBuilder({ query, facets, workspace, onApply }) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
@@ -422,7 +422,7 @@ function display(value, field, timezone) {
     return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value);
   return String(value);
 }
-/** @param {{id:string,workspace:import('./session.js').Workspace,timezone:string,onClose:()=>void,onExpired:()=>void}} props */
+/** @param {{id:string,workspace:import('./workspace.js').Workspace,timezone:string,onClose:()=>void,onExpired:()=>void}} props */
 function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
   const [tab, setTab] = useState('summary');
   const [result, setResult] = useState(
@@ -576,7 +576,7 @@ function FieldTree({ value }) {
     </div>
   );
 }
-/** @param {{workspace:import('./session.js').Workspace,search:string,updated:string,onExpired:()=>void}} props */
+/** @param {{workspace:import('./workspace.js').Workspace,search:string,updated:string,onExpired:()=>void}} props */
 export function Explorer({ workspace, search, updated, onExpired }) {
   const route = readExplorerRoute(search),
     { query } = route;

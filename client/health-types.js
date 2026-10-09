@@ -238,3 +238,12 @@ export const androidTypes = [
   'OxygenSaturation',
   'Power',
 ];
+
+export const special = [
+  'HKWorkoutTypeIdentifier',
+  'HKCorrelationTypeIdentifierBloodPressure',
+  'HKCorrelationTypeIdentifierFood',
+  'HKElectrocardiogramType',
+  'HKDataTypeIdentifierHeartbeatSeries',
+  'HKStateOfMindTypeIdentifier',
+];

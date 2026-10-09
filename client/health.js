@@ -1,17 +1,9 @@
 import { Platform } from 'react-native';
 import * as HK from '@kingstinct/react-native-healthkit';
 import * as HC from 'react-native-health-connect';
-import { quantities, categories, androidTypes } from './health-types.js';
+import { quantities, categories, androidTypes, special } from './health-types.js';
 import { record } from '../core/data.js';
 /** @typedef {import('@kingstinct/react-native-healthkit').ObjectTypeIdentifier} HKType */
-const special = [
-  'HKWorkoutTypeIdentifier',
-  'HKCorrelationTypeIdentifierBloodPressure',
-  'HKCorrelationTypeIdentifierFood',
-  'HKElectrocardiogramType',
-  'HKDataTypeIdentifierHeartbeatSeries',
-  'HKStateOfMindTypeIdentifier',
-];
 /** @returns {Promise<string[]>} */
 export async function healthTypes() {
   if (Platform.OS === 'ios') {

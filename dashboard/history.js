@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './com
 function openEntry(id) {
   navigateRoute(`?history=1&activity=${encodeURIComponent(id)}`);
 }
-/** @param {{workspace:import('./session.js').Workspace,search:string,updated:string,onExpired:()=>void}} props */
+/** @param {{workspace:import('./workspace.js').Workspace,search:string,updated:string,onExpired:()=>void}} props */
 export function HistoryView({ workspace, search, updated, onExpired }) {
   const [filter, setFilter] = useState('all'),
     [profile, setProfile] = useState('');
@@ -212,7 +212,7 @@ export function HistoryView({ workspace, search, updated, onExpired }) {
     </div>
   );
 }
-/** @param {{event:Event,related:Event[],workspace:import('./session.js').Workspace}} props */
+/** @param {{event:Event,related:Event[],workspace:import('./workspace.js').Workspace}} props */
 function HistoryDetails({ event, related, workspace }) {
   const fields = [
     ['Outcome', historyOutcome(event)],

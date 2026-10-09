@@ -1,8 +1,5 @@
-/** @typedef {{id:string,profileId:string,profileName:string,deviceId:string,day:string,format:string,bytes:number,created:number,shared:boolean}} StoredExport */
-/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>}} Profile */
-/** @typedef {{client:string,blocked:boolean,lastSeen:number}} Agent */
-/** @typedef {{account:string,exports:StoredExport[],profiles:Profile[],agents:Agent[],devices:{id:string,name:string}[]}} Workspace */
-/** @typedef {{records:{domain:string,type:string,source:string,start:string|null,end:string|null,native:unknown}[],nextCursor:string|null,manifest:Record<string,unknown>}} RecordPage */
+import { demoApi } from './demo.js';
+export const isDemo = location.pathname === '/';
 /** @type {{issuer:string,clientId:string}|null} */ let config = null;
 /** @type {{access_token:string,refresh_token?:string,id_token?:string,expires_in:number}|null} */ let tokens =
   null;
@@ -12,7 +9,7 @@ function reset() {
   tokens = null;
 }
 export function hasSession() {
-  return tokens !== null;
+  return isDemo || tokens !== null;
 }
 /** @param {Record<string,string>} parameters */
 async function exchange(parameters) {
@@ -52,6 +49,7 @@ async function ensureToken() {
 }
 /** @template T @param {string} path @param {string} [method] @param {unknown} [body] @returns {Promise<T>} */
 export async function api(path, method = 'GET', body) {
+  if (isDemo) return /** @type {T} */ (demoApi(path, method, body));
   await ensureToken();
   const response = await fetch(path, {
     method,
@@ -88,7 +86,7 @@ async function authorizationUrl() {
       verifier,
       state,
       created: Date.now(),
-      returnTo: `${location.pathname}${location.search}`,
+      returnTo: `${location.pathname === '/login' || location.pathname === '/login/' ? '/dashboard' : location.pathname}${location.search}`,
     }),
   );
   const url = new URL(`${config.issuer}/protocol/openid-connect/auth`);
@@ -110,6 +108,7 @@ export async function signIn(provider) {
   location.assign(url);
 }
 export async function initializeSession() {
+  if (isDemo) return true;
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
   if (!response.ok) throw new Error('Could not load sign-in configuration.');
   config = await response.json();

@@ -87,7 +87,8 @@
     "dashboard:auth": "node --env-file=.env.cloud scripts/setup-dashboard.js --cloud",
     "dashboard:build": "node scripts/build-dashboard.js",
     "verify:dashboard": "npm run dashboard:build && node scripts/verify-dashboard-login.js",
-    "verify:explorer": "node scripts/verify-explorer.js"
+    "verify:explorer": "node scripts/verify-explorer.js",
+    "verify:demo": "node scripts/verify-demo.js"
   },
   "private": true,
   "type": "module",

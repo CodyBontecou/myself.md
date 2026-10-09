@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { Button } from './components/ui/button.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card.js';
 import {
   Tooltip,
@@ -17,9 +18,8 @@ function dateLabel(day) {
   });
 }
 
-/** @param {{workspace:import('./session.js').Workspace,asOf:string}} props */
-export function ExportActivity({ workspace, asOf }) {
-  const [selected, setSelected] = useState('');
+/** @param {{workspace:import('./workspace.js').Workspace,asOf:string,selectedDays:string[],onSelectionChange:(days:string[])=>void}} props */
+export function ExportActivity({ workspace, asOf, selectedDays, onSelectionChange }) {
   const calendar = useRef(/** @type {HTMLDivElement|null} */ (null));
   const today = asOf.slice(0, 10);
   useEffect(() => {
@@ -44,7 +44,7 @@ export function ExportActivity({ workspace, asOf }) {
   const days = weeks.flat().filter((day) => !day.outside);
   const total = days.reduce((sum, day) => sum + day.count, 0);
   const active = days.filter((day) => day.count > 0).length;
-  const selectedDay = days.find((day) => day.day === selected);
+  const selectedCount = selectedDays.reduce((sum, day) => sum + (counts.get(day) ?? 0), 0);
   return (
     <Card>
       <CardHeader>
@@ -88,8 +88,14 @@ export function ExportActivity({ workspace, asOf }) {
                               className="export-calendar-day"
                               data-level={Math.min(count, 4)}
                               aria-label={`${count} ${count === 1 ? 'export' : 'exports'} on ${dateLabel(day)}`}
-                              aria-pressed={selected === day}
-                              onClick={() => setSelected(day)}
+                              aria-pressed={selectedDays.includes(day)}
+                              onClick={() =>
+                                onSelectionChange(
+                                  selectedDays.includes(day)
+                                    ? selectedDays.filter((selected) => selected !== day)
+                                    : [...selectedDays, day],
+                                )
+                              }
                             />
                           </TooltipTrigger>
                           <TooltipContent side="top" sideOffset={6}>
@@ -105,13 +111,18 @@ export function ExportActivity({ workspace, asOf }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p role="status">
-            {selectedDay
-              ? `${dateLabel(selectedDay.day)} · ${selectedDay.count} stored ${selectedDay.count === 1 ? 'export' : 'exports'}`
-              : total === 0
-                ? 'Your cloud exports will appear here. Select a date to see its count.'
-                : ''}
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p role="status">
+              {selectedDays.length
+                ? `${selectedDays.length === 1 ? dateLabel(selectedDays[0] ?? '') : `${selectedDays.length} days selected`} · ${selectedCount} stored ${selectedCount === 1 ? 'export' : 'exports'}`
+                : 'Select one or more dates to filter the export library.'}
+            </p>
+            {selectedDays.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => onSelectionChange([])}>
+                Clear dates
+              </Button>
+            )}
+          </div>
           <div
             className="flex items-center gap-1.5"
             aria-label="Intensity: 0, 1, 2, 3, or 4 or more exports"

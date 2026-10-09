@@ -159,11 +159,6 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       json(res, 200, { ...metadata, resource: requestResource });
       return;
     }
-    if (url.pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
-      res.writeHead(302, { Location: '/dashboard', 'Cache-Control': 'no-store' });
-      res.end();
-      return;
-    }
     if (url.pathname === '/health') {
       json(res, 200, { ok: true });
       return;

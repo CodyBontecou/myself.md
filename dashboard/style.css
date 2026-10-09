@@ -221,3 +221,7 @@ select:not([multiple]):not([size]) {
     background: #39d353;
   }
 }
+
+.demo-introduction {
+  background: var(--card);
+}

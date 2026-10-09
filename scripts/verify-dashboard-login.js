@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { Buffer } from 'node:buffer';
 import { webcrypto } from 'node:crypto';
-import { transform } from 'esbuild';
+import { build } from 'esbuild';
 
-const source = await transform(readFileSync('dashboard/session.js', 'utf8'), { format: 'cjs' });
+const source = await build({
+  entryPoints: ['dashboard/session.js'],
+  bundle: true,
+  write: false,
+  format: 'cjs',
+  platform: 'browser',
+});
 const storage = new Map();
 const location = {
   origin: 'https://workspace.example',
@@ -18,6 +23,7 @@ const location = {
 let destination = new URL(location.origin);
 const exports = { exports: {} };
 let exchangeCount = 0;
+let returnedTo = '';
 const context = {
   module: exports,
   crypto: webcrypto,
@@ -26,13 +32,25 @@ const context = {
   URLSearchParams,
   TextEncoder,
   Uint8Array,
+  Date,
+  Map,
+  Set,
+  structuredClone,
   location,
   sessionStorage: {
     setItem: (/** @type {string} */ key, /** @type {string} */ value) => storage.set(key, value),
     getItem: (/** @type {string} */ key) => storage.get(key) ?? null,
     removeItem: (/** @type {string} */ key) => storage.delete(key),
   },
-  history: { replaceState: () => {} },
+  history: {
+    replaceState: (
+      /** @type {unknown} */ _state,
+      /** @type {string} */ _title,
+      /** @type {string} */ path,
+    ) => {
+      returnedTo = String(path);
+    },
+  },
   window: { dispatchEvent: () => {} },
   Event,
   fetch: async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
@@ -53,7 +71,8 @@ const context = {
     return Response.json({ access_token: 'fixture', expires_in: 300 });
   },
 };
-runInNewContext(source.code, context);
+assert.ok(source.outputFiles[0]);
+runInNewContext(source.outputFiles[0].text, context);
 const session =
   /** @type {{initializeSession:()=>Promise<boolean>,signIn:(provider:'apple'|'github')=>Promise<void>,hasSession:()=>boolean}} */ (
     exports.exports
@@ -75,12 +94,16 @@ async function verifyProvider(provider) {
 }
 await verifyProvider('apple');
 await verifyProvider('github');
-assert.equal(exchangeCount, 2);
+location.pathname = '/login';
+location.search = '';
+await verifyProvider('github');
+assert.equal(returnedTo, '/dashboard');
+assert.equal(exchangeCount, 3);
 await session.signIn('github');
 location.pathname = '/dashboard/callback';
 location.search = '?code=fixture&state=wrong';
 await assert.rejects(session.initializeSession(), /could not be verified/);
-assert.equal(exchangeCount, 2);
+assert.equal(exchangeCount, 3);
 console.log(
   'Dashboard OAuth: Apple/GitHub redirects, PKCE exchange, callback state and single-use attempts passed.',
 );

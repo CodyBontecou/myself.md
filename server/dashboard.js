@@ -5,7 +5,18 @@ import { cloud, history } from './cloud.js';
 import { devices, PairingError } from './store.js';
 import { cancelAgent } from './data.js';
 import { explore, recordDetail } from './explorer.js';
+/** @type {Map<string, [string, string]>} */
 const assets = new Map([
+  ['/', ['index.html', 'text/html']],
+  ...['health', 'screen-time', 'location', 'all'].flatMap(
+    (dataset) =>
+      /** @type {[string, [string, string]][]} */ ([
+        [`/datasets/${dataset}`, ['index.html', 'text/html']],
+        [`/datasets/${dataset}/`, ['index.html', 'text/html']],
+      ]),
+  ),
+  ['/login', ['index.html', 'text/html']],
+  ['/login/', ['index.html', 'text/html']],
   ['/dashboard', ['index.html', 'text/html']],
   ['/dashboard/', ['index.html', 'text/html']],
   ['/dashboard/callback', ['index.html', 'text/html']],

@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { setNonce } from 'get-nonce';
 import { Dialog } from 'radix-ui';
 import {
+  IconUser,
   IconBrandApple,
   IconBrandGithub,
   IconDatabase,
@@ -42,7 +43,9 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
+import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
+import { deviceName } from './workspace.js';
+import { DatasetDocumentation } from './dataset-documentation.js';
 import { Explorer } from './explorer.js';
 import { HistoryView } from './history.js';
 import { ExportActivity } from './export-activity.js';
@@ -52,7 +55,6 @@ import { Button } from './components/ui/button.js';
 import { Badge } from './components/ui/badge.js';
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -94,26 +96,52 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './components/ui/dropdown-menu.js';
-/** @typedef {import('./session.js').Workspace} Workspace */
-/** @typedef {import('./session.js').StoredExport} StoredExport */
+/** @typedef {import('./workspace.js').Workspace} Workspace */
+/** @typedef {import('./workspace.js').StoredExport} StoredExport */
 /** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'} View */
 /** @typedef {{title:string,description:string,label:string,action:()=>Promise<void>}} Confirmation */
 const views = [
-  { id: /** @type {const} */ ('exports'), title: 'Stored data', icon: IconDatabase },
-  { id: /** @type {const} */ ('history'), title: 'History', icon: IconListDetails },
-  { id: /** @type {const} */ ('explore'), title: 'Explore data', icon: IconChartBar },
-  { id: /** @type {const} */ ('profiles'), title: 'Profiles & permissions', icon: IconListDetails },
-  { id: /** @type {const} */ ('agents'), title: 'Connected agents', icon: IconRobot },
+  {
+    id: /** @type {const} */ ('exports'),
+    title: 'Stored data',
+    description:
+      'Browse exported files from your phone, see when they were saved, and open them to explore their contents. Try it with fictional health, screen time, and location exports below.',
+    icon: IconDatabase,
+  },
+  {
+    id: /** @type {const} */ ('history'),
+    title: 'History',
+    description:
+      'See when data was exported and when agents accessed it. Filter the sample activity by profile or event type, then open an entry to see what happened.',
+    icon: IconListDetails,
+  },
+  {
+    id: /** @type {const} */ ('explore'),
+    title: 'Explore data',
+    description:
+      'Look inside your exported files to find individual records and spot patterns. Filter the sample data, compare it in charts, and open a record for details.',
+    icon: IconChartBar,
+  },
+  {
+    id: /** @type {const} */ ('profiles'),
+    title: 'Profiles & permissions',
+    description:
+      'Profiles define which data you export and share. Try changing a sample profile’s sharing permission to control whether agents can read its stored files.',
+    icon: IconListDetails,
+  },
+  {
+    id: /** @type {const} */ ('agents'),
+    title: 'Connected agents',
+    description:
+      'See which AI agents have connected to your workspace and when they were last active. Try blocking a sample agent or restoring its access.',
+    icon: IconRobot,
+  },
 ];
 /** @param {number} value */
 function bytes(value) {
   return value < 1024 * 1024
     ? `${(value / 1024).toFixed(1)} KiB`
     : `${(value / 1024 / 1024).toFixed(1)} MiB`;
-}
-/** @param {Workspace} workspace @param {string} id */
-function deviceName(workspace, id) {
-  return workspace.devices.find((d) => d.id === id)?.name ?? 'Disconnected phone';
 }
 /** @param {{view:View,onNavigate:(view:View)=>void,workspace:Workspace|null,busy:boolean}} props */
 function AppSidebar({ view, onNavigate, workspace, busy }) {
@@ -163,51 +191,92 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuButton size="lg" disabled={!workspace || busy}>
-                  <div className="flex size-8 items-center justify-center rounded-lg bg-muted font-semibold">
-                    {workspace?.account.slice(0, 1).toUpperCase() ?? 'Q'}
+            {isDemo ? (
+              <SidebarMenuButton asChild size="lg">
+                <a href="/login">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <IconUser className="size-4" aria-hidden="true" />
                   </div>
-                  <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">
-                      {workspace?.account ?? 'Your workspace'}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {workspace ? 'Personal account' : 'Sign in to continue'}
-                    </span>
+                  <div className="grid flex-1 gap-1 text-left text-sm leading-tight">
+                    <span className="font-medium">Sign in</span>
+                    <span className="text-xs text-muted-foreground">Your files, your control</span>
                   </div>
-                  <IconDotsVertical className="ml-auto size-4" />
-                </SidebarMenuButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="end" className="w-56">
-                <DropdownMenuLabel>{workspace?.account}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={signOut}>
-                  <IconLogout />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <IconChevronRight className="ml-auto size-4" aria-hidden="true" />
+                </a>
+              </SidebarMenuButton>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton size="lg" disabled={!workspace || busy}>
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-muted font-semibold">
+                      {workspace?.account.slice(0, 1).toUpperCase() ?? 'Q'}
+                    </div>
+                    <div className="grid flex-1 text-left text-sm leading-tight">
+                      <span className="truncate font-medium">
+                        {workspace?.account ?? 'Your workspace'}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {workspace ? 'Personal account' : 'Sign in to continue'}
+                      </span>
+                    </div>
+                    <IconDotsVertical className="ml-auto size-4" />
+                  </SidebarMenuButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="end" className="w-56">
+                  <DropdownMenuLabel>{workspace?.account}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={signOut}>
+                    <IconLogout /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );
 }
-/** @param {{title:string,busy:boolean,onRefresh:()=>void,authenticated:boolean}} props */
-function SiteHeader({ title, busy, onRefresh, authenticated }) {
+/** @param {{title:string,busy:boolean,onRefresh:()=>void,workspace:Workspace|null,view:View}} props */
+function SiteHeader({ title, busy, onRefresh, workspace, view }) {
   return (
-    <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b">
-      <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
-        <h1 className="text-base font-medium">{title}</h1>
-        {authenticated && (
+    <header
+      className={`flex min-h-(--header-height) shrink-0 items-center gap-2 border-b ${isDemo ? 'sticky top-0 z-30 bg-background' : ''}`}
+    >
+      <div className="flex w-full min-w-0 items-center gap-2 px-4 py-2 lg:px-6">
+        <SidebarTrigger className="-ml-1 size-11 shrink-0 lg:size-7" />
+        <Separator
+          orientation="vertical"
+          className="mx-2 hidden data-[orientation=vertical]:h-4 lg:block"
+        />
+        <h1 className="min-w-0 flex-1 truncate text-base font-medium lg:flex-none">{title}</h1>
+        {workspace && !isDemo && (
+          <div className="ml-auto hidden lg:block">
+            <SummaryPills workspace={workspace} view={view} />
+          </div>
+        )}
+        {isDemo && (
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            <a
+              href="/login"
+              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            >
+              Log in
+            </a>
+            <Button asChild size="sm" className="h-11 lg:h-8">
+              <a href="/login">
+                <span className="sm:hidden">Join</span>
+                <span className="hidden sm:inline">Join myself.md</span>
+                <IconChevronRight className="hidden sm:block" />
+              </a>
+            </Button>
+          </div>
+        )}
+        {workspace && !isDemo && (
           <Button
             variant="outline"
             size="sm"
-            className="ml-auto"
+            className="ml-auto size-11 shrink-0 sm:w-auto lg:ml-0 lg:h-8"
             aria-label="Refresh dashboard"
             disabled={busy}
             onClick={onRefresh}
@@ -220,65 +289,79 @@ function SiteHeader({ title, busy, onRefresh, authenticated }) {
     </header>
   );
 }
-/** @param {{workspace:Workspace}} props */
-function SectionCards({ workspace }) {
+/** @param {{workspace:Workspace,view:View,compact?:boolean}} props */
+function SummaryPills({ workspace, view, compact = false }) {
   const total = workspace.exports.reduce((sum, item) => sum + item.bytes, 0);
-  const cards = [
-    {
-      label: 'Cloud storage',
-      value: bytes(total),
-      badge: `${((total / 268435456) * 100).toFixed(1)}% used`,
-      footer: '256 MiB account capacity',
-      detail: 'Exports are encrypted at rest',
-      icon: IconCloud,
-    },
-    {
-      label: 'Stored exports',
-      value: String(workspace.exports.length),
-      badge: '30 days',
-      footer: 'Daily snapshots from your phone',
-      detail: 'Browse records or delete an export',
-      icon: IconDatabase,
-    },
-    {
-      label: 'Shared profiles',
-      value: String(workspace.profiles.filter((p) => p.shared).length),
-      badge: `${workspace.profiles.length} ${workspace.profiles.length === 1 ? 'profile' : 'profiles'}`,
-      footer: 'Available to allowed agents',
-      detail: 'Your approved data selection applies',
-      icon: IconShieldCheck,
-    },
-    {
-      label: 'Allowed agents',
-      value: String(workspace.agents.filter((a) => !a.blocked).length),
-      badge: `${workspace.agents.filter((a) => a.blocked).length} blocked`,
-      footer: 'Access is yours to control',
-      detail: 'Connected OAuth clients on this account',
-      icon: IconRobot,
-    },
-  ];
+  const shared = workspace.profiles.filter((profile) => profile.shared).length;
+  const allowed = workspace.agents.filter((agent) => !agent.blocked).length;
+  const pills =
+    view === 'profiles'
+      ? [
+          {
+            label: `${shared} shared`,
+            detail: `${shared} of ${workspace.profiles.length} profiles shared with allowed agents`,
+            icon: IconShieldCheck,
+          },
+          {
+            label: `${workspace.profiles.length} profiles`,
+            detail: 'Total export profiles',
+            icon: IconListDetails,
+          },
+        ]
+      : view === 'agents'
+        ? [
+            {
+              label: `${allowed} allowed`,
+              detail: 'Agents allowed to access shared profiles',
+              icon: IconRobot,
+            },
+            {
+              label: `${workspace.agents.length - allowed} blocked`,
+              detail: 'Agents with access blocked',
+              icon: IconLock,
+            },
+          ]
+        : [
+            {
+              label: `${workspace.exports.length} files`,
+              detail: 'Stored export files',
+              icon: IconDatabase,
+            },
+            {
+              label: `${((total / 268435456) * 100).toFixed(1)}% used`,
+              detail: `${bytes(total)} of 256 MiB cloud storage · encrypted at rest · files retained for 30 days`,
+              icon: IconCloud,
+            },
+          ];
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-      {cards.map((item) => (
-        <Card key={item.label} className="@container/card">
-          <CardHeader>
-            <CardDescription>{item.label}</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {item.value}
-            </CardTitle>
-            <CardAction>
-              <Badge variant="outline">
-                <item.icon />
-                {item.badge}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="flex gap-2 font-medium">{item.footer}</div>
-            <div className="text-muted-foreground">{item.detail}</div>
-          </CardFooter>
-        </Card>
-      ))}
+    <div
+      aria-label="Workspace summary"
+      className={
+        compact ? 'flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground' : 'flex gap-2'
+      }
+    >
+      {pills.map(({ label, detail, icon: Icon }) =>
+        compact ? (
+          <span
+            key={label}
+            title={detail}
+            aria-label={`${label}: ${detail}`}
+            className="tabular-nums"
+          >
+            {label}
+          </span>
+        ) : (
+          <Badge
+            key={label}
+            variant="outline"
+            title={detail}
+            aria-label={`${label}: ${detail}`}
+            className="rounded-full px-2.5 py-1 tabular-nums"
+          >
+            <Icon aria-hidden="true" /> {label}
+          </Badge>
+        ),
+      )}
     </div>
   );
 }
@@ -380,16 +463,24 @@ const columns = [
     cell: ActionsCell,
   },
 ];
-/** @param {TableActions} props */
+/** @param {TableActions & {selectedDays:string[]}} props */
 function DataTable(props) {
-  const { workspace } = props;
+  const { workspace, selectedDays } = props;
   const [filter, setFilter] = useState('');
   const [sorting, setSorting] = useState(
     /** @type {import('@tanstack/react-table').SortingState} */ ([]),
   );
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const data = workspace.exports.filter((item) =>
-    `${item.profileName} ${item.day} ${item.format}`.toLowerCase().includes(filter.toLowerCase()),
+  const dateKey = selectedDays.join(',');
+  const [previousDateKey, setPreviousDateKey] = useState(dateKey);
+  if (previousDateKey !== dateKey) {
+    setPreviousDateKey(dateKey);
+    setPagination({ pageIndex: 0, pageSize: 10 });
+  }
+  const data = workspace.exports.filter(
+    (item) =>
+      (!selectedDays.length || selectedDays.includes(item.day)) &&
+      `${item.profileName} ${item.day} ${item.format}`.toLowerCase().includes(filter.toLowerCase()),
   );
   const table = useTable({
     features,
@@ -408,7 +499,7 @@ function DataTable(props) {
             <span className="rounded-md bg-background px-3 py-1.5 text-sm font-medium shadow-xs">
               Export library{' '}
               <Badge variant="secondary" className="ml-2">
-                {workspace.exports.length}
+                {data.length}
               </Badge>
             </span>
           </div>
@@ -479,8 +570,8 @@ function DataTable(props) {
                     colSpan={columns.length}
                     className="h-32 text-center text-muted-foreground"
                   >
-                    {filter
-                      ? 'No exports match your search.'
+                    {filter || selectedDays.length
+                      ? 'No exports match your selected dates and search.'
                       : 'No cloud exports yet. Choose a cloud destination in the app, authorize uploads, and run an export.'}
                   </TableCell>
                 </TableRow>
@@ -811,7 +902,10 @@ function LoginCard({ ready }) {
             </span>
           </div>
           <CardTitle className="text-2xl">Sign in to myself.md</CardTitle>
-          <CardDescription>Use the same account as myself.md on your phone.</CardDescription>
+          <CardDescription>
+            Continue to create your workspace or sign in. Use the same account as myself.md on your
+            phone.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {error && (
@@ -838,17 +932,120 @@ function LoginCard({ ready }) {
             <IconBrandGithub aria-hidden="true" className="size-5" />
             Continue with GitHub
           </Button>
+          <a
+            href="/"
+            className="block text-center text-sm text-muted-foreground hover:text-foreground"
+          >
+            Back to the interactive demo
+          </a>
         </CardContent>
       </Card>
     </div>
   );
 }
+/** @param {{onNavigate:(search:string)=>void}} props */
+function DemoIntroduction({ onNavigate }) {
+  const examples = [
+    {
+      label: 'Health',
+      detail: 'Datasets, controls & JSON formats',
+      icon: IconHeart,
+      href: '/datasets/health',
+    },
+    {
+      label: 'Screen time',
+      detail: 'App usage, controls & JSON formats',
+      icon: IconClock,
+      href: '/datasets/screen-time',
+    },
+    {
+      label: 'Location',
+      detail: 'Recorded points, controls & JSON formats',
+      icon: IconMapPin,
+      href: '/datasets/location',
+    },
+  ];
+  return (
+    <section
+      className="demo-introduction mx-4 overflow-hidden rounded-xl border lg:mx-6"
+      aria-labelledby="demo-title"
+    >
+      <div className="grid gap-8 p-6 md:p-8 xl:grid-cols-[1.3fr_1fr]">
+        <div className="space-y-5">
+          <Badge variant="outline">
+            <IconShieldCheck /> Files first. You’re in control.
+          </Badge>
+          <h2
+            id="demo-title"
+            className="max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl"
+          >
+            Your data belongs in files.
+            <br />
+            <span className="text-muted-foreground">You decide who reads them.</span>
+          </h2>
+          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">
+            Export your health, screen time, and location data into portable files. Keep them on
+            your phone or store them in the cloud. Choose which profiles AI agents can read, and
+            revoke access whenever you want.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild>
+              <a href="/login">
+                Join myself.md <IconChevronRight />
+              </a>
+            </Button>
+            <Button variant="outline" onClick={() => onNavigate('?explore=1')}>
+              Explore sample files <IconChartBar />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            No account needed to explore. All data below is fictional.
+          </p>
+        </div>
+        <div className="flex flex-col justify-center gap-3">
+          {examples.map(({ label, detail, icon: Icon, href }) => (
+            <a
+              key={label}
+              href={href}
+              className="group flex items-center gap-4 rounded-lg border bg-background p-4 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Icon className="size-5" />
+              </span>
+              <span className="flex-1">
+                <span className="block text-sm font-semibold">{label}</span>
+                <span className="text-xs text-muted-foreground">{detail}</span>
+              </span>
+              <IconChevronRight className="size-4 text-muted-foreground" />
+            </a>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2 border-t bg-background px-6 py-3 text-xs text-muted-foreground md:px-8">
+        <span className="flex items-center gap-2">
+          <IconDatabase className="size-4" /> Portable data files
+        </span>
+        <span className="flex items-center gap-2">
+          <IconLock className="size-4" /> Local or encrypted cloud storage
+        </span>
+        <span className="flex items-center gap-2">
+          <IconRobot className="size-4" /> AI access you can revoke
+        </span>
+      </div>
+    </section>
+  );
+}
 function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
-  const [selectedView, setView] = useState(/** @type {View} */ ('exports'));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
   const query = new URLSearchParams(search);
-  const view = query.has('history') ? 'history' : selectedView;
+  const view = query.has('history')
+    ? 'history'
+    : query.get('view') === 'profiles'
+      ? 'profiles'
+      : query.get('view') === 'agents'
+        ? 'agents'
+        : 'exports';
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
   const [confirmation, setConfirmation] = useState(/** @type {Confirmation|null} */ (null));
@@ -856,6 +1053,7 @@ function App() {
   const [busy, setBusy] = useState(true);
   const [ready, setReady] = useState(false);
   const [updated, setUpdated] = useState('');
+  const [selectedDays, setSelectedDays] = useState(/** @type {string[]} */ ([]));
   async function reload() {
     const data = await api('/api/dashboard');
     setWorkspace(/** @type {Workspace} */ (data));
@@ -907,16 +1105,22 @@ function App() {
       active = false;
     };
   }, []);
-  const title = exploring
-    ? 'Data explorer'
-    : (views.find((item) => item.id === view)?.title ?? 'Stored data');
+  const currentView = views.find((item) => item.id === (exploring ? 'explore' : view));
+  const title = exploring ? 'Data explorer' : (currentView?.title ?? 'Stored data');
   return (
     <SidebarProvider className="dashboard-layout">
       <AppSidebar
         view={exploring ? 'explore' : view}
         onNavigate={(next) => {
-          navigateRoute(next === 'explore' ? '?explore=1' : next === 'history' ? '?history=1' : '');
-          setView(next === 'history' ? 'exports' : next);
+          navigateRoute(
+            next === 'explore'
+              ? '?explore=1'
+              : next === 'history'
+                ? '?history=1'
+                : next === 'profiles' || next === 'agents'
+                  ? `?view=${next}`
+                  : '',
+          );
         }}
         workspace={workspace}
         busy={busy}
@@ -925,7 +1129,8 @@ function App() {
         <SiteHeader
           title={title}
           busy={busy}
-          authenticated={Boolean(workspace)}
+          workspace={workspace}
+          view={exploring ? 'explore' : view}
           onRefresh={() => {
             void run(reload);
           }}
@@ -933,6 +1138,22 @@ function App() {
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              {workspace && !isDemo && (
+                <div className="px-4 lg:hidden">
+                  <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
+                </div>
+              )}
+              {isDemo && !exploring && view === 'exports' && (
+                <DemoIntroduction onNavigate={navigateRoute} />
+              )}
+              {isDemo && currentView && (
+                <header className="space-y-2 px-4 lg:px-6">
+                  <h2 className="text-2xl font-semibold tracking-tight">{currentView.title}</h2>
+                  <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                    {currentView.description}
+                  </p>
+                </header>
+              )}
               {notice && (
                 <div role="status" className="mx-4 rounded-lg border bg-muted p-4 text-sm lg:mx-6">
                   {notice}
@@ -949,7 +1170,6 @@ function App() {
                     />
                   ) : (
                     <>
-                      <SectionCards workspace={workspace} />
                       {view === 'history' ? (
                         <HistoryView
                           workspace={workspace}
@@ -960,16 +1180,24 @@ function App() {
                       ) : view === 'exports' ? (
                         <>
                           <div className="px-4 lg:px-6">
-                            <ExportActivity workspace={workspace} asOf={updated} />
+                            <ExportActivity
+                              workspace={workspace}
+                              asOf={updated}
+                              selectedDays={selectedDays}
+                              onSelectionChange={setSelectedDays}
+                            />
                           </div>
                           <DataTable
+                            selectedDays={selectedDays}
                             workspace={workspace}
                             busy={busy}
                             onView={(item) => navigateRoute(recordRoute(item.id))}
                             onDelete={(item) =>
                               setConfirmation({
                                 title: 'Delete this export?',
-                                description: `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
+                                description: isDemo
+                                  ? `${item.profileName} · ${item.day}. This removes a sample export from this preview. Reload the page to bring it back.`
+                                  : `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
                                 label: 'Delete export',
                                 action: async () => {
                                   await api(`/api/dashboard/exports/${item.id}`, 'DELETE');
@@ -991,9 +1219,25 @@ function App() {
                     </>
                   )}
                   <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
-                    Updated {new Date(updated).toLocaleTimeString()} · Stored exports remain
-                    available while your phone is offline.
+                    {isDemo
+                      ? 'You’re exploring a fictional workspace. Join to connect your own data.'
+                      : `Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
                   </p>
+                  {isDemo && (
+                    <div className="mx-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-6 lg:mx-6">
+                      <div>
+                        <p className="font-semibold">Make this workspace yours.</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Connect your phone, build your profiles, and bring your agents along.
+                        </p>
+                      </div>
+                      <Button asChild>
+                        <a href="/login">
+                          Join myself.md <IconChevronRight />
+                        </a>
+                      </Button>
+                    </div>
+                  )}
                 </>
               ) : (
                 <LoginCard ready={ready} />
@@ -1031,4 +1275,5 @@ const nonce = document.querySelector('meta[name="style-nonce"]')?.getAttribute('
 if (nonce) setNonce(nonce);
 const root = document.getElementById('root');
 if (!root) throw new Error('Dashboard root is missing.');
-createRoot(root).render(<App />);
+const dataset = location.pathname.match(/^\/datasets\/(health|screen-time|location|all)\/?$/)?.[1];
+createRoot(root).render(dataset ? <DatasetDocumentation dataset={dataset} /> : <App />);
