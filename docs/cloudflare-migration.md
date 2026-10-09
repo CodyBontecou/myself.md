@@ -2,15 +2,15 @@
 
 The production cutover on 9 October 2026 moved the dashboard, HTTP API, MCP endpoint, account metadata, quota accounting and encrypted exports to Cloudflare. `https://myself.md/mcp` remains the public MCP resource. The OAuth issuer remains `https://myself.md/auth/realms/qr-connect`; account partitions retain `https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect|<realm-user-id>`.
 
-| Responsibility                                                                 | Service                                                          |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Dashboard, API and MCP transport                                               | Worker `myself-md`                                               |
-| Account data, pairing, billing reservations, permissions and encrypted history | SQLite-backed `Account` Durable Objects, one per account         |
-| Purchase and legacy-claim ownership                                            | SQLite-backed `Purchase` Durable Objects, one per purchase       |
-| Hashed credential routing and account directory                                | D1 `myself-md-directory`, Western Europe                         |
-| Encrypted export files                                                         | Private R2 bucket `myself-md-exports`                            |
-| Existing OAuth realm, social sign-in and identity database                     | Retained Fly Keycloak and PostgreSQL services                    |
-| Legacy service URL and OAuth forwarding                                        | Retained Fly service, with `WORKER_ORIGIN` set to the Worker URL |
+| Responsibility                                                                 | Service                                                    |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Dashboard, API and MCP transport                                               | Worker `myself-md`                                         |
+| Account data, pairing, billing reservations, permissions and encrypted history | SQLite-backed `Account` Durable Objects, one per account   |
+| Purchase and legacy-claim ownership                                            | SQLite-backed `Purchase` Durable Objects, one per purchase |
+| Hashed credential routing and account directory                                | D1 `myself-md-directory`, Western Europe                   |
+| Encrypted export files                                                         | Private R2 bucket `myself-md-exports`                      |
+| Existing OAuth realm, social sign-in and identity database                     | Better Auth in Workers, D1 myself-md-identity              |
+| Legacy service URL and OAuth forwarding                                        | Retired; mobile source canonicalizes saved hosted URLs     |
 
 Account metadata and reservations share a transaction boundary so concurrent UI, scheduled uploads and MCP queries cannot obtain separate free allowances. Purchase ownership is coordinated across account objects. D1 routes hashed pairing/upload/claim tickets; the authoritative object still validates ownership, expiry and revocation. A directory entry alone grants no access.
 
@@ -50,4 +50,20 @@ During preparation, automatic Fly releases 20–22 deployed older committed code
 
 The workerd integration suite covers signed OAuth fixtures, MCP discovery and calls, first-party-only claims, cross-account denials, QR pairing, actual R2 bindings, shared allowances, simultaneous reservations and process restart persistence. Existing Node HTTP/MCP and migration eligibility tests also passed. Live public checks confirm Cloudflare serves the primary URL, legacy API requests forward correctly, OAuth discovery remains available, and migration access is disabled.
 
-Identity is deliberately still on Fly. Retiring those services requires a separate identity migration that preserves realm users, provider links, OAuth clients and the existing issuer/subject contracts; do not shut them down as part of the API cutover.
+The identity cutover is described below. The original Fly instructions above describe the completed API/storage stage and recovery into the archived Node deployment.
+
+## Identity cutover and Fly retirement
+
+Better Auth 1.7.7 and its OAuth provider run in the same Worker with a separate D1 identity database. The two original user IDs and exact Apple/GitHub provider subjects are imported; implicit email linking is disabled. qr-phone and qr-dashboard are trusted public clients, and qr-mcp requires user consent. All three require PKCE. Dynamic registration retains the existing approved callback hosts and cannot select a first-party client ID, skip consent or grant machine access. Password authentication, account linking, identity deletion and privileged client/resource administration are not exposed.
+
+The issuer remains https://myself.md/auth/realms/qr-connect. Existing authorization, token, certs, logout and broker callback paths have compatibility adapters. Modern OAuth discovery advertises provider endpoints under that issuer. RFC 9068 client_id is normalized to the application's verified client identity alongside legacy azp. Access tokens expire after five minutes; refresh tokens have a rolling 30-day lifetime. Old public verification keys allow already-issued access tokens to finish their short lifetime; Keycloak refresh tokens and browser sessions are not copied, so existing users must sign in again.
+
+Before cutover, export the realm through the private loopback tunnel with npm run identity:snapshot and retain a complete pg_dump -Fc backup. npm run identity:prepare writes private import SQL and a Worker secrets file under ignored .local/identity-migration. The generated worker/identity.sql contains schema only. Apply schema and import to an empty D1 database with wrangler d1 execute --remote --file PATH. Do not replay seed SQL into an active identity database or replace the identity secret; it encrypts provider/session/signing-key material.
+
+Deploy with IDENTITY_ENABLED:freeze to pause new sign-ins while preserving old certs for existing API tokens. Stop Keycloak writes, compare the final PostgreSQL identities/provider links against the D1 import and save the final recovery backup. Then deploy with IDENTITY_ENABLED=1. Verify discovery, JWKS, both provider callback URLs, native PKCE, token refresh, MCP consent and authenticated account access before removing Fly. No existing provider-console callback change is required. The identity operator/admin paths remain private; agents must complete sign-in and consent through the user-facing login handoff.
+
+Production identity secrets are IDENTITY_SECRET, GITHUB_AUTH_CLIENT_ID, GITHUB_AUTH_CLIENT_SECRET, APPLE_AUTH_CLIENT_ID, APPLE_AUTH_TEAM_ID, APPLE_AUTH_KEY_ID and APPLE_AUTH_PRIVATE_KEY. LEGACY_IDENTITY_JWKS contains only the old public keys. Apple client assertions rotate in warm isolates before expiry. D1 stores encrypted provider tokens and private signing keys; daily cleanup removes expired sessions, tokens, state and rate-limit entries.
+
+The retired fly.dev transport cannot continue serving after Fly retirement. Current mobile source canonicalizes stored hosted session/upload origins to myself.md, leaving owner IDs and local data partitions unchanged. Self-hosted origins are unchanged. Older builds need the updated app; MCP connectors should use https://myself.md/mcp. The remaining fly.dev ACCOUNT_NAMESPACE value is an immutable identifier, not a network dependency.
+
+Recovery backups stay private in .local/identity-migration and .local/worker-cutover-recovered-20261009.json. Before restoring Keycloak, export current D1 identities and provider links and preserve any newly created users; restoring only the pre-cutover PostgreSQL database would lose them. Preserve current Worker account and purchase state independently. Use npm run verify:identity, npm run verify:worker and the native/dashboard/session checks before deployment. Real social-provider completion additionally requires the account owner to sign in.

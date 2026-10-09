@@ -24,6 +24,7 @@ let destination = new URL(location.origin);
 const exports = { exports: {} };
 let exchangeCount = 0;
 let returnedTo = '';
+let pendingOAuth = '';
 const context = {
   module: exports,
   crypto: webcrypto,
@@ -56,6 +57,12 @@ const context = {
   fetch: async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
     if (url === '/dashboard/config')
       return Response.json({ issuer: 'https://identity.example/realm', clientId: 'qr-dashboard' });
+    if (url === 'https://identity.example/realm/sign-in/social') {
+      const body = JSON.parse(String(options.body));
+      assert.equal(body.oauth_query, pendingOAuth);
+      assert.equal(body.provider, 'github');
+      return Response.json({ url: 'https://github.com/login/oauth/authorize' });
+    }
     assert.equal(url, 'https://identity.example/realm/protocol/openid-connect/token');
     const body = new URLSearchParams(String(options.body));
     assert.equal(body.get('grant_type'), 'authorization_code');
@@ -105,6 +112,23 @@ location.pathname = '/claim';
 location.search = '';
 await verifyProvider('apple');
 assert.equal(exchangeCount, 4);
+location.pathname = '/login';
+pendingOAuth = new URLSearchParams({
+  client_id: 'agent-fixture',
+  redirect_uri: 'http://127.0.0.1:8765/callback',
+  state: 'agent-state',
+  code_challenge: 'agent-challenge',
+  code_challenge_method: 'S256',
+  sig: 'fixture-signature',
+  exp: 'fixture-expiry',
+}).toString();
+location.search = `?${pendingOAuth}`;
+await session.signIn('github');
+assert.equal(destination.hostname, 'github.com');
+assert.equal(storage.has('qr-dashboard-login'), false);
+assert.equal(exchangeCount, 4);
+location.pathname = '/claim';
+location.search = '';
 await session.signIn('github');
 location.pathname = '/dashboard/callback';
 location.search = '?code=fixture&state=wrong';

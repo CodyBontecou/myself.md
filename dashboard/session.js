@@ -103,6 +103,26 @@ async function authorizationUrl() {
 }
 /** @param {'apple'|'github'} provider */
 export async function signIn(provider) {
+  if (!config) throw new Error('Sign-in is not ready.');
+  const query = new URLSearchParams(location.search);
+  if (['/login', '/login/'].includes(location.pathname) && query.has('client_id')) {
+    // Continue the provider-signed authorization without replacing the client's PKCE or callback.
+    const response = await fetch(`${config.issuer}/sign-in/social`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        oauth_query: location.search.slice(1),
+        callbackURL: `${location.origin}/dashboard`,
+      }),
+    });
+    if (!response.ok)
+      throw new Error('Sign-in expired or could not be completed. Please start again.');
+    const result = /** @type {{url?:string}} */ (await response.json());
+    if (!result.url) throw new Error('Sign-in could not continue. Please start again.');
+    location.assign(new URL(result.url));
+    return;
+  }
   const url = await authorizationUrl();
   url.searchParams.set('kc_idp_hint', provider);
   location.assign(url);
@@ -139,7 +159,7 @@ export async function initializeSession() {
   const destination = new URL(login.returnTo ?? '/dashboard', location.origin);
   if (
     destination.origin === location.origin &&
-    ['/dashboard', '/claim'].includes(destination.pathname)
+    ['/dashboard', '/claim', '/delete-account'].includes(destination.pathname)
   ) {
     history.replaceState(null, '', `${destination.pathname}${destination.search}`);
     window.dispatchEvent(new Event('popstate'));

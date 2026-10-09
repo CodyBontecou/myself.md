@@ -355,6 +355,8 @@ export function createApplication(
       let payload;
       try {
         ({ payload } = await jwtVerify(token, jwks, { issuer, audience: resources }));
+        // Keycloak used azp; RFC 9068 OAuth access tokens use client_id.
+        payload.azp ??= payload.client_id;
       } catch {
         res.setHeader(
           'WWW-Authenticate',

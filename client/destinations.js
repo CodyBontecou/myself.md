@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { fetch } from 'expo/fetch';
 import { api } from './session.js';
+import { canonicalServiceOrigin } from '../core/hosting.js';
 /** @param {string} url @param {Parameters<typeof fetch>[1]} options */
 async function send(url, options) {
   const controller = new AbortController();
@@ -82,6 +83,7 @@ export async function deliverExport(context, profile, file, format, manifest, va
     return null;
   }
   if (!credential?.server) throw new Error('Authorize cloud uploads on this profile first.');
+  credential.server = canonicalServiceOrigin(credential.server);
   if (file.size > 16 * 1024 * 1024)
     throw new Error('Cloud daily files are limited to 16 MiB. Reduce selected types.');
   const authorization = `Upload ${credential.token}`;

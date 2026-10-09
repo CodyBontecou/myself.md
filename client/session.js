@@ -1,4 +1,5 @@
 import { saveExportContext } from './export-context.js';
+import { canonicalServiceOrigin } from '../core/hosting.js';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,6 +12,13 @@ export async function loadSession() {
   const value = await SecureStore.getItemAsync(key);
   if (!value) return null;
   const session = /** @type {Session} */ (JSON.parse(value));
+  const server = canonicalServiceOrigin(session.server);
+  if (server !== session.server) {
+    session.server = server;
+    session.issuer = `${server}/auth/realms/qr-connect`;
+    session.resource = `${server}/mcp`;
+    await saveSession(session);
+  }
   // Existing sessions retain their original device partition. Never reassign old records.
   if (!session.owner) {
     session.owner = session.deviceId;
@@ -70,6 +78,7 @@ function trustedUrl(value) {
 }
 /** @param {string} server @param {'apple'|'github'} provider @returns {Promise<Session>} */
 export async function signIn(server, provider) {
+  server = canonicalServiceOrigin(server);
   trustedUrl(server);
   const config = await request(/** @type {string} */ (`${server}/config`));
   const checked = /** @type {{issuer:string,clientId:string,resource:string}} */ (config);
@@ -84,7 +93,7 @@ export async function signIn(server, provider) {
     responseType: AuthSession.ResponseType.Code,
     usePKCE: true,
     codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
-    scopes: ['openid', 'profile', 'qr-connect'],
+    scopes: ['openid', 'profile', 'qr-connect', 'offline_access'],
     extraParams: {
       resource: checked.resource,
       prompt: 'select_account',

@@ -8,7 +8,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "triggers": { "crons": ["17 3 * * *"] },
-  "routes": [{ "pattern": "myself.md/*", "zone_name": "myself.md" }],
+  "routes": [{ "pattern": "myself.md", "custom_domain": true }],
   "observability": {
     "enabled": true,
     "logs": {
@@ -28,6 +28,11 @@
     },
   ],
   "d1_databases": [
+    {
+      "binding": "IDENTITY",
+      "database_name": "myself-md-identity",
+      "database_id": "4b6877ee-ce1a-4fab-a65e-d969fcb47f11",
+    },
     {
       "binding": "DIRECTORY",
       "database_name": "myself-md-directory",
@@ -61,8 +66,20 @@
     "IOS_APP_ID": "67KC823C9A.com.myself.md",
     "ALLOW_HTTP_DEV": "0",
     "MIGRATION_ENABLED": "0",
+    "IDENTITY_ENABLED": "1",
   },
   "secrets": {
-    "required": ["CLOUD_ENCRYPTION_KEY", "IMPORT_SECRET"],
+    "required": [
+      "CLOUD_ENCRYPTION_KEY",
+      "IMPORT_SECRET",
+      "IDENTITY_SECRET",
+      "GITHUB_AUTH_CLIENT_ID",
+      "GITHUB_AUTH_CLIENT_SECRET",
+      "APPLE_AUTH_CLIENT_ID",
+      "APPLE_AUTH_TEAM_ID",
+      "APPLE_AUTH_KEY_ID",
+      "APPLE_AUTH_PRIVATE_KEY",
+      "LEGACY_IDENTITY_JWKS",
+    ],
   },
 }

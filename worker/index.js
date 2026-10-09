@@ -8,6 +8,7 @@ import { assets } from '../server/dashboard-assets.js';
 import { readBytes } from './request.js';
 import { migrationRequest } from './import.js';
 import { digest, findTicket, registerTicket } from './tickets.js';
+import { identityRequest } from './identity.js';
 export { Account } from './account.js';
 export { Purchase } from './claims.js';
 /** @param {unknown} data @param {number} [status] */
@@ -47,6 +48,18 @@ export default {
   /** @param {ScheduledController} _controller @param {Env} env */
   async scheduled(_controller, env) {
     await env.DIRECTORY.prepare('DELETE FROM tickets WHERE expires<?').bind(Date.now()).run();
+    if (env.IDENTITY_ENABLED === '1') {
+      const now = new Date().toISOString();
+      await env.IDENTITY.batch([
+        env.IDENTITY.prepare('DELETE FROM verification WHERE expiresAt<?').bind(now),
+        env.IDENTITY.prepare('DELETE FROM oauthAccessToken WHERE expiresAt<?').bind(now),
+        env.IDENTITY.prepare('DELETE FROM oauthRefreshToken WHERE expiresAt<?').bind(now),
+        env.IDENTITY.prepare('DELETE FROM session WHERE expiresAt<?').bind(now),
+        env.IDENTITY.prepare('DELETE FROM rateLimit WHERE lastRequest<?').bind(
+          Date.now() - 86400000,
+        ),
+      ]);
+    }
   },
   /** @param {Request} request @param {Env} env */
   async fetch(request, env) {
@@ -63,6 +76,18 @@ export default {
           /[%\\;]/.test(url.pathname)
         )
           return json({ error: 'Not found.' }, 404);
+        if (
+          env.IDENTITY_ENABLED === 'freeze' &&
+          url.pathname.endsWith('/protocol/openid-connect/certs')
+        )
+          return json(JSON.parse(env.LEGACY_IDENTITY_JWKS));
+        if (
+          env.IDENTITY_ENABLED === 'freeze' &&
+          !url.pathname.endsWith('/certs') &&
+          !url.pathname.endsWith('/.well-known/openid-configuration')
+        )
+          return json({ error: 'Sign-in migration in progress. Retry shortly.' }, 503);
+        if (env.IDENTITY_ENABLED === '1') return await identityRequest(request, env);
         const target = new URL(url.pathname + url.search, env.AUTH_ORIGIN);
         return await fetch(new Request(target, request), { redirect: 'manual' });
       }

@@ -40,6 +40,7 @@ Object.assign(config.vars, {
   IOS_APP_ID: '67KC823C9A.com.myself.md',
   ALLOW_HTTP_DEV: '1',
   MIGRATION_ENABLED: '1',
+  IDENTITY_ENABLED: '0',
 });
 writeFileSync(
   join(directory, '.dev.vars'),

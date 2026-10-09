@@ -94,24 +94,15 @@ The existing `/pair#ticket` QR is an iOS Universal Link on the hosted Fly domain
 
 The public `/.well-known/apple-app-site-association` endpoint maps only `/pair` to `IOS_APP_ID` (Apple team ID plus bundle ID). `app.json` declares the hosted associated domain; changing domains requires matching that configuration and rebuilding the app. Compose reads `IOS_APP_ID` from `.env.cloud`; Fly sets it in `deploy/fly/service.toml`. Apple caches associations, so direct opening may be delayed after deployment or affected by the user’s preference to open links in Safari. The fallback remains available. [Expo Universal Links documentation](https://docs.expo.dev/linking/ios-universal-links/).
 
-## Retained Fly.io services and Node fallback
+## Hosted Cloudflare service
 
-The primary hosted endpoint is **https://myself.md/mcp**, with health at `/health`, now served by Cloudflare Workers. The existing `https://qr-connect-cloud-cody.fly.dev` origin forwards API/MCP requests to the Worker and remains the OAuth proxy. That service, private Keycloak and private PostgreSQL run in Paris (`cdg`) under `qr-connect-cloud-cody`, `qr-connect-cloud-cody-auth` and `qr-connect-cloud-cody-db`. Only the proxy exposes HTTPS. Fly volumes retain the Node fallback snapshot and identity data. Each retained app runs one machine; account data now lives in Cloudflare Durable Objects rather than the Fly volume.
+The hosted endpoint is **https://myself.md/mcp**, with health at /health. Workers serve the API, dashboard, MCP and OAuth provider. D1 stores identity and credential routing; account and purchase Durable Objects preserve ownership and shared billing; the private R2 bucket stores encrypted export files. The former Fly services are retired after identity cutover. The checked-in Fly configuration remains recovery/reference material for the Node/Keycloak deployment.
 
-Hosted export content moved to the private `myself-md-exports` R2 bucket on 2026-10-09. All seven existing exports (9,536,054 bytes) were read back from R2, compared byte for byte with the encrypted pre-migration backup, decrypted, and validated; no content files remained in SQLite. This was the initial storage stage; the later Worker cutover moved API and metadata as described below. Identity and legacy forwarding remain on Fly. The bucket has public `r2.dev` access disabled and no public custom domain. Bucket-restricted S3 credentials were created through `cf user tokens create` and saved only in the private environment file and Fly secrets. A private pre-migration backup remains on the volume and in ignored `.local/` storage outside the host.
+All seven existing exports (9,536,054 plaintext bytes) were authenticated through the live R2 binding during the API cutover. The identity migration preserves existing user IDs, social-provider account links, the public issuer and immutable data partition namespace. Existing Keycloak refresh tokens require a new sign-in; current mobile source redirects saved hosted transport and upload URLs to myself.md without reassigning local records. Older installed builds still pointing at fly.dev require an update.
 
-Install and authenticate the global Fly CLI before using these commands. The checked-in `deploy/fly/*.toml` files describe these existing apps. Generated realm and secret files stay ignored under `.local/` and `.env.cloud`.
+Use npm run worker:deploy for deployment and follow [Cloudflare migration and recovery](cloudflare-migration.md). Keep the data encryption key, identity signing/encryption secret and private recovery backups outside source control. Apple/GitHub callbacks retain their existing public URLs. Provider purchases still require their independent native-store configuration and testing.
 
-```sh
-npm run cloud:fly:prepare
-npm run cloud:fly:deploy
-# Identity image rebuild; realm imports initialize only new databases.
-fly deploy .local/fly-identity --config "$PWD/deploy/fly/identity.toml" --remote-only --ha=false --yes
-```
-
-`cloud:fly:prepare` creates restricted secret-import files from `.env.cloud`; it does not rotate or import deployed secrets. Keep `.env.cloud` backed up securely, especially its encryption key. Secret changes require explicit `fly secrets import --app <app> < <matching-file>` and coordinated identity/database updates. The public proxy blocks the admin console. For administration, use a temporary local tunnel (`fly proxy 18080:8080 --app qr-connect-cloud-cody-auth`) to its private admin API; set `X-Forwarded-Proto: https`, `X-Forwarded-Host: myself.md` and `X-Forwarded-Port: 443` consistently on authentication and admin requests. Close the tunnel after use. Use Fly volume snapshots and separately retained backups for recovery.
-
-Pair the phone to this hosted service using the same account used by connectors. Existing development accounts are separate. Review each cloud profile, authorize its uploads and explicitly enable stored-cloud MCP sharing.
+Pair the phone using the same account as connectors. Review each cloud profile, authorize its uploads and explicitly enable stored-cloud MCP sharing.
 
 ## Connectors
 
