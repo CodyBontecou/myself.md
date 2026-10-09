@@ -20,7 +20,7 @@ export function exportEvent({ id, profile, actor, interval, stamp, timezone }) {
       profile.export.destination === 'http'
         ? destinationHost(profile.export.httpUrl ?? '')
         : profile.export.destination === 'cloud'
-          ? 'QR Connect Cloud'
+          ? 'myself.md Cloud'
           : 'On this phone',
     profile: {
       id: profile.id,

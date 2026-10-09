@@ -1,16 +1,27 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 const cloud = process.argv.includes('--cloud');
-const origin = cloud ? `https://${process.env.SERVICE_DOMAIN}` : process.env.PUBLIC_URL;
+const origin =
+  process.env.PUBLIC_URL ?? (cloud ? `https://${process.env.SERVICE_DOMAIN}` : undefined);
 if (!origin || new URL(origin).origin !== origin) throw new Error('Set the exact service origin.');
+const origins = [
+  origin,
+  ...(process.env.PUBLIC_URL_ALIASES ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+];
+if (origins.some((value) => new URL(value).origin !== value))
+  throw new Error('Service aliases must be exact origins.');
+const authOrigin = process.env.OAUTH_ISSUER ? new URL(process.env.OAUTH_ISSUER).origin : origin;
 const local = process.env.KEYCLOAK_ADMIN_URL;
 if (!local || new URL(local).hostname !== '127.0.0.1' || new URL(local).protocol !== 'http:')
   throw new Error('Set KEYCLOAK_ADMIN_URL to the private HTTP loopback identity tunnel.');
 const proxyHeaders =
   cloud || process.env.AUTH_PROXY === '1'
     ? {
-        'X-Forwarded-Proto': new URL(origin).protocol.slice(0, -1),
-        'X-Forwarded-Host': new URL(origin).host,
-        'X-Forwarded-Port': new URL(origin).port || '443',
+        'X-Forwarded-Proto': new URL(authOrigin).protocol.slice(0, -1),
+        'X-Forwarded-Host': new URL(authOrigin).host,
+        'X-Forwarded-Port': new URL(authOrigin).port || '443',
       }
     : {};
 const login = await fetch(`${local}/realms/master/protocol/openid-connect/token`, {
@@ -40,7 +51,7 @@ const existing = /** @type {{id:string,clientId:string}[]} */ (await clients.jso
 const id = existing.find((c) => c.clientId === 'qr-dashboard')?.id;
 const client = {
   clientId: 'qr-dashboard',
-  name: 'QR Connect Dashboard',
+  name: 'myself.md Dashboard',
   protocol: 'openid-connect',
   enabled: true,
   publicClient: true,
@@ -48,12 +59,12 @@ const client = {
   directAccessGrantsEnabled: false,
   implicitFlowEnabled: false,
   serviceAccountsEnabled: false,
-  redirectUris: [`${origin}/dashboard/callback`],
-  webOrigins: [origin],
+  redirectUris: origins.map((value) => `${value}/dashboard/callback`),
+  webOrigins: origins,
   defaultClientScopes: ['profile', 'qr-connect'],
   attributes: {
     'pkce.code.challenge.method': 'S256',
-    'post.logout.redirect.uris': `${origin}/dashboard`,
+    'post.logout.redirect.uris': origins.map((value) => `${value}/dashboard`).join('##'),
   },
 };
 const saved = await fetch(id ? `${endpoint}/${id}` : endpoint, {

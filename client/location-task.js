@@ -40,8 +40,8 @@ export async function startTracking(owner) {
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'QR Connect is recording location',
-        notificationBody: 'Stop recording in QR Connect.',
+        notificationTitle: 'myself.md is recording location',
+        notificationBody: 'Stop recording in myself.md.',
       },
     });
     return true;

@@ -144,7 +144,7 @@ export function registerDataTools(mcp, subject, client = null) {
     'create_phone_export_profile',
     {
       description:
-        'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open QR Connect within five minutes). Use availableTypes from get_phone_data_catalog. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not activate a profile or grant access. The user reviews, saves and activates on the phone. Original imported:archive includes ALL imported data regardless of indexed selections.',
+        'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use availableTypes from get_phone_data_catalog. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not activate a profile or grant access. The user reviews, saves and activates on the phone. Original imported:archive includes ALL imported data regardless of indexed selections.',
       inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
     },
     async ({ profile, deviceId }) => {
@@ -187,7 +187,7 @@ export function registerDataTools(mcp, subject, client = null) {
     'get_phone_data_catalog',
     {
       description:
-        'Discover phone data types, explicit phone-side grants and collection limits before querying. Online means a heartbeat within 15 seconds. Keep QR Connect open. No tool can grant permissions.',
+        'Discover phone data types, explicit phone-side grants and collection limits before querying. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
       inputSchema: z.object({ deviceId: z.string().uuid() }),
       annotations: { readOnlyHint: true },
     },
@@ -244,7 +244,7 @@ export function registerDataTools(mcp, subject, client = null) {
       });
       try {
         if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
-          throw new PairingError(409, 'Phone is offline. Open QR Connect first.');
+          throw new PairingError(409, 'Phone is offline. Open myself.md first.');
         if (phone.catalog.activeProfileId !== query.profileId)
           throw new PairingError(403, 'Choose the active profile ID from the phone catalog.');
         if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))

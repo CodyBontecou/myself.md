@@ -3,7 +3,7 @@ import { Screen, Copy, Group, Row } from '../components/ui';
 export default function SettingsScreen() {
   return (
     <Screen>
-      <Copy variant="heading">A bridge to your data</Copy>
+      <Copy variant="heading">myself.md</Copy>
       <Copy muted>Manage your phone’s data sources and choose which agents can access them.</Copy>
       <Group>
         <Row

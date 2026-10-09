@@ -30,6 +30,22 @@ if (
 )
   throw new Error('OAuth and server URLs require HTTPS.');
 const resource = `${publicUrl}/mcp`;
+const publicUrls = [
+  publicUrl,
+  ...(process.env.PUBLIC_URL_ALIASES ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+];
+for (const origin of publicUrls) {
+  const parsed = new URL(origin);
+  if (
+    parsed.origin !== origin ||
+    (parsed.protocol !== 'https:' && process.env.ALLOW_HTTP_DEV !== '1')
+  )
+    throw new Error('Public service URLs must be exact HTTPS origins.');
+}
+const resources = publicUrls.map((origin) => `${origin}/mcp`);
 const iosAppId = process.env.IOS_APP_ID;
 if (iosAppId && !/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/.test(iosAppId))
   throw new Error('Invalid IOS_APP_ID for Universal Links.');
@@ -42,12 +58,12 @@ const metadata = {
 };
 /** @param {string} subject @param {string|null} client */
 function makeMcp(subject, client) {
-  const mcp = new McpServer({ name: 'qr-connect', version: '1.0.0' });
+  const mcp = new McpServer({ name: 'myself.md', version: '1.0.0' });
   mcp.registerTool(
     'create_phone_pairing',
     {
       description:
-        'Generate a five-minute, one-use QR image. Scan with QR Connect and sign in with this same account.',
+        'Generate a five-minute, one-use QR image. Scan with myself.md and sign in with this same account.',
       inputSchema: z.object({}),
     },
     async () => {
@@ -59,7 +75,7 @@ function makeMcp(subject, client) {
           { type: 'image', data: png.toString('base64'), mimeType: 'image/png' },
           {
             type: 'text',
-            text: `Scan this QR with QR Connect. View it in a browser: ${url}\nPairing ID: ${pairing.id}`,
+            text: `Scan this QR with myself.md. View it in a browser: ${url}\nPairing ID: ${pairing.id}`,
           },
         ],
         structuredContent: {
@@ -128,12 +144,20 @@ async function bodyBytes(req, limit) {
 createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', publicUrl);
+    const requestOrigin =
+      publicUrls.find((origin) => new URL(origin).host === req.headers.host) ?? publicUrl;
+    const requestResource = `${requestOrigin}/mcp`;
     if (process.env.AUTH_PROXY === '1' && url.pathname.startsWith('/auth/')) {
-      proxyAuth(req, res, url, publicUrl);
+      proxyAuth(req, res, url, new URL(issuer).origin);
       return;
     }
     if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
-      json(res, 200, metadata);
+      json(res, 200, { ...metadata, resource: requestResource });
+      return;
+    }
+    if (url.pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
+      res.writeHead(302, { Location: '/dashboard', 'Cache-Control': 'no-store' });
+      res.end();
       return;
     }
     if (url.pathname === '/health') {
@@ -150,7 +174,7 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     if (url.pathname === '/config') {
-      json(res, 200, { issuer, clientId: 'qr-phone', resource });
+      json(res, 200, { issuer, clientId: 'qr-phone', resource: requestResource });
       return;
     }
     if (url.pathname === '/.well-known/apple-app-site-association') {
@@ -169,7 +193,7 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
         'Content-Security-Policy': "default-src 'none'; img-src 'self'; script-src 'unsafe-inline'",
       });
       res.end(
-        `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect your phone</title><h1>QR Connect</h1><p>Scan with your phone’s Camera or QR Connect. On your phone, tap the link below, sign in with the same account, and confirm.</p><p><a id="open-app" hidden>Open in QR Connect</a></p><img id="qr" width="320" alt="Pairing QR code"><script>const t=location.hash.slice(1);if(/^[A-Za-z0-9_-]{43}$/.test(t)){document.getElementById('qr').src='/qr/'+t;const a=document.getElementById('open-app');a.href='qrconnect://pair?url='+encodeURIComponent(location.origin+'/pair#'+t);a.hidden=false;}</script>`,
+        `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect your phone</title><h1>myself.md</h1><p>Scan with your phone’s Camera or myself.md. On your phone, tap the link below, sign in with the same account, and confirm.</p><p><a id="open-app" hidden>Open in myself.md</a></p><img id="qr" width="320" alt="Pairing QR code"><script>const t=location.hash.slice(1);if(/^[A-Za-z0-9_-]{43}$/.test(t)){document.getElementById('qr').src='/qr/'+t;const a=document.getElementById('open-app');a.href='qrconnect://pair?url='+encodeURIComponent(location.origin+'/pair#'+t);a.hidden=false;}</script>`,
       );
       return;
     }
@@ -218,18 +242,18 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
     if (!token) {
       res.setHeader(
         'WWW-Authenticate',
-        `Bearer resource_metadata="${publicUrl}/.well-known/oauth-protected-resource/mcp"`,
+        `Bearer resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource/mcp"`,
       );
       json(res, 401, { error: 'OAuth sign-in required.' });
       return;
     }
     let payload;
     try {
-      ({ payload } = await jwtVerify(token, jwks, { issuer, audience: resource }));
+      ({ payload } = await jwtVerify(token, jwks, { issuer, audience: resources }));
     } catch {
       res.setHeader(
         'WWW-Authenticate',
-        `Bearer error="invalid_token", resource_metadata="${publicUrl}/.well-known/oauth-protected-resource/mcp"`,
+        `Bearer error="invalid_token", resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource/mcp"`,
       );
       json(res, 401, { error: 'Invalid or expired access token.' });
       return;
@@ -417,5 +441,5 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
 }).listen(
   Number(process.env.PORT ?? 3000),
   process.env.HOST ?? process.env.DEV_HOST ?? '127.0.0.1',
-  () => console.log(`QR Connect: ${resource}`),
+  () => console.log(`myself.md: ${resource}`),
 );

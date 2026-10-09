@@ -40,13 +40,13 @@ Keycloak administrative paths are not exposed through the app proxy. Administer 
 
 ## Camera pairing links
 
-The existing `/pair#ticket` QR is an iOS Universal Link on the hosted Fly domain. The app handles initial-launch and running-app links using the same parser as its in-app scanner. If the phone is already connected, it offers an explicit connection switch. Sign-in and confirmation are still required; a QR never enables access itself. Safari has an **Open in QR Connect** custom-scheme fallback. MCP pairing results also include a `deepLink`.
+The existing `/pair#ticket` QR is an iOS Universal Link on the hosted Fly domain. The app handles initial-launch and running-app links using the same parser as its in-app scanner. If the phone is already connected, it offers an explicit connection switch. Sign-in and confirmation are still required; a QR never enables access itself. Safari has an **Open in myself.md** custom-scheme fallback. MCP pairing results also include a `deepLink`.
 
 The public `/.well-known/apple-app-site-association` endpoint maps only `/pair` to `IOS_APP_ID` (Apple team ID plus bundle ID). `app.json` declares the hosted associated domain; changing domains requires matching that configuration and rebuilding the app. Compose reads `IOS_APP_ID` from `.env.cloud`; Fly sets it in `deploy/fly/service.toml`. Apple caches associations, so direct opening may be delayed after deployment or affected by the user’s preference to open links in Safari. The fallback remains available. [Expo Universal Links documentation](https://docs.expo.dev/linking/ios-universal-links/).
 
 ## Current Fly.io deployment
 
-The hosted endpoint is **https://qr-connect-cloud-cody.fly.dev/mcp**, with health at `/health`. The service, private Keycloak and private PostgreSQL run in Paris (`cdg`) under `qr-connect-cloud-cody`, `qr-connect-cloud-cody-auth` and `qr-connect-cloud-cody-db`. Only the service exposes HTTPS. Separate encrypted Fly volumes hold cloud data and identity data. Each app runs one machine; this is a persistent single-instance deployment, without automatic failover.
+The primary hosted endpoint is **https://myself.md/mcp**, with health at `/health`. The existing `https://qr-connect-cloud-cody.fly.dev` origin remains available. The service, private Keycloak and private PostgreSQL run in Paris (`cdg`) under `qr-connect-cloud-cody`, `qr-connect-cloud-cody-auth` and `qr-connect-cloud-cody-db`. Only the service exposes HTTPS. Separate encrypted Fly volumes hold cloud data and identity data. Each app runs one machine; this is a persistent single-instance deployment, without automatic failover.
 
 Install and authenticate the global Fly CLI before using these commands. The checked-in `deploy/fly/*.toml` files describe these existing apps. Generated realm and secret files stay ignored under `.local/` and `.env.cloud`.
 
@@ -67,7 +67,7 @@ Pair the phone to this hosted service using the same account used by connectors.
 
 The phone discovers the OAuth issuer from the paired server's `/config`. Hosted phone sessions and MCP connectors therefore use the same cloud realm and GitHub sign-in. Development accounts belong to a separate realm; provider email addresses do not automatically merge accounts or transfer data ownership.
 
-Configure GitHub on the running cloud identity service, rather than only in the development realm. Add the hosted callback to the existing QR Connect GitHub OAuth app (or register a separate production OAuth app): `https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect/broker/github/endpoint` Put its `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` in ignored `.env.cloud`. Keep the existing development callback registered; do not enable wildcard matching. GitHub validates callback hosts against the OAuth app registration. [GitHub callback rules](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps).
+Configure GitHub on the running cloud identity service, rather than only in the development realm. Add the hosted callback to the existing myself.md GitHub OAuth app (or register a separate production OAuth app): `https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect/broker/github/endpoint` Put its `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` in ignored `.env.cloud`. Keep the existing development callback registered; do not enable wildcard matching. GitHub validates callback hosts against the OAuth app registration. [GitHub callback rules](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps).
 
 ```sh
 # Leave the private tunnel running in one terminal.
@@ -92,7 +92,7 @@ Use `https://<domain>/mcp` as the Streamable HTTP endpoint. Authentication is OA
 
 ## Account dashboard
 
-Open `https://qr-connect-cloud-cody.fly.dev/dashboard` and sign in with the same cloud account used in QR Connect. The dashboard uses a dedicated public Keycloak client, `qr-dashboard`, in the existing `qr-connect` realm. Account ownership remains the issuer plus user subject, exactly as on the phone; no email-based account matching or second data store is involved.
+Open `https://myself.md/dashboard` and sign in with the same cloud account used in myself.md. The dashboard uses a dedicated public Keycloak client, `qr-dashboard`, in the existing `qr-connect` realm. Account ownership remains the issuer plus user subject, exactly as on the phone; no email-based account matching or second data store is involved.
 
 The export library shows stored profile snapshots, date, format, size and current sharing status. Search the library and open an export to browse records in bounded pages of up to 50 records / 200 KB, including expandable original native fields. Delete removes the entire selected cloud export after confirmation, preserving phone files; a later scheduled upload can recreate it. Individual record deletion and editing are not supported. The existing 30-day retention and 256 MiB account quota apply.
 
@@ -123,3 +123,32 @@ The owner dashboard now includes an account-wide data explorer (`/dashboard?expl
 `POST /api/dashboard/explore` requires the dashboard OAuth client and applies the authenticated owner's scope before any filtering or aggregation. It decrypts existing files in memory and computes full-result facets and charts before pagination; no derived plaintext index is written. A query that would scan more than 100,000 records fails explicitly, rather than returning partial totals. Select fewer exports or profiles for larger accounts. Exact overlapping records across exports collapse by canonical content and occurrence number, preserving every origin and repeated observations within an export. Changed samples remain distinct. Original archive containers are excluded by default. Numeric aggregation requires one metric and unit; mixed results use counts. Automatic totals are restricted to known additive types; other numeric types use sample means. Sleep intervals remain individual observations. Location charts use a local coordinate plot without external tiles; point plots show a labelled deterministic sample of at most 1,000 points, rankings the top 20 groups, and interval views the first 200 intervals.
 
 Records show normalized values, units, durations, applications and coordinates where supported, plus selectable original scalar fields. Field discovery caps at 256 paths and five nested levels, with table text previews limited to 256 characters. `GET /api/dashboard/record?export=<id>&index=<index>` returns the complete unchanged source record for Summary, Metadata and Raw JSON inspection; the same owner/client checks apply. `npm run verify:explorer` covers full-result query rules, chart semantics, provenance, URL round trips, missing values and raw fidelity; `npm run verify:cloud` covers the HTTP authentication and tenant boundaries.
+
+## myself.md domain cutover
+
+`myself.md` is the primary domain for the app. DNS is hosted on Cloudflare; nic.md is the registrar and cannot edit the zone while the Cloudflare nameservers are selected. Keep those nameservers. The domain is already registered and active through 14 August 2027.
+
+The production cutover completed on 9 October 2026. The root domain serves this app, replacing the previous Worker homepage. The previous `myself-md` Worker remains intact; its root custom-domain mapping was detached. The reminder Worker domains are unchanged. Cloudflare uses Full (strict) encryption and proxies both service address records. Fly issued valid RSA and ECDSA certificates for `myself.md`.
+
+| Type  | Name              | Value                          | Proxy    |
+| ----- | ----------------- | ------------------------------ | -------- |
+| A     | @                 | `66.241.124.216`               | Proxied  |
+| AAAA  | @                 | `2a09:8280:1::1ac:e3fa:0`      | Proxied  |
+| CNAME | `_acme-challenge` | `myself.md.6kylo2n.flydns.net` | DNS only |
+| TXT   | `_fly-ownership`  | `app-6kylo2n`                  | DNS only |
+
+The deployed service and ignored `.env.cloud` use `PUBLIC_URL=https://myself.md` and `PUBLIC_URL_ALIASES=https://qr-connect-cloud-cody.fly.dev`. Both exact MCP audiences are accepted; request metadata advertises the matching allowed origin. The homepage redirects to `/dashboard`. `app.json` includes both domains for Universal Links.
+
+OAuth retains `OAUTH_ISSUER=https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect`, the private Keycloak hostname, realm, users, scopes and client IDs. Existing cloud and phone records are partitioned by verified issuer plus subject, so retaining this issuer preserves account ownership. GitHub and Apple broker callbacks retain their existing Fly URLs. The dashboard client allows the exact `/dashboard/callback` URL, web origin and `/dashboard` logout URL on both service origins, with PKCE unchanged. `SERVICE_DOMAIN` in the existing `.env.cloud` remains the Fly hostname for identity provisioning.
+
+`npm run cloud:domain:setup` adds missing MCP audiences and dashboard origins to the existing realm through the private identity tunnel. It retains existing mappings and saves the original identity configuration in ignored `.local/domain-cutover/identity-before.json`. The detached Worker mapping is saved in `.local/domain-cutover/cloudflare-domain-before.json`. To inspect the configuration without applying changes:
+
+```sh
+fly proxy 18081:8080 --app qr-connect-cloud-cody-auth
+# In another terminal; close the tunnel after inspection:
+KEYCLOAK_ADMIN_URL=http://127.0.0.1:18081/auth npm run cloud:domain:setup -- --dry-run
+```
+
+HTTPS, `/health`, `/config`, `/dashboard`, OAuth resource discovery, the protected `/mcp` response and the Apple association file were verified through Cloudflare. A real GitHub browser sign-in returned to the new dashboard and retained access to existing account exports. Apple broker configuration is preserved; a fresh Apple sign-in was not exercised during this cutover. `npm run verify:cloud` covers both audiences, allowed-host metadata, rejection of unrelated audiences and unchanged issuer-based ownership.
+
+`.env.cloud.example` uses `SERVICE_DOMAIN=myself.md` for a new deployment. Keep the existing deployment’s identity and encryption settings when maintaining this service.

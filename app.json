@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Agent Bridge",
-    "slug": "shared-js-app",
+    "name": "myself.md",
+    "slug": "myself-md",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/myself-icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myself.md",
-      "associatedDomains": ["applinks:qr-connect-cloud-cody.fly.dev"],
+      "associatedDomains": ["applinks:myself.md", "applinks:qr-connect-cloud-cody.fly.dev"],
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -25,10 +25,9 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#F7F7F4",
+        "foregroundImage": "./assets/myself-foreground.png",
+        "monochromeImage": "./assets/myself-monochrome.png"
       },
       "package": "com.codybontecou.sharedjsapp",
       "permissions": [
@@ -74,7 +73,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/myself-favicon.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -83,7 +82,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow QR Connect to scan pairing QR codes.",
+          "cameraPermission": "Allow myself.md to scan pairing QR codes.",
           "recordAudioAndroid": false
         }
       ],
@@ -101,7 +100,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Record location history only when you start tracking in QR Connect.",
+          "locationAlwaysAndWhenInUsePermission": "Record location history only when you start tracking in myself.md.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
@@ -117,6 +116,7 @@
     "scheme": ["qrconnect", "agentbridge"],
     "updates": {
       "enabled": false
-    }
+    },
+    "description": "Your data, with context. Choose what to share with your agents."
   }
 }

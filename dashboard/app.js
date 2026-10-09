@@ -131,8 +131,10 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               onClick={() => navigate('exports')}
             >
-              <IconCloud className="size-5!" />
-              <span className="text-base font-semibold">QR Connect</span>
+              <span aria-hidden="true" className="font-mono text-lg font-semibold">
+                m.
+              </span>
+              <span className="text-base font-semibold">myself.md</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -719,7 +721,7 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                     <ProfileSelection selection={profile.selection} />
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                    <p>Change selected data and device permissions in QR Connect on your phone.</p>
+                    <p>Change selected data and device permissions in myself.md on your phone.</p>
                     <p className="break-all">Profile ID: {profile.profileId}</p>
                   </div>
                 </div>
@@ -804,10 +806,12 @@ function LoginCard({ ready }) {
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <IconCloud className="size-6" />
+            <span aria-hidden="true" className="font-mono text-xl font-semibold">
+              m.
+            </span>
           </div>
-          <CardTitle className="text-2xl">Sign in to your workspace</CardTitle>
-          <CardDescription>Use the same account as QR Connect on your phone.</CardDescription>
+          <CardTitle className="text-2xl">Sign in to myself.md</CardTitle>
+          <CardDescription>Use the same account as myself.md on your phone.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {error && (

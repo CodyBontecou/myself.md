@@ -1,5 +1,5 @@
 {
-  "name": "shared-js-app",
+  "name": "myself-md",
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
@@ -72,7 +72,7 @@
     "auth:social": "node --env-file=.env scripts/setup-social.js",
     "verify:exports": "node scripts/verify-profile-exports.js && node --experimental-vm-modules scripts/verify-export-resilience.js",
     "build:android": "cd android && ./gradlew :app:assembleDebug",
-    "build:ios": "xcodebuild -workspace ios/AgentBridge.xcworkspace -scheme AgentBridge -configuration Release -destination generic/platform=iOS -allowProvisioningUpdates",
+    "build:ios": "xcodebuild -workspace ios/myselfmd.xcworkspace -scheme myselfmd -configuration Release -destination generic/platform=iOS -allowProvisioningUpdates",
     "cloud:setup": "node scripts/setup-cloud.js",
     "cloud:start": "docker compose --env-file .env.cloud -f compose.cloud.yaml up -d --build",
     "verify:cloud": "npm run dashboard:build && node scripts/verify-cloud.js && node scripts/verify-cloud-http.js",
@@ -80,6 +80,7 @@
     "cloud:fly:deploy": "fly deploy --config deploy/fly/service.toml --remote-only --ha=false --yes",
     "cloud:run": "node server/start.js",
     "cloud:auth:social": "node --env-file=.env.cloud scripts/setup-social.js --cloud",
+    "cloud:domain:setup": "node --env-file=.env.cloud scripts/setup-domain.js",
     "verify:history": "node scripts/verify-history.js && node --experimental-vm-modules scripts/verify-local-history.js",
     "verify:disconnect": "node scripts/verify-disconnect.js",
     "web": "expo start --web",

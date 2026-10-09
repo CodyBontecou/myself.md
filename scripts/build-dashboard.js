@@ -31,4 +31,5 @@ const css = spawnSync(
 );
 if (css.status !== 0) throw new Error('Dashboard stylesheet build failed.');
 copyFileSync('dashboard/index.html', 'dashboard/dist/index.html');
+copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,6 +37,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     DATA_DIR: directory,
     CLOUD_ENCRYPTION_KEY: 'a'.repeat(64),
     PUBLIC_URL: origin,
+    PUBLIC_URL_ALIASES: 'https://legacy.example',
     OAUTH_ISSUER: issuer,
     ALLOW_HTTP_DEV: '1',
     AUTH_PROXY: '0',
@@ -47,12 +48,12 @@ const child = spawn(process.execPath, ['server/index.js'], {
   stdio: 'ignore',
 });
 const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
-/** @param {string} subject @param {string} azp */
-async function token(subject, azp) {
+/** @param {string} subject @param {string} azp @param {string} [audience] */
+async function token(subject, azp, audience = `${origin}/mcp`) {
   return new SignJWT({ scope: 'qr-connect', azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(issuer)
-    .setAudience(`${origin}/mcp`)
+    .setAudience(audience)
     .setSubject(subject)
     .setExpirationTime('5m')
     .sign(privateKey);
@@ -73,6 +74,24 @@ async function request(path, bearer, method = 'GET', body) {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { status: response.status, value: await response.json() };
+}
+/** Node's fetch normalizes Host; use an actual HTTP request for virtual-host verification.
+ * @param {string} path @param {string} host @returns {Promise<Response>} */
+function fetchHost(path, host) {
+  return new Promise((resolve, reject) => {
+    const outgoing = httpRequest(new URL(path, origin), { headers: { Host: host } }, (incoming) => {
+      let body = '';
+      incoming.setEncoding('utf8');
+      incoming.on('data', (/** @type {string} */ chunk) => {
+        body += chunk;
+      });
+      incoming.on('error', reject);
+      incoming.on('end', () => resolve(new Response(body, { status: incoming.statusCode ?? 500 })));
+    });
+    outgoing.on('error', reject);
+    outgoing.setTimeout(5000, () => outgoing.destroy(new Error('Host verification timed out.')));
+    outgoing.end();
+  });
 }
 const dashboardSchema = z.object({
   exports: z.array(z.object({ id: z.string() })),
@@ -128,7 +147,43 @@ try {
   });
   const landing = await fetch(`${origin}/pair`);
   assert.equal(landing.status, 200);
-  assert.ok((await landing.text()).includes('Open in QR Connect'));
+  assert.ok((await landing.text()).includes('Open in myself.md'));
+  const home = await fetch(origin, { redirect: 'manual' });
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get('location'), '/dashboard');
+  const hosts = /** @type {[string, string][]} */ ([
+    ['legacy.example', 'https://legacy.example'],
+    ['untrusted.example', origin],
+  ]);
+  await Promise.all(
+    hosts.map(async ([host, expected]) => {
+      // Exercise actual Host routing, including rejection of host-derived metadata injection.
+      const config = await fetchHost('/config', host);
+      assert.deepEqual(await config.json(), {
+        issuer,
+        clientId: 'qr-phone',
+        resource: `${expected}/mcp`,
+      });
+      const metadata = await fetchHost('/.well-known/oauth-protected-resource/mcp', host);
+      assert.equal(
+        z.object({ resource: z.string() }).parse(await metadata.json()).resource,
+        `${expected}/mcp`,
+      );
+    }),
+  );
+  const legacyToken = await token('alice', 'qr-phone', 'https://legacy.example/mcp');
+  const legacyIdentity = await request('/api/devices', legacyToken);
+  assert.equal(legacyIdentity.status, 200);
+  assert.equal(
+    z.object({ subject: z.string() }).parse(legacyIdentity.value).subject,
+    `${issuer}|alice`,
+  );
+  const unrelatedToken = await token('alice', 'qr-phone', 'https://untrusted.example/mcp');
+  assert.equal((await request('/api/devices', unrelatedToken)).status, 401);
+  const favicon = await fetch(`${origin}/dashboard/favicon.svg`);
+  assert.equal(favicon.status, 200);
+  assert.ok(favicon.headers.get('content-type')?.startsWith('image/svg+xml'));
+  assert.ok((await favicon.text()).includes('<svg'));
   const metadata = await request('/.well-known/oauth-protected-resource/mcp', null);
   assert.equal(z.object({ resource: z.string() }).parse(metadata.value).resource, `${origin}/mcp`);
   await client.connect(

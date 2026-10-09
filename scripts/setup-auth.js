@@ -13,6 +13,7 @@ const adminPassword = randomBytes(18).toString('base64url');
 mkdirSync('.local/realm', { recursive: true });
 const realm = {
   realm: 'qr-connect',
+  displayName: 'myself.md',
   enabled: true,
   sslRequired: 'none',
   ...socialAuth,
@@ -90,7 +91,7 @@ const realm = {
     },
     {
       clientId: 'qr-dashboard',
-      name: 'QR Connect Dashboard',
+      name: 'myself.md Dashboard',
       publicClient: true,
       standardFlowEnabled: true,
       directAccessGrantsEnabled: false,

@@ -11,6 +11,7 @@ const assets = new Map([
   ['/dashboard/callback', ['index.html', 'text/html']],
   ['/dashboard/app.js', ['app.js', 'text/javascript']],
   ['/dashboard/style.css', ['style.css', 'text/css']],
+  ['/dashboard/favicon.svg', ['favicon.svg', 'image/svg+xml']],
 ]);
 /** @param {string} path @param {import('node:http').ServerResponse} res @param {string} issuer */
 export function dashboardAsset(path, res, issuer) {

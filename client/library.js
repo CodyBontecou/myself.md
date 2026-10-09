@@ -106,7 +106,7 @@ export function localPage(owner, query, token) {
         : 'Only records whose start timestamp is in the UTC interval are returned. Undated imported aggregates remain in their original archive.',
       query.source === 'imported'
         ? 'Imported history is not a live native capture. Aggregates are not sessions. Read the original archive for its capture status and query manifest; indexed rows alone cannot establish completeness.'
-        : 'Location history contains only points explicitly recorded by QR Connect; it cannot recover earlier phone history.',
+        : 'Location history contains only points explicitly recorded by myself.md; it cannot recover earlier phone history.',
     ],
   };
 }

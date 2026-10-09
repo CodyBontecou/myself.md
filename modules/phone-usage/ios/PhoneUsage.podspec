@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.summary = 'Read-only phone usage bridge'
   s.description = s.summary
   s.license = 'MIT'
-  s.author = 'QR Connect'
+  s.author = 'myself.md'
   s.homepage = 'https://github.com/expo/expo'
   s.platforms = { :ios => '16.0' }
   s.swift_version = '5.9'

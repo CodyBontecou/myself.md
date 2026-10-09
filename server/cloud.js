@@ -73,7 +73,7 @@ export function registerCloudTools(mcp, subject, client = null) {
         actor: 'agent',
         client,
         target: 'cloud',
-        destination: 'QR Connect Cloud',
+        destination: 'myself.md Cloud',
         profile: {
           id: row.profile,
           name: metadata.profile.name,

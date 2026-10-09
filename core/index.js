@@ -12,6 +12,6 @@ export function parsePairingQr(value) {
   if (value.startsWith('qrconnect://pair?url='))
     value = decodeURIComponent(value.slice('qrconnect://pair?url='.length));
   const match = /^(https?:\/\/[^/\s?#]+)\/pair#([A-Za-z0-9_-]{43})$/.exec(value);
-  if (!match?.[1] || !match[2]) throw new Error('Scan a QR Connect pairing code.');
+  if (!match?.[1] || !match[2]) throw new Error('Scan a myself.md pairing code.');
   return { server: match[1], ticket: match[2] };
 }
