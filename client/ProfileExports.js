@@ -144,7 +144,7 @@ export default function ProfileExports({ session, profile, disabled }) {
           <SectionHeader compact title="Cloud access" />
           <Row
             compact
-            title="Authorize cloud uploads (30 days)"
+            title="Authorize cloud uploads"
             disabled={disabled || busy}
             onPress={() =>
               void run(async () => {

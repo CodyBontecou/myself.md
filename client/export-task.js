@@ -104,6 +104,17 @@ let generation = 0;
 export function cancelExports() {
   generation++;
 }
+/** Wait for cancelled work to release its staging files before deleting local account data. */
+export async function stopAccountExports() {
+  cancelExports();
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    if (!running) return;
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Wait for the single active export to finish cancellation.
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error('An export is still stopping. Retry account cleanup shortly.');
+}
 /** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string)=>void} progress */
 export async function exportNow(session, profile, progress) {
   if (running) throw new Error('An export is already running.');

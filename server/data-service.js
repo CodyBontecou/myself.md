@@ -135,6 +135,17 @@ export function createDataService({
         jobs.delete(id);
       }
   }
+  /** Remove all retained account work, including requests for already disconnected phones.
+   * @param {string} subject */
+  function cancelAccount(subject) {
+    for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
+    for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
+    for (const [id, job] of jobs)
+      if (job.subject === subject) {
+        billing.release(subject, id);
+        jobs.delete(id);
+      }
+  }
   /** Blocking an agent also discards its queued and retained live requests.
    * @param {string} subject @param {string} client */
   function cancelAgent(subject, client) {
@@ -523,5 +534,5 @@ export function createDataService({
     return { ok: true };
   }
 
-  return { registerDataTools, phoneApi, cancelPhone, cancelAgent, cleanup };
+  return { registerDataTools, phoneApi, cancelPhone, cancelAgent, cancelAccount, cleanup };
 }

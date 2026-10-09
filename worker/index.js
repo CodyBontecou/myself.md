@@ -91,6 +91,15 @@ export default {
         const target = new URL(url.pathname + url.search, env.AUTH_ORIGIN);
         return await fetch(new Request(target, request), { redirect: 'manual' });
       }
+      if (url.pathname.startsWith('/api/account-deletion/') && request.method === 'GET') {
+        const ticket = url.pathname.slice('/api/account-deletion/'.length);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return json({ error: 'Invalid receipt.' }, 400);
+        const route = await findTicket(env, ticket);
+        if (typeof route?.subject !== 'string')
+          return json({ error: 'Deletion receipt expired.' }, 410);
+        const result = await env.ACCOUNTS.getByName(digest(route.subject)).deletionReceipt(ticket);
+        return result ? json(result) : json({ error: 'Deletion receipt expired.' }, 410);
+      }
       if (url.pathname === '/health') return json({ ok: true, platform: 'cloudflare' });
       if (url.pathname === '/config')
         return json({

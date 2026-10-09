@@ -1,3 +1,4 @@
+import { accountDeletionNotice } from '../core/account-deletion.js';
 import { existingCustomerGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
@@ -26,13 +27,14 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
  * @returns {import('node:http').RequestListener} */
 export function createApplication(
   config,
   {
+    accountApi,
     qrPng,
     billing,
     billingApi,
@@ -95,9 +97,53 @@ export function createApplication(
     scopes_supported: ['qr-connect'],
     bearer_methods_supported: ['header'],
   };
+  /** @param {string} subject @returns {Promise<import('../core/account-deletion.js').DeletionStatus>} */
+  async function deletionStatus(subject) {
+    return accountApi
+      ? accountApi(subject, 'status')
+      : {
+          state: /** @type {const} */ ('unavailable'),
+          subject,
+          notice: accountDeletionNotice,
+          error:
+            'Account deletion requires the hosted identity service. Contact the service operator to enable it.',
+        };
+  }
   /** @param {string} subject @param {string|null} client */
-  function makeMcp(subject, client) {
+  async function makeMcp(subject, client) {
     const mcp = new McpServer({ name: 'myself.md', version: '1.0.0' });
+    for (const name of ['get_account_deletion', 'request_account_deletion']) {
+      mcp.registerTool(
+        name,
+        {
+          description:
+            name === 'get_account_deletion'
+              ? 'Inspect account deletion status, permanent effects and retained purchase identifiers.'
+              : 'Initiate account deletion by handing off to the authenticated owner for permanent-deletion confirmation. This tool cannot confirm on the owner’s behalf. Read status to verify completion.',
+          inputSchema: z.object({}).strict(),
+        },
+        async () => {
+          const deletion = await deletionStatus(subject);
+          const result = {
+            ...deletion,
+            handoff: {
+              status: deletion.state === 'active' ? 'awaiting_user' : deletion.state,
+              url:
+                deletion.statusUrl ??
+                `${publicUrl}/delete-account?subject=${encodeURIComponent(subject)}`,
+              requiresUser: ['active', 'failed'].includes(deletion.state),
+              verificationTool: 'get_account_deletion',
+            },
+          };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            structuredContent: result,
+          };
+        },
+      );
+    }
+
+    if (!['active', 'unavailable'].includes((await deletionStatus(subject)).state)) return mcp;
     mcp.registerTool(
       'get_lifetime_access',
       {
@@ -374,6 +420,28 @@ export function createApplication(
         return;
       }
       const subject = `${accountNamespace}|${payload.sub}`;
+      if (url.pathname === '/api/account' && req.method === 'GET') {
+        json(res, 200, await deletionStatus(subject));
+        return;
+      }
+      if (url.pathname === '/api/account' && req.method === 'DELETE') {
+        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+          throw new PairingError(403, 'Account owner confirmation required.');
+        const input = z
+          .object({ confirmation: z.literal('DELETE'), subject: z.literal(subject) })
+          .strict()
+          .parse(JSON.parse((await bodyBytes(req, 4096)).toString()));
+        if (!accountApi)
+          throw new PairingError(503, 'Account deletion requires the hosted identity service.');
+        json(res, 200, await accountApi(input.subject, 'delete'));
+        return;
+      }
+      if (
+        url.pathname !== '/mcp' &&
+        !['active', 'unavailable'].includes((await deletionStatus(subject)).state)
+      )
+        throw new PairingError(410, 'This account is being deleted or has been deleted.');
+
       if (url.pathname === '/api/migration/claim' && req.method === 'POST') {
         if (payload.azp !== 'qr-dashboard' && payload.azp !== 'qr-phone')
           throw new PairingError(403, 'First-party sign-in required.');
@@ -454,6 +522,27 @@ export function createApplication(
       if (url.pathname.startsWith('/api/cloud/')) {
         if (payload.azp !== 'qr-phone')
           throw new PairingError(403, 'Cloud management requires the phone OAuth client.');
+        if (url.pathname === '/api/cloud/credential/renew' && req.method === 'POST') {
+          const input = z
+            .object({
+              deviceId: z.string().uuid(),
+              profileId: z.string().min(1).max(100),
+              token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+              expiresAt: z.number().int().positive(),
+            })
+            .parse(JSON.parse((await bodyBytes(req, 16384)).toString()));
+          ownCloudDevice(subject, input.deviceId);
+          const result = cloud.renewAuthorization(
+            subject,
+            input.deviceId,
+            input.profileId,
+            input.token,
+            input.expiresAt,
+          );
+          await registerTicket(input.token, subject, result.expiresAt + 86400000);
+          json(res, 200, result);
+          return;
+        }
         if (url.pathname === '/api/cloud/exports' && req.method === 'GET') {
           json(res, 200, cloud.list(subject));
           return;
@@ -490,7 +579,8 @@ export function createApplication(
       if (url.pathname === '/mcp') {
         if (typeof payload.azp !== 'string' || ['qr-phone', 'qr-dashboard'].includes(payload.azp))
           throw new PairingError(403, 'Agent OAuth client required.');
-        cloud.observeAgent(subject, payload.azp);
+        if (['active', 'unavailable'].includes((await deletionStatus(subject)).state))
+          cloud.observeAgent(subject, payload.azp);
         await handler(
           Object.assign(req, {
             method: req.method ?? 'GET',

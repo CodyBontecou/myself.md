@@ -68,7 +68,8 @@ export class CloudStore {
     this.db
       .prepare('DELETE FROM exports WHERE content IS NULL AND object_key IS NULL AND created<?')
       .run(Date.now() - 3600000);
-    this.db.prepare('DELETE FROM upload_keys WHERE expires<?').run(Date.now());
+    // Retain hashed approvals for authenticated renewal after inactivity.
+    // Expired credentials still fail credential(); rotation removes the old approval.
   }
   /** @param {string} subject @param {string} device @param {import('../core/profiles.js').ExportProfile} profile */
   authorize(subject, device, profile) {
@@ -87,6 +88,28 @@ export class CloudStore {
       );
     this.access(subject, device, profile, false);
     return token;
+  }
+  /** Renew an existing approval without rotating its token or changing MCP sharing.
+   * @param {string} subject @param {string} device @param {string} profile
+   * @param {string} token @param {number} expiresAt */
+  renewAuthorization(subject, device, profile, token, expiresAt) {
+    const expires = Math.min(expiresAt, Date.now() + 30 * 86400000);
+    if (!Number.isSafeInteger(expires) || expires <= Date.now())
+      throw new PairingError(401, 'Sign in again to resume cloud uploads.');
+    const result = this.db
+      .prepare(
+        'UPDATE upload_keys SET expires=MAX(expires,?) WHERE hash=? AND subject=? AND device=? AND profile=?',
+      )
+      .run(expires, createHash('sha256').update(token).digest('hex'), subject, device, profile);
+    if (!result.changes)
+      throw new PairingError(
+        403,
+        'Cloud upload approval was revoked or does not match this profile.',
+      );
+    const row = this.db
+      .prepare('SELECT expires FROM upload_keys WHERE hash=?')
+      .get(createHash('sha256').update(token).digest('hex'));
+    return { expiresAt: Number(row?.expires) };
   }
   /** @param {string} token */
   credential(token) {

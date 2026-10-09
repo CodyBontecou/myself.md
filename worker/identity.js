@@ -1,3 +1,6 @@
+import { revokeAppleToken } from '../server/apple-revocation.js';
+import { decryptOAuthToken } from 'better-auth/oauth2';
+import { PairingError } from '../server/errors.js';
 import { importPKCS8, SignJWT } from 'jose';
 import { createIdentity } from '../server/identity.js';
 import { readBytes } from './request.js';
@@ -206,4 +209,36 @@ export async function identityRequest(request, env) {
     );
   }
   return response;
+}
+
+/** Revoke Apple's stored grant before removing the identity and all cascading OAuth records.
+ * @param {Env} env @param {string} subject */
+export async function deleteIdentity(env, subject) {
+  if (env.IDENTITY_ENABLED !== '1')
+    throw new PairingError(503, 'Account deletion requires the hosted identity service.');
+  const id = subject.slice(subject.indexOf('|') + 1);
+  const auth = await identity(env);
+  const context = await auth.$context;
+  const accounts = await context.internalAdapter.findAccounts(id);
+  await accounts
+    .filter((account) => account.providerId === 'apple')
+    .reduce(async (previous, account) => {
+      await previous;
+      const stored = account.refreshToken ?? account.accessToken;
+      if (!stored)
+        throw new PairingError(
+          409,
+          'Sign in with Apple again to authorize token revocation, then retry deletion.',
+        );
+      const token = await decryptOAuthToken(stored, context);
+      const provider = context.socialProviders.find((value) => value.id === 'apple');
+      if (!provider) throw new Error('Apple provider is unavailable.');
+      await revokeAppleToken({
+        clientId: env.APPLE_AUTH_CLIENT_ID,
+        clientSecret: String(provider.options?.clientSecret),
+        token,
+        hint: account.refreshToken ? 'refresh_token' : 'access_token',
+      });
+    }, Promise.resolve());
+  await env.IDENTITY.prepare('DELETE FROM "user" WHERE id=?').bind(id).run();
 }

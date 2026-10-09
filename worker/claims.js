@@ -58,6 +58,17 @@ export class Purchase extends DurableObject {
       return failure(error);
     }
   }
+  /** Preserve one-owner purchase protection without identity or receipt data.
+   * @param {string} subject */
+  forgetAccount(subject) {
+    this.billing.db
+      .prepare("UPDATE billing_purchases SET subject='deleted',proof='' WHERE subject=?")
+      .run(subject);
+    this.billing.db
+      .prepare("UPDATE billing_grants SET subject='deleted' WHERE subject=?")
+      .run(subject);
+    this.billing.db.prepare('DELETE FROM billing_claims WHERE subject=?').run(subject);
+  }
   /** @param {string} subject @param {string} source @param {string} reference */
   importGrant(subject, source, reference) {
     this.billing.grant(subject, source, reference);

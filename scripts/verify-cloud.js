@@ -38,6 +38,44 @@ const metadata = {
 try {
   const token = store.authorize('alice', 'device', profile);
   assert.equal(store.credential(token).subject, 'alice');
+  store.access('alice', 'device', profile, true);
+  store.db.prepare('UPDATE upload_keys SET expires=?').run(Date.now() - 1);
+  assert.throws(() => store.credential(token), /expired/);
+  const expiresAt = Date.now() + 30 * 86400000;
+  assert.throws(
+    () => store.renewAuthorization('bob', 'device', profile.id, token, expiresAt),
+    /revoked or does not match/,
+  );
+  assert.throws(
+    () => store.renewAuthorization('alice', 'other', profile.id, token, expiresAt),
+    /revoked or does not match/,
+  );
+  assert.throws(
+    () => store.renewAuthorization('alice', 'device', 'other', token, expiresAt),
+    /revoked or does not match/,
+  );
+  assert.throws(
+    () => store.renewAuthorization('alice', 'device', profile.id, token, Date.now() - 1),
+    /Sign in again/,
+  );
+  assert.equal(
+    store.renewAuthorization('alice', 'device', profile.id, token, expiresAt).expiresAt,
+    expiresAt,
+  );
+  assert.equal(
+    store.renewAuthorization('alice', 'device', profile.id, token, expiresAt - 10000).expiresAt,
+    expiresAt,
+    'A stale background deadline cannot shorten foreground renewal',
+  );
+  assert.equal(store.credential(token).subject, 'alice');
+  assert.equal(store.permission('alice', 'device', profile.id).shared, true);
+  store.access('alice', 'device', profile, false);
+  const revoked = store.authorize('alice', 'device', { ...profile, id: 'rotated' });
+  store.authorize('alice', 'device', { ...profile, id: 'rotated' });
+  assert.throws(
+    () => store.renewAuthorization('alice', 'device', 'rotated', revoked, expiresAt),
+    /revoked/,
+  );
   const { id } = store.begin('alice', 'device', profile.id, metadata);
   await assert.rejects(async () => await store.page('alice', id, 0, 50));
   assert.throws(() => store.row('bob', id));

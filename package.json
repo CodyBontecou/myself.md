@@ -5,6 +5,7 @@
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",
     "@aws-sdk/client-s3": "^3.1148.0",
+    "@better-auth/oauth-provider": "^1.7.7",
     "@kingstinct/react-native-healthkit": "^16.1.0",
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.3.1",
@@ -13,6 +14,7 @@
     "@shopify/flash-list": "2.0.2",
     "@tabler/icons-react": "^3.49.0",
     "@tanstack/react-table": "^9.2.6",
+    "better-auth": "^1.7.7",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "expo": "~57.0.27",
@@ -50,9 +52,7 @@
     "react-native-screens": "~4.26.0",
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.10.1",
-    "zod": "^4.6.5",
-    "better-auth": "^1.7.7",
-    "@better-auth/oauth-provider": "^1.7.7"
+    "zod": "^4.6.5"
   },
   "scripts": {
     "start": "expo start",
@@ -87,7 +87,7 @@
     "cloud:auth:social": "node --env-file=.env.cloud scripts/setup-social.js --cloud",
     "cloud:domain:setup": "node --env-file=.env.cloud scripts/setup-domain.js",
     "verify:history": "node scripts/verify-history.js && node --experimental-vm-modules scripts/verify-local-history.js",
-    "verify:disconnect": "node scripts/verify-disconnect.js",
+    "verify:disconnect": "node scripts/verify-disconnect.js && node scripts/verify-session.js",
     "web": "expo start --web",
     "dashboard:auth": "node --env-file=.env.cloud scripts/setup-dashboard.js --cloud",
     "dashboard:build": "node scripts/build-dashboard.js",
@@ -107,7 +107,8 @@
     "verify:worker": "npm run dashboard:build && node scripts/verify-worker.js",
     "verify:identity": "npm run dashboard:build && node scripts/verify-identity.js",
     "identity:prepare": "node --env-file=.env.cloud scripts/migrate-identity.js",
-    "identity:snapshot": "node --env-file=.env.cloud scripts/snapshot-identity.js"
+    "identity:snapshot": "node --env-file=.env.cloud scripts/snapshot-identity.js",
+    "verify:account-deletion": "npm run verify:identity && node --experimental-vm-modules scripts/verify-account-deletion.js"
   },
   "private": true,
   "type": "module",

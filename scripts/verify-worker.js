@@ -242,6 +242,14 @@ try {
     .parse(
       (await request('/api/cloud/credential', alice, 'POST', { deviceId: device, profile })).value,
     ).token;
+  const renewal = {
+    deviceId: device,
+    profileId: profile.id,
+    token: uploadToken,
+    expiresAt: Date.now() + 30 * 86400000,
+  };
+  assert.equal((await request('/api/cloud/credential/renew', alice, 'POST', renewal)).status, 200);
+  assert.equal((await request('/api/cloud/credential/renew', bob, 'POST', renewal)).status, 404);
   assert.equal(
     (
       await request('/api/billing', alice, 'POST', {

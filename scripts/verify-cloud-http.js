@@ -360,6 +360,37 @@ try {
     profile,
   });
   assert.equal(credential.status, 200);
+  const renewal = {
+    deviceId,
+    profileId: profile.id,
+    token: z.object({ token: z.string() }).parse(credential.value).token,
+    expiresAt: Date.now() + 30 * 86400000,
+  };
+  assert.equal(
+    (await request('/api/cloud/credential/renew', bobToken, 'POST', renewal)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/api/cloud/credential/renew', chatToken, 'POST', renewal)).status,
+    403,
+  );
+  assert.equal(
+    (await request('/api/cloud/credential/renew', dashboardToken, 'POST', renewal)).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request('/api/cloud/credential/renew', phoneToken, 'POST', {
+        ...renewal,
+        profileId: 'wrong',
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await request('/api/cloud/credential/renew', phoneToken, 'POST', renewal)).status,
+    200,
+  );
   assert.equal(
     (await request('/api/billing', chatToken, 'POST', { action: 'reserve', id: 'denied' })).status,
     403,

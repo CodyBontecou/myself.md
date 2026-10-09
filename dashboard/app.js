@@ -44,6 +44,7 @@ import {
   useTable,
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
+import { AccountDeletion } from './account-deletion.js';
 import { MigrationClaim } from './migration-claim.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
@@ -226,6 +227,9 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
                 <DropdownMenuContent side="top" align="end" className="w-56">
                   <DropdownMenuLabel>{workspace?.account}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <a href="/delete-account">Delete account</a>
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={signOut}>
                     <IconLogout /> Sign out
                   </DropdownMenuItem>
@@ -1270,7 +1274,10 @@ function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
   const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return pathname === '/claim' ||
+  return pathname === '/delete-account' ||
+    (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
+    <AccountDeletion />
+  ) : pathname === '/claim' ||
     (['/dashboard', '/dashboard/callback'].includes(pathname) &&
       sessionStorage.getItem('myself-migration-ticket')) ? (
     <MigrationClaim />

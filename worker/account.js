@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { accountDeletionNotice } from '../core/account-deletion.js';
+import { deleteIdentity } from './identity.js';
 import { DurableObject } from 'cloudflare:workers';
 import { handleAsNodeRequest } from 'cloudflare:node';
 import { createServer } from 'node:http';
@@ -27,6 +30,10 @@ export class Account extends DurableObject {
   /** @param {DurableObjectState} ctx @param {Env} env */
   constructor(ctx, env) {
     super(ctx, env);
+    /** @type {Promise<import('../core/account-deletion.js').DeletionStatus>|null} */
+    this.deleting = null;
+    /** @type {Set<Promise<void>>} */
+    this.activeRequests = new Set();
     this.db = objectDatabase(this.ctx.storage);
     this.billing = new BillingStore(this.db);
     this.pairing = new PairingStore(this.db);
@@ -102,6 +109,10 @@ export class Account extends DurableObject {
         ALLOW_HTTP_DEV: this.env.ALLOW_HTTP_DEV,
       },
       {
+        accountApi: (subject, action) =>
+          action === 'status'
+            ? Promise.resolve(this.deletionStatus(subject))
+            : this.deleteAccount(subject),
         qrPng,
         ...billingService,
         ...this.data,
@@ -144,15 +155,158 @@ export class Account extends DurableObject {
   async ensureAccount(subject) {
     const previous = this.ctx.storage.kv.get('subject');
     if (previous && previous !== subject) throw new Error('Account partition mismatch.');
-    if (!previous) {
+    if (!previous && !this.ctx.storage.kv.get('deletion')) {
       await this.env.DIRECTORY.prepare('INSERT OR IGNORE INTO accounts VALUES(?,?)')
         .bind(subject, Date.now())
         .run();
       this.ctx.storage.kv.put('subject', subject);
     }
   }
+  /** @param {string} subject @returns {import('../core/account-deletion.js').DeletionStatus} */
+  deletionStatus(subject) {
+    const state = /** @type {import('../core/account-deletion.js').DeletionState|undefined} */ (
+      this.ctx.storage.kv.get('deletion')
+    );
+    return {
+      state: state ?? (this.env.IDENTITY_ENABLED === '1' ? 'active' : 'unavailable'),
+      subject,
+      ...(typeof this.ctx.storage.kv.get('deletionReceipt') === 'string'
+        ? {
+            statusUrl: `${this.env.PUBLIC_URL}/delete-account?receipt=${this.ctx.storage.kv.get('deletionReceipt')}`,
+          }
+        : {}),
+      notice: accountDeletionNotice,
+      error:
+        state === 'failed'
+          ? String(
+              this.ctx.storage.kv.get('deletionError') ??
+                'Deletion is incomplete. Access is revoked; retry deletion or wait for automatic retry.',
+            )
+          : null,
+    };
+  }
+  /** @param {string} subject */
+  async deleteAccount(subject) {
+    if (this.deleting) return this.deleting;
+    if (this.deletionStatus(subject).state === 'completed') return this.deletionStatus(subject);
+    if (this.env.IDENTITY_ENABLED !== '1')
+      throw new PairingError(503, 'Account deletion requires the hosted identity service.');
+    this.ctx.storage.kv.put('deletion', 'running');
+    this.deleting = this.ctx.storage
+      .setAlarm(Date.now() + 60000)
+      .then(async () => {
+        // Previously admitted uploads/purchase verification must settle before their records are erased.
+        await Promise.all(this.activeRequests);
+        return this.purgeAccount(subject);
+      })
+      .finally(() => {
+        this.deleting = null;
+      });
+    return this.deleting;
+  }
+  /** @param {string} subject */
+  async purgeAccount(subject) {
+    try {
+      this.data.cancelAccount(subject);
+      // Revoke every phone and upload grant before any asynchronous deletion work.
+      for (const device of this.pairing.devices(subject)) {
+        this.data.cancelPhone(String(device.id), subject);
+        this.pairing.disconnect(String(device.id), subject);
+      }
+      this.db.prepare('DELETE FROM upload_keys WHERE subject=?').run(subject);
+      this.db.prepare('DELETE FROM pairings WHERE subject=?').run(subject);
+      await this.env.DIRECTORY.prepare('DELETE FROM tickets WHERE subject=?').bind(subject).run();
+      let receipt = this.ctx.storage.kv.get('deletionReceipt');
+      if (typeof receipt !== 'string') {
+        receipt = randomBytes(32).toString('base64url');
+        this.ctx.storage.kv.put('deletionReceipt', receipt);
+      }
+      const receiptExpires = Date.now() + 7 * 86400000;
+      this.ctx.storage.kv.put('deletionReceiptExpires', receiptExpires);
+      await registerTicket(this.env, String(receipt), subject, null, receiptExpires);
+      await deleteIdentity(this.env, subject);
+      const purchases = this.db
+        .prepare('SELECT store,id FROM billing_purchases WHERE subject=?')
+        .all(subject);
+      const grants = this.db
+        .prepare('SELECT source,reference FROM billing_grants WHERE subject=?')
+        .all(subject);
+      await [
+        ...purchases.map((row) => `${row.store}|${row.id}`),
+        ...grants.map((row) => `${row.source}|${row.reference}`),
+      ].reduce(async (previous, key) => {
+        await previous;
+        await this.env.PURCHASES.getByName(digest(key)).forgetAccount(subject);
+      }, Promise.resolve());
+      this.db.prepare('DELETE FROM exports WHERE subject=?').run(subject);
+      // Pending PUT candidates keep their one-hour uncertainty window. Completion waits for them.
+      await this.cloud.sweepObjects();
+      if (this.db.prepare('SELECT 1 FROM object_garbage LIMIT 1').get()) {
+        await this.ctx.storage.setAlarm(Date.now() + 60000);
+        return this.deletionStatus(subject);
+      }
+      for (const table of [
+        'cloud_access',
+        'agents',
+        'activity',
+        'billing_uses',
+        'billing_purchases',
+        'billing_grants',
+        'billing_claims',
+        'phone_queue',
+      ])
+        this.db.prepare(`DELETE FROM ${table} WHERE subject=?`).run(subject);
+      await this.env.DIRECTORY.prepare('DELETE FROM accounts WHERE subject=?').bind(subject).run();
+      this.ctx.storage.kv.put('deletion', 'completed');
+      this.ctx.storage.kv.delete('deletionError');
+      this.ctx.storage.kv.delete('subject');
+      await this.ctx.storage.setAlarm(Number(this.ctx.storage.kv.get('deletionReceiptExpires')));
+      return this.deletionStatus(subject);
+    } catch (error) {
+      this.ctx.storage.kv.put(
+        'deletionError',
+        error instanceof PairingError
+          ? error.message
+          : 'Deletion could not complete. Access is revoked; cleanup will retry automatically.',
+      );
+      this.ctx.storage.kv.put('deletion', 'failed');
+      await this.ctx.storage.setAlarm(Date.now() + 60000);
+      return this.deletionStatus(subject);
+    }
+  }
+  /** A receipt exposes only cleanup state, never account identifiers or data.
+   * @param {string} receipt */
+  deletionReceipt(receipt) {
+    if (receipt !== this.ctx.storage.kv.get('deletionReceipt')) return null;
+    const current = this.deletionStatus('');
+    return { state: current.state, error: current.error };
+  }
   /** @param {Request} request */
   async fetch(request) {
+    const ownerDelete =
+      new URL(request.url).pathname === '/api/account' && request.method === 'DELETE';
+    /** @type {(()=>void)|undefined} */
+    let finish;
+    /** @type {Promise<void>} */
+    const active = new Promise((resolve) => {
+      finish = () => resolve(undefined);
+    });
+    if (!ownerDelete) this.activeRequests.add(active);
+    try {
+      return await this.serve(request);
+    } finally {
+      finish?.();
+      this.activeRequests.delete(active);
+    }
+  }
+  /** @param {Request} request */
+  async serve(request) {
+    const path = new URL(request.url).pathname;
+    if (this.ctx.storage.kv.get('deletion') && !['/api/account', '/mcp'].includes(path))
+      return Response.json(
+        { error: 'This account is being deleted or has been deleted.' },
+        { status: 410 },
+      );
     this.data.cleanup();
     if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 300000);
     const bytes = await readBytes(request, 16 * 1024 * 1024);
@@ -245,6 +399,17 @@ export class Account extends DurableObject {
     );
   }
   async alarm() {
+    const deletion = this.ctx.storage.kv.get('deletion');
+    const subject = this.ctx.storage.kv.get('subject');
+    if (deletion === 'completed') {
+      this.ctx.storage.kv.delete('deletionReceipt');
+      this.ctx.storage.kv.delete('deletionReceiptExpires');
+      return;
+    }
+    if (deletion && deletion !== 'completed' && typeof subject === 'string') {
+      await this.deleteAccount(subject);
+      return;
+    }
     this.data.cleanup();
     this.cloud.cleanup();
     try {

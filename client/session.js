@@ -4,19 +4,35 @@ import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
-/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string}} Session */
+/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string,lastActiveAt?:number}} Session */
 const key = 'qr-connect-session';
 const inactiveSessions = new WeakSet();
+const idleTimeout = 30 * 86400000;
+/** @type {Session|null} */
+let currentSession = null;
+/** @type {Map<string, Promise<import('expo-auth-session').TokenResponse>>} */
+const refreshes = new Map();
 /** @returns {Promise<Session|null>} */
 export async function loadSession() {
-  const value = await SecureStore.getItemAsync(key);
-  if (!value) return null;
-  const session = /** @type {Session} */ (JSON.parse(value));
+  const value = currentSession ? null : await SecureStore.getItemAsync(key);
+  if (!currentSession && !value) return null;
+  // Billing and foreground callers share mutations to rotating tokens and activity.
+  const session = currentSession ?? /** @type {Session} */ (JSON.parse(value ?? 'null'));
+  currentSession = session;
   const server = canonicalServiceOrigin(session.server);
   if (server !== session.server) {
     session.server = server;
     session.issuer = `${server}/auth/realms/qr-connect`;
     session.resource = `${server}/mcp`;
+    await saveSession(session);
+  }
+  if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout) {
+    await clearSession(session);
+    return null;
+  }
+  // Older installs have no activity timestamp; start their inactivity window on upgrade.
+  if (session.lastActiveAt === undefined) {
+    session.lastActiveAt = Date.now();
     await saveSession(session);
   }
   // Existing sessions retain their original device partition. Never reassign old records.
@@ -30,6 +46,8 @@ export async function loadSession() {
 /** @param {Session} [session] */
 export async function clearSession(session) {
   if (session) inactiveSessions.add(session);
+  if (currentSession) inactiveSessions.add(currentSession);
+  currentSession = null;
   saveExportContext(null);
   await SecureStore.deleteItemAsync(key);
 }
@@ -39,7 +57,20 @@ export async function saveSession(session) {
   await SecureStore.setItemAsync(key, JSON.stringify(session), {
     keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
+  currentSession = session;
   if (session.deviceId) saveExportContext(session);
+}
+/** Record actual foreground use; background exports do not extend the login window.
+ * @param {Session} session @returns {Promise<boolean>} */
+export async function resumeSession(session) {
+  if (inactiveSessions.has(session)) return false;
+  if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout) {
+    await clearSession(session);
+    return false;
+  }
+  session.lastActiveAt = Date.now();
+  await saveSession(session);
+  return true;
 }
 /** Revoke with the existing token; sign-out must not refresh or persist the old session.
  * @param {Session} session */
@@ -122,6 +153,7 @@ export async function signIn(server, provider) {
     deviceId: '',
     account: '',
     owner: '',
+    lastActiveAt: Date.now(),
   };
   const info = await api(session, '/api/devices');
   const identity = /** @type {{account:string,subject:string}} */ (info);
@@ -132,17 +164,27 @@ export async function signIn(server, provider) {
 /** @template T @param {Session} session @param {string} path @param {RequestInit} [options] @returns {Promise<T>} */
 export async function api(session, path, options) {
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
+  if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout)
+    throw new Error('Your session expired after 30 days of inactivity. Please sign in again.');
   if (session.expires < Date.now() + 30000) {
     if (!session.refreshToken) throw new Error('Please sign in again.');
-    const discovery = await AuthSession.fetchDiscoveryAsync(session.issuer);
-    const token = await AuthSession.refreshAsync(
-      {
-        clientId: 'qr-phone',
-        refreshToken: session.refreshToken,
-        extraParams: { resource: session.resource },
-      },
-      discovery,
-    );
+    const refreshKey = `${session.issuer}|${session.resource}|${session.refreshToken}`;
+    let pending = refreshes.get(refreshKey);
+    if (!pending) {
+      pending = (async () => {
+        const discovery = await AuthSession.fetchDiscoveryAsync(session.issuer);
+        return AuthSession.refreshAsync(
+          {
+            clientId: 'qr-phone',
+            refreshToken: session.refreshToken,
+            extraParams: { resource: session.resource },
+          },
+          discovery,
+        );
+      })().finally(() => refreshes.delete(refreshKey));
+      refreshes.set(refreshKey, pending);
+    }
+    const token = await pending;
     if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
     session.accessToken = token.accessToken;
     session.refreshToken = token.refreshToken ?? session.refreshToken;

@@ -1,3 +1,4 @@
+import { parseProfile } from '../core/profiles.js';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, openSync, closeSync } from 'node:fs';
@@ -454,6 +455,165 @@ try {
     body: JSON.stringify({ redirect_uris: ['https://untrusted.example/callback'] }),
   });
   assert.equal(unsupported.status, 400);
+  // Deletion runs through the real hosted HTTP and MCP adapters, using only fixture accounts.
+  assert.equal((await fetch(`${origin}/delete-account`)).status, 200);
+  const handoff = await client.callTool({ name: 'request_account_deletion', arguments: {} });
+  assert.equal(handoff.isError, undefined);
+  const subject = 'https://old.example/realm|original-user-id';
+  const authHeaders = {
+    Authorization: `Bearer ${tokens.access_token}`,
+    'Content-Type': 'application/json',
+  };
+  async function ownerRequest(
+    /** @type {string} */ path,
+    /** @type {string} */ method = 'GET',
+    /** @type {unknown} */ body = undefined,
+  ) {
+    return fetch(origin + path, {
+      method,
+      headers: authHeaders,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+  const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
+  const pairingUrl = z
+    .object({ pairingUrl: z.string() })
+    .parse(pairing.structuredContent).pairingUrl;
+  const deviceResponse = await ownerRequest('/api/claim', 'POST', {
+    ticket: new URL(pairingUrl).hash.slice(1),
+    name: 'Deletion fixture phone',
+  });
+  assert.equal(deviceResponse.status, 200, await deviceResponse.clone().text());
+  const deviceId = z.object({ id: z.string() }).parse(await deviceResponse.json()).id;
+  const profile = {
+    ...parseProfile({
+      schema: 'myself.md.profile.v1',
+      name: 'Deletion fixture',
+      selection: { health: ['native:sleep'], time: [], location: [] },
+    }),
+    id: 'deletion-fixture',
+  };
+  const credential = await ownerRequest('/api/cloud/credential', 'POST', { deviceId, profile });
+  assert.equal(credential.status, 200);
+  const upload = z.object({ token: z.string() }).parse(await credential.json()).token;
+  assert.equal(
+    (
+      await ownerRequest('/api/billing', 'POST', {
+        action: 'reserve',
+        id: 'delete-export',
+        scope: { profileId: profile.id, days: ['2026-10-08'], formats: ['jsonl'] },
+      })
+    ).status,
+    200,
+  );
+  const uploadResponse = await fetch(`${origin}/api/cloud/uploads`, {
+    method: 'POST',
+    headers: { Authorization: `Upload ${upload}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile,
+      day: '2026-10-08',
+      format: 'jsonl',
+      manifest: { profileId: profile.id, recordCount: 1, billingOperationId: 'delete-export' },
+    }),
+  });
+  assert.equal(uploadResponse.status, 200, await uploadResponse.clone().text());
+  const exportId = z.object({ id: z.string() }).parse(await uploadResponse.json()).id;
+  assert.equal(
+    (
+      await fetch(`${origin}/api/cloud/uploads/${exportId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Upload ${upload}` },
+        body:
+          JSON.stringify({
+            domain: 'health',
+            type: 'sleep',
+            source: 'healthkit',
+            start: null,
+            end: null,
+            native: { synthetic: true },
+          }) + '\n',
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await fetch(`${origin}/api/account`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${mcpTokens.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ subject, confirmation: 'DELETE' }),
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'delete' })).status,
+    400,
+  );
+  assert.equal(
+    (
+      await ownerRequest('/api/account', 'DELETE', {
+        subject: 'other-account',
+        confirmation: 'DELETE',
+      })
+    ).status,
+    400,
+  );
+  const removed = await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' });
+  assert.equal(removed.status, 200, await removed.clone().text());
+  const deletion = z
+    .object({ state: z.literal('completed'), statusUrl: z.string() })
+    .parse(await removed.json());
+  assert.equal((await ownerRequest('/api/devices')).status, 410);
+  assert.equal(
+    (await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' })).status,
+    200,
+  );
+  assert.equal((await fetch(`${origin}/qr/${new URL(pairingUrl).hash.slice(1)}`)).status, 410);
+  assert.equal(
+    (
+      await fetch(`${origin}/api/cloud/uploads`, {
+        method: 'POST',
+        headers: { Authorization: `Upload ${upload}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+    ).status,
+    410,
+  );
+  const receipt = new URL(deletion.statusUrl).searchParams.get('receipt');
+  const receiptResponse = await fetch(`${origin}/api/account-deletion/${receipt}`);
+  assert.deepEqual(await receiptResponse.json(), { state: 'completed', error: null });
+  assert.equal(
+    (await fetch(`${origin}/api/account-deletion/${randomBytes(32).toString('base64url')}`)).status,
+    410,
+  );
+  const deletionTool = await client.callTool({ name: 'get_account_deletion', arguments: {} });
+  assert.equal(
+    z.object({ state: z.string() }).parse(deletionTool.structuredContent).state,
+    'completed',
+  );
+  assert.equal(
+    (
+      await post('/oauth2/token', {
+        grant_type: 'refresh_token',
+        client_id: 'qr-mcp',
+        refresh_token: mcpTokens.refresh_token,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await authorize('qr-phone', true)).response.headers
+      .get('location')
+      ?.startsWith(origin + '/login'),
+    true,
+  );
+  console.log(
+    'PASS account deletion: owner confirmation, agent handoff, R2 cleanup, stale-token denial, credential revocation, receipt isolation, identity/session/refresh removal and safe retries.',
+  );
   console.log(
     'PASS Cloudflare identity: Apple/GitHub callback URLs, signed login state, preserved subjects, native PKCE, code replay denial, refresh isolation, consent, MCP and first-party authorization.',
   );

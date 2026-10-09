@@ -1,15 +1,35 @@
+import {
+  deleteLocalAccount,
+  queueAccountCleanup,
+  pendingAccountCleanup,
+  completeAccountCleanup,
+} from './account-deletion.js';
 import { syncBilling, clearAccountAllowance } from './billing.js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Platform } from 'react-native';
+import { Alert, AppState, Keyboard, Linking, Platform } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { PhoneDataProvider } from './DataPanel.js';
-import { reconcileExports, cancelExports, runScheduledExports } from './export-task.js';
+import {
+  reconcileExports,
+  cancelExports,
+  stopAccountExports,
+  runScheduledExports,
+} from './export-task.js';
 import { stopTracking } from './location-task.js';
 import { saveExportContext } from './export-context.js';
+import { renewCloudAuthorizations } from './destinations.js';
 import { profileFromLink } from '../core/profiles.js';
 import { parsePairingQr } from '../core/index.js';
-import { api, clearSession, loadSession, saveSession, signIn, revokeDevice } from './session.js';
+import {
+  api,
+  clearSession,
+  loadSession,
+  saveSession,
+  signIn,
+  revokeDevice,
+  resumeSession,
+} from './session.js';
 const PhoneContext = createContext(/** @type {ReturnType<typeof usePhoneState>|null} */ (null));
 export function usePhone() {
   const value = useContext(PhoneContext);
@@ -34,7 +54,7 @@ export default function PhoneProvider({ children }) {
   return (
     <PhoneContext.Provider value={value}>
       <PhoneDataProvider
-        key={dataSession.deviceId}
+        key={`${dataSession.deviceId}:${value.accountRevision}`}
         session={dataSession}
         incoming={value.incoming}
         onDismiss={value.dismissIncoming}
@@ -53,6 +73,8 @@ function usePhoneState() {
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [accountRevision, setAccountRevision] = useState(0);
+  const [deletionStatusUrl, setDeletionStatusUrl] = useState('');
   const [link, setLink] = useState('');
   const locked = useRef(false);
   const [incoming, setIncoming] = useState(
@@ -86,7 +108,21 @@ function usePhoneState() {
   }, []);
   useEffect(() => {
     loadSession()
-      .then(setSession)
+      .then(async (loaded) => {
+        const pending = pendingAccountCleanup();
+        if (pending) {
+          saveExportContext(null);
+          await stopAccountExports();
+          await stopTracking();
+          await deleteLocalAccount(pending);
+          await clearSession(loaded ?? undefined);
+          clearAccountAllowance();
+          completeAccountCleanup();
+          setSession(null);
+          setAccountRevision((value) => value + 1);
+        } else setSession(loaded);
+        return undefined;
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setReady(true));
   }, []);
@@ -101,6 +137,30 @@ function usePhoneState() {
     const timer = setInterval(tick, 30000);
     return () => clearInterval(timer);
   }, [session, ready]);
+  useEffect(() => {
+    if (!session) return;
+    const active = () => {
+      if (AppState.currentState !== 'active') return;
+      void resumeSession(session)
+        .then((valid) => {
+          if (!valid) {
+            cancelExports();
+            clearAccountAllowance();
+            setSession(null);
+            setError('Your session expired after 30 days of inactivity. Please sign in again.');
+          }
+          return valid ? renewCloudAuthorizations(session) : undefined;
+        })
+        .catch((e) => setError(String(e)));
+    };
+    active();
+    const listener = AppState.addEventListener('change', active);
+    const timer = setInterval(active, 60000);
+    return () => {
+      listener.remove();
+      clearInterval(timer);
+    };
+  }, [session]);
   /** @param {string} value */
   function scan(value) {
     if (locked.current) return;
@@ -181,6 +241,8 @@ function usePhoneState() {
   }
   const connected = Boolean(session?.deviceId);
   return {
+    accountRevision,
+    deletionStatusUrl,
     incoming,
     dismissIncoming: () => setIncoming(null),
     session,
@@ -196,6 +258,36 @@ function usePhoneState() {
     confirm,
     refresh,
     disconnect,
+    deleteAccount: async () => {
+      if (!session?.owner) throw new Error('Sign in to delete your account.');
+      const result = /** @type {import('../core/account-deletion.js').DeletionStatus} */ (
+        await api(session, '/api/account', {
+          method: 'DELETE',
+          body: JSON.stringify({ confirmation: 'DELETE', subject: session.owner }),
+        })
+      );
+      if (result.state === 'unavailable' || result.state === 'active')
+        throw new Error(result.error ?? 'Deletion could not start.');
+      setDeletionStatusUrl(result.statusUrl ?? '');
+      queueAccountCleanup(session);
+      saveExportContext(null);
+      await stopAccountExports();
+      await stopTracking();
+      await deleteLocalAccount(session);
+      await clearSession(session);
+      completeAccountCleanup();
+      setSession(null);
+      setAccountRevision((value) => value + 1);
+      clearAccountAllowance();
+      reset();
+      Alert.alert(
+        result.state === 'completed' ? 'Account deleted' : 'Account deletion started',
+        result.state === 'completed'
+          ? 'Your account and cloud data were deleted.'
+          : (result.error ??
+              'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.'),
+      );
+    },
     run,
     reset,
     changeAccount: () => setSession(null),

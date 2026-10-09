@@ -12,6 +12,7 @@ export const assets = new Map([
         [`/datasets/${dataset}/`, ['index.html', 'text/html']],
       ]),
   ),
+  ['/delete-account', ['index.html', 'text/html']],
   ['/claim', ['index.html', 'text/html']],
   ['/login', ['index.html', 'text/html']],
   ['/login/', ['index.html', 'text/html']],

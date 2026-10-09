@@ -19,7 +19,7 @@ export default function SettingsScreen() {
         />
         <Row
           title="Your myself.md account"
-          subtitle="Sign in to retrieve complimentary lifetime access"
+          subtitle="Sign in, lifetime access, or delete your account"
           onPress={() => router.push('/account')}
         />
         <Row

@@ -16,6 +16,8 @@ const realm = {
   displayName: 'myself.md',
   enabled: true,
   sslRequired: 'none',
+  offlineSessionIdleTimeout: 30 * 86400,
+  offlineSessionMaxLifespanEnabled: false,
   ...socialAuth,
   defaultDefaultClientScopes: ['profile', 'qr-connect'],
   clientProfiles: {
@@ -87,6 +89,7 @@ const realm = {
       directAccessGrantsEnabled: false,
       redirectUris: ['qrconnect://oauth'],
       defaultClientScopes: ['profile', 'qr-connect'],
+      optionalClientScopes: ['offline_access'],
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
     {
@@ -98,6 +101,7 @@ const realm = {
       redirectUris: [`${origin}/dashboard/callback`],
       webOrigins: [origin],
       defaultClientScopes: ['profile', 'qr-connect'],
+      optionalClientScopes: ['offline_access'],
       attributes: {
         'pkce.code.challenge.method': 'S256',
         'post.logout.redirect.uris': `${origin}/dashboard`,
@@ -110,6 +114,7 @@ const realm = {
       directAccessGrantsEnabled: false,
       redirectUris: ['http://localhost:8765/callback'],
       defaultClientScopes: ['profile', 'qr-connect'],
+      optionalClientScopes: ['offline_access'],
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
   ],
