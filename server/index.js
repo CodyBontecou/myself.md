@@ -1,4 +1,5 @@
 import { billing, billingApi } from './billing.js';
+import { verifyMigrationPurchase } from './migration-purchases.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
@@ -160,6 +161,15 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       json(res, 200, { ...metadata, resource: requestResource });
       return;
     }
+    if (url.pathname === '/api/migration/proof' && req.method === 'POST') {
+      const verified = await verifyMigrationPurchase(
+        JSON.parse((await bodyBytes(req, 40000)).toString()),
+      );
+      const ticket = billing.createClaim(verified);
+      res.setHeader('Cache-Control', 'no-store');
+      json(res, 200, { claimUrl: `${requestOrigin}/claim#${ticket}` });
+      return;
+    }
     if (url.pathname === '/health') {
       json(res, 200, { ok: true });
       return;
@@ -292,6 +302,15 @@ createServer({ requestTimeout: 60000, headersTimeout: 15000 }, async (req, res) 
       return;
     }
     const subject = `${accountNamespace}|${payload.sub}`;
+    if (url.pathname === '/api/migration/claim' && req.method === 'POST') {
+      if (payload.azp !== 'qr-dashboard' && payload.azp !== 'qr-phone')
+        throw new PairingError(403, 'First-party sign-in required.');
+      const input = z
+        .object({ ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
+        .parse(JSON.parse((await bodyBytes(req, 1024)).toString()));
+      json(res, 200, billing.claim(subject, input.ticket));
+      return;
+    }
     if (url.pathname === '/api/billing' && req.method === 'POST') {
       if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
       json(

@@ -31,6 +31,10 @@ billingFixture.unlock(`${accountNamespace}|alice`, {
   id: 'http-fixture-paid',
   proof: 'fixture-only',
 });
+const migrationTicket = billingFixture.createClaim({
+  source: 'iso.me:ios:iap',
+  reference: 'migration-fixture',
+});
 billingFixture.db.close();
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
@@ -120,6 +124,28 @@ try {
     // oxlint-disable-next-line eslint/no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  assert.equal((await fetch(`${origin}/claim`)).status, 200);
+  assert.equal(
+    (await request('/api/migration/claim', null, 'POST', { ticket: migrationTicket })).status,
+    401,
+  );
+  assert.equal(
+    (await request('/api/migration/claim', chatToken, 'POST', { ticket: migrationTicket })).status,
+    403,
+  );
+  assert.equal(
+    (await request('/api/migration/claim', bobDashboardToken, 'POST', { ticket: migrationTicket }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request('/api/migration/claim', dashboardToken, 'POST', { ticket: migrationTicket }))
+      .status,
+    409,
+  );
+  const migrated = await request('/api/billing', bobToken, 'POST', { action: 'sync' });
+  assert.equal(migrated.status, 200);
+  assert.equal(z.object({ unlocked: z.boolean() }).parse(migrated.value).unlocked, true);
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
   const dashboardPage = await fetch(`${origin}/dashboard`);
   assert.equal(dashboardPage.status, 200);
@@ -558,6 +584,88 @@ try {
   assert.equal((await request('/api/history', dashboardToken, 'POST', syncBody)).status, 403);
   assert.equal((await request('/api/history', bobToken, 'POST', syncBody)).status, 404);
   assert.equal((await request('/api/history', phoneToken, 'POST', syncBody)).status, 200);
+  const exportHistory = await client.callTool({
+    name: 'list_phone_export_history',
+    arguments: { deviceId },
+  });
+  assert.ok(!exportHistory.isError);
+  const agentHistory = z
+    .object({ events: z.array(z.unknown()), hasMore: z.boolean() })
+    .parse(exportHistory.structuredContent);
+  assert.ok(agentHistory.events.map(parseHistoryEvent).some((event) => event.id === synced.id));
+  assert.ok(!JSON.stringify(exportHistory).includes('file:///private'));
+  const diagnosis = await client.callTool({
+    name: 'diagnose_phone_export',
+    arguments: { deviceId, eventId: synced.id },
+  });
+  assert.ok(!diagnosis.isError);
+  const report = z
+    .object({
+      diagnostics: z.object({
+        outcome: z.string(),
+        actions: z.array(z.object({ deepLink: z.string() })),
+      }),
+    })
+    .parse(diagnosis.structuredContent);
+  assert.equal(report.diagnostics.outcome, 'partial');
+  assert.ok(
+    report.diagnostics.actions.some(
+      (action) => action.deepLink === 'qrconnect://profiles/synthetic',
+    ),
+  );
+  assert.ok(
+    (
+      await client.callTool({
+        name: 'diagnose_phone_export',
+        arguments: { deviceId, eventId: requestId },
+      })
+    ).isError,
+  );
+  const secondPairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
+  const secondUrl = z
+    .object({ pairingUrl: z.string() })
+    .parse(secondPairing.structuredContent).pairingUrl;
+  const secondDevice = z.object({ id: z.string() }).parse(
+    (
+      await request('/api/claim', phoneToken, 'POST', {
+        ticket: new URL(secondUrl).hash.slice(1),
+        name: 'Other phone',
+      })
+    ).value,
+  ).id;
+  assert.ok(
+    (
+      await client.callTool({
+        name: 'diagnose_phone_export',
+        arguments: { deviceId: secondDevice, eventId: synced.id },
+      })
+    ).isError,
+  );
+  assert.equal((await request(`/api/devices/${secondDevice}`, phoneToken, 'DELETE')).status, 200);
+  const otherAgent = new Client({ name: 'other-account-diagnostics', version: '1' });
+  try {
+    await otherAgent.connect(
+      new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
+        requestInit: {
+          headers: { Authorization: `Bearer ${await token('bob', 'diagnostics-chat')}` },
+        },
+      }),
+    );
+    assert.ok(
+      (await otherAgent.callTool({ name: 'list_phone_export_history', arguments: { deviceId } }))
+        .isError,
+    );
+    assert.ok(
+      (
+        await otherAgent.callTool({
+          name: 'diagnose_phone_export',
+          arguments: { deviceId, eventId: synced.id },
+        })
+      ).isError,
+    );
+  } finally {
+    await otherAgent.close();
+  }
   assert.equal(
     (
       await request('/api/history', phoneToken, 'POST', {

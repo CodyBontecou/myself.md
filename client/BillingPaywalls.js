@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, AppState, Platform } from 'react-native';
-import { router } from 'expo-router';
+import { router, useRootNavigationState, usePathname } from 'expo-router';
+import { useOnboarding } from './onboarding.js';
 import {
   allowance,
   subscribeBilling,
@@ -18,6 +19,9 @@ export function useBilling() {
 }
 export default function BillingPaywalls() {
   const current = useBilling();
+  const navigation = useRootNavigationState();
+  const pathname = usePathname();
+  const { complete } = useOnboarding();
   const [active, setActive] = useState(AppState.currentState === 'active');
   useEffect(() => {
     const listener = AppState.addEventListener('change', (state) => setActive(state === 'active'));
@@ -49,7 +53,17 @@ export default function BillingPaywalls() {
       .catch(() => {});
   }, [active]);
   useEffect(() => {
-    if (!active || current.unlocked) return;
+    // Wait for the entry redirect before presenting a milestone modal.
+    if (
+      !active ||
+      !complete ||
+      !navigation?.key ||
+      pathname === '/' ||
+      pathname === '/account' ||
+      pathname.startsWith('/onboarding') ||
+      current.unlocked
+    )
+      return;
     const milestone = current.used >= 5 ? 5 : current.used >= 2 ? 2 : null;
     const blocked = takeBlockedPaywall(current.promptVersion);
     if (blocked || (milestone && !paywallSeen(milestone))) {
@@ -57,8 +71,16 @@ export default function BillingPaywalls() {
         markPaywallSeen(milestone);
         if (milestone === 5) markPaywallSeen(2);
       }
-      router.push('/unlock');
+      if (pathname !== '/unlock') router.push('/unlock');
     }
-  }, [active, current.used, current.unlocked, current.promptVersion]);
+  }, [
+    active,
+    complete,
+    navigation?.key,
+    pathname,
+    current.used,
+    current.unlocked,
+    current.promptVersion,
+  ]);
   return null;
 }

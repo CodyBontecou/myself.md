@@ -80,6 +80,7 @@ const session =
 await session.initializeSession();
 /** @param {'apple'|'github'} provider */
 async function verifyProvider(provider) {
+  const expectedReturn = location.pathname === '/claim' ? '/claim' : '/dashboard';
   await session.signIn(provider);
   assert.equal(destination.searchParams.get('kc_idp_hint'), provider);
   assert.equal(destination.searchParams.get('code_challenge_method'), 'S256');
@@ -88,6 +89,7 @@ async function verifyProvider(provider) {
   location.search = `?code=fixture&state=${state}`;
   assert.equal(await session.initializeSession(), true);
   assert.equal(session.hasSession(), true);
+  if (expectedReturn === '/claim') assert.equal(returnedTo, '/claim');
   // A callback cannot reuse a consumed login attempt.
   await assert.rejects(session.initializeSession(), /could not be verified/);
   location.pathname = '/dashboard';
@@ -99,11 +101,15 @@ location.search = '';
 await verifyProvider('github');
 assert.equal(returnedTo, '/dashboard');
 assert.equal(exchangeCount, 3);
+location.pathname = '/claim';
+location.search = '';
+await verifyProvider('apple');
+assert.equal(exchangeCount, 4);
 await session.signIn('github');
 location.pathname = '/dashboard/callback';
 location.search = '?code=fixture&state=wrong';
 await assert.rejects(session.initializeSession(), /could not be verified/);
-assert.equal(exchangeCount, 3);
+assert.equal(exchangeCount, 4);
 console.log(
   'Dashboard OAuth: Apple/GitHub redirects, PKCE exchange, callback state and single-use attempts passed.',
 );

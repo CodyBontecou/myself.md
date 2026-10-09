@@ -5,6 +5,7 @@ RUN npm ci --ignore-scripts
 COPY jsconfig.json ./
 COPY core ./core
 COPY dashboard ./dashboard
+COPY client/health-types.js ./client/health-types.js
 COPY scripts/build-dashboard.js ./scripts/build-dashboard.js
 RUN npm run dashboard:build
 

@@ -5,6 +5,7 @@ import { devices, PairingError } from './store.js';
 import { parseProfile, profileLink } from '../core/profiles.js';
 import { history } from './cloud.js';
 import { domains, exportPage } from '../core/data.js';
+import { exportDiagnostics } from '../core/diagnostics.js';
 const ttl = 300000;
 const domainSchema = z.enum(domains);
 const querySchema = z
@@ -144,6 +145,53 @@ const content = (value) => ({
 });
 /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
 export function registerDataTools(mcp, subject, client = null) {
+  mcp.registerTool(
+    'list_phone_export_history',
+    {
+      description:
+        'List saved phone export and agent access metadata for an owned phone, newest first, in pages of 50. Includes failed, partial and interrupted exports. Open myself.md to sync recent phone history; offline results may be stale. No data records or local file paths are returned.',
+      inputSchema: z.object({
+        deviceId: z.string().uuid(),
+        offset: z.number().int().min(0).default(0),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ deviceId, offset }) => {
+      own(deviceId, subject);
+      return content(history.list(subject, deviceId, offset));
+    },
+  );
+  mcp.registerTool(
+    'diagnose_phone_export',
+    {
+      description:
+        'Inspect one saved export failure, partial result or interruption, compare its snapshot with the latest phone configuration, and return deep links to review the existing profile and source permissions on the phone. Start with list_phone_export_history. Current configuration is evidence, not a confirmed cause. Links navigate only; the user reviews and saves fixes in myself.md. Use create_phone_export_profile to propose replacement configuration for review.',
+      inputSchema: z.object({ deviceId: z.string().uuid(), eventId: z.string().min(1).max(2000) }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ deviceId, eventId }) => {
+      own(deviceId, subject);
+      const stored = history.get(subject, eventId);
+      if (!stored || stored.device !== deviceId || stored.event.kind !== 'export')
+        throw new PairingError(404, 'Phone export history not found.');
+      const phone = phones.get(deviceId);
+      const profile = phone?.catalog.profiles.find((p) => p.id === stored.event.profile.id);
+      return content({
+        deviceId,
+        online: Boolean(phone && phone.seen > Date.now() - 15000),
+        configurationLastSeen: phone?.seen ?? null,
+        event: stored.event,
+        currentProfile: profile
+          ? { ...profile, export: { ...profile.export, httpUrl: undefined } }
+          : null,
+        diagnostics: exportDiagnostics(
+          stored.event,
+          phone ? (profile ?? null) : undefined,
+          phone?.catalog.domains ?? [],
+        ),
+      });
+    },
+  );
   mcp.registerTool(
     'create_phone_export_profile',
     {

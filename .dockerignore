@@ -10,3 +10,5 @@
 !dashboard/**
 !scripts/
 !scripts/build-dashboard.js
+!client/
+!client/health-types.js

@@ -47,8 +47,9 @@ export function acceptAllowance(value) {
   notify();
 }
 /** @param {boolean} value */
-export function setNativeUnlocked(value) {
+function setNativeUnlocked(value) {
   nativeUnlocked = value;
+  db.runSync('INSERT OR REPLACE INTO billing_cache VALUES (2,?)', String(value));
   notify();
 }
 /** @param {number} version */
@@ -61,7 +62,7 @@ export function takeBlockedPaywall(version) {
 /** @param {import('./export-context.js').ExportContext} context */
 async function billingSession(context) {
   const session = await loadSession();
-  if (context.deviceId === 'local-device') return null;
+  if (context.deviceId === 'local-device') return session?.owner ? session : null;
   if (!session || session.deviceId !== context.deviceId || session.owner !== context.owner)
     throw new Error('Sign in to check your shared export allowance.');
   return session;
@@ -70,7 +71,7 @@ async function billingSession(context) {
 /** @param {import('./session.js').Session} session @param {string} action @param {string} [id] @param {{store:'ios'|'android',proof:string}} [purchase] @param {ExportScope} [scope] */
 async function send(session, action, id, purchase, scope) {
   const offlineUses = /** @type {{id:string}[]} */ (
-    db.getAllSync("SELECT id FROM export_allowance WHERE state='complete' AND offline=1 LIMIT 5")
+    db.getAllSync("SELECT id FROM export_allowance WHERE state='complete' LIMIT 5")
   ).map((row) => row.id);
   const result = /** @type {import('../core/billing.js').ExportAllowance} */ (
     await api(session, '/api/billing', {
@@ -84,7 +85,10 @@ async function send(session, action, id, purchase, scope) {
 }
 /** @param {import('./session.js').Session|null} session */
 export async function syncBilling(session) {
-  if (!session?.deviceId) return;
+  if (!session?.owner) {
+    clearAccountAllowance();
+    return;
+  }
   const storedProof = await SecureStore.getItemAsync('lifetime-purchase-proof');
   if (storedProof) await send(session, 'purchase', undefined, JSON.parse(storedProof));
   else await send(session, 'sync');
@@ -95,7 +99,7 @@ export async function savePurchase(proof) {
     keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
   const session = await loadSession();
-  if (session?.deviceId) await send(session, 'purchase', undefined, proof);
+  if (session?.owner) await send(session, 'purchase', undefined, proof);
   setNativeUnlocked(true);
 }
 /** @param {import('./export-context.js').ExportContext} context @param {string} id @param {ExportScope} [scope] */
@@ -150,4 +154,20 @@ export function paywallSeen(milestone) {
   return Boolean(
     db.getFirstSync('SELECT milestone FROM billing_notices WHERE milestone=?', milestone),
   );
+}
+
+export async function clearNativePurchase() {
+  const proof = await SecureStore.getItemAsync('lifetime-purchase-proof');
+  if (proof) {
+    await SecureStore.deleteItemAsync('lifetime-purchase-proof');
+    acceptAllowance({ ...remote, unlocked: Boolean(remote.complimentary) });
+  }
+  setNativeUnlocked(false);
+}
+
+/** Drop account access on sign-out; an independent native purchase remains valid. */
+export function clearAccountAllowance() {
+  remote = exportAllowance(0, 0, false);
+  db.runSync('DELETE FROM billing_cache WHERE id=1');
+  notify();
 }

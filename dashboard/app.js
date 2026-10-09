@@ -44,6 +44,7 @@ import {
   useTable,
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
+import { MigrationClaim } from './migration-claim.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
 import { Explorer } from './explorer.js';
@@ -1269,6 +1270,14 @@ function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
   const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return dataset ? <DatasetDocumentation dataset={dataset} /> : <App />;
+  return pathname === '/claim' ||
+    (['/dashboard', '/dashboard/callback'].includes(pathname) &&
+      sessionStorage.getItem('myself-migration-ticket')) ? (
+    <MigrationClaim />
+  ) : dataset ? (
+    <DatasetDocumentation dataset={dataset} />
+  ) : (
+    <App />
+  );
 }
 createRoot(root).render(<Page />);

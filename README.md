@@ -134,6 +134,8 @@ Tools:
 - `list_connected_phones`: shows your account's confirmed devices.
 - `disconnect_phone`: removes a device from your account and cancels retained requests.
 - `get_phone_data_catalog`: discovers readable types, grants, warnings, and online status.
+- `list_phone_export_history`: lists saved export and access metadata for an owned phone, including failures and partial exports, with pages of 50.
+- `diagnose_phone_export`: returns a saved export's outcome, error, warnings, current profile comparison, and deep links to the existing profile, activity details, and source permissions.
 - `query_phone_data`: queues a read/export using the active profile ID and a type enabled by both the profile and domain grant.
 - `get_phone_request`: retrieves the queued, running, complete, or failed response.
 - `create_phone_export_profile`: validates a generated profile, returns a deep link, and optionally queues delivery to an owned phone for review.
@@ -191,6 +193,10 @@ Authorization code with PKCE runs in the system browser. The API verifies the Ke
 Disconnect clears the phone’s saved session and stops scheduled exports before attempting native location shutdown and remote device revocation. The scanner remains available when the old server is offline, its token has expired, or a connection check is pending. Remote revocation times out after ten seconds; a cleanup failure is reported without restoring the old session. Local records and files remain in their original account partition. Stored-cloud sharing is a separate permission. Run `npm run verify:disconnect` for the failure and delayed-refresh regressions.
 
 This connection establishes an account/device association. It does not implement remote phone control or push delivery. Static checks cannot prove OAuth interoperability, camera recognition, token refresh, or account isolation; verify those at the runtime boundary when changing them.
+
+For agent-assisted export debugging, pair the phone with the same MCP account and keep myself.md open. Export history syncs immediately and every 30 seconds while the app is in the foreground, without opening History. Ask the agent to list connected phones, call `list_phone_export_history`, then call `diagnose_phone_export` with the selected `deviceId` and `eventId`. Saved metadata remains available when the phone is offline; the returned online status and configuration timestamp indicate whether the current profile evidence is fresh. History keeps its existing 90-day retention. A cable alone does not pair a phone or provide USB transport to this HTTP MCP server.
+
+The diagnostic links use the installed `qrconnect` scheme and open the existing profile editor entry point, activity detail, or data-source permission screen. Review and save configuration changes on that phone, then retry from the profile. Links navigate; they do not change settings or grant OS permissions. `create_phone_export_profile` can deliver a proposed replacement for review. Current profile selections and unavailable types can explain what to check, but are not proof of an earlier failure; local exports do not require agent-access grants. Known destination errors (including HTTP status, cloud authorization and file-size limits) are retained in new failure history. Unknown native/network errors remain generic to avoid publishing credentials or private URLs. Older generic failure entries cannot recover details that were never saved.
 
 ## Structure and builds
 
@@ -306,3 +312,5 @@ The dashboard’s **History** page shares outcome labels and related-activity ma
 ## Lifetime unlock
 
 The free iOS and Android apps include five exports/agent queries across manual, scheduled, and cloud activity. Native StoreKit or Google Play Billing offers a $19.99 US non-consumable lifetime unlock, with reminder paywalls after uses two and five. Store product creation, verification credentials, counting rules, offline limits, and sandbox testing are documented in [Lifetime unlock](docs/lifetime-unlock.md). Run `npm run verify:billing` to verify the quota and purchase-ownership business rules.
+
+Existing customers can claim complimentary lifetime access from health.md or iso.me, with manual grants for verified time.md buyers. See [customer migration](docs/customer-migration.md) for eligibility, deployment configuration, and the operator grant command.

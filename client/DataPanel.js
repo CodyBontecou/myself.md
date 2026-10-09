@@ -13,6 +13,7 @@ import { authorizeUsage } from './usage.js';
 import { captureLocation, startTracking, stopTracking, locationStatus } from './location-task.js';
 import { cloudAccess } from './destinations.js';
 import { reconcileExports } from './export-task.js';
+import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
 import { loadProfiles, saveProfiles } from './profiles.js';
 import { parseProfile, profileAllows } from '../core/profiles.js';
@@ -49,6 +50,25 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   );
   const reviewing = useRef(false);
   const receivedProfileId = useRef('');
+  useEffect(() => {
+    if (!session.server) return;
+    let active = true;
+    /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
+    const sync = async () => {
+      try {
+        if (AppState.currentState === 'active') await syncHistory(session);
+      } catch {
+        // Keep local history intact and retry while the paired app is open.
+      } finally {
+        if (active) timer = setTimeout(() => void sync(), 30000);
+      }
+    };
+    void sync();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [session]);
   useEffect(() => {
     reviewing.current = Boolean(proposal || incoming);
   }, [proposal, incoming]);

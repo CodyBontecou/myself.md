@@ -16,7 +16,7 @@ export async function loadSession() {
     session.owner = session.deviceId;
     await saveSession(session);
   }
-  saveExportContext(session);
+  if (session.deviceId) saveExportContext(session);
   return session;
 }
 /** @param {Session} [session] */
@@ -31,7 +31,7 @@ export async function saveSession(session) {
   await SecureStore.setItemAsync(key, JSON.stringify(session), {
     keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
-  saveExportContext(session);
+  if (session.deviceId) saveExportContext(session);
 }
 /** Revoke with the existing token; sign-out must not refresh or persist the old session.
  * @param {Session} session */
@@ -138,7 +138,7 @@ export async function api(session, path, options) {
     session.accessToken = token.accessToken;
     session.refreshToken = token.refreshToken ?? session.refreshToken;
     session.expires = (token.issuedAt + (token.expiresIn ?? 300)) * 1000;
-    if (session.deviceId) await saveSession(session);
+    await saveSession(session);
   }
   const body = await request(`${session.server}${path}`, {
     ...options,

@@ -50,6 +50,7 @@ export async function billingApi(subject, body) {
 /** Refresh directly with the original store; a phone heartbeat is not required.
  * @param {string} subject */
 export async function refreshEntitlement(subject) {
+  if (billing.hasGrant(subject)) return;
   const purchase = billing.purchase(subject);
   if (!purchase || purchase.verified > Date.now() - 3600000) return;
   try {

@@ -10,8 +10,21 @@ services:
       AUTH_PROXY: '1'
       KEYCLOAK_INTERNAL_HOST: identity
       IOS_APP_ID: ${IOS_APP_ID:-}
+      LIFETIME_PRODUCT_ID: ${LIFETIME_PRODUCT_ID:-myself_md_lifetime}
+      HEALTH_MD_APPLE_APP_ID: ${HEALTH_MD_APPLE_APP_ID:-}
+      ISO_ME_APPLE_APP_ID: ${ISO_ME_APPLE_APP_ID:-6761960794}
+      APPLE_IAP_APP_ID: ${APPLE_IAP_APP_ID:-}
+      APPLE_IAP_BUNDLE_ID: ${APPLE_IAP_BUNDLE_ID:-com.myself.md}
+      APPLE_IAP_ROOT_CERTIFICATES: ${APPLE_IAP_ROOT_CERTIFICATES:-}
+      APPLE_IAP_KEY_PATH: ${APPLE_IAP_KEY_PATH:-}
+      APPLE_IAP_KEY_ID: ${APPLE_IAP_KEY_ID:-}
+      APPLE_IAP_ISSUER_ID: ${APPLE_IAP_ISSUER_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_PLAY_PACKAGE: ${GOOGLE_PLAY_PACKAGE:-com.codybontecou.sharedjsapp}
+      IAP_SANDBOX: ${IAP_SANDBOX:-0}
     volumes:
       - cloud-data:/data
+      - ${IAP_CREDENTIALS_DIR:-./.local/iap}:/iap:ro
     depends_on: [identity]
   identity:
     image: quay.io/keycloak/keycloak:26.8.0

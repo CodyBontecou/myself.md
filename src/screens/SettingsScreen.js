@@ -18,6 +18,11 @@ export default function SettingsScreen() {
           onPress={() => router.push('/unlock')}
         />
         <Row
+          title="Your myself.md account"
+          subtitle="Sign in to retrieve complimentary lifetime access"
+          onPress={() => router.push('/account')}
+        />
+        <Row
           title="Connections & data sources"
           subtitle="Health, screen time, location, and agent access"
           onPress={() => router.push('/settings/connections')}

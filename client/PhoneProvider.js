@@ -1,4 +1,4 @@
-import { syncBilling } from './billing.js';
+import { syncBilling, clearAccountAllowance } from './billing.js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, Linking, Platform } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
@@ -63,7 +63,9 @@ function usePhoneState() {
     const receive = (url) => {
       if (!url) return;
       try {
-        if (url.startsWith('qrconnect://profile')) {
+        if (url === 'qrconnect://account' || url.startsWith('qrconnect://account?')) {
+          router.navigate('/account');
+        } else if (url.startsWith('qrconnect://profile')) {
           setIncoming(profileFromLink(url));
           router.navigate('/profiles');
         } else if (url.startsWith('qrconnect://pair?') || /^https?:\/\/[^/]+\/pair#/.test(url)) {
@@ -149,6 +151,7 @@ function usePhoneState() {
     const info = /** @type {{devices:{id:string}[]}} */ (await api(session, '/api/devices'));
     if (!info.devices.some((device) => device.id === session.deviceId)) {
       await clearSession(session);
+      clearAccountAllowance();
       setSession(null);
       throw new Error('This phone was disconnected. Scan a new QR code.');
     }
@@ -160,8 +163,12 @@ function usePhoneState() {
     cancelExports();
     await clearSession(previous);
     setSession(null);
+    clearAccountAllowance();
     reset();
-    void Promise.allSettled([stopTracking(), revokeDevice(previous)]).then(([tracking, remote]) => {
+    void Promise.allSettled([
+      stopTracking(),
+      previous.deviceId ? revokeDevice(previous) : Promise.resolve(),
+    ]).then(([tracking, remote]) => {
       const failures = [
         tracking.status === 'rejected' ? 'Location shutdown failed; check location settings.' : '',
         remote.status === 'rejected'
@@ -197,6 +204,19 @@ function usePhoneState() {
       await disconnect();
       setPairing(next);
       locked.current = true;
+    },
+    /** @param {'apple'|'github'} provider */
+    signInAccount: async (provider) => {
+      const next = await signIn(
+        process.env.EXPO_PUBLIC_ACCOUNT_SERVER ?? 'https://myself.md',
+        provider,
+      );
+      await syncBilling(next);
+      await saveSession(next);
+      setSession(next);
+    },
+    syncAccount: async () => {
+      if (session) await syncBilling(session);
     },
     /** @param {'apple'|'github'} provider */
     signIn: async (provider) => setSession(await signIn(pairing?.server ?? '', provider)),

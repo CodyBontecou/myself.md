@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
 import { relatedHistoryEvents, historyOutcome } from '../core/history-display.js';
 import { parseProfile } from '../core/profiles.js';
+import { exportDiagnostics, exportFailureMessage } from '../core/diagnostics.js';
 import { CloudStore } from '../server/cloud-store.js';
 import { HistoryStore } from '../server/history-store.js';
 const directory = mkdtempSync(join(tmpdir(), 'history-test-'));
@@ -43,9 +44,37 @@ const artifact = {
   partial: false,
 };
 try {
+  const diagnosis = exportDiagnostics(event, profile, [
+    { domain: 'health', availableTypes: [], notes: ['Health access is limited.'] },
+  ]);
+  assert.equal(diagnosis.selectionChanged, false);
+  assert.ok(diagnosis.actions.some((action) => action.deepLink === 'qrconnect://profiles/profile'));
+  const sourceAction = diagnosis.actions.find((action) => 'unavailableTypes' in action);
+  assert.ok(sourceAction && 'unavailableTypes' in sourceAction);
+  assert.deepEqual(sourceAction.unavailableTypes, ['native:sleep']);
+  assert.equal(exportDiagnostics(event, null, []).profileExists, false);
+  assert.equal(exportDiagnostics(event, undefined, []).profileExists, null);
+  assert.equal(exportDiagnostics(event, null, []).selectionChanged, null);
+  const unknownSource = exportDiagnostics(event, null, []).actions.find(
+    (action) => 'unavailableTypes' in action,
+  );
+  assert.ok(unknownSource && 'unavailableTypes' in unknownSource);
+  assert.equal(unknownSource.unavailableTypes, null);
+  assert.equal(
+    exportFailureMessage(new Error('HTTP export failed (401).')),
+    'HTTP export failed (401).',
+  );
+  assert.equal(
+    exportFailureMessage(new Error('Authorize cloud uploads on this profile first.')),
+    'Authorize cloud uploads on this profile first.',
+  );
+  assert.ok(
+    !exportFailureMessage(new Error('https://private.example/?token=secret')).includes('secret'),
+  );
   assert.equal(event.destination, 'example.com');
   profile.name = 'Renamed';
   profile.selection.health.push('native:steps');
+  assert.equal(exportDiagnostics(event, profile, []).selectionChanged, true);
   assert.equal(event.profile.name, 'Sleep snapshot');
   assert.deepEqual(event.profile.selection.health, ['native:sleep']);
   event = addArtifact(event, artifact, stamp);

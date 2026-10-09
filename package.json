@@ -91,8 +91,10 @@
     "verify:dashboard": "npm run dashboard:build && node scripts/verify-dashboard-login.js",
     "verify:explorer": "node scripts/verify-explorer.js",
     "verify:demo": "node scripts/verify-demo.js",
-    "verify:billing": "node scripts/verify-billing.js",
-    "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js"
+    "verify:billing": "node scripts/verify-billing.js && node --experimental-vm-modules scripts/verify-local-billing.js",
+    "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js",
+    "verify:migration": "node scripts/verify-migration.js",
+    "billing:grant": "node --env-file-if-exists=.env scripts/grant-lifetime.js"
   },
   "private": true,
   "type": "module",

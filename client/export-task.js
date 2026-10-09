@@ -1,4 +1,5 @@
 import { reserveExport, settleExport } from './billing.js';
+import { exportFailureMessage } from '../core/diagnostics.js';
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import * as SQLite from 'expo-sqlite';
@@ -172,7 +173,7 @@ export async function exportNow(session, profile, progress) {
         session,
         historyId,
         valid() ? 'failed' : 'cancelled',
-        'The export could not finish. Check source permissions and destination access.',
+        exportFailureMessage(error),
       );
     throw error;
   } finally {
@@ -291,12 +292,7 @@ export async function runScheduledExports() {
           // oxlint-disable-next-line eslint/no-await-in-loop
           await settleExport(session, historyId, true).catch(() => {});
         }
-        finishExport(
-          session,
-          historyId,
-          valid() ? 'failed' : 'cancelled',
-          'The export could not finish. Check source permissions and destination access.',
-        );
+        finishExport(session, historyId, valid() ? 'failed' : 'cancelled', exportFailureMessage(e));
         if (valid()) {
           state.message = e instanceof Error ? e.message : 'Export failed.';
           state.retryAt = Date.now() + 300000;

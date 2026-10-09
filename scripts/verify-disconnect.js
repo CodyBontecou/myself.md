@@ -41,15 +41,21 @@ linkContext.receive('qrconnect://oauth?code=fixture');
 assert.equal(linkError, '');
 const disconnect = app.match(/  async function disconnect\(\) \{[\s\S]*?\n  \}/)?.[0];
 assert.ok(disconnect, 'Disconnect handler must be available to the regression harness.');
-for (const failure of ['server', 'location', 'pending']) {
+for (const failure of ['server', 'location', 'pending', 'account']) {
   let cleared = false;
+  let allowanceCleared = false;
+  let revocations = 0;
   let screen = 'connected';
   const context = vm.createContext({
-    session: { deviceId: 'old-phone' },
+    session: { deviceId: failure === 'account' ? '' : 'old-phone' },
+    clearAccountAllowance: () => {
+      allowanceCleared = true;
+    },
     stopTracking: async () => {
       if (failure === 'location') throw new Error('Native shutdown failed');
     },
     revokeDevice: async () => {
+      revocations += 1;
       if (failure === 'pending') return new Promise(() => {});
       throw new Error('Old server unavailable');
     },
@@ -68,6 +74,8 @@ for (const failure of ['server', 'location', 'pending']) {
   // oxlint-disable-next-line eslint/no-await-in-loop
   await vm.runInContext(disconnect + '\ndisconnect()', context);
   assert.ok(cleared && screen === 'scanner', `${failure} must not block local sign-out`);
+  assert.ok(allowanceCleared, `${failure} must clear account access on sign-out`);
+  if (failure === 'account') assert.equal(revocations, 0);
 }
 const source = readFileSync('client/session.js', 'utf8')
   .replace(/^import .*;\n/gm, '')

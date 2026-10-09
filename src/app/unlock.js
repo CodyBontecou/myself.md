@@ -62,6 +62,12 @@ export default function UnlockScreen() {
         onPress={() => void run(() => restoreLifetime(true))}
       />
       <Button
+        label="Already own health.md, iso.me, or time.md?"
+        secondary
+        disabled={busy}
+        onPress={() => router.push('/account')}
+      />
+      <Button
         label={current.used >= 5 ? 'Close' : 'Maybe later'}
         secondary
         disabled={busy}

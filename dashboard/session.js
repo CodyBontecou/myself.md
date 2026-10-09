@@ -137,7 +137,10 @@ export async function initializeSession() {
     redirect_uri: `${location.origin}/dashboard/callback`,
   });
   const destination = new URL(login.returnTo ?? '/dashboard', location.origin);
-  if (destination.origin === location.origin && destination.pathname === '/dashboard') {
+  if (
+    destination.origin === location.origin &&
+    ['/dashboard', '/claim'].includes(destination.pathname)
+  ) {
     history.replaceState(null, '', `${destination.pathname}${destination.search}`);
     window.dispatchEvent(new Event('popstate'));
   }
