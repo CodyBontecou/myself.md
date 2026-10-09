@@ -949,19 +949,16 @@ function DemoIntroduction({ onNavigate }) {
     {
       label: 'Health',
       detail: 'Datasets, controls & JSON formats',
-      icon: IconHeart,
       href: '/datasets/health',
     },
     {
       label: 'Screen time',
       detail: 'App usage, controls & JSON formats',
-      icon: IconClock,
       href: '/datasets/screen-time',
     },
     {
       label: 'Location',
       detail: 'Recorded points, controls & JSON formats',
-      icon: IconMapPin,
       href: '/datasets/location',
     },
   ];
@@ -1002,21 +999,17 @@ function DemoIntroduction({ onNavigate }) {
             No account needed to explore. All data below is fictional.
           </p>
         </div>
-        <div className="flex flex-col justify-center gap-3">
-          {examples.map(({ label, detail, icon: Icon, href }) => (
+        <div className="flex flex-col items-start justify-center gap-4">
+          {examples.map(({ label, detail, href }) => (
             <a
               key={label}
               href={href}
-              className="group flex items-center gap-4 rounded-lg border bg-background p-4 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              className="group flex min-h-11 flex-col justify-center gap-1 rounded-sm py-1 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
             >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Icon className="size-5" />
+              <span className="text-sm font-semibold underline decoration-muted-foreground/50 underline-offset-4 transition-colors group-hover:decoration-foreground">
+                {label}
               </span>
-              <span className="flex-1">
-                <span className="block text-sm font-semibold">{label}</span>
-                <span className="text-xs text-muted-foreground">{detail}</span>
-              </span>
-              <IconChevronRight className="size-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{detail}</span>
             </a>
           ))}
         </div>
