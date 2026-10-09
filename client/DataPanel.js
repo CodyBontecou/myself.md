@@ -1,4 +1,5 @@
 import { acceptAllowance } from './billing.js';
+import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
@@ -109,6 +110,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     return {
       ...raw,
+      feedback: await feedbackState(),
       profiles: profileState.current.profiles,
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
@@ -218,13 +220,19 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{feedback?:{id:string,expiresAt:number}|null,request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
             })
           );
         if (active) {
+          await requestFeedback(response.feedback ?? null, () =>
+            api(session, `/api/phones/${session.deviceId}/feedback`, {
+              method: 'POST',
+              body: JSON.stringify({ id: response.feedback?.id }),
+            }),
+          );
           acceptAllowance(response.allowance);
           setNotes(
             Object.fromEntries(

@@ -224,6 +224,28 @@ export default function ProfilePanel({
       setWorking(false);
     }
   }
+  /** @param {import('../core/profiles.js').ExportProfile} target @param {boolean} enabled */
+  function changeAgentAccess(target, enabled) {
+    if (disabled || actionRunning.current) return;
+    const save = () =>
+      void run(() =>
+        onChange({
+          ...state,
+          profiles: state.profiles.map((p) =>
+            p.id === target.id ? { ...p, agentAccess: enabled } : p,
+          ),
+        }),
+      );
+    if (!enabled) return save();
+    Alert.alert(
+      'Allow agent access?',
+      `Paired agents can read the selected data in ${target.name}, subject to domain grants and source permissions.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Allow', onPress: save },
+      ],
+    );
+  }
   const content = (
     <View testID={profile ? 'profile-content' : 'profiles-list'} style={styles.container}>
       {profileId && !profile && (
@@ -254,26 +276,7 @@ export default function ProfilePanel({
                   accessibilityLabel={`Allow agent access for ${profile.name}`}
                   value={profile.agentAccess === true}
                   disabled={disabled}
-                  onValueChange={(enabled) => {
-                    const save = () =>
-                      void run(() =>
-                        onChange({
-                          ...state,
-                          profiles: state.profiles.map((p) =>
-                            p.id === profile.id ? { ...p, agentAccess: enabled } : p,
-                          ),
-                        }),
-                      );
-                    if (!enabled) return save();
-                    Alert.alert(
-                      'Allow agent access?',
-                      `Paired agents can read the selected data in ${profile.name}, subject to domain grants and source permissions.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Allow', onPress: save },
-                      ],
-                    );
-                  }}
+                  onValueChange={(enabled) => changeAgentAccess(profile, enabled)}
                 />
               }
             />
@@ -516,19 +519,37 @@ export default function ProfilePanel({
           >
             <SectionHeader title="Saved profiles" count={state.profiles.length} />
           </View>
-          <Group compact>
-            {state.profiles.map((p) => (
+          {state.profiles.map((p) => (
+            <View
+              key={p.id}
+              testID={`profile-card-${p.id}`}
+              style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            >
               <Row
                 compact
-                key={p.id}
                 testID={`profile-row-${p.id}`}
                 title={p.name}
                 subtitle={`${domains.reduce((n, d) => n + p.selection[d].length, 0)} data types · ${p.export.formats.join(' + ').toUpperCase()} · ${p.export.destination === 'local' ? 'On this phone' : p.export.destination === 'http' ? 'HTTPS' : 'Cloud'}`}
-                value={p.agentAccess ? 'Agent access' : 'Private'}
+                value={p.agentAccess ? 'Agents enabled' : 'Private'}
                 onPress={() => router.push({ pathname: '/profiles/[id]', params: { id: p.id } })}
               />
-            ))}
-          </Group>
+              <View style={styles.quickActions}>
+                <View style={styles.quickAction}>
+                  <ProfileExports session={session} profile={p} disabled={disabled} quick />
+                </View>
+                <View style={styles.quickAction}>
+                  <BridgeButton
+                    testID={`profile-agents-${p.id}`}
+                    label={p.agentAccess ? 'Disable agents' : 'Enable agents'}
+                    icon="people-outline"
+                    plain
+                    disabled={disabled}
+                    onPress={() => changeAgentAccess(p, !p.agentAccess)}
+                  />
+                </View>
+              </View>
+            </View>
+          ))}
         </>
       )}
     </View>
@@ -578,6 +599,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
     fontSize: 16,
   },
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  quickAction: { flexGrow: 1, flexBasis: 140 },
   container: { gap: 16 },
   intro: { gap: 8 },
   feed: { flex: 1 },

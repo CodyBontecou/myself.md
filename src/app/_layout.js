@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import { feedbackState } from '../../client/gripe.js';
 import QaPhoneProvider from '../../client/QaPhoneProvider.js';
 import { qaEnabled, qaSnapshot, subscribeQa } from '../../client/qa-runtime.js';
 import BillingPaywalls from '../../client/BillingPaywalls';
@@ -10,6 +11,10 @@ import PhoneProvider from '../../client/PhoneProvider';
 import { OnboardingProvider, useOnboarding } from '../../client/onboarding';
 export const unstable_settings = { initialRouteName: 'index' };
 export default function RootLayout() {
+  useEffect(() => {
+    if (qaEnabled) return;
+    void feedbackState().catch(() => {});
+  }, []);
   const fixture = useSyncExternalStore(subscribeQa, qaSnapshot);
   return (
     <OnboardingProvider key={qaEnabled ? fixture.revision : 0}>

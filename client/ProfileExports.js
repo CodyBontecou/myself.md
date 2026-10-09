@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { Switch } from './Terminal.js';
-import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
+import { Button, Copy, Group, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
 import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
@@ -11,12 +11,12 @@ import { shareDomain } from './export.js';
 import { domains } from '../core/data.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean}} props */
-function ProfileExportControls({ session, profile, disabled }) {
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean}} props */
+function ProfileExportControls({ session, profile, disabled, quick = false }) {
   const { colors } = useTheme();
   const running = useRef(false);
   const [bearer, setBearer] = useState('');
@@ -58,11 +58,34 @@ function ProfileExportControls({ session, profile, disabled }) {
     }
   }
   useEffect(() => {
-    if (!qaEnabled && profile.export.destination === 'cloud')
+    if (!quick && !qaEnabled && profile.export.destination === 'cloud')
       void cloudAccess(session, profile)
         .then((r) => setShared(r.shared))
         .catch(() => {});
-  }, [session, profile]);
+  }, [session, profile, quick]);
+  if (quick)
+    return (
+      <View style={styles.container}>
+        <Button
+          testID={`profile-export-${profile.id}`}
+          label={busy ? 'Exporting…' : 'Run export'}
+          icon="download-outline"
+          plain
+          disabled={disabled || busy}
+          busy={busy}
+          onPress={() => void run(() => exportNow(session, profile, setMessage))}
+        />
+        {message || state.message ? (
+          <Copy
+            testID={`profile-export-status-${profile.id}`}
+            accessibilityRole="alert"
+            variant="caption"
+          >
+            {message || state.message}
+          </Copy>
+        ) : null}
+      </View>
+    );
   const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
   return (
     <View testID="profile-exports" accessibilityState={{ busy }} style={styles.container}>

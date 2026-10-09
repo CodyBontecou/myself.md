@@ -87,18 +87,19 @@ export function IconButton({ icon, label, onPress, testID }) {
     </Pressable>
   );
 }
-/** @param {{label:string,onPress:()=>void,secondary?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,plain?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
 export function Button({
   label,
   onPress,
   secondary = false,
+  plain = false,
   disabled = false,
   busy = false,
   testID,
   icon,
 }) {
   const { colors } = useTheme();
-  const color = secondary ? colors.text : colors.onAccent;
+  const color = plain ? colors.accent : secondary ? colors.text : colors.onAccent;
   return (
     <Pressable
       testID={testID}
@@ -110,8 +111,9 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: secondary ? colors.surface : colors.accent,
+          backgroundColor: plain ? 'transparent' : secondary ? colors.surface : colors.accent,
           borderColor: secondary ? colors.border : colors.accent,
+          ...(plain && { borderWidth: 0 }),
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
       ]}

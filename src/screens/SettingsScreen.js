@@ -1,4 +1,6 @@
 import { qaEnabled } from '../../client/qa-runtime.js';
+import { Platform } from 'react-native';
+import { openFeedback } from '../../client/gripe.js';
 import { useBilling } from '../../client/BillingPaywalls';
 import { router } from 'expo-router';
 import { Screen, Copy, Group, Row, Divider, SectionHeader } from '../components/ui';
@@ -50,6 +52,14 @@ export default function SettingsScreen() {
       <Copy variant="caption" muted>
         myself.md · You choose which data your agents can access.
       </Copy>
+      {!qaEnabled && __DEV__ && Platform.OS === 'ios' && (
+        <Row
+          testID="settings-feedback"
+          title="Report a bug"
+          subtitle="Capture, annotate, and submit a GitHub ticket"
+          onPress={() => void openFeedback()}
+        />
+      )}
     </Screen>
   );
 }

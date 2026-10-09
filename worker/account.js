@@ -85,6 +85,15 @@ export class Account extends DurableObject {
       (/** @type {import('../server/data-service.js').Proposal} */ proposal) => proposal,
     );
     this.data = createDataService({
+      feedbackOperations: new DurableMap(
+        this.db,
+        this.cloud,
+        'feedbackOperations',
+        (/** @type {import('../server/feedback-service.js').FeedbackOperation} */ operation) =>
+          operation,
+        (/** @type {import('../server/feedback-service.js').FeedbackOperation} */ operation) =>
+          operation,
+      ),
       jobs,
       proposals,
       billing: this.billing,

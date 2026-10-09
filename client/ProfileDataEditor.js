@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Animated, { cubicBezier, useReducedMotion } from 'react-native-reanimated';
 import { FlashList } from '@shopify/flash-list';
 import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -115,6 +116,7 @@ export default function ProfileDataEditor({
       const available = types[item.domain];
       const allSelected = selected.length > 0 && available.every((key) => selected.includes(key));
       const toggleDisabled = locked || (!available.length && !selected.length);
+      const toggleLabel = allSelected ? 'Deselect all' : 'Select all';
       return (
         <View>
           <View
@@ -158,28 +160,29 @@ export default function ProfileDataEditor({
               </View>
             </Pressable>
             {(!inline || item.expanded) && (
-              <View style={[styles.actions, inline && styles.inlineActions]}>
+              <View
+                style={[
+                  styles.actions,
+                  inline && styles.inlineActions,
+                  item.domain === 'health' && styles.healthActions,
+                ]}
+              >
                 {item.domain === 'health' && (
-                  <Pressable
-                    accessibilityRole="button"
-                    testID="selection-search-toggle"
-                    accessibilityLabel={
-                      searchOpen ? 'Close Health search' : 'Search Health data types'
-                    }
-                    accessibilityState={{ expanded: searchOpen, disabled: locked }}
+                  <HealthSearch
+                    open={searchOpen}
+                    search={search}
                     disabled={locked}
-                    onPress={() => {
-                      setSearchOpen(!searchOpen);
+                    onSearch={setSearch}
+                    onOpen={() => {
+                      setSearchOpen(true);
                       setExpandedDomains((current) => [...new Set([...current, 'health'])]);
-                      if (searchOpen) {
-                        setSearch('');
-                        Keyboard.dismiss();
-                      }
                     }}
-                    style={styles.checkboxAction}
-                  >
-                    <Icon name={searchOpen ? 'close' : 'search'} size={20} color={colors.accent} />
-                  </Pressable>
+                    onClose={() => {
+                      setSearch('');
+                      setSearchOpen(false);
+                      Keyboard.dismiss();
+                    }}
+                  />
                 )}
                 {item.domain !== 'health' && (
                   <Pressable
@@ -198,9 +201,9 @@ export default function ProfileDataEditor({
                 <Pressable
                   accessibilityRole="checkbox"
                   testID={`selection-all-${item.domain}`}
-                  accessibilityLabel={`Include all ${label} data types`}
+                  accessibilityLabel={`${toggleLabel} ${label} data types`}
                   accessibilityState={{
-                    checked: allSelected ? true : selected.length ? 'mixed' : false,
+                    checked: allSelected,
                     disabled: toggleDisabled,
                   }}
                   disabled={toggleDisabled}
@@ -210,27 +213,35 @@ export default function ProfileDataEditor({
                       [item.domain]: allSelected ? [] : [...new Set([...selected, ...available])],
                     })
                   }
-                  style={[styles.checkboxAction, toggleDisabled && styles.disabled]}
+                  style={[
+                    styles.checkboxAction,
+                    styles.bulkAction,
+                    toggleDisabled && styles.disabled,
+                  ]}
                 >
-                  <Icon
-                    name={
-                      allSelected
-                        ? 'checkbox'
-                        : selected.length
-                          ? 'remove-outline'
-                          : 'square-outline'
-                    }
-                    size={20}
-                    color={colors.accent}
-                  />
+                  <Copy variant="caption" style={[styles.bulkLabel, { color: colors.accent }]}>
+                    {toggleLabel}
+                  </Copy>
+                  <View style={styles.checkboxAction}>
+                    <View
+                      style={[
+                        styles.checkbox,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: allSelected ? colors.accent : colors.surface,
+                        },
+                      ]}
+                    >
+                      {allSelected && <Icon name="checkmark" size={14} color={colors.onAccent} />}
+                    </View>
+                  </View>
                 </Pressable>
               </View>
             )}
           </View>
-          {inline && item.expanded && (
+          {(inline || item.domain === 'health') && item.expanded && (
             <View style={styles.inlineFilters}>
-              {item.domain === 'health' && healthSearch}
-              {status}
+              {inline && status}
               {!allTypes.some((type) => type.domain === item.domain && matches(type)) && (
                 <Copy variant="caption" muted>
                   {query && item.domain === 'health'
@@ -240,7 +251,6 @@ export default function ProfileDataEditor({
               )}
             </View>
           )}
-          {!inline && item.domain === 'health' && item.expanded && healthSearch}
           {item.domain !== 'health' && item.expanded && (
             <Group compact>
               <Row
@@ -405,19 +415,6 @@ export default function ProfileDataEditor({
             },
           ]}
         >
-          <View
-            style={[
-              styles.checkbox,
-              {
-                borderColor: colors.border,
-                backgroundColor: selection[domain].includes(key) ? colors.accent : colors.surface,
-              },
-            ]}
-          >
-            {selection[domain].includes(key) && (
-              <Icon name="checkmark" size={14} color={colors.onAccent} />
-            )}
-          </View>
           <View style={styles.groupText}>
             <Copy variant="caption">{label}</Copy>
             {!types[domain].includes(key) && (
@@ -425,6 +422,21 @@ export default function ProfileDataEditor({
                 Unavailable on this phone
               </Copy>
             )}
+          </View>
+          <View style={styles.typeCheckbox}>
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: selection[domain].includes(key) ? colors.accent : colors.surface,
+                },
+              ]}
+            >
+              {selection[domain].includes(key) && (
+                <Icon name="checkmark" size={14} color={colors.onAccent} />
+              )}
+            </View>
           </View>
         </Pressable>
       );
@@ -461,28 +473,6 @@ export default function ProfileDataEditor({
       </View>
     );
   }
-  const healthSearch = searchOpen ? (
-    <View style={styles.header}>
-      <TextInput
-        autoFocus
-        testID="selection-search"
-        accessibilityLabel="Search Health data types"
-        placeholder="Search Health data types"
-        placeholderTextColor={colors.secondary}
-        value={search}
-        onChangeText={setSearch}
-        editable={!locked}
-        autoCorrect={false}
-        autoCapitalize="none"
-        returnKeyType="search"
-        onSubmitEditing={Keyboard.dismiss}
-        style={[
-          styles.input,
-          { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-        ]}
-      />
-    </View>
-  ) : null;
   const status = accessMessage ? (
     <View testID="selection-status" accessibilityRole="alert" style={styles.header}>
       <Copy>{accessMessage}</Copy>
@@ -513,6 +503,92 @@ export default function ProfileDataEditor({
       }
       renderItem={renderItem}
     />
+  );
+}
+/**
+ * @param {{open:boolean,search:string,disabled:boolean,onSearch:(value:string)=>void,onOpen:()=>void,onClose:()=>void}} props
+ */
+function HealthSearch({ open, search, disabled, onSearch, onOpen, onClose }) {
+  const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const input = useRef(/** @type {TextInput|null} */ (null));
+  useEffect(() => {
+    if (open) input.current?.focus();
+    else input.current?.blur();
+  }, [open]);
+  const transition = {
+    transitionProperty: /** @type {('opacity'|'transform')[]} */ (['opacity', 'transform']),
+    transitionDuration: reduceMotion ? 0 : 180,
+    transitionTimingFunction: cubicBezier(0.23, 1, 0.32, 1),
+  };
+  return (
+    <View style={styles.searchSlot}>
+      <Animated.View
+        pointerEvents={open ? 'auto' : 'none'}
+        accessibilityElementsHidden={!open}
+        importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+        style={[
+          styles.searchField,
+          open
+            ? styles.searchShown
+            : reduceMotion
+              ? styles.searchHiddenReduced
+              : styles.searchHidden,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            ...transition,
+          },
+        ]}
+      >
+        <TextInput
+          ref={input}
+          testID="selection-search"
+          accessibilityLabel="Search Health data types"
+          placeholder="Search"
+          placeholderTextColor={colors.secondary}
+          value={search}
+          onChangeText={onSearch}
+          editable={open && !disabled}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          onSubmitEditing={Keyboard.dismiss}
+          style={[styles.searchInput, { color: colors.text }]}
+        />
+        <Pressable
+          testID="selection-search-cancel"
+          accessibilityRole="button"
+          accessibilityLabel="Cancel Health search"
+          onPress={onClose}
+          style={styles.checkboxAction}
+        >
+          <Icon name="close" size={16} color={colors.secondary} />
+        </Pressable>
+      </Animated.View>
+      <Animated.View
+        pointerEvents={open ? 'none' : 'auto'}
+        accessibilityElementsHidden={open}
+        importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}
+        style={[
+          styles.searchIcon,
+          open ? (reduceMotion ? styles.iconHiddenReduced : styles.iconHidden) : styles.iconShown,
+          transition,
+        ]}
+      >
+        <Pressable
+          testID="selection-search-toggle"
+          accessibilityRole="button"
+          accessibilityLabel="Search Health data types"
+          accessibilityState={{ expanded: open, disabled }}
+          disabled={disabled}
+          onPress={onOpen}
+          style={styles.checkboxAction}
+        >
+          <Icon name="search" size={20} color={colors.accent} />
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
 /** @param {string[]} selected @param {string[]} available @param {string} group @param {boolean} enabled */
@@ -580,11 +656,33 @@ const styles = StyleSheet.create({
   inlineActions: {
     width: '100%',
     maxWidth: '100%',
-    paddingHorizontal: 12,
+    paddingLeft: 12,
+    paddingRight: 0,
     justifyContent: 'flex-start',
   },
+  healthActions: { width: '100%', maxWidth: '100%', flexWrap: 'nowrap', paddingLeft: 12 },
+  searchSlot: { flex: 1, minWidth: 44, height: 44, overflow: 'hidden' },
+  searchShown: { opacity: 1, transform: [{ translateX: 0 }] },
+  searchHidden: { opacity: 0, transform: [{ translateX: 16 }] },
+  searchHiddenReduced: { opacity: 0, transform: [{ translateX: 0 }] },
+  iconShown: { opacity: 1, transform: [{ scale: 1 }] },
+  iconHidden: { opacity: 0, transform: [{ scale: 0.9 }] },
+  iconHiddenReduced: { opacity: 0, transform: [{ scale: 1 }] },
+  searchIcon: { position: 'absolute', top: 0, right: 0 },
+  searchField: {
+    ...StyleSheet.absoluteFill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+  },
+  searchInput: { flex: 1, minWidth: 0, paddingLeft: 12, paddingVertical: 8, fontSize: 14 },
   inlineFilters: { paddingHorizontal: 12, paddingBottom: 8 },
+  bulkLabel: { flexShrink: 1 },
+  bulkAction: { flexDirection: 'row', marginLeft: 'auto', flexShrink: 1 },
   checkboxAction: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  typeCheckbox: { width: 44, alignItems: 'center', justifyContent: 'center' },
   checkbox: {
     width: 20,
     height: 20,
@@ -597,7 +695,7 @@ const styles = StyleSheet.create({
   typeOption: {
     minHeight: 44,
     marginLeft: 24,
-    paddingHorizontal: 12,
+    paddingLeft: 12,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -650,12 +748,4 @@ const styles = StyleSheet.create({
   },
   disabled: { opacity: 0.45 },
   action: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    padding: 12,
-    fontSize: 16,
-    minHeight: 44,
-  },
 });

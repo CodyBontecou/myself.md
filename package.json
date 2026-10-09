@@ -110,6 +110,7 @@
     "identity:snapshot": "node --env-file=.env.cloud scripts/snapshot-identity.js",
     "verify:account-deletion": "npm run verify:identity && node --experimental-vm-modules scripts/verify-account-deletion.js",
     "verify:qa": "node --experimental-vm-modules scripts/verify-qa.js",
+    "verify:feedback": "node scripts/verify-feedback.js && node --experimental-vm-modules scripts/verify-feedback-client.js",
     "start:qa": "EXPO_PUBLIC_QA=1 expo start --port 8082",
     "postinstall": "patch-package --error-on-fail"
   },

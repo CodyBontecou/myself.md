@@ -1,0 +1,6 @@
+{
+  "name": "myself-gripe",
+  "version": "1.0.0",
+  "description": "Development-only iOS feedback bridge for Expo",
+  "license": "MIT"
+}

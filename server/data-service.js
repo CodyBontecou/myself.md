@@ -4,6 +4,7 @@ import { PairingError } from './errors.js';
 import { parseProfile, profileLink, agentProfileAllows } from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
+import { createFeedbackService, feedbackSchema } from './feedback-service.js';
 const ttl = 300000;
 const domainSchema = z.enum(domains);
 const querySchema = z
@@ -63,6 +64,7 @@ const profileSchema = z.object({
   }),
 });
 const catalogSchema = z.object({
+  feedback: feedbackSchema.optional(),
   dispatch: z.boolean().default(true),
   profiles: z
     .array(
@@ -110,7 +112,7 @@ function catalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>}} dependencies */
+/** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,feedbackOperations?:Map<string,import('./feedback-service.js').FeedbackOperation>}} dependencies */
 export function createDataService({
   billing,
   refreshEntitlement,
@@ -119,9 +121,12 @@ export function createDataService({
   phones = new Map(),
   jobs = new Map(),
   proposals = new Map(),
+  feedbackOperations = new Map(),
 }) {
+  const feedback = createFeedbackService({ own, phones, operations: feedbackOperations });
   // Query payloads are never persisted. A restarted server requires a fresh phone heartbeat.
   function cleanup() {
+    feedback.cleanup();
     for (const [id, p] of proposals) if (p.expires <= Date.now()) proposals.delete(id);
     for (const [id, job] of jobs)
       if (job.expires <= Date.now()) {
@@ -142,6 +147,7 @@ export function createDataService({
   }
   /** @param {string} deviceId @param {string} subject */
   function cancelPhone(deviceId, subject) {
+    feedback.cancel((op) => op.deviceId === deviceId && op.subject === subject);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
@@ -156,6 +162,7 @@ export function createDataService({
   /** Remove all retained account work, including requests for already disconnected phones.
    * @param {string} subject */
   function cancelAccount(subject) {
+    feedback.cancel((op) => op.subject === subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
@@ -167,6 +174,7 @@ export function createDataService({
   /** Blocking an agent also discards its queued and retained live requests.
    * @param {string} subject @param {string} client */
   function cancelAgent(subject, client) {
+    feedback.cancel((op) => op.subject === subject && op.client === client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
         if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
@@ -178,6 +186,7 @@ export function createDataService({
   }
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerDataTools(mcp, subject, client = null) {
+    feedback.register(mcp, subject, client);
     mcp.registerTool(
       'list_phone_export_history',
       {
@@ -466,11 +475,15 @@ export function createDataService({
   });
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
-    const match = path.match(/^\/api\/phones\/([a-f0-9-]{36})\/(poll|result)$/);
+    const match = path.match(/^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|feedback)$/);
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
+    if (match[2] === 'feedback') {
+      const input = z.object({ id: z.string().uuid() }).parse(body);
+      return feedback.authorize(deviceId, subject, input.id);
+    }
     if (match[2] === 'poll') {
       const catalog = catalogSchema.parse(body);
       phones.set(deviceId, { deviceId, subject, seen: Date.now(), catalog });
@@ -523,6 +536,7 @@ export function createDataService({
             )
           : undefined;
       return {
+        feedback: feedback.poll(deviceId, subject, catalog.feedback, catalog.dispatch),
         request: job ? { id: job.id, query: job.query } : null,
         profile: proposal ? { id: proposal.id, profile: proposal.profile } : null,
         allowance: billing.snapshot(subject),
