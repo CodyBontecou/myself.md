@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync } from 'node:fs';
+import { mkdirSync, copyFileSync, cpSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
@@ -32,4 +32,5 @@ const css = spawnSync(
 if (css.status !== 0) throw new Error('Dashboard stylesheet build failed.');
 copyFileSync('dashboard/index.html', 'dashboard/dist/index.html');
 copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
+cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');

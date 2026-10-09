@@ -163,6 +163,17 @@ try {
   assert.ok((await home.text()).includes('datasets and example exports'));
   assert.equal((await fetch(`${origin}/demo`)).status, 200);
   assert.equal((await fetch(`${origin}/demo/`)).status, 200);
+  const appStoreBadge = await fetch(`${origin}/dashboard/store-badges/app-store.svg`);
+  assert.equal(appStoreBadge.status, 200);
+  assert.match(appStoreBadge.headers.get('content-type') ?? '', /image\/svg\+xml/);
+  assert.match(await appStoreBadge.text(), /<svg/);
+  const playBadge = await fetch(`${origin}/dashboard/store-badges/google-play.png`);
+  assert.equal(playBadge.status, 200);
+  assert.match(playBadge.headers.get('content-type') ?? '', /image\/png/);
+  assert.deepEqual(
+    new Uint8Array(await playBadge.arrayBuffer()).slice(0, 8),
+    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
   assert.equal((await fetch(`${origin}/login`)).status, 200);
   assert.equal((await fetch(`${origin}/datasets`)).status, 200);
   assert.equal((await fetch(`${origin}/datasets/`)).status, 200);

@@ -27,6 +27,10 @@ const assets = new Map([
   ['/dashboard/app.js', ['app.js', 'text/javascript']],
   ['/dashboard/style.css', ['style.css', 'text/css']],
   ['/dashboard/favicon.svg', ['favicon.svg', 'image/svg+xml']],
+  ['/dashboard/store-badges/app-store.svg', ['store-badges/app-store.svg', 'image/svg+xml']],
+  ['/dashboard/store-badges/google-play.png', ['store-badges/google-play.png', 'image/png']],
+  ['/dashboard/store-badges/f-droid.svg', ['store-badges/f-droid.svg', 'image/svg+xml']],
+  ['/dashboard/store-badges/github.svg', ['store-badges/github.svg', 'image/svg+xml']],
 ]);
 /** @param {string} path @param {import('node:http').ServerResponse} res @param {string} issuer */
 export function dashboardAsset(path, res, issuer) {
@@ -40,11 +44,9 @@ export function dashboardAsset(path, res, issuer) {
     'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin}; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
+  const content = readFileSync(new URL(`../dashboard/dist/${asset[0]}`, import.meta.url));
   res.end(
-    readFileSync(new URL(`../dashboard/dist/${asset[0]}`, import.meta.url), 'utf8').replace(
-      '__STYLE_NONCE__',
-      nonce,
-    ),
+    asset[1] === 'text/html' ? content.toString('utf8').replace('__STYLE_NONCE__', nonce) : content,
   );
   return true;
 }

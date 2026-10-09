@@ -5,6 +5,7 @@ import { record } from '../core/data.js';
 import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
+import { DownloadBadges } from './download-badges.js';
 import { Button } from './components/ui/button.js';
 import { Input } from './components/ui/input.js';
 
@@ -119,6 +120,7 @@ export function DatasetDocumentation({ dataset }) {
                 <p className="text-sm text-muted-foreground">
                   Choose what to keep. See exactly what’s in your files.
                 </p>
+                <DownloadBadges />
               </section>
               <nav aria-label="Dataset documentation" className="flex flex-wrap gap-2">
                 {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (

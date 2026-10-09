@@ -8,6 +8,12 @@ Compatibility identifiers remain stable: `qrconnect://` links, `qr-connect` OAut
 
 Plain JavaScript Expo/React Native app for iOS and Android, dependency-free shared QR and data protocols in `core/`, and an OAuth-protected Streamable HTTP MCP server.
 
+## License
+
+Project code is licensed under [AGPL-3.0-only](LICENSE). Existing third-party licenses and store artwork notices are preserved in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+The landing page links to [the GitHub repository](https://github.com/CodyBontecou/agent-bridge). App Store, Google Play, and F-Droid badges show “Coming soon” until the myself.md listings are available. Badge markup lives in `dashboard/download-badges.js`; the App Store and Play artwork and dimensions match the [healthmd.app](https://healthmd.app/) reference.
+
 ## Run locally
 
 Requires Node 22.13+, Java 21+, and the native platform toolchain. In this directory:

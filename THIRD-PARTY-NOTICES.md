@@ -37,3 +37,7 @@ JetBrains Mono retains its SIL Open Font License in `assets/fonts/JetBrainsMono-
 ## Store badges
 
 The App Store and Google Play artwork is provided by Apple and Google respectively. Store names, logos, and badges remain the property of their owners; the project AGPL license does not apply to those trademarks or artwork. The badge files were retrieved from healthmd.app, the requested design reference.
+
+The unmodified F-Droid badge comes from https://f-droid.org/badge/get-it-on.svg and is licensed under [CC-BY-SA-3.0](https://creativecommons.org/licenses/by-sa/3.0/). Artwork source: https://gitlab.com/fdroid/artwork.
+
+The unmodified GitHub logo comes from the [GitHub Brand Toolkit](https://brand.github.com/foundations/logo). GitHub’s trademarks and artwork remain the property of GitHub, Inc., and are excluded from the project AGPL license.
