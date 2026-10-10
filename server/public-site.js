@@ -104,7 +104,16 @@ export function publicResponse(
       type = 'text/markdown';
       body = markdown;
     } else if (
-      ['/docs', '/docs/reference', '/about', '/contact', '/faq', '/pricing'].includes(path)
+      [
+        '/docs',
+        '/docs/reference',
+        '/about',
+        '/contact',
+        '/privacy',
+        '/support',
+        '/faq',
+        '/pricing',
+      ].includes(path)
     ) {
       type = 'text/html';
       body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
@@ -121,7 +130,7 @@ export function publicResponse(
             },
           ],
         },
-      )}</script><title>${(markdown.split('\n')[0] ?? 'myself.md').slice(2)}</title><link rel="stylesheet" href="/dashboard/style.css">${path.startsWith('/docs') ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${path.startsWith('/docs') ? docsHTML(markdown, path === '/docs/reference') : publicHTML(markdown)}</body></html>`;
+      )}</script><title>${(markdown.split('\n')[0] ?? 'myself.md').slice(2)}</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/support'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/support'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
     } else return null;
   }
   return { status: 200, headers: { ...headers, 'Content-Type': `${type}; charset=utf-8` }, body };

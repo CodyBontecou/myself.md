@@ -51,13 +51,37 @@
   transform: none;
 }
 .docs-header {
-  height: 72px;
+  min-height: 72px;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 40px;
+  justify-content: flex-start;
+  padding: 16px 40px;
   gap: 24px;
+}
+.site-icons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.site-icons > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+.docs-header a[aria-current='page'],
+.docs-sidebar a[aria-current='page'] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .site-mono-icon {
+    filter: invert(1);
+  }
 }
 .docs-brand {
   display: flex;
@@ -78,7 +102,8 @@
 }
 .docs-header nav {
   display: flex;
-  gap: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
   font-size: 14px;
   color: var(--muted-foreground);
 }
@@ -222,8 +247,8 @@
 @media (max-width: 760px) {
   .docs-header {
     gap: 12px;
-    padding: 0 24px;
-    height: 64px;
+    padding: 12px 24px;
+    min-height: 64px;
   }
   .docs-header nav {
     white-space: nowrap;
@@ -246,10 +271,7 @@
     gap: 8px;
   }
   .docs-sidebar nav p,
-  .docs-sidebar nav a[href^='#'],
-  .docs-sidebar nav a[href='/pricing'],
-  .docs-sidebar nav a[href='/privacy'],
-  .docs-sidebar nav a[href='/contact'] {
+  .docs-sidebar nav a[href^='#'] {
     display: none;
   }
   .docs-sidebar a {
@@ -266,9 +288,6 @@
   }
   .docs-brand span {
     padding-left: 8px;
-  }
-  .docs-header nav a:first-child {
-    display: none;
   }
   .docs-content > h1 + p {
     margin-bottom: 32px;

@@ -39,6 +39,8 @@ export const assets = new Map([
   ['/dashboard/app.js', ['app.js', 'text/javascript']],
   ['/dashboard/style.css', ['style.css', 'text/css']],
   ['/dashboard/favicon.svg', ['favicon.svg', 'image/svg+xml']],
+  ['/dashboard/store-badges/apple-icon.svg', ['store-badges/apple-icon.svg', 'image/svg+xml']],
+  ['/dashboard/store-badges/github-icon.svg', ['store-badges/github-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/app-store.svg', ['store-badges/app-store.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/google-play.png', ['store-badges/google-play.png', 'image/png']],
   ['/dashboard/store-badges/github.svg', ['store-badges/github.svg', 'image/svg+xml']],

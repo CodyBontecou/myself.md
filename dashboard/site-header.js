@@ -1,0 +1,36 @@
+import { useSyncExternalStore } from 'react';
+import { publicNavigation } from '../core/public-site.js';
+import { DownloadBadges } from './download-badges.js';
+
+/** @param {()=>void} listener */
+function subscribe(listener) {
+  window.addEventListener('hashchange', listener);
+  window.addEventListener('popstate', listener);
+  return () => {
+    window.removeEventListener('hashchange', listener);
+    window.removeEventListener('popstate', listener);
+  };
+}
+function snapshot() {
+  return location.pathname + location.hash;
+}
+export function SiteHeader() {
+  const current = useSyncExternalStore(subscribe, snapshot);
+  return (
+    <header className="flex flex-wrap items-center gap-x-6 gap-y-3">
+      <DownloadBadges />
+      <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" aria-label="Site">
+        {publicNavigation.map(({ label, href }) => (
+          <a
+            key={label}
+            href={href}
+            aria-current={current === href ? 'page' : undefined}
+            className="underline-offset-4 aria-[current=page]:underline"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+    </header>
+  );
+}

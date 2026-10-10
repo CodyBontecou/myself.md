@@ -1,3 +1,4 @@
+import { SiteHeader } from './site-header.js';
 import { publicFAQs } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
@@ -7,10 +8,8 @@ import { datasets } from './dataset-catalog.js';
 import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
-import { DownloadBadges } from './download-badges.js';
 import { PricingSection } from './pricing-section.js';
 import { Button } from './components/ui/button.js';
-import { privacyPolicy } from '../core/privacy.js';
 import { Input } from './components/ui/input.js';
 
 // Replace each videoId with its tutorial's YouTube ID before launch.
@@ -153,21 +152,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
           <div className="min-w-0 space-y-10">
             {landing ? (
               <div className="space-y-4">
-                <header className="flex flex-wrap items-center gap-x-6 gap-y-3">
-                  <nav
-                    className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm underline underline-offset-4"
-                    aria-label="Site"
-                  >
-                    <a href="/docs">Docs</a>
-                    <a href="#pricing">Pricing</a>
-                    <a href="/faq">FAQ</a>
-                    <a href="/about">About</a>
-                    <a href="/contact">Contact</a>
-                    <a href={privacyPolicy.url}>Privacy</a>
-                    <a href={privacyPolicy.supportUrl}>Support</a>
-                  </nav>
-                  <DownloadBadges />
-                </header>
+                <SiteHeader />
                 <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
                   <h1
                     id="landing-title"

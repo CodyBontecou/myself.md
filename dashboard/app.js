@@ -51,7 +51,6 @@ import {
 } from '@tanstack/react-table';
 import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
 import { AccountDeletion } from './account-deletion.js';
-import { PrivacyPage } from './privacy.js';
 import { MigrationClaim } from './migration-claim.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
@@ -1330,9 +1329,7 @@ function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
   const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return /^\/(privacy|support)\/?$/.test(pathname) ? (
-    <PrivacyPage support={pathname.startsWith('/support')} />
-  ) : pathname === '/delete-account' ||
+  return pathname === '/delete-account' ||
     (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
     <AccountDeletion />
   ) : pathname === '/claim' ||

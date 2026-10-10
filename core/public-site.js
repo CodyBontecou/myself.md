@@ -1,6 +1,16 @@
 import { freeExports } from './billing.js';
 import { privacyPolicy } from './privacy.js';
 
+export const publicNavigation = [
+  { label: 'Docs', href: '/docs' },
+  { label: 'Pricing', href: '/#pricing' },
+  { label: 'FAQ', href: '/faq' },
+  { label: 'About', href: '/about' },
+  { label: 'Contact', href: '/contact' },
+  { label: 'Privacy', href: '/privacy' },
+  { label: 'Support', href: '/support' },
+];
+
 const home = `# myself.md — Personal data for AI agents
 
 myself.md brings your health, screen time and recorded location data together in files you control. Create export profiles that select data types, date ranges and destinations. Use local files, your own HTTPS endpoint, or the paired cloud service. Native sources differ between iOS and Android, and operating-system permissions still apply.
@@ -271,7 +281,15 @@ See [pricing](/pricing) and [common questions](/faq) for product details, or [co
 `;
 const contact = `# Contact myself.md support
 
-For app help, pairing problems, export failures, privacy questions or account deletion questions, email ${privacyPolicy.supportEmail}. Public development issues can be opened at ${privacyPolicy.issuesUrl}. Email composition and issue submission are external actions you complete yourself; reading this page does not send a message or create a report.
+For app help, pairing problems, export failures, privacy questions or account deletion questions, use the support contacts below.
+
+## Get in touch
+
+[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})
+
+Email composition and issue submission are external actions you complete yourself; reading this page does not send a message or create a report.
+
+## Reporting a problem
 
 GitHub issues may be public. Describe the platform, the action you tried, the observed result and the time of the failure. Review screenshots and diagnostic information before sending them. Read https://myself.md/privacy for storage, retention and revocation details. For account deletion use https://myself.md/delete-account and follow the authenticated confirmation flow.
 `;
@@ -287,10 +305,10 @@ export const publicPages = new Map([
   ],
   ['/about', `# About myself.md\n\n${home.slice(home.indexOf('\n\n') + 2)}`],
   ['/contact', contact],
-  ['/support', contact],
+  ['/support', contact.replace('# Contact myself.md support', '# Contact support')],
   [
     '/privacy',
-    `# ${privacyPolicy.title}\n\nUpdated ${privacyPolicy.updated}\n\n${privacyPolicy.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\nSupport: ${privacyPolicy.supportEmail}\n`,
+    `# ${privacyPolicy.title}\n\nUpdated ${privacyPolicy.updated}\n\n${privacyPolicy.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\n## Support\n\n[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})\n`,
   ],
 ]);
 export const agentIndex = `${home}\n## Developer resources\n\n- [myself.md MCP and OAuth documentation](https://myself.md/docs)\n- [Privacy policy](https://myself.md/privacy)\n- [Contact](https://myself.md/contact)\n- [OpenAPI public discovery specification](https://myself.md/openapi.json)\n- [MCP server card](https://myself.md/mcp/server-card)\n- [Agent resource catalog](https://myself.md/.well-known/ard.json)\n- [Sitemap](https://myself.md/sitemap.xml)\n`;
