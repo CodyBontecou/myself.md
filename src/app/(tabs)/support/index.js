@@ -1,17 +1,17 @@
-import { registerSupportNotifications } from '../../client/support-notifications.js';
+import { registerSupportNotifications } from '../../../../client/support-notifications.js';
 import { Alert, AppState } from 'react-native';
 import { useEffect, useState, useMemo } from 'react';
 import { Stack, router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
-import { NativeSupport } from '../../packages/support-chat/native.js';
-import { createSupportClient } from '../../packages/support-chat/index.js';
-import { usePhoneData } from '../../client/DataPanel.js';
-import { usePhone } from '../../client/PhoneProvider.js';
-import { api } from '../../client/session.js';
-import { debugReport } from '../../client/debug-log.js';
+import { NativeSupport } from '../../../../packages/support-chat/native.js';
+import { createSupportClient } from '../../../../packages/support-chat/index.js';
+import { usePhoneData } from '../../../../client/DataPanel.js';
+import { usePhone } from '../../../../client/PhoneProvider.js';
+import { api } from '../../../../client/session.js';
+import { debugReport } from '../../../../client/debug-log.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../lib/theme.js';
-import { Screen, Copy, Button, Row, Group, Icon } from '../components/ui.js';
+import { useTheme } from '../../../lib/theme.js';
+import { Screen, Copy, Button, Row, Group, Icon } from '../../../components/ui.js';
 
 export default function SupportScreen() {
   const { session } = usePhone();
@@ -37,7 +37,7 @@ export default function SupportScreen() {
   );
 }
 /** Support is account-scoped and does not require pairing this phone with an agent.
- * @param {{session:import('../../client/session.js').Session}} props */
+ * @param {{session:import('../../../../client/session.js').Session}} props */
 function SupportInbox({ session }) {
   const { session: logSession } = usePhoneData(),
     { colors, isDark } = useTheme(),
@@ -57,7 +57,7 @@ function SupportInbox({ session }) {
   );
   const data = useMemo(
     () => ({
-      /** @param {import('../../packages/support-chat/support-client.js').SupportDataRequest|null} dataRequest */
+      /** @param {import('../../../../packages/support-chat/support-client.js').SupportDataRequest|null} dataRequest */
       collect: async (dataRequest) => {
         const now = Date.now();
         if (dataRequest && dataRequest.selector.category !== 'logs')
@@ -120,7 +120,7 @@ function SupportInbox({ session }) {
         bottomInset={insets.bottom}
         topInset={insets.top}
         projectLabel="myself.md"
-        onExit={() => router.back()}
+        onExit={() => router.navigate('/profiles')}
         renderIcon={(name) => (
           <Icon
             name={name}

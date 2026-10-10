@@ -1,5 +1,4 @@
 import { Tabs, TabList, TabSlot, TabTrigger } from 'expo-router/ui';
-import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import FloatingNavigation, { NavigationDockContext } from '../../components/FloatingNavigation.js';
 import { use } from 'react';
@@ -25,12 +24,13 @@ export default function TabLayout() {
             <TabTrigger name="history" href="/history" asChild>
               <NavigationButton label="Logs" icon="time-outline" testID="history-tab" />
             </TabTrigger>
-            <NavigationButton
-              label="Contact support"
-              icon="chatbubble-ellipses-outline"
-              testID="support-tab"
-              onPress={() => router.push('/support')}
-            />
+            <TabTrigger name="support" href="/support" asChild>
+              <NavigationButton
+                label="Contact support"
+                icon="chatbubble-ellipses-outline"
+                testID="support-tab"
+              />
+            </TabTrigger>
             <TabTrigger name="settings" href="/settings" asChild>
               <NavigationButton label="Settings" icon="settings-outline" testID="settings-tab" />
             </TabTrigger>
