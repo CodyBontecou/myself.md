@@ -1,5 +1,11 @@
 import { IconBrandAppleFilled, IconBrandGithubFilled } from '@tabler/icons-react';
 import { Button } from './components/ui/button.js';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './components/ui/tooltip.js';
 
 function GooglePlayIcon() {
   return (
@@ -19,18 +25,27 @@ export function DownloadBadges() {
         { label: 'App Store', icon: IconBrandAppleFilled, color: 'text-foreground' },
         { label: 'Google Play', icon: GooglePlayIcon, color: '' },
       ].map(({ label, icon: Icon, color }) => (
-        <Button
-          key={label}
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={`size-10 disabled:opacity-100 ${color}`}
-          disabled
-          aria-label={`${label} — coming soon`}
-          title={`${label} — coming soon`}
-        >
-          <Icon aria-hidden="true" className="size-7" />
-        </Button>
+        <TooltipProvider key={label} delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className="inline-flex" aria-label={`${label} — coming soon`}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={`size-10 disabled:opacity-100 ${color}`}
+                  disabled
+                  aria-label={`${label} — coming soon`}
+                >
+                  <Icon aria-hidden="true" className="size-7" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6} className="px-2 py-1">
+              Coming soon
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ))}
       <Button asChild variant="ghost" size="icon" className="size-10">
         <a

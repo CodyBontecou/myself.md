@@ -40,6 +40,31 @@ function JsonExample({ title, value }) {
 export function DatasetDocumentation({ dataset }) {
   const [filter, setFilter] = useState(dataset);
   const datasetPane = useRef(/** @type {HTMLDivElement|null} */ (null));
+  useEffect(() => {
+    const pane = datasetPane.current;
+    if (!pane) return;
+    let frame = 0;
+    function measure() {
+      if (!pane) return;
+      const viewport = window.innerHeight;
+      const top = Math.max(0, pane.getBoundingClientRect().top);
+      // Cap at the viewport even after the panel scrolls above the screen.
+      const height = Math.min(viewport, Math.max(Math.min(240, viewport), viewport - top));
+      pane.style.setProperty('--dataset-pane-height', `${height}px`);
+    }
+    function schedule() {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    }
+    measure();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+    };
+  }, []);
   const included = Object.values(datasets);
   const data = {
     ...datasets.health,
@@ -207,7 +232,7 @@ export function DatasetDocumentation({ dataset }) {
               </section>
             </div>
             <section id="dataset-types" className="min-w-0 space-y-5" aria-label="Dataset types">
-              <div className="sticky top-0 z-10 bg-background py-3">
+              <div className="bg-background py-3">
                 <div className="relative">
                   <div
                     aria-label="Filter dataset types"
@@ -235,7 +260,7 @@ export function DatasetDocumentation({ dataset }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-1 text-xs tabular-nums text-muted-foreground"
+                        className="h-7 justify-end px-1 text-xs tabular-nums text-muted-foreground"
                         aria-label="Clear selection"
                         title="Clear selection"
                         onClick={() => {
@@ -305,7 +330,7 @@ export function DatasetDocumentation({ dataset }) {
               </div>
               <div
                 ref={datasetPane}
-                className="h-[min(36rem,65dvh)] overflow-y-auto pr-2"
+                className="h-[var(--dataset-pane-height,100dvh)] overflow-y-auto"
                 aria-label="Scrollable dataset types"
                 tabIndex={0}
               >
@@ -316,9 +341,9 @@ export function DatasetDocumentation({ dataset }) {
                       open={Boolean(search) || defaultOpen}
                       className="group"
                     >
-                      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md px-4 py-4 text-base font-semibold hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md bg-background py-4 pl-3 text-base font-medium hover:bg-muted group-open:sticky group-open:top-0 group-open:z-10 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
                         <span>{title}</span>
-                        <span className="ml-auto text-sm font-normal tabular-nums text-muted-foreground">
+                        <span className="ml-auto px-1 text-xs font-medium tabular-nums text-muted-foreground">
                           {platformSections.reduce(
                             (count, group) =>
                               count +
@@ -328,10 +353,12 @@ export function DatasetDocumentation({ dataset }) {
                           )}
                           /{platformSections.reduce((count, group) => count + group.keys.length, 0)}
                         </span>
-                        <IconChevronRight
-                          className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none"
-                          aria-hidden="true"
-                        />
+                        <span className="flex size-8 shrink-0 items-center justify-center text-foreground">
+                          <IconChevronRight
+                            className="size-4 transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none"
+                            aria-hidden="true"
+                          />
+                        </span>
                       </summary>
                       <div className="space-y-6 px-4 pb-5">
                         {platformSections.map((group) => (
@@ -378,116 +405,6 @@ export function DatasetDocumentation({ dataset }) {
               </div>
             </section>
             <div className="lg:hidden">{exportPreview}</div>
-            <section className="space-y-3" aria-labelledby="sources-title">
-              <h2 id="sources-title" className="text-xl font-semibold">
-                What this dataset contains
-              </h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">{data.sources}</p>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Each record has a shared envelope. Its native payload keeps the original source
-                fields; it is not converted into one universal schema. All examples here use
-                fictional data.
-              </p>
-            </section>
-            <section className="space-y-5" aria-labelledby="json-title">
-              <h2 id="json-title" className="text-xl font-semibold">
-                JSON structures
-              </h2>
-              <dl className="grid gap-4 sm:grid-cols-2">
-                {[
-                  ['domain', 'health, time, or location.'],
-                  ['type', 'The source metric or collection identifier.'],
-                  [
-                    'source',
-                    'The platform adapter, such as healthkit, health-connect, native-usage, or expo-location.',
-                  ],
-                  [
-                    'start / end',
-                    'ISO UTC timestamps, or null when the source has no valid timestamp. When no end is supplied, end falls back to start.',
-                  ],
-                  [
-                    'native',
-                    'The unchanged source payload. Its fields depend on the platform and dataset type.',
-                  ],
-                  [
-                    'Selection keys',
-                    'Profiles use native:<type>. These authorization keys differ from the source value stored on a record.',
-                  ],
-                ].map(([label, description]) => (
-                  <div key={label}>
-                    <dt className="font-mono text-sm">{label}</dt>
-                    <dd className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      {description}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              {included.map((item, index) => (
-                <JsonExample
-                  key={item.domain}
-                  title={`${item.title} · example record`}
-                  value={examples[index]}
-                />
-              ))}
-              {included.some((item) => item.domain === 'time') && (
-                <JsonExample
-                  title="Android application record"
-                  value={record('time', 'applications', 'native-usage', {
-                    identifier: 'com.example.reader',
-                    startMs: 1791417600000,
-                    endMs: 1791504000000,
-                    lastTimeUsedMs: 1791446400000,
-                    durationMs: 1200000,
-                    granularity: 'system-daily-aggregate',
-                  })}
-                />
-              )}
-              {included.some((item) => item.domain === 'health') && (
-                <JsonExample
-                  title="Android Health Connect record · Steps"
-                  value={record('health', 'Steps', 'health-connect', {
-                    startTime: '2026-10-08T08:00:00.000Z',
-                    endTime: '2026-10-08T08:30:00.000Z',
-                    count: 1250,
-                  })}
-                />
-              )}
-              <JsonExample
-                title="JSON export file · completed daily profile export"
-                value={{
-                  schema: 'myself.md.export.v1',
-                  records: examples,
-                  profileId: 'example-profile',
-                  profileName: profile.name,
-                  interval: {
-                    day: '2026-10-08',
-                    start: '2026-10-08T00:00:00.000Z',
-                    end: '2026-10-09T00:00:00.000Z',
-                  },
-                  recordCount: examples.length,
-                  captures: [],
-                  status: 'complete',
-                  failures: [],
-                  exportedAt: '2026-10-09T00:00:00.000Z',
-                }}
-              />
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                JSONL writes one record envelope per line, with daily metadata in a separate
-                .jsonl.manifest.json file. JSON places records and metadata in one document. The
-                captures and failures arrays report source coverage; a file can have partial status
-                when some selected sources could not be read.
-              </p>
-            </section>
-            <section className="space-y-4" aria-labelledby="limits-title">
-              <h2 id="limits-title" className="text-xl font-semibold">
-                Availability and limitations
-              </h2>
-              <ul className="list-disc space-y-3 pl-5 text-sm leading-relaxed text-muted-foreground">
-                {data.limitations.map((limit) => (
-                  <li key={limit}>{limit}</li>
-                ))}
-              </ul>
-            </section>
           </div>
           <aside
             aria-label="Live export JSON preview"
@@ -495,6 +412,129 @@ export function DatasetDocumentation({ dataset }) {
           >
             {exportPreview}
           </aside>
+        </div>
+        <div className="mx-auto max-w-4xl space-y-12 py-12 sm:space-y-16 sm:py-20">
+          <section className="space-y-6" aria-labelledby="sources-title">
+            <h2 id="sources-title" className="text-2xl font-medium tracking-tight">
+              What this dataset contains
+            </h2>
+            <p className="text-base leading-8 text-muted-foreground sm:text-lg">{data.sources}</p>
+            <p className="text-base leading-8 text-muted-foreground sm:text-lg">
+              Each record has a shared envelope. Its native payload keeps the original source
+              fields; it is not converted into one universal schema. All examples here use fictional
+              data.
+            </p>
+          </section>
+          <section className="space-y-6" aria-labelledby="json-title">
+            <h2 id="json-title" className="text-2xl font-medium tracking-tight">
+              JSON structures
+            </h2>
+            <dl className="space-y-6">
+              {[
+                ['domain', 'health, time, or location.'],
+                ['type', 'The source metric or collection identifier.'],
+                [
+                  'source',
+                  'The platform adapter, such as healthkit, health-connect, native-usage, or expo-location.',
+                ],
+                [
+                  'start / end',
+                  'ISO UTC timestamps, or null when the source has no valid timestamp. When no end is supplied, end falls back to start.',
+                ],
+                [
+                  'native',
+                  'The unchanged source payload. Its fields depend on the platform and dataset type.',
+                ],
+                [
+                  'Selection keys',
+                  'Profiles use native:<type>. These authorization keys differ from the source value stored on a record.',
+                ],
+              ].map(([label, description]) => (
+                <div key={label}>
+                  <dt className="font-mono text-base font-medium">{label}</dt>
+                  <dd className="mt-2 text-base leading-8 text-muted-foreground sm:text-lg">
+                    {description}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-base font-medium [&::-webkit-details-marker]:hidden">
+                Example JSON records
+                <IconChevronRight
+                  className="size-4 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </summary>
+              <div className="mt-6 space-y-8">
+                {included.map((item, index) => (
+                  <JsonExample
+                    key={item.domain}
+                    title={`${item.title} · example record`}
+                    value={examples[index]}
+                  />
+                ))}
+                {included.some((item) => item.domain === 'time') && (
+                  <JsonExample
+                    title="Android application record"
+                    value={record('time', 'applications', 'native-usage', {
+                      identifier: 'com.example.reader',
+                      startMs: 1791417600000,
+                      endMs: 1791504000000,
+                      lastTimeUsedMs: 1791446400000,
+                      durationMs: 1200000,
+                      granularity: 'system-daily-aggregate',
+                    })}
+                  />
+                )}
+                {included.some((item) => item.domain === 'health') && (
+                  <JsonExample
+                    title="Android Health Connect record · Steps"
+                    value={record('health', 'Steps', 'health-connect', {
+                      startTime: '2026-10-08T08:00:00.000Z',
+                      endTime: '2026-10-08T08:30:00.000Z',
+                      count: 1250,
+                    })}
+                  />
+                )}
+                <JsonExample
+                  title="JSON export file · completed daily profile export"
+                  value={{
+                    schema: 'myself.md.export.v1',
+                    records: examples,
+                    profileId: 'example-profile',
+                    profileName: profile.name,
+                    interval: {
+                      day: '2026-10-08',
+                      start: '2026-10-08T00:00:00.000Z',
+                      end: '2026-10-09T00:00:00.000Z',
+                    },
+                    recordCount: examples.length,
+                    captures: [],
+                    status: 'complete',
+                    failures: [],
+                    exportedAt: '2026-10-09T00:00:00.000Z',
+                  }}
+                />
+              </div>
+            </details>
+            <p className="text-base leading-8 text-muted-foreground sm:text-lg">
+              JSONL writes one record envelope per line, with daily metadata in a separate
+              .jsonl.manifest.json file. JSON places records and metadata in one document. The
+              captures and failures arrays report source coverage; a file can have partial status
+              when some selected sources could not be read.
+            </p>
+          </section>
+          <section className="space-y-6" aria-labelledby="limits-title">
+            <h2 id="limits-title" className="text-2xl font-medium tracking-tight">
+              Availability and limitations
+            </h2>
+            <ul className="list-disc space-y-4 pl-5 text-base leading-8 text-muted-foreground sm:text-lg">
+              {data.limitations.map((limit) => (
+                <li key={limit}>{limit}</li>
+              ))}
+            </ul>
+          </section>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <p className="text-sm text-muted-foreground">
