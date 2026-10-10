@@ -1,5 +1,11 @@
 # UI and MCP parity
 
+## Local developer Debug builds
+
+The separate `local-phone-builds` project provides CLI build/start/status/publish commands and a local stdio MCP server. `start_debug_build`, `get_debug_builds`, and `publish_debug_build` use the same validation, source checkout, local build process, signing checks, artifact upload, and install-link generation. Status distinguishes accepted, checking, building, verifying, publishing, completed, and failed; completed confirms the artifact and hosted delivery, not phone installation. Retrying publication reuses and reverifies the existing IPA. Expiring bearer links authorize artifact reads only; no app data grants or account authorization change. Signing credentials and Gripe keys remain inaccessible through MCP.
+
+There are no new mobile or dashboard actions. The developer install page initiates Apple's installer via an HTTPS manifest and reports the remaining phone handoff; the owner must confirm installation on an eligible registered iPhone. The local MCP operation returns that same install URL and expiry. Cloudflare deployment and Apple/Expo credential renewal remain developer operations. See [the standalone runner's coverage and validation](../../local-phone-builds/README.md).
+
 ## Local lifetime preview build
 
 The developer-only `EXPO_PUBLIC_PREVIEW_LIFETIME=1` build flag simulates lifetime access for local phone exports through the shared billing path. `allowance()` reports `previewLifetime: true`; no receipt or entitlement is persisted. An ordinary build restores normal billing. Paired MCP exports retain session validation and server billing, and dashboard/account entitlements are unchanged. This is a developer build option, not a user-facing setting or an agent grant operation. Existing profile selections, data grants and OS permissions still apply. Runtime fixtures cover local export completion, absence of persisted purchase proof, removal on a normal build and denial of unauthenticated paired exports. On 10 October 2026, this build was installed on the connected owner's iPhone without deleting data; a previously quota-blocked local export completed and its saved JSON was retrieved and parsed.
