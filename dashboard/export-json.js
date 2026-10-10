@@ -40,7 +40,7 @@ export function ExportJson({ value, added }) {
     <section className="space-y-3">
       <pre
         ref={pane}
-        className="export-json-pane overflow-auto text-xs leading-relaxed"
+        className="export-json-pane overflow-x-hidden overflow-y-auto text-xs leading-relaxed"
         tabIndex={0}
         aria-label="Export JSON"
       >

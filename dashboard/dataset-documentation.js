@@ -97,7 +97,7 @@ export function DatasetDocumentation({ dataset }) {
   const accordionGroups = [
     ...['iOS', 'Android'].map((platform) => ({
       title: `Health · ${platform}`,
-      defaultOpen: false,
+      defaultOpen: platform === 'iOS',
       groups: filteredGroups.filter(
         (group) => group.domain === 'health' && group.title.includes(platform),
       ),
