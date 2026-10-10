@@ -69,7 +69,7 @@ function ProfileExportControls({ session, profile, disabled, quick = false }) {
       <View style={styles.container}>
         <Button
           testID={`profile-export-${profile.id}`}
-          label={busy ? 'Exporting…' : 'Run export'}
+          label={busy ? 'Exporting…' : 'Export'}
           icon="download-outline"
           plain
           disabled={disabled || busy}

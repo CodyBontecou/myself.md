@@ -60,6 +60,7 @@
     "zod": "^4.6.5"
   },
   "scripts": {
+    "verify:usage-sessions": "node --experimental-vm-modules scripts/verify-usage-sessions.js",
     "verify:time-series": "node --experimental-vm-modules scripts/verify-time-series.js",
     "start": "expo start",
     "ios": "expo run:ios",

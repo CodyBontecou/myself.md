@@ -3,6 +3,7 @@ package com.qrconnect.usage
 import android.Manifest
 import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
+import android.app.usage.UsageEvents
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,6 +28,34 @@ class PhoneUsageModule : Module() {
       val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       context().startActivity(intent)
       "settings-opened"
+    }
+    AsyncFunction("readEvents") { start: Double, end: Double ->
+      require(authorized()) { "Grant Usage Access in Android settings." }
+      require(start.isFinite() && end.isFinite() && end > start && end - start <= 31 * 86400000.0) { "Invalid usage query." }
+      val observedEnd = minOf(end.toLong(), System.currentTimeMillis())
+      val manager = context().getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+      // One day of context recovers observed sessions crossing the requested start.
+      val events = manager.queryEvents(maxOf(0L, start.toLong() - 86400000L), observedEnd)
+        ?: throw IllegalStateException("Usage events unavailable while the device is locked.")
+      val event = UsageEvents.Event()
+      val rows = mutableListOf<Map<String, Any>>()
+      while (events.hasNextEvent()) {
+        events.getNextEvent(event)
+        val kind = when (event.eventType) {
+          UsageEvents.Event.ACTIVITY_RESUMED -> "resume"
+          UsageEvents.Event.ACTIVITY_PAUSED -> "pause"
+          UsageEvents.Event.ACTIVITY_STOPPED -> "stop"
+          UsageEvents.Event.SCREEN_NON_INTERACTIVE -> "screen-off"
+          UsageEvents.Event.DEVICE_SHUTDOWN -> "shutdown"
+          UsageEvents.Event.DEVICE_STARTUP -> "startup"
+          else -> null
+        } ?: continue
+        val activity = event.className ?: ""
+        rows.add(mapOf("kind" to kind, "timeMs" to event.timeStamp,
+          "identifier" to (event.packageName ?: ""), "activity" to activity))
+        require(rows.size <= 100000) { "Too many usage events. Select a shorter interval." }
+      }
+      mapOf("events" to rows, "observedEndMs" to observedEnd)
     }
     AsyncFunction("read") { start: Double, end: Double, kind: String, offset: Int, limit: Int ->
       require(authorized()) { "Grant Usage Access in Android settings." }

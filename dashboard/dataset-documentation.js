@@ -1,3 +1,4 @@
+import { publicFAQs } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'radix-ui';
@@ -7,6 +8,7 @@ import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
 import { DownloadBadges } from './download-badges.js';
+import { PricingSection } from './pricing-section.js';
 import { Button } from './components/ui/button.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { Input } from './components/ui/input.js';
@@ -55,11 +57,6 @@ export function DatasetDocumentation({ dataset, landing = false }) {
     };
   }, []);
   const included = Object.values(datasets);
-  const data = {
-    ...datasets.health,
-    sources: included.map((item) => `${item.title}: ${item.sources}`).join('\n'),
-    limitations: included.flatMap((item) => item.limitations),
-  };
   const selectable =
     filter === 'all'
       ? included
@@ -214,12 +211,23 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                     ))}
                   </Tabs.Root>
                   <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
-                    <a href="/docs">Developer docs</a>
+                    <a href="/docs">Docs</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="/faq">FAQ</a>
                     <a href="/about">About</a>
                     <a href="/contact">Contact</a>
-                    <a href={privacyPolicy.url}>Privacy policy</a>
+                    <a href={privacyPolicy.url}>Privacy</a>
                     <a href={privacyPolicy.supportUrl}>Support</a>
                   </nav>
+                  <details className="space-y-3 text-sm">
+                    <summary className="cursor-pointer font-medium">Common questions</summary>
+                    {publicFAQs.map((item) => (
+                      <div key={item.question} className="space-y-1">
+                        <h3 className="font-medium">{item.question}</h3>
+                        <p className="text-muted-foreground">{item.answer}</p>
+                      </div>
+                    ))}
+                  </details>
                 </section>
               </div>
             ) : (
@@ -349,8 +357,10 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                       open={Boolean(search) || defaultOpen}
                       className="group"
                     >
-                      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md bg-background py-4 pl-3 text-base font-medium hover:bg-muted group-open:sticky group-open:top-0 group-open:z-10 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                        <span>{title}</span>
+                      <summary className="group/row flex cursor-pointer list-none items-center gap-3 rounded-md bg-background py-4 pl-3 text-base font-medium group-open:sticky group-open:top-0 group-open:z-10 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                        <span className="decoration-muted-foreground/50 underline-offset-4 group-hover/row:underline">
+                          {title}
+                        </span>
                         <span className="ml-auto px-1 text-xs font-medium tabular-nums text-muted-foreground">
                           {platformSections.reduce(
                             (count, group) =>
@@ -422,23 +432,44 @@ export function DatasetDocumentation({ dataset, landing = false }) {
           </aside>
         </div>
         <div className="mx-auto max-w-4xl space-y-12 py-12 sm:space-y-16 sm:py-20">
+          {landing && <PricingSection />}
           <section className="space-y-6" aria-labelledby="sources-title">
             <h2 id="sources-title" className="text-2xl font-medium tracking-tight">
               What this dataset contains
             </h2>
-            <p className="text-base leading-8 whitespace-pre-line text-muted-foreground sm:text-lg">
-              {data.sources}
-            </p>
+            <div className="text-base leading-8 text-muted-foreground sm:text-lg">
+              {included.map((item) => (
+                <p key={item.domain}>
+                  <strong>{item.title}:</strong> {item.sources}
+                </p>
+              ))}
+            </div>
           </section>
           <section className="space-y-6" aria-labelledby="limits-title">
             <h2 id="limits-title" className="text-2xl font-medium tracking-tight">
               Availability and limitations
             </h2>
-            <ul className="list-disc space-y-4 pl-5 text-base leading-8 text-muted-foreground sm:text-lg">
-              {data.limitations.map((limit) => (
-                <li key={limit}>{limit}</li>
+            <div className="space-y-8">
+              {[
+                { platform: 'ios', title: 'iOS' },
+                { platform: 'android', title: 'Android' },
+              ].map(({ platform, title }) => (
+                <section key={platform} className="space-y-4">
+                  <h3 className="text-xl font-medium">{title}</h3>
+                  <ul className="list-disc space-y-4 pl-5 text-base leading-8 text-muted-foreground sm:text-lg">
+                    {included
+                      .flatMap((item) =>
+                        item.limitationsByPlatform[
+                          /** @type {'ios'|'android'} */ (platform)
+                        ].concat(item.limitationsByPlatform.shared),
+                      )
+                      .map((limit) => (
+                        <li key={limit}>{limit}</li>
+                      ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           </section>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-6">

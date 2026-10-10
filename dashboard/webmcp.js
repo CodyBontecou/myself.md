@@ -10,7 +10,7 @@ export async function registerPublicTools(context, client) {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     execute: async (input) => {
-      if (!input || Array.isArray(input) || Object.keys(input).length)
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
         throw new Error('This tool takes an empty object.');
       return { markdown: await client.docs() };
     },

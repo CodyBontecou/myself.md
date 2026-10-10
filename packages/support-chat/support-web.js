@@ -22,7 +22,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
   }, [latest]);
   return (
     <section
-      className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-8 lg:px-6"
+      className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pb-8 lg:px-6"
       aria-label="Support inbox"
     >
       <header className="flex items-center justify-between border-b py-4">
@@ -50,14 +50,14 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
       )}
       {!c ? (
         <>
-          <div className="pt-16 pb-6 text-center">
-            <h3 className="text-3xl font-semibold tracking-tight">How can we help?</h3>
-            <p className="mt-3 text-sm text-muted-foreground">
+          <div className="space-y-2 py-2">
+            <h3 className="text-xl font-semibold tracking-tight">How can we help?</h3>
+            <p className="text-sm text-muted-foreground">
               Ask Isobot a question or report a problem. Staff can join the conversation.
             </p>
           </div>
           <form
-            className="rounded-3xl border bg-muted/40 p-4 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
+            className="rounded-xl border bg-background p-3 focus-within:ring-2 focus-within:ring-ring/30"
             onSubmit={(event) => {
               event.preventDefault();
               void chat.create(crypto.randomUUID(), title).then((saved) => {
@@ -93,11 +93,11 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
           </form>
           {chat.conversations.map((item) => (
             <Button
-              variant="outline"
+              variant="ghost"
               key={item.id}
               disabled={disabled}
               type="button"
-              className="h-auto w-full justify-start rounded-xl border bg-background p-4 text-left"
+              className="h-auto w-full justify-start rounded-none border-0 border-b bg-transparent px-0 py-3 text-left shadow-none"
               onClick={() => {
                 setDraft('');
                 atBottom.current = true;
@@ -112,7 +112,8 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
       ) : (
         <>
           <Button
-            variant="outline"
+            className="self-start px-0"
+            variant="ghost"
             type="button"
             disabled={disabled}
             onClick={() => {
@@ -123,12 +124,12 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
           >
             Back to conversations
           </Button>
-          <h3 className="text-center text-sm font-medium">
+          <h3 className="text-lg font-medium">
             {c.title} · {c.status}
           </h3>
           {c.hasMore && (
             <Button
-              variant="outline"
+              variant="ghost"
               disabled={disabled}
               type="button"
               onClick={() => void chat.loadOlder()}
@@ -145,17 +146,10 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
             }}
             role="log"
             aria-label="Support messages"
-            className="flex min-h-48 max-h-[55vh] flex-col gap-8 overflow-y-auto py-4"
+            className="flex min-h-48 max-h-[55vh] flex-col divide-y overflow-y-auto"
           >
             {c.messages.map((message) => (
-              <article
-                key={message.id}
-                className={
-                  message.author === 'user'
-                    ? 'ml-auto max-w-[85%] rounded-3xl bg-muted px-5 py-3'
-                    : 'mr-auto w-full px-1 py-3'
-                }
-              >
+              <article key={message.id} className="w-full py-4">
                 <p className="mb-2 text-xs text-muted-foreground">
                   {message.author === 'pi'
                     ? 'Isobot'
@@ -172,7 +166,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
           </div>
           {c.status === 'open' && (
             <form
-              className="sticky bottom-4 z-10 rounded-3xl border bg-background p-4 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
+              className="sticky bottom-4 z-10 rounded-xl border bg-background p-3 focus-within:ring-2 focus-within:ring-ring/30"
               onSubmit={(event) => {
                 event.preventDefault();
                 const value = draft.trim();
@@ -216,7 +210,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
               {r.status === 'pending' && (
                 <>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     type="button"
                     disabled={disabled || !data}
                     onClick={() => void logs.prepare(r)}
@@ -224,7 +218,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                     Review requested data
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     type="button"
                     disabled={disabled}
                     onClick={() => void chat.mutate('decline', { requestId: r.id })}
@@ -257,23 +251,23 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                 className="w-full rounded-lg border bg-background p-3 font-mono text-sm"
               />
               <Button
-                variant="outline"
+                variant="ghost"
                 disabled={disabled}
                 type="button"
                 onClick={() => void logs.share()}
               >
                 Accept and share this snapshot
               </Button>
-              <Button variant="outline" disabled={disabled} type="button" onClick={logs.cancel}>
+              <Button variant="ghost" disabled={disabled} type="button" onClick={logs.cancel}>
                 Cancel
               </Button>
             </div>
           )}
-          <details className="rounded-xl border p-4 text-sm">
+          <details className="border-t py-3 text-sm">
             <summary className="cursor-pointer font-medium">Conversation details</summary>
-            <div className="mt-4 flex flex-col gap-4">
+            <div className="mt-3 flex flex-col items-start gap-2">
               <Button
-                variant="outline"
+                variant="ghost"
                 disabled={disabled}
                 type="button"
                 onClick={() =>
@@ -286,7 +280,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                 <>
                   {data && (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       type="button"
                       disabled={disabled}
                       onClick={() => void logs.prepare(null)}
@@ -317,7 +311,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                     Isobot replies automatically
                   </label>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     type="button"
                     disabled={disabled}
                     onClick={() => void chat.mutate('update', { status: 'resolved' })}
@@ -327,7 +321,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                 </>
               ) : (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   type="button"
                   disabled={disabled}
                   onClick={() => void chat.mutate('update', { status: 'open' })}
@@ -337,7 +331,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
               )}
               {c.status !== 'archived' && (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   disabled={disabled}
                   type="button"
                   onClick={() => {
@@ -353,7 +347,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                 </Button>
               )}
               <Button
-                variant="outline"
+                variant="ghost"
                 disabled={disabled}
                 type="button"
                 onClick={() => {

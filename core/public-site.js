@@ -47,8 +47,8 @@ export const publicFAQs = [
       'Review and revoke sharing permissions in the phone app or authenticated dashboard. Revocation prevents future reads but cannot recall copies already delivered.',
   },
 ];
-const publicLifetimePrice = '$19.99';
-const publicCloudPlans = [
+export const publicLifetimePrice = '$19.99';
+export const publicCloudPlans = [
   { capacity: '50 MB', price: 'Included with Lifetime', billing: 'No storage subscription' },
   { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
   { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },

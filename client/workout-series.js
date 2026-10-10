@@ -1,13 +1,22 @@
 import * as HK from '@kingstinct/react-native-healthkit';
-import { captureQuantitySeries } from './health-series.js';
+import { captureHealthSamples, captureFailure, readWorkoutRoutes } from './health-series.js';
 import { quantities } from './health-types.js';
 /** Query real workout associations, never infer membership from overlapping times.
  * @param {Awaited<ReturnType<typeof HK.queryWorkoutSamplesWithAnchor>>['workouts'][number]} workout */
 export async function captureWorkout(workout) {
   const native = workout.toJSON();
+  const details =
+    (
+      await captureHealthSamples([
+        /** @type {Record<string,unknown>} */ (JSON.parse(JSON.stringify(native))),
+      ])
+    )[0] ?? /** @type {Record<string,unknown>} */ (JSON.parse(JSON.stringify(native)));
   /** @type {Record<string,unknown[]>} */ const timeSeries = {};
   /** @type {Record<string,unknown[]>} */ const associatedSamples = {};
-  /** @type {string[]} */ const captureFailures = [];
+  /** @type {unknown[]} */ const captureFailures =
+    'captureFailures' in details && Array.isArray(details.captureFailures)
+      ? [...details.captureFailures]
+      : [];
   const namedMetrics = [
     ['heartRate', 'HKQuantityTypeIdentifierHeartRate'],
     ...(native.workoutActivityType === HK.WorkoutActivityType.running
@@ -53,7 +62,7 @@ export async function captureWorkout(workout) {
             ),
             { filter: { workout }, ascending: true, limit: 0 },
           );
-          const enriched = await captureQuantitySeries(
+          const enriched = await captureHealthSamples(
             /** @type {Record<string,unknown>[]} */ (JSON.parse(JSON.stringify(samples))),
           );
           associatedSamples[key] = enriched;
@@ -75,39 +84,43 @@ export async function captureWorkout(workout) {
                 ],
           );
           if (enriched.some((sample) => sample.captureFailures))
-            captureFailures.push(`${key}: quantity-series detail could not be read.`);
-        } catch {
-          captureFailures.push(`${key}: associated samples could not be read.`);
+            captureFailures.push(
+              captureFailure(
+                'associatedSamples',
+                identifier,
+                new Error('Inspect associated sample captureFailures.'),
+              ),
+            );
+        } catch (error) {
+          captureFailures.push(captureFailure('associatedSamples', identifier, error));
         }
       }),
     );
   }
-  let routes = /** @type {Awaited<ReturnType<typeof workout.getWorkoutRoutes>>} */ ([]);
+  /** @type {Record<string,unknown>[]} */ let routes = [];
   try {
-    routes = await workout.getWorkoutRoutes();
+    const result = await readWorkoutRoutes(native.uuid);
+    routes = result.records;
+    captureFailures.push(...result.captureFailures);
+    for (const route of routes)
+      if (Array.isArray(route.captureFailures)) captureFailures.push(...route.captureFailures);
     timeSeries.altitude = routes.flatMap((route) =>
-      route.locations.map((location) => ({
+      (Array.isArray(route.locations) ? route.locations : []).map((location) => ({
         timestamp: location.date,
         value: location.altitude,
         unit: 'm',
         native: location,
       })),
     );
-  } catch {
-    captureFailures.push('Workout routes could not be read.');
-  }
-  let workoutPlan;
-  try {
-    workoutPlan = await workout.getWorkoutPlan();
-  } catch {
-    captureFailures.push('The associated workout plan could not be read.');
+  } catch (error) {
+    captureFailures.push(captureFailure('workoutRoutes', native.uuid, error));
   }
   return {
     ...native,
+    ...details,
     routes,
     associatedSamples,
     timeSeries,
-    ...(workoutPlan ? { workoutPlan } : {}),
     captureFailures,
   };
 }

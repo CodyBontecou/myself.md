@@ -258,6 +258,28 @@ select:not([multiple]):not([size]) {
     max-height: none;
   }
 }
+.export-json-line {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+}
+.export-json-line:hover {
+  background: var(--muted);
+}
+summary.export-json-line {
+  cursor: pointer;
+  list-style: none;
+}
+summary.export-json-line::-webkit-details-marker {
+  display: none;
+}
+summary.export-json-line:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+.export-json-node[open] > summary > .export-json-collapsed {
+  display: none;
+}
 .export-json-record {
   position: relative;
   display: block;

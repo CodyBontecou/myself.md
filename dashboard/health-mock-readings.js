@@ -1,4 +1,10 @@
-import { quantities, categories, androidTypes, special } from '../client/health-types.js';
+import {
+  quantities,
+  categories,
+  androidTypes,
+  special,
+  characteristics,
+} from '../client/health-types.js';
 import { record } from '../core/data.js';
 
 // Mock units and category values follow @kingstinct/react-native-healthkit 16.1 generated identifiers.
@@ -434,6 +440,17 @@ export function healthMockReadings(start, end) {
   return [
     ...iosQuantities,
     ...iosCategories,
+    ...characteristics.map((type) =>
+      record('health', type, 'healthkit', {
+        characteristicType: type,
+        characteristicValue:
+          type === 'HKCharacteristicTypeIdentifierDateOfBirth'
+            ? { year: 1990, month: 1, day: 1, calendar: 'gregorian' }
+            : 0,
+        captureKind: 'current-snapshot',
+        capturedAt: start,
+      }),
+    ),
     ...special.map((type, index) => {
       if (!extras[type]) throw new Error(`Missing mock special type: ${type}`);
       return record('health', type, 'healthkit', {

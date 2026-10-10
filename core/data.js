@@ -43,7 +43,11 @@ function object(value) {
 function timestamp(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  return Number.isFinite(date.getTime())
+    ? typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)
+      ? value
+      : date.toISOString()
+    : null;
 }
 /** @param {DataPage} page @param {DataQuery['format']} format @param {import('./export-schemas.js').ExportSchema} [schema] */
 export function exportPage(page, format, schema = defaultExportSchema) {

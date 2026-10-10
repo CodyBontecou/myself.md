@@ -426,7 +426,7 @@ export function createDataService({
       'query_phone_data',
       {
         description:
-          'Ask the connected phone to read one discovered data type in a UTC interval under any catalog profileId with agentAccess true. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization.',
+          'Ask the connected phone to read one discovered data type in a UTC interval under any catalog profileId with agentAccess true. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: reuse identical arguments to retrieve the original live job without another charge. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Keep keys unique; activity fingerprints are retained for 90 days.',
         inputSchema: querySchema,
         annotations: { readOnlyHint: true },
       },

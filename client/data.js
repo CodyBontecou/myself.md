@@ -19,7 +19,7 @@ export async function catalog(_owner, grants, profile) {
           ? Platform.OS === 'ios'
             ? ['applications', 'websites']
             : Platform.OS === 'android'
-              ? ['applications']
+              ? ['applications', 'sessions']
               : []
           : ['points']
       ).map((type) => `native:${type}`),
@@ -39,7 +39,7 @@ export async function catalog(_owner, grants, profile) {
           ? usage === 'authorized'
             ? Platform.OS === 'ios'
               ? ['applications', 'websites']
-              : ['applications']
+              : ['applications', 'sessions']
             : []
           : location.granted
             ? ['points']
@@ -51,11 +51,12 @@ export async function catalog(_owner, grants, profile) {
         domain === 'health'
           ? [
               'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions are not captured by this adapter.',
+              'Characteristics are current snapshots captured at read time, not historical values for the selected day. Newly available types require profile selection; agents cannot add them or grant Health access.',
               'Exports preserve native records and explicit timeSeries without summaries. Workout selection includes genuinely associated heart-rate/form series and routes. Nested capture failures mark exports partial. Health Connect series remain intact; Android exercise membership is not inferred from overlapping times.',
             ]
           : domain === 'time'
             ? [
-                `System authorization: ${usage}. iOS raw data requires iOS 26.4+, the approved Family Controls data entitlement, and EU eligibility. Android uses Usage Access. Aggregates are not sessions.`,
+                `System authorization: ${usage}. iOS raw data requires iOS 26.4+, the approved Family Controls data entitlement, and EU eligibility. iOS applications/websites are hourly aggregates, not sessions. Android applications are daily aggregates; sessions are reconstructed activity intervals under the same Usage Access permission. Select sessions separately in the profile.`,
               ]
             : [
                 `Location access: ${location.granted ? 'authorized' : 'required'}. Only locally recorded points are available. Background tracking is optional. No historical OS location archive is exposed.`,

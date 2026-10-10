@@ -126,6 +126,27 @@ try {
   });
   billing.clearAccountAllowance();
   assert.equal(billing.allowance().unlocked, false, 'Sign-out clears account access.');
+  const previousPreview = process.env.EXPO_PUBLIC_PREVIEW_LIFETIME;
+  try {
+    process.env.EXPO_PUBLIC_PREVIEW_LIFETIME = '1';
+    billing = await load();
+    assert.equal(billing.allowance().unlocked, true);
+    await billing.reserveExport(context, 'preview-local');
+    await billing.settleExport(context, 'preview-local', true);
+    assert.equal(secure.has('lifetime-purchase-proof'), false);
+    assert.equal(db.prepare('SELECT value FROM billing_cache WHERE id=2').get()?.value, 'false');
+    await assert.rejects(
+      billing.reserveExport({ owner: 'alice', deviceId: 'paired-phone' }, 'preview-agent'),
+      /Sign in/,
+    );
+    process.env.EXPO_PUBLIC_PREVIEW_LIFETIME = '0';
+    billing = await load();
+    assert.equal(billing.allowance().unlocked, false, 'A normal build removes preview access.');
+    await assert.rejects(billing.reserveExport(context, 'after-preview'), /Reconnect|5 free/);
+  } finally {
+    if (previousPreview === undefined) delete process.env.EXPO_PUBLIC_PREVIEW_LIFETIME;
+    else process.env.EXPO_PUBLIC_PREVIEW_LIFETIME = previousPreview;
+  }
   console.log(
     'Local billing: shared counter, blocked prompts, reminder persistence, offline lifetime access across process restarts, and refund clearing passed.',
   );

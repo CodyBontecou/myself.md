@@ -4,10 +4,10 @@ import { Switch, TextInput, View, StyleSheet } from 'react-native';
 import { useSupport } from './useSupport.js';
 import { supportNotice } from './protocol.js';
 /** @typedef {import('react').ReactNode} ReactNode */
-/** @typedef {import('react').ComponentType<{children:ReactNode,testID?:string}>} ScreenComponent */
+/** @typedef {import('react').ComponentType<{children:ReactNode,testID?:string,compact?:boolean}>} ScreenComponent */
 /** @typedef {import('react').ComponentType<{children:ReactNode,muted?:boolean,variant?:'caption',selectable?:boolean,accessibilityRole?:import('react-native').TextProps['accessibilityRole'],style?:import('react-native').StyleProp<import('react-native').TextStyle>}>} CopyComponent */
 /** @typedef {import('react').ComponentType<{label:string,onPress:()=>void,secondary?:boolean,disabled?:boolean,busy?:boolean,testID?:string}>} ButtonComponent */
-/** @typedef {import('react').ComponentType<{title:string,subtitle:string,trailing:ReactNode}>} RowComponent */
+/** @typedef {import('react').ComponentType<{title:string,subtitle:string,trailing:ReactNode,compact?:boolean,onPress?:()=>void,disabled?:boolean}>} RowComponent */
 /** Host supplies theme and UI primitives; authentication and navigation stay in the host.
  * @param {{request:import('./protocol.js').SupportRequest,active?:boolean,unavailableContent?:ReactNode,colors:{danger:string,accent:string,surface:string,onAccent:string,secondary:string,text:string,border:string},components:{Screen:ScreenComponent,Copy:CopyComponent,Button:ButtonComponent,Row:RowComponent}}} props */
 export function NativeChat({

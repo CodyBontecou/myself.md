@@ -247,3 +247,13 @@ export const special = [
   'HKDataTypeIdentifierHeartbeatSeries',
   'HKStateOfMindTypeIdentifier',
 ];
+
+/** Current HealthKit profile values; these are snapshots, not historical samples. */
+export const characteristics = [
+  'HKCharacteristicTypeIdentifierActivityMoveMode',
+  'HKCharacteristicTypeIdentifierBiologicalSex',
+  'HKCharacteristicTypeIdentifierBloodType',
+  'HKCharacteristicTypeIdentifierDateOfBirth',
+  'HKCharacteristicTypeIdentifierFitzpatrickSkinType',
+  'HKCharacteristicTypeIdentifierWheelchairUse',
+];

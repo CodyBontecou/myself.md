@@ -1,16 +1,16 @@
 import { Platform } from 'react-native';
 import * as HK from '@kingstinct/react-native-healthkit';
 import * as HC from 'react-native-health-connect';
-import { quantities, categories, androidTypes, special } from './health-types.js';
+import { quantities, categories, androidTypes, special, characteristics } from './health-types.js';
 import { record } from '../core/data.js';
-import { captureQuantitySeries } from './health-series.js';
+import { captureHealthSamples, readHealthCharacteristic } from './health-series.js';
 import { captureWorkout } from './workout-series.js';
 /** @typedef {import('@kingstinct/react-native-healthkit').ObjectTypeIdentifier} HKType */
 /** @returns {Promise<string[]>} */
 export async function healthTypes() {
   if (Platform.OS === 'ios') {
     if (!HK.isHealthDataAvailable()) return [];
-    return [...quantities, ...categories, ...special].filter((type) => {
+    return [...quantities, ...categories, ...special, ...characteristics].filter((type) => {
       try {
         return HK.isObjectTypeAvailable(/** @type {HKType} */ (type));
       } catch {
@@ -36,7 +36,10 @@ export async function authorizeHealth() {
     // Correlations are readable through their constituent quantity permissions.
     // Requesting a correlation itself raises an Objective-C HealthKit exception.
     await HK.requestAuthorization({
-      toRead: /** @type {HKType[]} */ (types.filter((t) => !t.startsWith('HKCorrelation'))),
+      toRead: /** @type {HKType[]} */ ([
+        ...types.filter((t) => !t.startsWith('HKCorrelation')),
+        'HKWorkoutRouteTypeIdentifier',
+      ]),
     });
   } else if (Platform.OS === 'android') {
     if (!(await HC.initialize())) throw new Error('Install or update Health Connect, then retry.');
@@ -68,6 +71,19 @@ export async function healthPage(query, token) {
       capture: 'native-readable-samples',
       warnings: [
         'Health Connect can limit historical reads to 30 days unless historical access is granted. Exercise routes may require separate consent; a route is not inferred from an exercise summary.',
+      ],
+    };
+  }
+  if (characteristics.includes(query.type)) {
+    if (token) throw new Error('Characteristic snapshots do not accept an anchor.');
+    const snapshot = await readHealthCharacteristic(query.type);
+    return {
+      records: [record('health', query.type, 'healthkit', snapshot)],
+      nextCursor: null,
+      capture: 'current-characteristic-snapshot',
+      complete: true,
+      warnings: [
+        'Current characteristic captured at read time; the requested interval is not its historical effective date.',
       ],
     };
   }
@@ -124,8 +140,7 @@ export async function healthPage(query, token) {
   let samples = /** @type {Record<string,unknown>[]} */ (
     JSON.parse(JSON.stringify(result.samples))
   );
-  if (quantities.includes(query.type) || query.type.startsWith('HKCorrelation'))
-    samples = await captureQuantitySeries(samples);
+  if (query.type !== 'HKWorkoutTypeIdentifier') samples = await captureHealthSamples(samples);
   const complete = !samples.some(
     (sample) => Array.isArray(sample.captureFailures) && sample.captureFailures.length,
   );
@@ -133,7 +148,12 @@ export async function healthPage(query, token) {
   return {
     records: samples
       .map((r) => record('health', query.type, 'healthkit', r))
-      .filter((r) => r.start === null || (r.start >= query.start && r.start < query.end)),
+      .filter(
+        (r) =>
+          r.start === null ||
+          (Date.parse(r.start) >= Date.parse(query.start) &&
+            Date.parse(r.start) < Date.parse(query.end)),
+      ),
     nextCursor: full ? result.newAnchor : null,
     capture: 'native-readable-samples',
     complete,

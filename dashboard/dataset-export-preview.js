@@ -33,6 +33,16 @@ const nativeRecords = [
     durationMs: 300000,
     granularity: 'hourly-aggregate',
   }),
+  record('time', 'sessions', 'native-usage', {
+    identifier: 'com.example.reader',
+    startMs: Date.parse(start),
+    endMs: Date.parse(end),
+    durationMs: Date.parse(end) - Date.parse(start),
+    observedStartMs: Date.parse(start),
+    startClipped: false,
+    endReason: 'pause',
+    granularity: 'foreground-session',
+  }),
   record('location', 'points', 'expo-location', {
     timestamp: Date.parse(start),
     coords: {
@@ -68,10 +78,14 @@ export function datasetExportPreview(profile) {
         source,
         capture:
           domain === 'health'
-            ? 'native-readable-samples'
+            ? type.startsWith('HKCharacteristic')
+              ? 'current-characteristic-snapshot'
+              : 'native-readable-samples'
             : domain === 'location'
               ? 'recorded-location-points'
-              : 'native-usage-aggregates',
+              : type === 'sessions'
+                ? 'native-usage-sessions'
+                : 'native-usage-aggregates',
         warnings: [],
       };
     }),

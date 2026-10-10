@@ -20,6 +20,8 @@ Create an Expo access token in the Expo account settings and save it as the GitH
 
 ## Release commands
 
+For an explicitly requested local lifetime preview on the connected development phone, compile with `EXPO_NO_DOTENV=1 EXPO_PUBLIC_ACCOUNT_SERVER=https://myself.md EXPO_PUBLIC_ALLOW_HTTP=0 EXPO_PUBLIC_PREVIEW_LIFETIME=1 npm run build:ios`, then install the generated app using `devicectl device install app` to preserve existing data. This build flag enables local exports and suppresses lifetime paywalls without persisting a receipt or entitlement. Omit it from ordinary builds and EAS updates. Installing an ordinary build restores normal billing. Paired agent exports and hosted account billing still require real server authorization.
+
 After setup, run `npm run build:preview -- --platform ios` for a new iPhone binary, or use android. Publish compatible changes with `npm run update:preview -- --message "Describe the change"`. The preview command never publishes to production.
 
 The Mobile preview GitHub workflow runs checks and publishes to preview on pushes to main. Its manual trigger offers update/build and platform selection. Native builds are explicitly triggered to avoid consuming build quota on every push. A new fingerprint update cannot reach an older binary: build and install the corresponding native runtime when native inputs change. Build jobs wait for EAS completion, so a successful submission alone does not count as a successful build. There is no automatic production publishing or store submission.

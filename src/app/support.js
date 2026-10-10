@@ -11,7 +11,7 @@ import { usePhone } from '../../client/PhoneProvider.js';
 import { api } from '../../client/session.js';
 import { debugReport } from '../../client/debug-log.js';
 import { useTheme } from '../lib/theme.js';
-import { Screen, Copy, Button, Row } from '../components/ui.js';
+import { Screen, Copy, Button, Row, Group } from '../components/ui.js';
 
 export default function SupportScreen() {
   const { session } = usePhone();
@@ -111,7 +111,7 @@ function SupportInbox({ session }) {
         data={data}
         newId={Crypto.randomUUID}
         colors={colors}
-        components={{ Screen, Copy, Button, Row }}
+        components={{ Screen, Copy, Button, Row, Group }}
       />
     </>
   );

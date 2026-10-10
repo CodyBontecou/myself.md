@@ -3,6 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 import { exportAllowance, freeExports } from '../core/billing.js';
 import { api, loadSession } from './session.js';
 const db = phoneDatabase();
+// Build-only local preview; never persist a purchase or grant server access.
+const previewLifetime = process.env.EXPO_PUBLIC_PREVIEW_LIFETIME === '1';
 db.execSync(`CREATE TABLE IF NOT EXISTS export_allowance (id TEXT PRIMARY KEY, state TEXT, offline INTEGER);
 CREATE TABLE IF NOT EXISTS billing_cache (id INTEGER PRIMARY KEY, value TEXT);`);
 const stored = /** @type {{value:string}|null} */ (
@@ -35,9 +37,10 @@ export function allowance() {
     ...exportAllowance(
       Math.max(Number(row?.used ?? 0), remote.used),
       Math.max(Number(row?.reserved ?? 0), remote.reserved),
-      nativeUnlocked || remote.unlocked,
+      previewLifetime || nativeUnlocked || remote.unlocked,
     ),
     promptVersion,
+    previewLifetime,
   };
 }
 /** @param {import('../core/billing.js').ExportAllowance} value */
@@ -61,6 +64,7 @@ export function takeBlockedPaywall(version) {
 }
 /** @param {import('./export-context.js').ExportContext} context */
 async function billingSession(context) {
+  if (previewLifetime && context.deviceId === 'local-device') return null;
   const session = await loadSession();
   if (context.deviceId === 'local-device') return session?.owner ? session : null;
   if (!session || session.deviceId !== context.deviceId || session.owner !== context.owner)

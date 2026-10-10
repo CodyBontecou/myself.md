@@ -11,6 +11,7 @@ import {
   IconPlus,
 } from '@tabler/icons-react';
 import { normalizeRecord } from '../core/explorer.js';
+import { sorted } from '../core/collections.js';
 import { api, hasSession } from './session.js';
 import { navigateRoute } from './navigation.js';
 import { readExplorerRoute, explorerRoute } from './explorer-route.js';
@@ -578,6 +579,57 @@ function FieldTree({ value }) {
     </div>
   );
 }
+/** @param {{rows:ExplorerRow[],timezone:string,onInspect:(id:string)=>void}} props */
+function SessionTimeline({ rows, timezone, onInspect }) {
+  const sessions = sorted(
+    rows.filter((row) => row.domain === 'time' && row.type === 'sessions' && row.start && row.end),
+    (a, b) => String(a.start).localeCompare(String(b.start)),
+  );
+  if (!sessions.length) return null;
+  const start = Math.min(...sessions.map((row) => Date.parse(row.start ?? '')));
+  const end = Math.max(...sessions.map((row) => Date.parse(row.end ?? '')));
+  const span = Math.max(1, end - start);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Session timeline</CardTitle>
+        <CardDescription>
+          Sessions on this results page, in {timezone}. Overlapping apps are shown separately.
+          Query-boundary endings have no observed closing event.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ol className="space-y-4">
+          {sessions.map((row) => (
+            <li key={row.id}>
+              <button type="button" className="w-full text-left" onClick={() => onInspect(row.id)}>
+                <span className="block break-all text-sm font-medium">
+                  {row.application ?? row.metric}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {display(row.start, 'start', timezone)} — {display(row.end, 'end', timezone)}
+                  {' · '}
+                  {display(row.duration, 'duration', timezone)} s{' · '}
+                  {String(row.fields['native.endReason'] ?? 'unknown ending')}
+                  {row.fields['native.startClipped'] === true ? ' · start clipped' : ''}
+                </span>
+                <span className="mt-2 block h-2 bg-muted" aria-hidden="true">
+                  <span
+                    className="block h-full bg-foreground"
+                    style={{
+                      marginLeft: `${((Date.parse(row.start ?? '') - start) / span) * 100}%`,
+                      width: `${((Date.parse(row.end ?? '') - Date.parse(row.start ?? '')) / span) * 100}%`,
+                    }}
+                  />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </CardContent>
+    </Card>
+  );
+}
 /** @param {{workspace:import('./workspace.js').Workspace,search:string,updated:string,onExpired:()=>void}} props */
 export function Explorer({ workspace, search, updated, onExpired }) {
   const route = readExplorerRoute(search),
@@ -803,6 +855,11 @@ export function Explorer({ workspace, search, updated, onExpired }) {
             <Badge variant="outline">{result.duplicates.toLocaleString()} overlaps collapsed</Badge>
             <Badge variant="outline">{query.timezone}</Badge>
           </div>
+          <SessionTimeline
+            rows={result.rows}
+            timezone={query.timezone}
+            onInspect={(id) => change({}, { record: id })}
+          />
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">

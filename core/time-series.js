@@ -12,7 +12,11 @@ function object(value) {
 function instant(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  return Number.isFinite(date.getTime())
+    ? typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)
+      ? value
+      : date.toISOString()
+    : null;
 }
 /** @param {Record<string,unknown>} sample @param {string|null} start @param {unknown} value @param {string} [unit] @returns {TimePoint} */
 function point(sample, start, value, unit) {
@@ -64,6 +68,7 @@ function observationUnit(sample) {
 export function explicitTimeSeries(payload, start) {
   const native = object(payload);
   /** @type {TimeSeries} */ const series = {};
+  if (native.captureKind === 'current-snapshot') return series;
   if (
     !Array.isArray(native.quantitySeries) &&
     (native.quantity !== undefined || native.value !== undefined)

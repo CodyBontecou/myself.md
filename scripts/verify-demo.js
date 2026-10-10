@@ -72,11 +72,17 @@ for (const dataset of Object.values(datasets)) {
       }
       if (row.source === 'health-connect') assert.equal(payload.recordType, row.type);
 
-      assert.ok(
-        row.start &&
-          row.start >= '2026-10-08T00:00:00.000Z' &&
-          row.start < '2026-10-09T00:00:00.000Z',
-      );
+      if (payload.captureKind === 'current-snapshot') {
+        assert.equal(row.start, null);
+        assert.equal(row.end, null);
+        assert.deepEqual(row.timeSeries, {});
+        assert.ok(payload.capturedAt);
+      } else
+        assert.ok(
+          row.start &&
+            row.start >= '2026-10-08T00:00:00.000Z' &&
+            row.start < '2026-10-09T00:00:00.000Z',
+        );
     }
     coveredTypes++;
   }

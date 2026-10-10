@@ -539,8 +539,6 @@ export default function ProfilePanel({
                 compact
                 testID={`profile-row-${p.id}`}
                 title={p.name}
-                subtitle={`${domains.reduce((n, d) => n + p.selection[d].length, 0)} data types · ${p.export.formats.join(' + ').toUpperCase()} · ${p.export.destination === 'local' ? 'On this phone' : p.export.destination === 'http' ? 'HTTPS' : 'Cloud'}`}
-                value={p.agentAccess ? 'Agents enabled' : 'Private'}
                 onPress={() => router.push({ pathname: '/profiles/[id]', params: { id: p.id } })}
               />
               <View style={styles.quickActions}>
