@@ -25,7 +25,10 @@ export async function loadSession() {
   // Billing and foreground callers share mutations to rotating tokens and activity.
   const session = currentSession ?? /** @type {Session} */ (JSON.parse(value ?? 'null'));
   currentSession = session;
-  if (legacy || session.issuer.endsWith('/realms/qr-connect')) {
+  const hostedReset =
+    canonicalServiceOrigin(session.server) === 'https://myself.md' &&
+    !session.owner?.startsWith('https://myself.md/auth/realms/myselfmd|');
+  if (legacy || session.issuer.endsWith('/realms/qr-connect') || hostedReset) {
     session.requiresSignIn = true;
     session.accessToken = '';
     session.refreshToken = '';

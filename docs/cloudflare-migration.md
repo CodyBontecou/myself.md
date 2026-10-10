@@ -1,6 +1,6 @@
 # Hosted Cloudflare deployment
 
-Protocol naming migration was applied to production on 10 October 2026. The new issuer, scope, callback and client IDs, provider prerequisites, and verification steps are in [protocol migration](protocol-migration.md). The deployment history below records the original identifiers; its old URLs and client names are historical. Updated native binaries still require distribution.
+Protocol naming migration was applied to production on 10 October 2026. The new issuer, scope, callback and client IDs, provider prerequisites, and verification steps are in [protocol migration](protocol-migration.md). The deployment history below records the original identifiers; its old URLs and client names are historical. The owner subsequently authorized deleting the old hosted storage; current account partitions use the canonical issuer and fresh Durable Object classes. Updated native binaries still require distribution.
 
 The production cutover on 9 October 2026 moved the dashboard, HTTP API, MCP endpoint, account metadata, quota accounting and encrypted exports to Cloudflare. `https://myself.md/mcp` remains the public MCP resource. The OAuth issuer remains `https://myself.md/auth/realms/qr-connect`; account partitions retain `https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect|<realm-user-id>`.
 

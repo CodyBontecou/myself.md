@@ -69,9 +69,6 @@ for (const value of Object.values(secrets))
 const issuer = process.env.OAUTH_ISSUER;
 if (issuer !== 'https://myself.md/auth/realms/qr-connect')
   throw new Error('Preserve the existing production issuer.');
-const keys = await fetch(`${issuer}/protocol/openid-connect/certs`);
-if (!keys.ok) throw new Error('Cannot back up existing public verification keys.');
-secrets.LEGACY_IDENTITY_JWKS = JSON.stringify(await keys.json());
 writeFileSync(`${directory}/worker-secrets.json`, JSON.stringify(secrets), { mode: 0o600 });
 const config = {
   issuer: issuer.replace('/realms/qr-connect', '/realms/myselfmd'),

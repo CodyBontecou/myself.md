@@ -141,6 +141,23 @@ await assert.rejects(context.api(migrated, '/api/devices'), /Sign in again/);
 const renewed = await context.signIn('https://myself.md', 'github');
 assert.equal(renewed.deviceId, 'existing-phone');
 assert.equal(renewed.owner, owner);
+// Already-renamed sessions from before the hosted storage reset must also reconnect.
+vm.runInContext('currentSession = null;', context);
+secure.set('myselfmd-session', JSON.stringify({ ...renewed, requiresSignIn: false }));
+const resetSession = await context.loadSession();
+assert.equal(resetSession.requiresSignIn, true);
+assert.equal(resetSession.accessToken, '');
+assert.equal(resetSession.refreshToken, '');
+signedInOwner = 'https://myself.md/auth/realms/myselfmd|original-user';
+assert.equal((await context.signIn('https://myself.md', 'github')).deviceId, '');
+// A current canonical account retains a device only after the ownership check succeeds.
+vm.runInContext('currentSession = null;', context);
+secure.set(
+  'myselfmd-session',
+  JSON.stringify({ ...renewed, owner: signedInOwner, requiresSignIn: false }),
+);
+assert.equal((await context.loadSession()).requiresSignIn, false);
+assert.equal((await context.signIn('https://myself.md', 'github')).deviceId, 'existing-phone');
 signedInOwner = 'other-owner';
 assert.equal((await context.signIn('https://myself.md', 'github')).deviceId, '');
 

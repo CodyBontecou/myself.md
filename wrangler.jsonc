@@ -43,11 +43,11 @@
     "bindings": [
       {
         "name": "ACCOUNTS",
-        "class_name": "Account",
+        "class_name": "MyselfAccount",
       },
       {
         "name": "PURCHASES",
-        "class_name": "Purchase",
+        "class_name": "MyselfPurchase",
       },
     ],
   },
@@ -56,12 +56,20 @@
       "tag": "v1",
       "new_sqlite_classes": ["Account", "Purchase"],
     },
+    {
+      "tag": "v2-myselfmd-reset",
+      "new_sqlite_classes": ["MyselfAccount", "MyselfPurchase"],
+    },
+    {
+      "tag": "v3-delete-legacy-storage",
+      "deleted_classes": ["Account", "Purchase"],
+    },
   ],
   "vars": {
     "PUBLIC_URL": "https://myself.md",
     "PUBLIC_URL_ALIASES": "",
     "OAUTH_ISSUER": "https://myself.md/auth/realms/myselfmd",
-    "ACCOUNT_NAMESPACE": "https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect",
+    "ACCOUNT_NAMESPACE": "https://myself.md/auth/realms/myselfmd",
     "AUTH_ORIGIN": "https://myself.md",
     "IOS_APP_ID": "67KC823C9A.com.myself.md",
     "ALLOW_HTTP_DEV": "0",
@@ -81,7 +89,6 @@
       "APPLE_AUTH_TEAM_ID",
       "APPLE_AUTH_KEY_ID",
       "APPLE_AUTH_PRIVATE_KEY",
-      "LEGACY_IDENTITY_JWKS",
       "SUPPORT_DISCORD_BOT_TOKEN",
       "SUPPORT_DISCORD_CHANNEL_ID",
       "SUPPORT_DISCORD_STAFF_IDS",

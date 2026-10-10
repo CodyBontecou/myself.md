@@ -202,7 +202,7 @@ export async function identityRequest(request, env) {
     }
   }
   url.pathname = base + targetPath;
-  let response = await auth.handler(
+  const response = await auth.handler(
     new Request(url, { method: request.method, headers, ...(body ? { body } : {}) }),
   );
   // The existing native/dashboard authorization URL is a browser handoff.
@@ -214,14 +214,6 @@ export async function identityRequest(request, env) {
       redirectHeaders.set('Cache-Control', 'no-store');
       return new Response(null, { status: 302, headers: redirectHeaders });
     }
-  }
-  if (targetPath === '/jwks' && response.ok && env.LEGACY_IDENTITY_JWKS) {
-    const current = /** @type {{keys:unknown[]}} */ (await response.json());
-    const legacy = /** @type {{keys:unknown[]}} */ (JSON.parse(env.LEGACY_IDENTITY_JWKS));
-    response = Response.json(
-      { keys: [...current.keys, ...legacy.keys] },
-      { headers: { 'Cache-Control': 'public, max-age=60' } },
-    );
   }
   return response;
 }

@@ -17,8 +17,8 @@ import { readBytes } from './request.js';
 import { migrationRequest } from './import.js';
 import { digest, findTicket, registerTicket } from './tickets.js';
 import { identityRequest } from './identity.js';
-export { Account } from './account.js';
-export { Purchase } from './claims.js';
+export { Account as MyselfAccount } from './account.js';
+export { Purchase as MyselfPurchase } from './claims.js';
 /** @param {unknown} data @param {number} [status] */
 function json(data, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -123,11 +123,6 @@ export default {
           /[%\\;]/.test(url.pathname)
         )
           return json({ error: 'Not found.' }, 404);
-        if (
-          env.IDENTITY_ENABLED === 'freeze' &&
-          url.pathname.endsWith('/protocol/openid-connect/certs')
-        )
-          return json(JSON.parse(env.LEGACY_IDENTITY_JWKS));
         if (
           env.IDENTITY_ENABLED === 'freeze' &&
           !url.pathname.endsWith('/certs') &&

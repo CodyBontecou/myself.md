@@ -170,12 +170,8 @@ writeFileSync(
     APPLE_AUTH_TEAM_ID: 'FIXTURE123',
     APPLE_AUTH_KEY_ID: 'FIXTURE123',
     APPLE_AUTH_PRIVATE_KEY: appleKey,
-    LEGACY_IDENTITY_JWKS: '{"keys":[]}',
   })
-    .map(
-      ([key, value]) =>
-        `${key}=${key === 'LEGACY_IDENTITY_JWKS' ? "'" + value + "'" : JSON.stringify(value)}`,
-    )
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
     .join('\n'),
   { mode: 0o600 },
 );
