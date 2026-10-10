@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { IconChevronRight } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
+import { Tabs } from 'radix-ui';
+import { IconChevronRight, IconSearch, IconX } from '@tabler/icons-react';
 import { datasets } from './dataset-catalog.js';
 import { record } from '../core/data.js';
 import { parseProfile } from '../core/profiles.js';
@@ -9,6 +10,13 @@ import { DownloadBadges } from './download-badges.js';
 import { Button } from './components/ui/button.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { Input } from './components/ui/input.js';
+
+// Replace each videoId with its tutorial's YouTube ID before launch.
+const tutorials = [
+  { id: 'launch', label: 'Launch video', videoId: 'dQw4w9WgXcQ' },
+  { id: 'mcp', label: 'MCP', videoId: 'dQw4w9WgXcQ' },
+  { id: 'agent-design', label: 'Agent-first design', videoId: 'dQw4w9WgXcQ' },
+];
 
 /** @param {string} key */
 function typeLabel(key) {
@@ -31,6 +39,7 @@ function JsonExample({ title, value }) {
 /** @param {{dataset:string}} props */
 export function DatasetDocumentation({ dataset }) {
   const [filter, setFilter] = useState(dataset);
+  const datasetPane = useRef(/** @type {HTMLDivElement|null} */ (null));
   const included = Object.values(datasets);
   const data = {
     ...datasets.health,
@@ -49,6 +58,48 @@ export function DatasetDocumentation({ dataset }) {
     })),
   );
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInput = useRef(/** @type {HTMLInputElement|null} */ (null));
+  const searchTrigger = useRef(/** @type {HTMLButtonElement|null} */ (null));
+  const searchWasOpen = useRef(false);
+  useEffect(() => {
+    if (searchOpen) searchInput.current?.focus({ preventScroll: true });
+    else if (searchWasOpen.current) searchTrigger.current?.focus({ preventScroll: true });
+    searchWasOpen.current = searchOpen;
+  }, [searchOpen]);
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearch('');
+  }
+  const filteredGroups = groups
+    .map((group) => ({
+      domain: group.domain,
+      title: group.title,
+      keys: group.keys.filter((key) =>
+        `${group.title} ${key} ${typeLabel(key)}`.toLowerCase().includes(search.toLowerCase()),
+      ),
+    }))
+    .filter((group) => group.keys.length > 0);
+  const accordionGroups = [
+    ...['iOS', 'Android'].map((platform) => ({
+      title: `Health · ${platform}`,
+      defaultOpen: false,
+      groups: filteredGroups.filter(
+        (group) => group.domain === 'health' && group.title.includes(platform),
+      ),
+    })),
+    ...filteredGroups
+      .filter((group) => group.domain !== 'health')
+      .map((group) => ({
+        title:
+          group.domain === 'location'
+            ? 'Location'
+            : group.title.split(' · ').slice(0, 2).join(' · '),
+        defaultOpen: false,
+        groups: [group],
+      })),
+  ].filter((accordion) => accordion.groups.length > 0);
+
   const [added, setAdded] = useState(
     /** @type {import('./export-json.js').AddedSelection|null} */ (null),
   );
@@ -84,24 +135,12 @@ export function DatasetDocumentation({ dataset }) {
   );
   return (
     <div className="mx-auto max-w-7xl px-5 sm:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b py-5">
-        <a href="/" className="font-semibold">
-          myself.md
-        </a>
-        <Button asChild size="sm">
-          <a href="/login">
-            Join myself.md <IconChevronRight />
-          </a>
-        </Button>
-      </header>
       <main className="space-y-10 py-8 sm:py-12">
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="min-w-0 space-y-10">
             <div className="space-y-4">
-              <section className="space-y-6 py-6 sm:py-10" aria-labelledby="landing-title">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Apps come and go. Your data should stay.
-                </p>
+              <DownloadBadges />
+              <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
                 <h1
                   id="landing-title"
                   className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
@@ -114,47 +153,142 @@ export function DatasetDocumentation({ dataset }) {
                   Save your health, screen time, and location as files you can read, back up, and
                   take with you. Keep your history, even when you change apps.
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  Choose what to keep. See exactly what’s in your files.
-                </p>
-                <DownloadBadges />
+                <Tabs.Root defaultValue="launch" className="space-y-4">
+                  <Tabs.List
+                    aria-label="Video tutorials"
+                    className="inline-flex max-w-full items-center divide-x divide-border"
+                  >
+                    {tutorials.map((tutorial) => (
+                      <Tabs.Trigger
+                        key={tutorial.id}
+                        value={tutorial.id}
+                        className="cursor-pointer px-3 text-sm font-medium text-muted-foreground outline-none first:pl-0 last:pr-0 hover:text-foreground focus-visible:underline focus-visible:underline-offset-4 data-[state=active]:text-foreground"
+                      >
+                        {tutorial.label}
+                      </Tabs.Trigger>
+                    ))}
+                  </Tabs.List>
+                  {tutorials.map((tutorial) => (
+                    <Tabs.Content
+                      key={tutorial.id}
+                      value={tutorial.id}
+                      className="outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <figure className="space-y-3">
+                        {/* oxlint-disable react/iframe-missing-sandbox -- Cross-origin YouTube needs scripts and its own origin for playback; it cannot access this page. */}
+                        <iframe
+                          className="block aspect-video min-h-[200px] w-full rounded-lg border-0 bg-black shadow-2xl shadow-black/25 dark:shadow-black/60"
+                          src={`https://www.youtube-nocookie.com/embed/${tutorial.videoId}?playsinline=1&rel=0`}
+                          title={`${tutorial.label} — Rick Astley placeholder`}
+                          loading="lazy"
+                          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                        />
+                        {/* oxlint-enable react/iframe-missing-sandbox */}
+                        <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span>
+                            {tutorial.label} coming soon. Enjoy a little Rick Astley for now.
+                          </span>
+                          <a
+                            href={`https://www.youtube.com/watch?v=${tutorial.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline underline-offset-4 hover:text-foreground"
+                          >
+                            Watch on YouTube
+                          </a>
+                        </figcaption>
+                      </figure>
+                    </Tabs.Content>
+                  ))}
+                </Tabs.Root>
                 <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
                   <a href={privacyPolicy.url}>Privacy policy</a>
                   <a href={privacyPolicy.supportUrl}>Support</a>
                 </nav>
               </section>
-              <div aria-label="Filter dataset types" className="flex flex-wrap gap-2">
-                {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (
-                  <Button
-                    key={key}
-                    type="button"
-                    variant={key === filter ? 'secondary' : 'ghost'}
-                    size="sm"
-                    aria-pressed={key === filter}
-                    aria-controls="dataset-types"
-                    onClick={() => setFilter(key)}
-                  >
-                    {item.title}
-                  </Button>
-                ))}
-              </div>
             </div>
-            <section id="dataset-types" className="min-w-0 space-y-5" aria-labelledby="types-title">
-              <h2 id="types-title" className="text-xl font-semibold">
-                Individual dataset types
-              </h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                Explore the data points you can access through the app. Select a type to see sample
-                values and the JSON structure it provides in an export.
-              </p>
+            <section id="dataset-types" className="min-w-0 space-y-5" aria-label="Dataset types">
+              <div className="sticky top-0 z-10 bg-background py-3">
+                <div className="relative">
+                  <div
+                    aria-label="Filter dataset types"
+                    className="flex flex-wrap items-center gap-2"
+                    inert={searchOpen}
+                    aria-hidden={searchOpen}
+                  >
+                    {Object.entries({ all: { title: 'All' }, ...datasets }).map(([key, item]) => (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant={key === filter ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={key === filter}
+                        aria-controls="dataset-types"
+                        onClick={() => {
+                          setFilter(key);
+                          datasetPane.current?.scrollTo({ top: 0, left: 0 });
+                        }}
+                      >
+                        {item.title}
+                      </Button>
+                    ))}
+                    <Button
+                      ref={searchTrigger}
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="ml-auto"
+                      aria-label="Open dataset search"
+                      aria-expanded={searchOpen}
+                      aria-controls="dataset-search"
+                      onClick={() => setSearchOpen(true)}
+                    >
+                      <IconSearch aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <div
+                    id="dataset-search"
+                    className="dataset-search-reveal absolute inset-x-0 top-1/2 -translate-y-1/2"
+                    data-open={searchOpen}
+                    aria-hidden={!searchOpen}
+                    inert={!searchOpen}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        closeSearch();
+                      }
+                    }}
+                  >
+                    <Input
+                      ref={searchInput}
+                      className="bg-background pr-11 dark:bg-background"
+                      aria-label="Search dataset types"
+                      placeholder="Search types or identifiers…"
+                      value={search}
+                      disabled={!searchOpen}
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        datasetPane.current?.scrollTo({ top: 0, left: 0 });
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="absolute top-1/2 right-1 -translate-y-1/2"
+                      aria-label="Close dataset search"
+                      disabled={!searchOpen}
+                      onClick={closeSearch}
+                    >
+                      <IconX aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
               <div className="flex flex-wrap items-center gap-3">
-                <Input
-                  className="max-w-md"
-                  aria-label="Search dataset types"
-                  placeholder="Search types or identifiers…"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
                 <Button
                   variant="outline"
                   size="sm"
@@ -169,56 +303,79 @@ export function DatasetDocumentation({ dataset }) {
                   {selectedCount} {selectedCount === 1 ? 'type' : 'types'} selected
                 </span>
               </div>
-              {groups.map((group) => {
-                const keys = group.keys.filter((key) =>
-                  `${group.title} ${key} ${typeLabel(key)}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-                );
-                return keys.length ? (
-                  <details
-                    key={group.title}
-                    open={Boolean(search) || group.domain !== 'health'}
-                    className="rounded-lg border p-4"
-                  >
-                    <summary className="cursor-pointer text-sm font-medium">
-                      {group.title} · {keys.length} {keys.length === 1 ? 'type' : 'types'}
-                    </summary>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {keys.map((key) => (
-                        <label key={key} className="flex min-w-0 items-start gap-3 text-sm">
-                          <input
-                            className="mt-1 accent-current"
-                            type="checkbox"
-                            checked={selected[group.domain].includes(key)}
-                            onChange={(event) => {
-                              const checked = event.target.checked;
-                              setAdded(checked ? { domain: group.domain, key } : null);
-                              setSelected((current) => ({
-                                ...current,
-                                [group.domain]: checked
-                                  ? [...new Set([...current[group.domain], key])]
-                                  : current[group.domain].filter((item) => item !== key),
-                              }));
-                            }}
-                          />
-                          <span className="min-w-0">
-                            <span className="block">{typeLabel(key)}</span>
-                            <code className="break-all text-xs text-muted-foreground">{key}</code>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-                ) : null;
-              })}
-              {!groups.some((group) =>
-                group.keys.some((key) =>
-                  `${group.title} ${key} ${typeLabel(key)}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-                ),
-              ) && <p className="text-sm text-muted-foreground">No matching dataset types.</p>}
+              <div
+                ref={datasetPane}
+                className="h-[min(36rem,65dvh)] overflow-y-auto overscroll-contain pr-2"
+                aria-label="Scrollable dataset types"
+                tabIndex={0}
+              >
+                <div className="rounded-2xl border border-border/60 py-2">
+                  {accordionGroups.map(({ title, defaultOpen, groups: platformSections }) => (
+                    <details
+                      key={`${filter}:${title}`}
+                      open={Boolean(search) || defaultOpen}
+                      className="group"
+                    >
+                      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-4 text-base font-semibold [&::-webkit-details-marker]:hidden">
+                        <IconChevronRight
+                          className="size-5 shrink-0 text-muted-foreground group-open:rotate-90"
+                          aria-hidden="true"
+                        />
+                        <span>{title}</span>
+                        <span className="ml-auto text-sm font-normal tabular-nums text-muted-foreground">
+                          {platformSections.reduce(
+                            (count, group) =>
+                              count +
+                              group.keys.filter((key) => selected[group.domain].includes(key))
+                                .length,
+                            0,
+                          )}
+                          /{platformSections.reduce((count, group) => count + group.keys.length, 0)}
+                        </span>
+                      </summary>
+                      <div className="space-y-6 px-4 pb-5 sm:pl-12">
+                        {platformSections.map((group) => (
+                          <section key={group.title} className="space-y-3">
+                            <h3 className="text-sm font-medium text-muted-foreground">
+                              {group.title}
+                            </h3>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {group.keys.map((key) => (
+                                <label key={key} className="flex min-w-0 items-start gap-3 text-sm">
+                                  <input
+                                    className="mt-1 accent-current"
+                                    type="checkbox"
+                                    checked={selected[group.domain].includes(key)}
+                                    onChange={(event) => {
+                                      const checked = event.target.checked;
+                                      setAdded(checked ? { domain: group.domain, key } : null);
+                                      setSelected((current) => ({
+                                        ...current,
+                                        [group.domain]: checked
+                                          ? [...new Set([...current[group.domain], key])]
+                                          : current[group.domain].filter((item) => item !== key),
+                                      }));
+                                    }}
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block">{typeLabel(key)}</span>
+                                    <code className="break-all text-xs text-muted-foreground">
+                                      {key}
+                                    </code>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+                {accordionGroups.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No matching dataset types.</p>
+                )}
+              </div>
             </section>
             <div className="lg:hidden">{exportPreview}</div>
             <section className="space-y-3" aria-labelledby="sources-title">
@@ -334,7 +491,7 @@ export function DatasetDocumentation({ dataset }) {
           </div>
           <aside
             aria-label="Live export JSON preview"
-            className="hidden min-w-0 lg:block lg:sticky lg:top-6"
+            className="hidden min-w-0 lg:-mt-6 lg:block lg:sticky lg:top-6"
           >
             {exportPreview}
           </aside>

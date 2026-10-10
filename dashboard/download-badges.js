@@ -1,64 +1,48 @@
+import { IconBrandAppleFilled, IconBrandGithubFilled } from '@tabler/icons-react';
+import { Button } from './components/ui/button.js';
+
+function GooglePlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-7">
+      <path fill="#4285F4" d="M3 2v20l10-10Z" />
+      <path fill="#34A853" d="m3 2 12 7-5 3Z" />
+      <path fill="#EA4335" d="m3 22 12-7-5-3Z" />
+      <path fill="#FBBC04" d="m15 9 6 3-6 3-5-3Z" />
+    </svg>
+  );
+}
+
 export function DownloadBadges() {
   return (
-    <div aria-label="Get myself.md" className="flex flex-wrap items-start gap-3">
-      <div className="space-y-2">
-        <button
+    <div aria-label="Get myself.md" className="-ml-1.5 flex flex-wrap items-center gap-3">
+      {[
+        { label: 'App Store', icon: IconBrandAppleFilled, color: 'text-foreground' },
+        { label: 'Google Play', icon: GooglePlayIcon, color: '' },
+      ].map(({ label, icon: Icon, color }) => (
+        <Button
+          key={label}
           type="button"
+          variant="ghost"
+          size="icon"
+          className={`size-10 disabled:opacity-100 ${color}`}
           disabled
-          aria-label="App Store — coming soon"
-          className="download-badge download-badge-apple"
+          aria-label={`${label} — coming soon`}
+          title={`${label} — coming soon`}
         >
-          <img
-            src="/dashboard/store-badges/app-store.svg"
-            width="120"
-            height="40"
-            alt="Download on the App Store"
-          />
-        </button>
-        <p className="text-xs text-muted-foreground">Coming soon</p>
-      </div>
-      <div className="space-y-2">
-        <button
-          type="button"
-          disabled
-          aria-label="Google Play — coming soon"
-          className="download-badge download-badge-google"
+          <Icon aria-hidden="true" className="size-7" />
+        </Button>
+      ))}
+      <Button asChild variant="ghost" size="icon" className="size-10">
+        <a
+          href="https://github.com/CodyBontecou/agent-bridge"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="View myself.md on GitHub"
+          title="View source on GitHub"
         >
-          <img
-            src="/dashboard/store-badges/google-play.png"
-            width="646"
-            height="250"
-            alt="Get it on Google Play"
-          />
-        </button>
-        <p className="text-xs text-muted-foreground">Coming soon</p>
-      </div>
-      <div className="space-y-2">
-        <button
-          type="button"
-          disabled
-          aria-label="F-Droid — coming soon"
-          className="download-badge download-badge-google"
-        >
-          <img
-            src="/dashboard/store-badges/f-droid.svg"
-            width="646"
-            height="250"
-            alt="Get it on F-Droid"
-          />
-        </button>
-        <p className="text-xs text-muted-foreground">Coming soon</p>
-      </div>
-      <a
-        href="https://github.com/CodyBontecou/agent-bridge"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="View myself.md on GitHub"
-        className="download-badge download-badge-source rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring hover:opacity-80"
-      >
-        <span>VIEW THE SOURCE</span>
-        <img src="/dashboard/store-badges/github.svg" alt="GitHub" />
-      </a>
+          <IconBrandGithubFilled aria-hidden="true" className="size-7" />
+        </a>
+      </Button>
     </div>
   );
 }

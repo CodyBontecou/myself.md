@@ -15,7 +15,7 @@ export function dashboardAsset(path, res, issuer) {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin}; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin}; img-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const content = readFileSync(new URL(`../dashboard/dist/${asset[0]}`, import.meta.url));
   res.end(

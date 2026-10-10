@@ -16,10 +16,7 @@ export function ExportJson({ value, added }) {
     let frame = 0;
     function measure() {
       if (!container || !container.getClientRects().length) return;
-      const available = Math.max(
-        0,
-        window.innerHeight - container.getBoundingClientRect().top - 24,
-      );
+      const available = Math.max(0, window.innerHeight - container.getBoundingClientRect().top);
       container.style.setProperty('--export-json-height', `${available}px`);
     }
     function schedule() {
@@ -64,12 +61,9 @@ export function ExportJson({ value, added }) {
 
   return (
     <section className="space-y-3">
-      <h3 className="text-xs font-medium text-muted-foreground">
-        Export JSON · updates with your selections
-      </h3>
       <pre
         ref={pane}
-        className="export-json-pane overflow-auto rounded-lg border bg-muted/30 p-4 text-xs leading-relaxed"
+        className="export-json-pane overflow-auto text-xs leading-relaxed"
         tabIndex={0}
         aria-label="Export JSON"
       >

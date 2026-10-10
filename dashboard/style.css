@@ -226,71 +226,33 @@ select:not([multiple]):not([size]) {
   background: var(--card);
 }
 
-.download-badge {
-  position: relative;
-  display: block;
-  flex: 0 0 auto;
-  height: 55px;
-  overflow: hidden;
-  line-height: 0;
+.dataset-search-reveal {
+  opacity: 0;
+  pointer-events: none;
 }
-.download-badge img {
-  position: absolute;
-  max-width: none;
-}
-.download-badge-apple {
-  width: 166px;
-}
-.download-badge-apple img {
-  inset: 0;
-  width: 166px;
-}
-.download-badge-google {
-  width: 185px;
-  border-radius: 6px;
-}
-.download-badge-google img {
-  top: -13.5px;
-  left: -13.5px;
-  width: 212px;
-}
-.download-badge-source {
-  width: 166px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 0 17px;
-  border: 1px solid #2e2e31;
-  border-radius: 7px;
-  background: #202124;
-  color: #fff;
-  line-height: 1;
-  text-align: left;
-}
-.download-badge-source span {
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-.download-badge-source img {
-  position: static;
-  margin-top: 4px;
-  width: 100px;
-  height: auto;
+.dataset-search-reveal[data-open='true'] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Brief feedback behind new readings; never animate or move the JSON text. */
 .export-json-pane {
   max-height: min(36rem, 65dvh);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-wrap: normal;
+  mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
   overscroll-behavior: contain;
   overflow-anchor: none;
+  scrollbar-color: transparent transparent;
+}
+.export-json-pane::-webkit-scrollbar-thumb,
+.export-json-pane::-webkit-scrollbar-track,
+.export-json-pane::-webkit-scrollbar-corner {
+  background: transparent;
 }
 @media (min-width: 64rem) {
   aside .export-json-pane {
-    height: var(--export-json-height, calc(100dvh - 7rem));
+    height: var(--export-json-height, calc(100dvh - 1.5rem));
     max-height: none;
   }
 }

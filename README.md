@@ -22,7 +22,7 @@ myself.md is open source so you can run your own instance and control where your
 
 Self-hosting currently retains the app's usage allowance and purchase verification. See the guide's [billing and mobile build requirements](docs/self-hosting.md#billing-and-mobile-builds) before deploying.
 
-The landing page links to [the GitHub repository](https://github.com/CodyBontecou/agent-bridge). App Store, Google Play, and F-Droid badges show “Coming soon” until the myself.md listings are available. Badge markup lives in `dashboard/download-badges.js`; the App Store and Play artwork and dimensions match the [healthmd.app](https://healthmd.app/) reference.
+The landing page links to [the GitHub repository](https://github.com/CodyBontecou/agent-bridge). App Store and Google Play use compact icon buttons, disabled until the myself.md listings are available; accessible labels and tooltips identify each store and its “Coming soon” status. GitHub uses a matching icon link. Markup lives in `dashboard/download-badges.js`.
 
 ## Run locally
 
@@ -261,6 +261,8 @@ npm run unused        # Knip only
 ```
 
 Sequential native pagination and page-size retries have narrow `no-await-in-loop` exceptions: each request needs the previous cursor or reduced page size.
+
+The public YouTube iframe has a narrow `react/iframe-missing-sandbox` exception for combining `allow-scripts` and `allow-same-origin`: playback needs scripts and YouTube's own origin. The fixed cross-origin `youtube-nocookie.com` URL cannot access the host document; the remaining sandbox restrictions and CSP frame allowlist still apply.
 
 Type checking uses `allowJs`, `checkJs`, strict null/implicit-any checks, unused locals/parameters, explicit return checks, unchecked-index checks, and exact optional properties. Application source stays JavaScript. JSDoc describes exported function boundaries. JSON from the network remains a runtime trust boundary: a type annotation cannot validate a remote response.
 
