@@ -241,7 +241,6 @@ select:not([multiple]):not([size]) {
   white-space: pre;
   overflow-wrap: normal;
   mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent);
-  overscroll-behavior: contain;
   overflow-anchor: none;
   scrollbar-color: transparent transparent;
 }
@@ -252,7 +251,7 @@ select:not([multiple]):not([size]) {
 }
 @media (min-width: 64rem) {
   aside .export-json-pane {
-    height: var(--export-json-height, calc(100dvh - 1.5rem));
+    height: calc(100dvh - 1.5rem);
     max-height: none;
   }
 }

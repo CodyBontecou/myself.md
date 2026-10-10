@@ -12,29 +12,6 @@ export function ExportJson({ value, added }) {
 
   useEffect(() => {
     const container = pane.current;
-    if (!container) return;
-    let frame = 0;
-    function measure() {
-      if (!container || !container.getClientRects().length) return;
-      const available = Math.max(0, window.innerHeight - container.getBoundingClientRect().top);
-      container.style.setProperty('--export-json-height', `${available}px`);
-    }
-    function schedule() {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(measure);
-    }
-    measure();
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
-    };
-  }, []);
-
-  useEffect(() => {
-    const container = pane.current;
     if (!container || !added || !container.getClientRects().length) return;
     const targetKey = `${added.domain}:${added.key}`;
     const target = [...container.querySelectorAll('[data-selection]')].find(

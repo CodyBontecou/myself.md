@@ -112,6 +112,10 @@ export function DatasetDocumentation({ dataset }) {
     }),
   );
   const selectedCount = Object.values(selected).reduce((total, keys) => total + keys.length, 0);
+  const totalCount = included.reduce(
+    (total, item) => total + new Set(item.groups.flatMap((group) => group.keys)).size,
+    0,
+  );
   const examples = included.map((item) =>
     record(item.domain, item.sampleType, item.sampleSource, item.sample),
   );
@@ -191,14 +195,6 @@ export function DatasetDocumentation({ dataset }) {
                           <span>
                             {tutorial.label} coming soon. Enjoy a little Rick Astley for now.
                           </span>
-                          <a
-                            href={`https://www.youtube.com/watch?v=${tutorial.videoId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline underline-offset-4 hover:text-foreground"
-                          >
-                            Watch on YouTube
-                          </a>
                         </figcaption>
                       </figure>
                     </Tabs.Content>
@@ -235,19 +231,38 @@ export function DatasetDocumentation({ dataset }) {
                         {item.title}
                       </Button>
                     ))}
-                    <Button
-                      ref={searchTrigger}
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="ml-auto"
-                      aria-label="Open dataset search"
-                      aria-expanded={searchOpen}
-                      aria-controls="dataset-search"
-                      onClick={() => setSearchOpen(true)}
-                    >
-                      <IconSearch aria-hidden="true" />
-                    </Button>
+                    <div className="ml-auto flex flex-wrap items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-1 text-xs tabular-nums text-muted-foreground"
+                        aria-label="Clear selection"
+                        title="Clear selection"
+                        onClick={() => {
+                          setAdded(null);
+                          setSelected({ health: [], time: [], location: [] });
+                        }}
+                      >
+                        <span
+                          role="status"
+                          aria-label={`${selectedCount} of ${totalCount} types selected`}
+                        >
+                          ({selectedCount}/{totalCount})
+                        </span>
+                      </Button>
+                      <Button
+                        ref={searchTrigger}
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Open dataset search"
+                        aria-expanded={searchOpen}
+                        aria-controls="dataset-search"
+                        onClick={() => setSearchOpen(true)}
+                      >
+                        <IconSearch aria-hidden="true" />
+                      </Button>
+                    </div>
                   </div>
                   <div
                     id="dataset-search"
@@ -288,39 +303,20 @@ export function DatasetDocumentation({ dataset }) {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setAdded(null);
-                    setSelected({ health: [], time: [], location: [] });
-                  }}
-                >
-                  Clear selection
-                </Button>
-                <span role="status" className="text-sm text-muted-foreground">
-                  {selectedCount} {selectedCount === 1 ? 'type' : 'types'} selected
-                </span>
-              </div>
               <div
                 ref={datasetPane}
-                className="h-[min(36rem,65dvh)] overflow-y-auto overscroll-contain pr-2"
+                className="h-[min(36rem,65dvh)] overflow-y-auto pr-2"
                 aria-label="Scrollable dataset types"
                 tabIndex={0}
               >
-                <div className="rounded-2xl border border-border/60 py-2">
+                <div className="py-2">
                   {accordionGroups.map(({ title, defaultOpen, groups: platformSections }) => (
                     <details
                       key={`${filter}:${title}`}
                       open={Boolean(search) || defaultOpen}
                       className="group"
                     >
-                      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-4 text-base font-semibold [&::-webkit-details-marker]:hidden">
-                        <IconChevronRight
-                          className="size-5 shrink-0 text-muted-foreground group-open:rotate-90"
-                          aria-hidden="true"
-                        />
+                      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md px-4 py-4 text-base font-semibold hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
                         <span>{title}</span>
                         <span className="ml-auto text-sm font-normal tabular-nums text-muted-foreground">
                           {platformSections.reduce(
@@ -332,8 +328,12 @@ export function DatasetDocumentation({ dataset }) {
                           )}
                           /{platformSections.reduce((count, group) => count + group.keys.length, 0)}
                         </span>
+                        <IconChevronRight
+                          className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none"
+                          aria-hidden="true"
+                        />
                       </summary>
-                      <div className="space-y-6 px-4 pb-5 sm:pl-12">
+                      <div className="space-y-6 px-4 pb-5">
                         {platformSections.map((group) => (
                           <section key={group.title} className="space-y-3">
                             <h3 className="text-sm font-medium text-muted-foreground">
