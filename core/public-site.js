@@ -49,7 +49,11 @@ export const publicFAQs = [
 ];
 export const publicLifetimePrice = '$19.99';
 export const publicCloudPlans = [
-  { capacity: '50 MB', price: 'Included with Lifetime', billing: 'No storage subscription' },
+  {
+    capacity: '50 MB',
+    price: '30-day free trial',
+    billing: 'For Lifetime users · No automatic billing',
+  },
   { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
   { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
 ];
@@ -269,7 +273,7 @@ const contact = `# Contact myself.md support
 
 For app help, pairing problems, export failures, privacy questions or account deletion questions, email ${privacyPolicy.supportEmail}. Public development issues can be opened at ${privacyPolicy.issuesUrl}. Email composition and issue submission are external actions you complete yourself; reading this page does not send a message or create a report.
 
-Do not include health records, precise location, access tokens, passwords, purchase receipts or other private information in an initial request. GitHub issues may be public. Describe the platform, the action you tried, the observed result and the time of the failure. Review screenshots and diagnostic information before sending them. Read https://myself.md/privacy for storage, retention and revocation details. For account deletion use https://myself.md/delete-account and follow the authenticated confirmation flow.
+GitHub issues may be public. Describe the platform, the action you tried, the observed result and the time of the failure. Review screenshots and diagnostic information before sending them. Read https://myself.md/privacy for storage, retention and revocation details. For account deletion use https://myself.md/delete-account and follow the authenticated confirmation flow.
 `;
 /** Public descriptions contain no account records or credentials. */
 export const publicPages = new Map([

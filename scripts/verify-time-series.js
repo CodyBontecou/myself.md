@@ -58,6 +58,7 @@ const nativeFailures = [
     message: 'Plan decode failed.',
   },
 ];
+/** @type {unknown[]} */ let workoutPlanFailures = [];
 const series =
   /** @type {{captureHealthSamples:(samples:Record<string,unknown>[])=>Promise<Record<string,unknown>[]>}} */ (
     await load('../client/health-series.js', {
@@ -71,7 +72,7 @@ const series =
                 huge: { type: 'unsigned_integer', value: '18446744073709551615' },
                 date: { type: 'date', value: preciseStart },
               },
-              ...(id === 'workout' ? fullWorkout : {}),
+              ...(id === 'workout' ? { ...fullWorkout, captureFailures: workoutPlanFailures } : {}),
             });
           },
           characteristic: async (/** @type {string} */ identifier) =>
@@ -245,6 +246,31 @@ assert.equal(workoutRow.timeSeries?.heartRate?.length, 3);
 assert.equal(workoutRow.timeSeries?.HKQuantityTypeIdentifierStepCount?.length, 3);
 assert.equal(workoutRow.timeSeries?.altitude?.[0]?.value, 1);
 assert.deepEqual(workoutCapture.captureFailures, []);
+workoutPlanFailures = nativeFailures;
+const omittedPlan = await workout.captureWorkout(nativeWorkout);
+assert.deepEqual(omittedPlan.captureFailures, [], 'Optional import must not fail captured samples');
+assert.deepEqual(omittedPlan.workoutPlanCapture, {
+  status: 'unavailable',
+  optional: true,
+  message:
+    'WorkoutKit could not import the optional structured plan. Inspect diagnostics; the captured HealthKit workout and samples are retained.',
+  diagnostics: nativeFailures,
+});
+assert.deepEqual(omittedPlan.activities, fullWorkout.activities);
+const omissionRow = data.record('health', 'HKWorkoutTypeIdentifier', 'healthkit', omittedPlan);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(omissionRow)).native.workoutPlanCapture,
+  omittedPlan.workoutPlanCapture,
+);
+workoutPlanFailures = [{ ...nativeFailures[0], domain: 'com.apple.healthkit', code: 5 }];
+const deniedPlan = await workout.captureWorkout(nativeWorkout);
+assert.deepEqual(
+  deniedPlan.captureFailures,
+  workoutPlanFailures,
+  'Permission failures remain failures',
+);
+assert.equal(deniedPlan.workoutPlanCapture, undefined);
+workoutPlanFailures = [];
 partialSeries = true;
 const partialChild = (await series.captureHealthSamples([sample]))[0];
 assert.ok(partialChild);

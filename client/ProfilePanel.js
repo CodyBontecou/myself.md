@@ -20,6 +20,7 @@ import { Button, Switch, Text } from './Terminal.js';
 import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ProfileExports from './ProfileExports.js';
+import ProfileFeed from './ProfileFeed.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
 import { domains } from '../core/data.js';
 import { parseProfile, profileLink, uniqueProfileName } from '../core/profiles.js';
@@ -529,35 +530,12 @@ export default function ProfilePanel({
           >
             <SectionHeader title="Saved profiles" count={state.profiles.length} />
           </View>
-          {state.profiles.map((p) => (
-            <View
-              key={p.id}
-              testID={`profile-card-${p.id}`}
-              style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            >
-              <Row
-                compact
-                testID={`profile-row-${p.id}`}
-                title={p.name}
-                onPress={() => router.push({ pathname: '/profiles/[id]', params: { id: p.id } })}
-              />
-              <View style={styles.quickActions}>
-                <View style={styles.quickAction}>
-                  <ProfileExports session={session} profile={p} disabled={disabled} quick />
-                </View>
-                <View style={styles.quickAction}>
-                  <BridgeButton
-                    testID={`profile-agents-${p.id}`}
-                    label={p.agentAccess ? 'Disable agents' : 'Enable agents'}
-                    icon="people-outline"
-                    plain
-                    disabled={disabled}
-                    onPress={() => changeAgentAccess(p, !p.agentAccess)}
-                  />
-                </View>
-              </View>
-            </View>
-          ))}
+          <ProfileFeed
+            profiles={state.profiles}
+            session={session}
+            disabled={disabled}
+            onAgentAccess={changeAgentAccess}
+          />
         </>
       )}
     </View>
@@ -607,8 +585,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     fontSize: 16,
   },
-  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  quickAction: { flexGrow: 1, flexBasis: 140 },
   container: { gap: 16 },
   intro: { gap: 8 },
   feed: { flex: 1 },

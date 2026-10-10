@@ -56,8 +56,8 @@ export function PricingSection() {
             <span className="text-xs text-muted-foreground">Coming soon</span>
           </div>
           <p className="text-base leading-7 text-muted-foreground">
-            Store your exports in the cloud. Requires an account; the app’s lifetime unlock is a
-            separate purchase.
+            Store your exports in the cloud. Lifetime users get a 30-day free trial with 50 MB of
+            storage. Requires an account; paid cloud storage is a separate subscription.
           </p>
         </div>
         <div className="divide-y divide-border border-y border-border">

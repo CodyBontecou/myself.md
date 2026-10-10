@@ -13,10 +13,19 @@ export async function captureWorkout(workout) {
     )[0] ?? /** @type {Record<string,unknown>} */ (JSON.parse(JSON.stringify(native)));
   /** @type {Record<string,unknown[]>} */ const timeSeries = {};
   /** @type {Record<string,unknown[]>} */ const associatedSamples = {};
-  /** @type {unknown[]} */ const captureFailures =
+  /** @type {unknown[]} */ const detailFailures =
     'captureFailures' in details && Array.isArray(details.captureFailures)
       ? [...details.captureFailures]
       : [];
+  // WorkoutKit's optional import is separate from the captured HealthKit workout.
+  // Keep the omission diagnostic; never reclassify sample/permission failures.
+  const planImportFailures = detailFailures.filter((failure) => {
+    if (!Array.isArray(details.activities) || !details.allStatistics) return false;
+    if (!failure || typeof failure !== 'object') return false;
+    const value = /** @type {Record<string,unknown>} */ (failure);
+    return value.operation === 'workoutPlan' && value.domain === 'WorkoutKit.ImportError';
+  });
+  const captureFailures = detailFailures.filter((failure) => !planImportFailures.includes(failure));
   const namedMetrics = [
     ['heartRate', 'HKQuantityTypeIdentifierHeartRate'],
     ...(native.workoutActivityType === HK.WorkoutActivityType.running
@@ -122,5 +131,16 @@ export async function captureWorkout(workout) {
     associatedSamples,
     timeSeries,
     captureFailures,
+    ...(planImportFailures.length
+      ? {
+          workoutPlanCapture: {
+            status: 'unavailable',
+            optional: true,
+            message:
+              'WorkoutKit could not import the optional structured plan. Inspect diagnostics; the captured HealthKit workout and samples are retained.',
+            diagnostics: planImportFailures,
+          },
+        }
+      : {}),
   };
 }

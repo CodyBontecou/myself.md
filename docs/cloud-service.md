@@ -48,13 +48,15 @@ Run `npm run verify:r2` for signed SDK requests against a synthetic local S3 end
 
 Lifetime app access and hosted storage are separate entitlements. The $19.99 lifetime unlock removes export/query usage limits; it does not promise unlimited hosted storage. The proposed commercial offering is:
 
-| Plan                              | Storage capacity | Billing                                         |
-| --------------------------------- | ---------------- | ----------------------------------------------- |
-| Included with a lifetime purchase | 50 MB            | Included allowance, no storage subscription     |
-| Larger cloud plan                 | 1 GB             | $1.99/month or $19.99/year (planned US pricing) |
-| Larger cloud plan                 | 10 GB            | $4.99/month or $49.99/year (planned US pricing) |
+| Plan                          | Storage capacity | Billing                                         |
+| ----------------------------- | ---------------- | ----------------------------------------------- |
+| Trial for lifetime purchasers | 50 MB            | Free for 30 days, no automatic billing          |
+| Larger cloud plan             | 1 GB             | $1.99/month or $19.99/year (planned US pricing) |
+| Larger cloud plan             | 10 GB            | $4.99/month or $49.99/year (planned US pricing) |
 
-These capacities are proposals, not implemented quotas or store products. The existing 256 MiB limit and retention still apply. Before implementation, decide eligibility for complimentary migration grants and trial users, whether paid capacities replace or add to the included allowance, decimal versus binary storage units, and retention for each plan. Commercial hosted plans are distinct from an operator's self-hosted server.
+These capacities are proposals, not implemented quotas or store products. The existing 256 MiB limit and retention still apply. Before implementation, decide eligibility for complimentary migration grants and trial users, trial activation and repeat-trial eligibility, decimal versus binary storage units, and retention for each plan. Commercial hosted plans are distinct from an operator's self-hosted server.
+
+Planned trial behavior: require an account and Lifetime access, allow up to 50 MB for 30 days, and do not bill automatically. After expiry, stop uploads and allow 30 additional days to download files or subscribe before deleting the trial cloud copies. Local files remain available. Trial activation, expiry enforcement and cleanup are not implemented by this pricing-copy change.
 
 Implementation must verify cloud subscriptions independently of permanent lifetime purchases, enforce account capacity for manual and scheduled uploads (including concurrent uploads), and expose used, reserved, and available storage to mobile, dashboard, and MCP through shared logic. Store checkout and subscription management require a user handoff; agents cannot grant themselves storage. Subscription renewal or expiry must never remove the lifetime app unlock. Proposed downgrade behavior: block uploads that exceed the reduced capacity while retaining access to download and delete existing files under the published retention policy; do not immediately delete data just because a subscription ends. This behavior needs confirmation before release.
 
@@ -206,8 +208,8 @@ The production API, MCP transport, dashboard and account data moved to Workers, 
 
 ### Cloud price rationale
 
-The owner selected 50 MB included with Lifetime; the planned paid tiers are 1 GB at $1.99/month or $19.99/year and 10 GB at $4.99/month or $49.99/year. Store checkout uses localized pricing. These are public planned prices, not implemented subscriptions.
+The owner selected a 30-day free cloud trial with a 50 MB limit for Lifetime users; the planned paid tiers are 1 GB at $1.99/month or $19.99/year and 10 GB at $4.99/month or $49.99/year. Store checkout uses localized pricing. These are public planned prices, not implemented subscriptions.
 
 At [R2 Standard rates](https://developers.cloudflare.com/r2/pricing/) checked on 10 October 2026, fully occupied storage costs about $0.015/month for 1 GB and $0.15/month for 10 GB, before shared account rounding and free tiers. Writes/list operations cost $4.50/million and reads $0.36/million, with no egress charge. Model store fees conservatively at 30%, plus taxes/refunds, [Workers request/CPU costs](https://developers.cloudflare.com/workers/platform/pricing/), database/authentication costs, support and fixed overhead. Annual net revenue at that fee assumption is roughly $1.17/month and $2.92/month respectively, before taxes and other costs. This supports healthy storage margins under bounded usage; it does not guarantee profit for arbitrary traffic or at every customer count.
 
-Before launching subscriptions, enforce per-account storage, object-count, upload/write/read budgets and upload-size limits across UI, REST and MCP, with clear retryable rate-limit outcomes. Set Worker CPU limits and monitor actual variable cost per tier. Exact budgets and subscription enforcement are not implemented by this website copy change. The included 50 MB is an ongoing cost funded by the lifetime purchase, not recurring revenue.
+Before launching subscriptions, enforce per-account storage, object-count, upload/write/read budgets and upload-size limits across UI, REST and MCP, with clear retryable rate-limit outcomes. Set Worker CPU limits and monitor actual variable cost per tier. Exact budgets and subscription enforcement are not implemented by this website copy change. The 50 MB trial is limited to 30 days and funded by the lifetime purchase, not recurring revenue.

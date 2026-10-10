@@ -26,9 +26,6 @@ export function PrivacyPage({ support = false }) {
           ))}
         </>
       )}
-      <p className="text-sm text-muted-foreground">
-        Do not send health records, precise location, credentials or receipts in an initial request.
-      </p>
       <div className="flex flex-wrap gap-4">
         <a className="underline" href={`mailto:${privacyPolicy.supportEmail}`}>
           {privacyPolicy.supportEmail}

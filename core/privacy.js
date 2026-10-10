@@ -4,7 +4,7 @@ export const privacyPolicy = {
   updated: '2026-10-10',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/support',
-  supportEmail: 'cody@iolated.tech',
+  supportEmail: 'cody@isolated.tech',
   issuesUrl: 'https://github.com/CodyBontecou/myself.md/issues',
   sections: [
     {
@@ -45,7 +45,7 @@ export const privacyPolicy = {
     },
     {
       title: 'Support and policy changes',
-      body: 'Use the support link below for app help and privacy or deletion questions. Do not include health records, precise location, credentials or receipts in an initial support request. If you submit a bug report, review its text and screenshot before sending; a GitHub issue may be public. This policy’s update date identifies the current disclosures. Review it again before enabling new data sharing.',
+      body: 'Use the support link below for app help and privacy or deletion questions. If you submit a bug report, review its text and screenshot before sending; a GitHub issue may be public. This policy’s update date identifies the current disclosures. Review it again before enabling new data sharing.',
     },
   ],
 };

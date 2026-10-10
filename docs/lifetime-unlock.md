@@ -2,7 +2,7 @@
 
 The apps are free to install. The non-consumable `myself_md_lifetime` product unlocks unlimited exports and queries for a one-time US price of $19.99. Payments and restores use native StoreKit and Google Play Billing through `expo-iap`; there is no RevenueCat account or service.
 
-Lifetime app access does not include unlimited hosted cloud storage. A planned 50 MB allowance for lifetime purchasers and larger 1 GB/10 GB plans billed monthly or yearly are tracked in [Cloud service](cloud-service.md#proposed-hosted-storage-plans). Planned prices are $1.99/month or $19.99/year for 1 GB and $4.99/month or $49.99/year for 10 GB. Storage subscriptions are not implemented; current technical cloud limits remain in effect.
+Lifetime app access does not include unlimited hosted cloud storage. A planned 30-day free cloud trial with a 50 MB limit for lifetime purchasers and larger 1 GB/10 GB plans billed monthly or yearly are tracked in [Cloud service](cloud-service.md#proposed-hosted-storage-plans). Planned prices are $1.99/month or $19.99/year for 1 GB and $4.99/month or $49.99/year for 10 GB. Storage subscriptions are not implemented; current technical cloud limits remain in effect.
 
 ## What counts
 

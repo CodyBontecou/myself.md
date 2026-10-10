@@ -153,7 +153,21 @@ export function DatasetDocumentation({ dataset, landing = false }) {
           <div className="min-w-0 space-y-10">
             {landing ? (
               <div className="space-y-4">
-                <DownloadBadges />
+                <header className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <nav
+                    className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm underline underline-offset-4"
+                    aria-label="Site"
+                  >
+                    <a href="/docs">Docs</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="/faq">FAQ</a>
+                    <a href="/about">About</a>
+                    <a href="/contact">Contact</a>
+                    <a href={privacyPolicy.url}>Privacy</a>
+                    <a href={privacyPolicy.supportUrl}>Support</a>
+                  </nav>
+                  <DownloadBadges />
+                </header>
                 <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
                   <h1
                     id="landing-title"
@@ -210,15 +224,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                       </Tabs.Content>
                     ))}
                   </Tabs.Root>
-                  <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
-                    <a href="/docs">Docs</a>
-                    <a href="#pricing">Pricing</a>
-                    <a href="/faq">FAQ</a>
-                    <a href="/about">About</a>
-                    <a href="/contact">Contact</a>
-                    <a href={privacyPolicy.url}>Privacy</a>
-                    <a href={privacyPolicy.supportUrl}>Support</a>
-                  </nav>
+
                   <details className="space-y-3 text-sm">
                     <summary className="cursor-pointer font-medium">Common questions</summary>
                     {publicFAQs.map((item) => (

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { Switch } from './Terminal.js';
-import { Button, Copy, Group, Row, SectionHeader } from '../src/components/ui';
+import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
 import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
@@ -12,12 +12,21 @@ import { shareDomain } from './export.js';
 import { domains } from '../core/data.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean}} props */
+import ProfileQuickAction from './ProfileQuickAction.js';
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean}} props */
-function ProfileExportControls({ session, profile, disabled, quick = false }) {
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode}} props */
+function ProfileExportControls({
+  session,
+  profile,
+  disabled,
+  quick = false,
+  roomy = false,
+  iconOnly = false,
+  agentAction,
+}) {
   const { colors } = useTheme();
   const running = useRef(false);
   const [bearer, setBearer] = useState('');
@@ -67,16 +76,20 @@ function ProfileExportControls({ session, profile, disabled, quick = false }) {
   if (quick)
     return (
       <View style={styles.container}>
-        <Button
-          testID={`profile-export-${profile.id}`}
-          label={busy ? 'Exporting…' : 'Export'}
-          icon="download-outline"
-          plain
-          disabled={disabled || busy}
-          busy={busy}
-          onPress={() => void run(() => exportNow(session, profile, setMessage))}
-        />
-        {message || state.message ? (
+        <View style={[styles.quickActions, iconOnly && styles.inlineActions]}>
+          <ProfileQuickAction
+            testID={`profile-export-${profile.id}`}
+            label={busy ? 'Exporting…' : 'Export'}
+            icon="download-outline"
+            disabled={disabled || busy}
+            busy={busy}
+            roomy={roomy}
+            iconOnly={iconOnly}
+            onPress={() => void run(() => exportNow(session, profile, setMessage))}
+          />
+          {agentAction}
+        </View>
+        {message || (state.message && state.message !== 'No exports yet.') ? (
           <Copy
             testID={`profile-export-status-${profile.id}`}
             accessibilityRole="alert"
@@ -317,6 +330,8 @@ function ProfileExportControls({ session, profile, disabled, quick = false }) {
 }
 
 const styles = StyleSheet.create({
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  inlineActions: { flexWrap: 'nowrap' },
   container: { gap: 8 },
   input: {
     minHeight: 44,
