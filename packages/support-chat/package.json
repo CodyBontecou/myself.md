@@ -1,0 +1,42 @@
+{
+  "name": "@codybontecou/support-chat",
+  "version": "0.1.0",
+  "description": "Portable React and React Native support chat clients for an authenticated Discord relay.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodyBontecou/support-chat.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./native": "./native.js",
+    "./web": "./web.js",
+    "./protocol": "./protocol.js"
+  },
+  "files": [
+    "*.js",
+    "jsconfig*.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "react": ">=19",
+    "react-native": ">=0.81"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "check": "tsc -p jsconfig.json && tsc -p jsconfig.web.json"
+  },
+  "devDependencies": {
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "typescript": "~6.0.3",
+    "@types/react": "~19.2.4",
+    "@types/react-dom": "~19.2.0"
+  }
+}

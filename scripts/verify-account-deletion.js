@@ -35,6 +35,13 @@ const db = new DatabaseSync(':memory:');
 db.exec(
   `CREATE TABLE records(owner TEXT); CREATE TABLE settings(owner TEXT); CREATE TABLE export_profiles(owner TEXT); CREATE TABLE profile_schedules(device TEXT); CREATE TABLE activity_history(owner TEXT,device TEXT,value TEXT);`,
 );
+db.exec(
+  'CREATE TABLE debug_content(owner TEXT,device TEXT); CREATE TABLE debug_log(owner TEXT,device TEXT); CREATE TABLE debug_sharing(owner TEXT,device TEXT)',
+);
+for (const table of ['debug_log', 'debug_sharing', 'debug_content']) {
+  db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('alice', 'phone-a');
+  db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('bob', 'phone-b');
+}
 for (const table of ['records', 'settings', 'export_profiles'])
   for (const owner of ['alice', 'phone-a', 'bob', 'phone-b'])
     db.prepare(`INSERT INTO ${table} VALUES(?)`).run(owner);
@@ -173,6 +180,10 @@ assert.equal(
 assert.equal(db.prepare("SELECT count(*) n FROM records WHERE owner='bob'").get()?.n, 1);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='alice'").get()?.n, 0);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='bob'").get()?.n, 1);
+for (const table of ['debug_log', 'debug_sharing', 'debug_content']) {
+  assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='alice'`).get()?.n, 0);
+  assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='bob'`).get()?.n, 1);
+}
 assert.deepEqual(
   files,
   new Set(['file:///document/exports/phone-b/current', 'file:///external/user-owned.json']),

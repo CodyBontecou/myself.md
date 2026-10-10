@@ -7,6 +7,8 @@ const checks = [
   ['Oxlint', 'oxlint', ['--deny-warnings', '--report-unused-disable-directives', '.']],
   ['Prettier', 'prettier', ['--check', '--cache', '.']],
   ['Mobile types', 'tsc', ['-p', 'jsconfig.json']],
+  ['Chat native types', 'tsc', ['-p', 'packages/support-chat/jsconfig.json']],
+  ['Chat web types', 'tsc', ['-p', 'packages/support-chat/jsconfig.web.json']],
   ['Core types', 'tsc', ['-p', 'core/jsconfig.json']],
   ['Server types', 'tsc', ['-p', 'server/jsconfig.json']],
   ['Worker types', 'tsc', ['-p', 'worker/jsconfig.json']],

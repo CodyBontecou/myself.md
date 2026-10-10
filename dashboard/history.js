@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { parseHistoryEvent } from '../core/history.js';
 import { historyDay, historyTitle, historyOutcome, historyRoute } from '../core/history-display.js';
@@ -72,7 +73,7 @@ export function HistoryView({ workspace, search, updated, onExpired }) {
             detail: previous?.detail?.id === id ? previous.detail : null,
             related: previous?.detail?.id === id ? previous.related : [],
             hasMore: previous?.hasMore ?? false,
-            error: err instanceof Error ? err.message : 'History could not be loaded.',
+            error: errorJSON(err),
           }));
           if (!hasSession()) onExpired();
         }
@@ -139,7 +140,11 @@ export function HistoryView({ workspace, search, updated, onExpired }) {
               Refresh
             </Button>
           </div>
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? (
+            <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
+              {errorJSON(error)}
+            </pre>
+          ) : null}
           {loading ? (
             <p role="status" className="text-sm text-muted-foreground">
               Loading history…
@@ -246,6 +251,7 @@ function HistoryDetails({ event, related, workspace }) {
         ? 'Not confirmed'
         : `${event.recordCount.toLocaleString()}${event.kind === 'access' ? ' in this response page' : ''}`,
     ],
+    ['Schema', event.schema ?? 'myself.md.export.v1'],
     ['Formats', event.formats.map((f) => f.toUpperCase()).join(', ')],
   ];
   return (
@@ -266,7 +272,7 @@ function HistoryDetails({ event, related, workspace }) {
       </dl>
       {event.error ? (
         <p role="alert" className="rounded-lg border p-4">
-          This activity did not finish: {event.error}
+          This activity did not finish: {errorJSON(event.error)}
         </p>
       ) : null}
       <div>

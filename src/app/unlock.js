@@ -1,3 +1,4 @@
+import { errorJSON } from '../../packages/support-chat/errors.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
@@ -17,7 +18,7 @@ export default function UnlockScreen() {
     if (qaEnabled) return;
     void lifetimeProduct()
       .then((product) => setPrice(product.displayPrice))
-      .catch((e) => setError(e instanceof Error ? e.message : 'The store is unavailable.'));
+      .catch((e) => setError(errorJSON(e)));
   }, []);
   useEffect(() => {
     if (current.unlocked) router.back();
@@ -29,7 +30,7 @@ export default function UnlockScreen() {
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Please try again.');
+      setError(errorJSON(e));
     } finally {
       setBusy(false);
     }
@@ -63,7 +64,7 @@ export default function UnlockScreen() {
         disabled={busy}
         onPress={() => router.push('/account')}
       />
-      {error ? <Notice title="Purchase unavailable" body={error} /> : null}
+      {error ? <Notice title="Purchase unavailable" body={errorJSON(error)} /> : null}
       <Button
         label={busy ? 'Please wait…' : `Unlock forever${price ? ` · ${price}` : ''}`}
         disabled={busy || !price}

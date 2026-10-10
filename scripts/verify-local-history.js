@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
+import * as updates from '../client/log-updates.js';
 import * as core from '../core/history.js';
 import * as display from '../core/history-display.js';
 import { parseProfile } from '../core/profiles.js';
@@ -39,19 +40,23 @@ async function load() {
   );
   await module.link((specifier) => {
     const values =
-      specifier === './phone-database.js'
-        ? { phoneDatabase: sqlite.openDatabaseSync }
-        : specifier === './session.js'
-          ? session
-          : specifier === '../core/history-display.js'
-            ? display
-            : core;
+      specifier === './log-updates.js'
+        ? updates
+        : specifier === './debug-log.js'
+          ? { recordDebug: () => {} }
+          : specifier === './phone-database.js'
+            ? { phoneDatabase: sqlite.openDatabaseSync }
+            : specifier === './session.js'
+              ? session
+              : specifier === '../core/history-display.js'
+                ? display
+                : core;
     return new SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
     });
   });
   await module.evaluate();
-  return /** @type {{beginExport:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,actor:'manual'|'schedule',interval:{start:string,end:string},id?:string)=>string,recordArtifact:(context:{owner:string,deviceId:string},id:string,artifact:import('../core/history.js').HistoryArtifact)=>void,finishExport:(context:{owner:string,deviceId:string},id:string,status:import('../core/history.js').HistoryStatus)=>void,historyEntry:(context:{owner:string,deviceId:string},server:string,id:string)=>import('../core/history.js').HistoryEvent|null,historyPage:(context:{owner:string,deviceId:string},server:string)=>import('../core/history.js').HistoryEvent[],syncHistory:(session:{owner:string,deviceId:string,server:string})=>Promise<unknown>}} */ (
+  return /** @type {{beginExport:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,actor:'manual'|'schedule',interval:{start:string,end:string},id?:string)=>string,recordArtifact:(context:{owner:string,deviceId:string},id:string,artifact:import('../core/history.js').HistoryArtifact)=>void,finishExport:(context:{owner:string,deviceId:string},id:string,status:import('../core/history.js').HistoryStatus)=>void,historyEntry:(context:{owner:string,deviceId:string},server:string,id:string)=>import('../core/history.js').HistoryEvent|null,historyPage:(context:{owner:string,deviceId:string},server:string)=>import('../core/history.js').HistoryEvent[],syncHistory:(session:{owner:string,deviceId:string,server:string},offset?:number,publish?:boolean)=>Promise<unknown>}} */ (
     module.namespace
   );
 }
@@ -69,7 +74,13 @@ const profile = {
 const stamp = new Date().toISOString(),
   interval = { start: stamp, end: stamp };
 try {
+  let observed = '';
+  const unsubscribe = updates.subscribeLogs(context, () => {
+    observed = journal.historyPage(context, '')[0]?.status ?? '';
+  });
   const id = journal.beginExport(context, profile, 'manual', interval);
+  await Promise.resolve();
+  assert.equal(observed, 'running', 'Persisted export starts notify live viewers');
   journal.recordArtifact(context, id, {
     day: '2026-10-08',
     name: 'sleep.json',
@@ -91,6 +102,9 @@ try {
   assert.deepEqual(journal.historyEntry(context, '', id), beforeInvalid);
   journal.finishExport(context, id, 'complete');
   assert.equal(journal.historyEntry(context, '', id)?.status, 'partial');
+  await Promise.resolve();
+  assert.equal(observed, 'partial', 'Existing export outcomes update live viewers');
+  unsubscribe();
   assert.equal(journal.historyPage(other, '').length, 0);
   assert.equal(journal.historyPage({ ...context, deviceId: 'other' }, '').length, 0);
   const pending = journal.beginExport(context, profile, 'manual', interval);
@@ -160,6 +174,13 @@ try {
     ...localEvent,
     artifacts: localEvent.artifacts.map((a) => Object.assign({}, a, { uri: null })),
   });
+  await journal.syncHistory(paired, 0, false);
+  assert.equal(
+    published.length,
+    0,
+    'Live polling reads history without republishing local exports',
+  );
+  assert.ok(journal.historyEntry(context, paired.server, 'remote'));
   await journal.syncHistory(paired);
   assert.ok(published.length > 0);
   assert.ok(!JSON.stringify(published).includes('file:///'));

@@ -1,25 +1,42 @@
-import { randomUUID } from 'node:crypto';
+import { exportSchemas, defaultExportSchema } from '../core/export-schemas.js';
+import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
 import { parseProfile, profileLink, agentProfileAllows } from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
 import { createFeedbackService, feedbackSchema } from './feedback-service.js';
+import {
+  debugReportSchema,
+  latestDebugReport,
+  registerDebugTools,
+  phoneDebugState,
+  publishDebugReport,
+} from './debug-service.js';
+import { logs, logsJson, selectLogs } from '../core/logs.js';
 const ttl = 300000;
 const domainSchema = z.enum(domains);
+const exportSchema = z.enum(exportSchemas().versions.map((version) => version.id));
+const queryFields = {
+  requestKey: z.string().min(1).max(200).optional(),
+  deviceId: z.string().uuid(),
+  profileId: z.string().min(1).max(100),
+  domain: domainSchema,
+  type: z.string().min(1).max(160),
+  source: z.literal('native').default('native'),
+  start: z.iso.datetime(),
+  end: z.iso.datetime(),
+  cursor: z.string().max(16000).default(''),
+  limit: z.number().int().min(1).max(50).default(50),
+  format: z.enum(['json', 'jsonl']).default('json'),
+  schema: exportSchema.default(defaultExportSchema),
+};
+export const phoneQueryBodySchema = z.toJSONSchema(
+  z.object(queryFields).omit({ requestKey: true }),
+  { io: 'input' },
+);
 const querySchema = z
-  .object({
-    deviceId: z.string().uuid(),
-    profileId: z.string().min(1).max(100),
-    domain: domainSchema,
-    type: z.string().min(1).max(160),
-    source: z.literal('native').default('native'),
-    start: z.iso.datetime(),
-    end: z.iso.datetime(),
-    cursor: z.string().max(16000).default(''),
-    limit: z.number().int().min(1).max(50).default(50),
-    format: z.enum(['json', 'jsonl']).default('json'),
-  })
+  .object(queryFields)
   .refine(
     (q) =>
       Date.parse(q.end) > Date.parse(q.start) &&
@@ -31,6 +48,7 @@ const profileSchema = z.object({
   name: z.string().min(1).max(80),
   export: z
     .object({
+      schema: exportSchema.optional(),
       formats: z
         .array(z.enum(['json', 'jsonl']))
         .min(1)
@@ -43,6 +61,7 @@ const profileSchema = z.object({
       destination: z.enum(['local', 'http', 'cloud']).optional(),
       httpUrl: z.string().nullable().optional(),
     })
+    .partial()
     .optional(),
   schedule: z
     .object({
@@ -64,6 +83,7 @@ const profileSchema = z.object({
   }),
 });
 const catalogSchema = z.object({
+  diagnostics: debugReportSchema.optional(),
   feedback: feedbackSchema.optional(),
   dispatch: z.boolean().default(true),
   profiles: z
@@ -102,7 +122,7 @@ const content = (value) => ({
 });
 /** @typedef {z.infer<typeof querySchema>} Query */
 /** @typedef {{subject:string,deviceId:string,seen:number,catalog:z.infer<typeof catalogSchema>}} Phone */
-/** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:unknown,error?:string}} Job */
+/** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:{schema:import('../core/export-schemas.js').ExportSchema,format:Query['format'],page:import('../core/data.js').DataPage,export:string|null},error?:string}} Job */
 /** @typedef {{id:string,subject:string,deviceId:string,profile:import('../core/profiles.js').ProfileDraft,expires:number,state:'queued'|'delivered'}} Proposal */
 /** @param {z.infer<typeof catalogSchema>|undefined} catalog @param {Query} query */
 function catalogAllows(catalog, query) {
@@ -124,13 +144,18 @@ export function createDataService({
   feedbackOperations = new Map(),
 }) {
   const feedback = createFeedbackService({ own, phones, operations: feedbackOperations });
+  /** Completed capture outcomes survive payload expiry and grant revocation.
+   * @param {string} subject @param {string} id */
+  function captured(subject, id) {
+    return ['complete', 'partial'].includes(history.get(subject, id)?.event.status ?? '');
+  }
   // Query payloads are never persisted. A restarted server requires a fresh phone heartbeat.
   function cleanup() {
     feedback.cleanup();
     for (const [id, p] of proposals) if (p.expires <= Date.now()) proposals.delete(id);
     for (const [id, job] of jobs)
       if (job.expires <= Date.now()) {
-        if (job.state !== 'failed' && history.get(job.subject, id)?.event.status !== 'complete')
+        if (job.state !== 'failed' && !captured(job.subject, id))
           history.update(job.subject, id, {
             status: 'expired',
             error: 'The request expired before the agent retrieved its response.',
@@ -153,7 +178,7 @@ export function createDataService({
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
       if (job.deviceId === deviceId && job.subject === subject) {
-        if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
+        if (!captured(subject, id) && job.state !== 'failed')
           history.update(subject, id, { status: 'cancelled', error: 'Phone disconnected.' });
         billing.release(job.subject, id);
         jobs.delete(id);
@@ -177,7 +202,7 @@ export function createDataService({
     feedback.cancel((op) => op.subject === subject && op.client === client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
-        if (history.get(subject, id)?.event.status !== 'complete' && job.state !== 'failed')
+        if (!captured(subject, id) && job.state !== 'failed')
           history.update(subject, id, { status: 'cancelled', error: 'Agent access was revoked.' });
         billing.release(job.subject, id);
         jobs.delete(id);
@@ -186,7 +211,65 @@ export function createDataService({
   }
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerDataTools(mcp, subject, client = null) {
+    registerDebugTools(mcp, subject, own, phones);
     feedback.register(mcp, subject, client);
+    mcp.registerTool(
+      'list_phone_logs',
+      {
+        description:
+          'Browse owned-phone logs using the same All/App/Exports/Agents categories as the mobile Logs tab. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require phone diagnostics consent and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use selectedIds to select up to 350 unique IDs from this page; unavailableIds reports missing or inaccessible entries without fetching beyond current grants. Use format=jsonl for copyable raw JSON lines equivalent to the phone’s Raw view. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Structured entries include details; no personal records or local artifact paths.',
+        inputSchema: z
+          .object({
+            deviceId: z.string().uuid(),
+            historyOffset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+            category: z.enum(['all', 'app', 'exports', 'agents']).default('all'),
+            issues: z.boolean().default(false),
+            format: z.enum(['structured', 'jsonl']).default('structured'),
+            profileId: z.string().min(1).max(100).optional(),
+            selectedIds: z
+              .array(z.string().min(1).max(1000))
+              .max(350)
+              .refine((ids) => new Set(ids).size === ids.length)
+              .optional(),
+          })
+          .strict(),
+        annotations: { readOnlyHint: true },
+      },
+      async ({ deviceId, historyOffset, category, issues, profileId, format, selectedIds }) => {
+        own(deviceId, subject);
+        const page = history.list(subject, deviceId, historyOffset);
+        const diagnostics = phoneDebugState(deviceId, phones.get(deviceId));
+        const entries = logs(page.events, diagnostics.report?.entries ?? [], Date.now(), {
+          category,
+          issues,
+          profileId,
+        });
+        const selection =
+          selectedIds === undefined
+            ? { logs: entries, unavailableIds: [] }
+            : selectLogs(entries, selectedIds);
+        return content({
+          deviceId,
+          logs: selection.logs,
+          unavailableIds: selection.unavailableIds,
+          ...(format === 'jsonl' ? { jsonl: logsJson(selection.logs) } : {}),
+          observedAt: Date.now(),
+          recommendedPollMs: 2000,
+          nextHistoryOffset: page.hasMore ? historyOffset + page.events.length : null,
+          diagnostics: { ...diagnostics, report: undefined },
+        });
+      },
+    );
+    mcp.registerTool(
+      'list_export_schemas',
+      {
+        description:
+          'Discover released export contracts, the recommended version, JSON Schema definitions, JSONL record definitions, examples and changes. Profiles pin an explicit version; new releases never upgrade saved profiles. Does not read personal data.',
+        inputSchema: z.object({}),
+        annotations: { readOnlyHint: true },
+      },
+      async () => content(exportSchemas()),
+    );
     mcp.registerTool(
       'list_phone_export_history',
       {
@@ -241,11 +324,14 @@ export function createDataService({
       'create_phone_export_profile',
       {
         description:
-          'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings choose JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
+          'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
         inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
       },
       async ({ profile, deviceId }) => {
-        const draft = parseProfile(profile);
+        const draft = parseProfile({
+          ...profile,
+          export: { ...profile.export, schema: profile.export?.schema ?? defaultExportSchema },
+        });
         const deepLink = profileLink(draft);
         if (!deviceId) return content({ profile: draft, deepLink, delivery: null });
         own(deviceId, subject);
@@ -295,7 +381,9 @@ export function createDataService({
           deviceId,
           online: Boolean(p && p.seen > Date.now() - 15000),
           lastSeen: p?.seen ?? null,
-          catalog: p?.catalog ?? null,
+          catalog: p
+            ? { ...p.catalog, diagnostics: phoneDebugState(deviceId, p).report ?? undefined }
+            : null,
         });
       },
     );
@@ -346,12 +434,48 @@ export function createDataService({
         own(query.deviceId, subject);
         const phone = phones.get(query.deviceId);
         const domain = phone?.catalog.domains.find((d) => d.domain === query.domain);
-        const id = randomUUID(),
-          stamp = new Date().toISOString();
+        const requestHash = createHash('sha256')
+          .update(JSON.stringify({ ...query, requestKey: undefined }))
+          .digest('hex');
+        const keyHash = query.requestKey
+          ? createHash('sha256')
+              .update(JSON.stringify([subject, client, query.requestKey]))
+              .digest('hex')
+          : null;
+        const id = keyHash
+          ? `${keyHash.slice(0, 8)}-${keyHash.slice(8, 12)}-4${keyHash.slice(13, 16)}-a${keyHash.slice(17, 20)}-${keyHash.slice(20, 32)}`
+          : randomUUID();
+        const stamp = new Date().toISOString();
+        if (query.requestKey) {
+          const previous = history.get(subject, id)?.event;
+          if (previous) {
+            if (previous.requestHash !== requestHash)
+              throw new PairingError(
+                409,
+                'Idempotency key already used with different query arguments.',
+              );
+            if (
+              !phone ||
+              !catalogAllows(phone.catalog, query) ||
+              !domain?.enabled ||
+              !domain.types.includes(`${query.source}:${query.type}`)
+            )
+              throw new PairingError(403, 'Current phone data grants do not permit this retry.');
+            const existing = jobs.get(id);
+            if (!existing || existing.expires <= Date.now())
+              throw new PairingError(
+                410,
+                'The original request is no longer available; it will not be dispatched again.',
+              );
+            return content({ requestId: id, status: existing.state, expiresAt: existing.expires });
+          }
+        }
         const profile = phone?.catalog.profiles.find((p) => p.id === query.profileId);
         history.record(subject, query.deviceId, {
           id,
           kind: 'access',
+          ...(query.requestKey ? { requestHash } : {}),
+          schema: query.schema,
           startedAt: stamp,
           updatedAt: stamp,
           status: 'running',
@@ -422,7 +546,10 @@ export function createDataService({
         if (!job || job.subject !== subject || job.expires <= Date.now())
           throw new PairingError(404, 'Request expired or not found.');
         own(job.deviceId, subject);
-        if (job.state === 'complete') history.update(subject, requestId, { status: 'complete' });
+        if (job.state === 'complete')
+          history.update(subject, requestId, {
+            status: job.result?.page.complete === false ? 'partial' : 'complete',
+          });
         return content({
           requestId,
           status: job.state,
@@ -441,10 +568,7 @@ export function createDataService({
       async ({ requestId }) => {
         const job = jobs.get(requestId);
         if (job?.subject === subject) {
-          if (
-            history.get(subject, requestId)?.event.status !== 'complete' &&
-            job.state !== 'failed'
-          )
+          if (!captured(subject, requestId) && job.state !== 'failed')
             history.update(subject, requestId, {
               status: 'cancelled',
               error: 'The agent discarded this request.',
@@ -466,26 +590,50 @@ export function createDataService({
           start: z.string().nullable(),
           end: z.string().nullable(),
           native: z.unknown(),
+          timeSeries: z
+            .record(
+              z.string(),
+              z.array(
+                z
+                  .object({
+                    timestamp: z.string().nullable(),
+                    value: z.unknown(),
+                    unit: z.string().optional(),
+                    metadata: z.unknown().optional(),
+                    offsetSeconds: z.number().optional(),
+                  })
+                  .passthrough(),
+              ),
+            )
+            .optional(),
         }),
       )
       .max(50),
     nextCursor: z.string().max(16000).nullable(),
     warnings: z.array(z.string().max(1000)).max(20),
     capture: z.string().max(200),
+    complete: z.boolean().optional(),
   });
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
-    const match = path.match(/^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|feedback)$/);
+    const match = path.match(
+      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|feedback|diagnostics)$/,
+    );
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
+    if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
     if (match[2] === 'feedback') {
       const input = z.object({ id: z.string().uuid() }).parse(body);
       return feedback.authorize(deviceId, subject, input.id);
     }
     if (match[2] === 'poll') {
       const catalog = catalogSchema.parse(body);
+      catalog.diagnostics = latestDebugReport(
+        phones.get(deviceId)?.catalog.diagnostics,
+        catalog.diagnostics,
+      );
       phones.set(deviceId, { deviceId, subject, seen: Date.now(), catalog });
       // Recheck consent every heartbeat, deleting retained data on revocation.
       for (const [id, j] of jobs)
@@ -499,7 +647,7 @@ export function createDataService({
                 d.types.includes(`${j.query.source}:${j.query.type}`),
             ))
         ) {
-          if (history.get(subject, id)?.event.status !== 'complete' && j.state !== 'failed')
+          if (!captured(subject, id) && j.state !== 'failed')
             history.update(subject, id, {
               status: 'cancelled',
               error: 'Phone access was revoked.',
@@ -583,13 +731,17 @@ export function createDataService({
         throw new PairingError(400, 'Response does not match the query.');
       billing.complete(subject, input.id);
       job.result = {
+        schema: job.query.schema,
         format: job.query.format,
         page: input.page,
-        export: job.query.format === 'json' ? null : exportPage(input.page, job.query.format),
+        export:
+          job.query.format === 'json'
+            ? null
+            : exportPage(input.page, job.query.format, job.query.schema),
       };
       job.state = 'complete';
       history.update(subject, input.id, {
-        status: 'ready',
+        status: input.page.complete === false ? 'partial' : 'ready',
         recordCount: input.page.records.length,
         warnings: [
           ...input.page.warnings,

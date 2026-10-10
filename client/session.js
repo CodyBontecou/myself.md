@@ -1,4 +1,7 @@
+import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { saveExportContext } from './export-context.js';
+import { recordDebug } from './debug-log.js';
+import { debugOperation } from '../core/debug-log.js';
 import { canonicalServiceOrigin } from '../core/hosting.js';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
@@ -45,6 +48,27 @@ export async function loadSession() {
 }
 /** @param {Session} [session] */
 export async function clearSession(session) {
+  const previous = session ?? currentSession;
+  if (previous?.server && previous.deviceId && previous.accessToken) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      const response = await fetch(`${previous.server}/api/support/v1`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${previous.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'device', id: previous.deviceId, token: null }),
+        signal: controller.signal,
+      });
+      await response.body?.cancel();
+    } catch {
+      /* A signed-out session cannot refresh or regain support access. */
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   if (session) inactiveSessions.add(session);
   if (currentSession) inactiveSessions.add(currentSession);
   currentSession = null;
@@ -87,12 +111,48 @@ export async function revokeDevice(session) {
     clearTimeout(timeout);
   }
 }
-/** @template T @param {string} url @param {RequestInit} [options] @returns {Promise<T>} */
-async function request(url, options) {
-  const response = await fetch(url, options);
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? 'The server could not complete this request.');
-  return body;
+/** @template T @param {string} url @param {RequestInit} [options]
+ * @param {{session:Session,operation:string}} [diagnostics] @returns {Promise<T>} */
+async function request(url, options, diagnostics) {
+  const started = Date.now();
+  let status;
+  try {
+    const response = await fetch(url, options);
+    status = response.status;
+    const body = /** @type {T} */ (await readJSONResponse(response));
+    if (diagnostics)
+      recordDebug(diagnostics.session, diagnostics.operation, 'succeeded', {
+        durationMs: Date.now() - started,
+        httpStatus: status,
+        url,
+        credentials: requestCredentials(options?.headers),
+      });
+    return body;
+  } catch (error) {
+    if (diagnostics)
+      recordDebug(diagnostics.session, diagnostics.operation, 'failed', {
+        durationMs: Date.now() - started,
+        ...(status ? { httpStatus: status } : {}),
+        error,
+        url,
+        credentials: requestCredentials(options?.headers),
+      });
+    throw error;
+  }
+}
+/** @param {RequestInit['headers']} headers */
+function requestCredentials(headers) {
+  /** @type {Record<string,string>} */
+  const credentials = {};
+  try {
+    const values = new Headers(headers);
+    for (const [header, value] of values.entries()) {
+      if (/authorization|cookie|api.?key|token|secret/i.test(header)) credentials[header] = value;
+    }
+  } catch {
+    /* Optional diagnostics cannot affect the request. */
+  }
+  return credentials;
 }
 /** @param {string} value */
 function trustedUrl(value) {
@@ -191,14 +251,18 @@ export async function api(session, path, options) {
     session.expires = (token.issuedAt + (token.expiresIn ?? 300)) * 1000;
     await saveSession(session);
   }
-  const body = await request(`${session.server}${path}`, {
-    ...options,
-    headers: {
-      ...options?.headers,
-      Authorization: `Bearer ${session.accessToken}`,
-      'Content-Type': 'application/json',
+  const body = await request(
+    `${session.server}${path}`,
+    {
+      ...options,
+      headers: {
+        ...options?.headers,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
     },
-  });
+    { session, operation: debugOperation(path) },
+  );
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
   return /** @type {T} */ (body);
 }

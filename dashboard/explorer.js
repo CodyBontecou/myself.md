@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useId, useState } from 'react';
 import { Dialog } from 'radix-ui';
 import {
@@ -119,8 +120,8 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
         deduplicate: data.has('deduplicate'),
         includeArchives: data.has('archives'),
       });
-    } catch {
-      setError('Check the date range and use a valid timezone, such as Europe/Lisbon.');
+    } catch (failure) {
+      setError(errorJSON(failure));
     }
   }
   return (
@@ -236,7 +237,7 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
                 selected={query.exportIds}
                 options={workspace.exports.map((e) => ({
                   id: e.id,
-                  label: `${e.profileName} · ${e.day} · ${e.format.toUpperCase()}`,
+                  label: `${e.profileName} · ${e.day} · ${e.format.toUpperCase()} · ${(e.schema ?? 'myself.md.export.v1').split('.').at(-1)}`,
                 }))}
               />
             </div>
@@ -370,9 +371,12 @@ function QueryBuilder({ query, facets, workspace, onApply }) {
             </Button>
           </div>
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <pre
+              role="alert"
+              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+            >
+              {errorJSON(error)}
+            </pre>
           )}
         </form>
       </CardContent>
@@ -453,7 +457,7 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
         if (active) setResult(data);
       } catch (failure) {
         if (active) {
-          setError(failure instanceof Error ? failure.message : 'Could not read record.');
+          setError(errorJSON(failure));
           if (!hasSession()) onExpired();
         }
       }
@@ -501,7 +505,9 @@ function RecordInspector({ id, workspace, timezone, onClose, onExpired }) {
             ))}
           </div>
           {error ? (
-            <p role="alert">{error}</p>
+            <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
+              {errorJSON(error)}
+            </pre>
           ) : !result ? (
             <p role="status">Loading record…</p>
           ) : tab === 'raw' ? (
@@ -601,7 +607,7 @@ export function Explorer({ workspace, search, updated, onExpired }) {
           setResponse({
             key: requestKey,
             result: null,
-            error: failure instanceof Error ? failure.message : 'Query failed.',
+            error: errorJSON(failure),
           });
           if (!hasSession()) onExpired();
         }
@@ -647,8 +653,8 @@ export function Explorer({ workspace, search, updated, onExpired }) {
     try {
       await navigator.clipboard.writeText(location.href);
       setNotice('Query link copied. Opening it requires access to this account.');
-    } catch {
-      setNotice('Copy the current URL to share this query.');
+    } catch (failure) {
+      setNotice(errorJSON(failure));
     }
   }
   const facets = response?.result?.facets ?? emptyFacets;
@@ -716,8 +722,8 @@ export function Explorer({ workspace, search, updated, onExpired }) {
               setSaved(next);
               setSaveName('');
               setNotice('View saved in this browser for this account.');
-            } catch {
-              setNotice('This browser could not save the view.');
+            } catch (failure) {
+              setNotice(errorJSON(failure));
             }
           }}
         >
@@ -780,9 +786,12 @@ export function Explorer({ workspace, search, updated, onExpired }) {
         </div>
       )}
       {error && (
-        <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">
-          {error}
-        </p>
+        <pre
+          role="alert"
+          className="whitespace-pre-wrap break-words font-mono rounded-lg border p-4 text-sm text-destructive"
+        >
+          {errorJSON(error)}
+        </pre>
       )}
       {result && (
         <>

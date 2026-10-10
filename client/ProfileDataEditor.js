@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useRef, useState } from 'react';
 import Animated, { cubicBezier, useReducedMotion } from 'react-native-reanimated';
 import { FlashList } from '@shopify/flash-list';
@@ -32,7 +33,7 @@ export default function ProfileDataEditor({
     try {
       setAccessMessage((await onAuthorize(domain)).message);
     } catch (error) {
-      setAccessMessage(error instanceof Error ? error.message : 'Could not request access.');
+      setAccessMessage(errorJSON(error));
     } finally {
       setRequesting(false);
     }
@@ -49,7 +50,7 @@ export default function ProfileDataEditor({
       );
       if (added && permissions[added] !== 'authorized') await authorize(added);
     } catch (error) {
-      setAccessMessage(error instanceof Error ? error.message : 'Could not save selection.');
+      setAccessMessage(errorJSON(error));
     } finally {
       setRequesting(false);
     }

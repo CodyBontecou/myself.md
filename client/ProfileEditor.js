@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { useProfileEditor } from './ProfileEditorState.js';
 import { router, Stack, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -28,6 +29,7 @@ export default function ProfileEditor({ data = false }) {
           : ({
               name: 'Profile name',
               destination: 'Destination',
+              schema: 'Schema version',
               formats: 'Formats',
               window: 'Export window',
               filename: 'Filename',
@@ -71,8 +73,13 @@ export default function ProfileEditor({ data = false }) {
           options={{ title, ...(section ? { headerRight: renderSaveProfileButton } : {}) }}
         />
         {error ? (
-          <Copy testID="profile-editor-error" accessibilityRole="alert" style={styles.error}>
-            {error}
+          <Copy
+            testID="profile-editor-error"
+            accessibilityRole="alert"
+            style={styles.error}
+            selectable
+          >
+            {errorJSON(error)}
           </Copy>
         ) : null}
         <ProfileDataEditor
@@ -94,7 +101,7 @@ export default function ProfileEditor({ data = false }) {
       />
       {error ? (
         <View testID="profile-editor-error" accessibilityRole="alert">
-          <Copy>{error}</Copy>
+          <Copy selectable>{errorJSON(error)}</Copy>
         </View>
       ) : null}
       {!section && !session.id && !session.onSaved && (

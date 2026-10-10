@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { api, initializeSession, hasSession, signIn } from './session.js';
@@ -26,7 +27,7 @@ export function AccountDeletion() {
           setStatus({ ...result, subject: '', notice: accountDeletionNotice });
           return undefined;
         })
-        .catch((reason) => setError(String(reason)))
+        .catch((reason) => setError(errorJSON(reason)))
         .finally(() => setReady(true));
       return;
     }
@@ -45,7 +46,7 @@ export function AccountDeletion() {
         }
         return undefined;
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Sign-in failed.'))
+      .catch((reason) => setError(errorJSON(reason)))
       .finally(() => setReady(true));
   }, []);
   /** @param {()=>Promise<unknown>} action */
@@ -55,7 +56,7 @@ export function AccountDeletion() {
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Please retry.');
+      setError(errorJSON(reason));
     } finally {
       setBusy(false);
     }
@@ -81,9 +82,12 @@ export function AccountDeletion() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <pre
+              role="alert"
+              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+            >
+              {errorJSON(error)}
+            </pre>
           )}
           {started ? (
             <>
@@ -97,7 +101,11 @@ export function AccountDeletion() {
                   <a href={location.href}>Refresh deletion status</a>
                 </Button>
               )}
-              {status.error && <p role="alert">{status.error}</p>}
+              {status.error && (
+                <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
+                  {errorJSON(status.error)}
+                </pre>
+              )}
               {status.state !== 'completed' && status.subject && (
                 <Button disabled={busy} onClick={() => void run(remove)}>
                   Retry deletion
@@ -110,7 +118,9 @@ export function AccountDeletion() {
                 Signed in as {status.subject.slice(status.subject.indexOf('|') + 1)}.
               </p>
               {status.state === 'unavailable' ? (
-                <p role="alert">{status.error}</p>
+                <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
+                  {errorJSON(status.error)}
+                </pre>
               ) : (
                 <>
                   <label className="flex items-start gap-3 text-sm">

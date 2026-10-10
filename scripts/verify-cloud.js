@@ -76,6 +76,14 @@ try {
     () => store.renewAuthorization('alice', 'device', 'rotated', revoked, expiresAt),
     /revoked/,
   );
+  assert.throws(
+    () =>
+      store.begin('alice', 'device', profile.id, {
+        ...metadata,
+        manifest: { ...metadata.manifest, schema: 'myself.md.export.v2' },
+      }),
+    /Unsupported export schema/,
+  );
   const { id } = store.begin('alice', 'device', profile.id, metadata);
   await assert.rejects(async () => await store.page('alice', id, 0, 50));
   assert.throws(() => store.row('bob', id));
@@ -102,6 +110,11 @@ try {
   );
   const bytes = Buffer.from(JSON.stringify(records[0]) + '\n');
   await store.commit('alice', 'device', profile.id, id, bytes);
+  const firstExport = store.list('alice')[0];
+  assert.ok(firstExport);
+  assert.equal(firstExport.schema, profile.export.schema);
+  assert.equal((await store.page('alice', id, 0, 50)).schema, profile.export.schema);
+  assert.deepEqual(await store.bytes(store.row('alice', id)), bytes);
   assert.deepEqual((await store.page('alice', id, 0, 50)).records, records);
   assert.equal(store.list('alice', true).length, 0);
   await assert.rejects(async () => await store.page('alice', id, 0, 50, true));
@@ -158,6 +171,17 @@ try {
     format: 'json',
     manifest: { profileId: profile.id, recordCount: 2 },
   });
+  await assert.rejects(
+    () =>
+      store.commit(
+        'alice',
+        'device',
+        profile.id,
+        json.id,
+        Buffer.from(JSON.stringify({ schema: 'myself.md.export.v2', records })),
+      ),
+    /Unsupported export schema/,
+  );
   await store.commit(
     'alice',
     'device',
@@ -169,6 +193,26 @@ try {
   );
   assert.equal((await store.page('alice', json.id, 0, 1)).nextCursor, '1');
   assert.equal((await store.page('alice', json.id, 1, 1)).nextCursor, null);
+
+  // Seed a different historical identity without releasing a fictional schema.
+  const coexistProfile = { ...profile, id: 'schema-isolation' };
+  const coexistMetadata = {
+    ...metadata,
+    profile: coexistProfile,
+    manifest: { profileId: coexistProfile.id, recordCount: 1 },
+  };
+  const older = store.begin('alice', 'device', coexistProfile.id, coexistMetadata);
+  await store.commit('alice', 'device', coexistProfile.id, older.id, bytes);
+  store.db
+    .prepare('UPDATE exports SET schema=? WHERE id=?')
+    .run('historical-schema-fixture', older.id);
+  const newer = store.begin('alice', 'device', coexistProfile.id, coexistMetadata);
+  await store.commit('alice', 'device', coexistProfile.id, newer.id, bytes);
+  assert.equal(store.row('alice', older.id).schema, 'historical-schema-fixture');
+  assert.deepEqual(await store.bytes(store.row('alice', older.id)), bytes);
+  assert.equal(store.row('alice', newer.id).schema, profile.export.schema);
+  await store.delete('alice', older.id);
+  await store.delete('alice', newer.id);
   store.db.prepare('UPDATE exports SET created=? WHERE id=?').run(Date.now() - 31 * 86400000, id);
   store.cleanup();
   assert.throws(() => store.row('alice', id));

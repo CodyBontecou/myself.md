@@ -173,15 +173,19 @@ async function verifyDatabase(enabled) {
   await journal.link((specifier) => {
     if (specifier === './phone-database.js') return boundary;
     const values =
-      specifier === '../core/history.js'
-        ? history
-        : specifier === '../core/history-display.js'
-          ? display
-          : {
-              api: () => {
-                throw new Error('No network in QA startup.');
-              },
-            };
+      specifier === './log-updates.js'
+        ? { notifyLogs: () => {} }
+        : specifier === './debug-log.js'
+          ? { recordDebug: () => {} }
+          : specifier === '../core/history.js'
+            ? history
+            : specifier === '../core/history-display.js'
+              ? display
+              : {
+                  api: () => {
+                    throw new Error('No network in QA startup.');
+                  },
+                };
     return new SyntheticModule(
       Object.keys(values),
       function () {

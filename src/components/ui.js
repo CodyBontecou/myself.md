@@ -254,7 +254,7 @@ export function Notice({ title, body, icon = 'information-circle-outline' }) {
         <Copy variant="caption" style={styles.semibold}>
           {title}
         </Copy>
-        <Copy variant="caption" muted>
+        <Copy variant="caption" muted selectable>
           {body}
         </Copy>
       </View>

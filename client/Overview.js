@@ -118,7 +118,7 @@ export default function Overview() {
       <Group>
         <Row
           testID="connections-history"
-          title="History"
+          title="Logs"
           subtitle="Past exports and agent access"
           icon={<SourceIcon icon="time-outline" />}
           onPress={() => router.navigate('/history')}

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
 import * as data from '../core/data.js';
 import * as exportFiles from '../core/export-files.js';
+import * as errors from '../packages/support-chat/errors.js';
 /** @type {Map<string,string>} */
 const files = new Map();
 class Directory {
@@ -53,7 +54,9 @@ class File {
 let failMove = false,
   failWrite = false,
   failDelivery = false;
+let failDetail = false;
 const mocks = {
+  recordDebug: () => {},
   Directory,
   File,
   Paths: { document: 'documents', cache: 'cache' },
@@ -81,6 +84,7 @@ const mocks = {
       nextCursor: query.type === 'paged' ? 'next' : null,
       capture: 'native',
       warnings: [],
+      complete: !failDetail,
     };
   },
   deliverExport: async () => {
@@ -92,13 +96,15 @@ const exporter = new SourceTextModule(
 );
 await exporter.link((specifier) => {
   const values =
-    specifier === 'expo-file-system'
-      ? mocks
-      : specifier === '../core/data.js'
-        ? data
-        : specifier === '../core/export-files.js'
-          ? exportFiles
-          : mocks;
+    specifier === '../packages/support-chat/errors.js'
+      ? errors
+      : specifier === 'expo-file-system'
+        ? mocks
+        : specifier === '../core/data.js'
+          ? data
+          : specifier === '../core/export-files.js'
+            ? exportFiles
+            : mocks;
   return new SyntheticModule(Object.keys(values), function () {
     for (const [key, value] of Object.entries(values)) this.setExport(key, value);
   });
@@ -155,7 +161,7 @@ assert.ok(!JSON.stringify(artifacts).includes('Authorization not determined'));
 assert.equal(result.count, 3);
 assert.equal(result.failedSources, 3);
 /** @type {{status:string,failures:{type:string,recordCount:number}[],records:import('../core/data.js').DataRecord[]}} */
-const json = JSON.parse(files.get('documents/Exports/phone/default/2026-10-07.json') ?? '');
+const json = JSON.parse(files.get('documents/Exports/phone/default/2026-10-07.v1.json') ?? '');
 assert.equal(json.status, 'partial');
 assert.equal(json.failures.length, 3);
 assert.deepEqual(
@@ -164,10 +170,10 @@ assert.deepEqual(
 );
 assert.equal(json.failures.find((f) => f.type === 'paged')?.recordCount, 1);
 const manifest = JSON.parse(
-  files.get('documents/Exports/phone/default/2026-10-07.jsonl.manifest.json') ?? '',
+  files.get('documents/Exports/phone/default/2026-10-07.v1.jsonl.manifest.json') ?? '',
 );
 assert.deepEqual(manifest.failures, json.failures);
-const previous = files.get('documents/Exports/phone/default/2026-10-07.json');
+const previous = files.get('documents/Exports/phone/default/2026-10-07.v1.json');
 await assert.rejects(
   exportProfileDay(
     session,
@@ -178,7 +184,7 @@ await assert.rejects(
   ),
   /No selected sources could be read/,
 );
-assert.equal(files.get('documents/Exports/phone/default/2026-10-07.json') ?? '', previous);
+assert.equal(files.get('documents/Exports/phone/default/2026-10-07.v1.json') ?? '', previous);
 await assert.rejects(
   exportProfileDay(
     session,
@@ -215,6 +221,24 @@ await assert.rejects(
   /Move failed/,
 );
 assert.equal(artifacts.length, 0);
+failMove = false;
+failDelivery = false;
+failDetail = true;
+const partialDetail = await exportProfileDay(
+  session,
+  { ...profile, selection: { health: ['native:steps'], time: [], location: [] } },
+  interval,
+  () => true,
+  () => {},
+);
+assert.equal(partialDetail.count, 1);
+assert.equal(partialDetail.failedSources, 1);
+const retainedDetail = JSON.parse(
+  files.get('documents/Exports/phone/default/2026-10-07.v1.json') ?? '{}',
+);
+assert.equal(retainedDetail.status, 'partial');
+assert.equal(retainedDetail.records.length, 1);
+failDetail = false;
 failMove = false;
 failDelivery = true;
 artifacts.length = 0;

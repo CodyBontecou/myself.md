@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { Stack } from 'expo-router';
@@ -204,7 +205,7 @@ export default function PairScreen() {
       )}
       {error && (
         <View testID="pair-error" accessibilityRole="alert">
-          <Notice title="Connection needs attention" body={error} />
+          <Notice title="Connection needs attention" body={errorJSON(error)} />
         </View>
       )}
     </Screen>

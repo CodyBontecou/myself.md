@@ -1,3 +1,4 @@
+import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { demoApi } from './demo.js';
 export const isDemo = /^\/demo\/?$/.test(location.pathname);
 /** @type {{issuer:string,clientId:string}|null} */ let config = null;
@@ -21,9 +22,8 @@ async function exchange(parameters) {
   });
   if (!response.ok) {
     reset();
-    throw new Error('Sign-in expired or could not be completed. Please sign in again.');
   }
-  tokens = await response.json();
+  tokens = /** @type {NonNullable<typeof tokens>} */ (await readJSONResponse(response));
   if (!tokens?.access_token || !Number.isFinite(tokens.expires_in)) {
     reset();
     throw new Error('Invalid sign-in response.');
@@ -60,9 +60,8 @@ export async function api(path, method = 'GET', body) {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: 'no-store',
   });
-  const data = await response.json();
   if (response.status === 401) reset();
-  if (!response.ok) throw new Error(data.error ?? 'The server could not complete this request.');
+  const data = /** @type {T} */ (await readJSONResponse(response));
   return data;
 }
 function random() {
@@ -116,9 +115,7 @@ export async function signIn(provider) {
         callbackURL: `${location.origin}/dashboard`,
       }),
     });
-    if (!response.ok)
-      throw new Error('Sign-in expired or could not be completed. Please start again.');
-    const result = /** @type {{url?:string}} */ (await response.json());
+    const result = /** @type {{url?:string}} */ (await readJSONResponse(response));
     if (!result.url) throw new Error('Sign-in could not continue. Please start again.');
     location.assign(new URL(result.url));
     return;
@@ -130,14 +127,17 @@ export async function signIn(provider) {
 export async function initializeSession() {
   if (isDemo) return true;
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Could not load sign-in configuration.');
-  config = await response.json();
+  config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
   if (location.pathname !== '/dashboard/callback') return false;
   const query = new URLSearchParams(location.search),
     stored = sessionStorage.getItem('qr-dashboard-login');
   sessionStorage.removeItem('qr-dashboard-login');
   history.replaceState(null, '', '/dashboard');
-  if (query.has('error')) throw new Error('Sign-in was cancelled or denied. Please try again.');
+  if (query.has('error'))
+    throw Object.assign(
+      new Error(query.get('error_description') ?? query.get('error') ?? 'Sign-in failed.'),
+      { code: query.get('error') ?? 'oauth_error' },
+    );
   const login = stored
     ? /** @type {{verifier:string,state:string,created:number,returnTo?:string}} */ (
         JSON.parse(stored)

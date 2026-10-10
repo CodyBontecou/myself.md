@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Button } from './components/ui/button.js';
@@ -24,7 +25,7 @@ export function MigrationClaim() {
         }
         return undefined;
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Sign-in failed.'))
+      .catch((reason) => setError(errorJSON(reason)))
       .finally(() => setReady(true));
   }, []);
   /** @param {()=>Promise<unknown>} action */
@@ -34,7 +35,7 @@ export function MigrationClaim() {
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Please try again.');
+      setError(errorJSON(reason));
     } finally {
       setBusy(false);
     }
@@ -61,9 +62,12 @@ export function MigrationClaim() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <pre
+              role="alert"
+              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+            >
+              {errorJSON(error)}
+            </pre>
           )}
           {claimed ? (
             <>

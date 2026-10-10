@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { exportSchemas } from '../core/export-schemas.js';
 import { useTheme } from '../src/lib/theme';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Switch } from './Terminal.js';
@@ -31,6 +33,8 @@ export default function ExportSettingsEditor({
   disabled,
 }) {
   const { colors } = useTheme();
+  const [details, setDetails] = useState(false);
+  const registry = exportSchemas();
   /** @param {string} label */
   function visible(label) {
     if (!field) return true;
@@ -139,6 +143,56 @@ export default function ExportSettingsEditor({
       {(!section || section === 'output') && (
         <>
           {!section && <SectionHeader compact title="Output" />}
+          {(!field || field === 'schema') && (
+            <>
+              <Copy variant="caption" muted>
+                Schema version
+              </Copy>
+              <Group compact>
+                {registry.versions.map((version) => (
+                  <Choice
+                    key={version.id}
+                    testID={`export-schema-${version.version}`}
+                    title={`${version.version} — ${version.title}${version.id === registry.recommended ? ' (recommended)' : ''}`}
+                    selected={settings.schema === version.id}
+                    disabled={disabled}
+                    onPress={() => onSettings({ ...settings, schema: version.id })}
+                  />
+                ))}
+                <Row
+                  compact
+                  title="View schema and example"
+                  testID="export-schema-details"
+                  selected={false}
+                  onPress={() => setDetails(!details)}
+                  trailing={<Icon name={details ? 'chevron-up' : 'chevron-down'} />}
+                />
+              </Group>
+              <Copy variant="caption" muted>
+                Saved profiles keep this version when new versions are released.
+              </Copy>
+              {details &&
+                registry.versions
+                  .filter((v) => v.id === settings.schema)
+                  .map((version) => (
+                    <View key={version.id} style={styles.field}>
+                      <Copy variant="caption">{version.description}</Copy>
+                      <Copy variant="caption">{version.changes.join('\n')}</Copy>
+                      <Copy variant="caption" selectable>
+                        {JSON.stringify(
+                          {
+                            definition: version.definition,
+                            jsonlRecordDefinition: version.jsonlRecordDefinition,
+                            example: version.example,
+                          },
+                          null,
+                          2,
+                        )}
+                      </Copy>
+                    </View>
+                  ))}
+            </>
+          )}
           {['json', 'jsonl'].map((format) =>
             toggle(
               format.toUpperCase(),
@@ -175,7 +229,7 @@ export default function ExportSettingsEditor({
           {(!field || field === 'filename') && (
             <Copy variant="caption" muted>
               Use {'{date}'} or all of {'{year}'}, {'{month}'} and {'{day}'}. Matching daily files
-              are replaced.
+              of the same schema are replaced. The version suffix is added automatically.
             </Copy>
           )}
           {toggle('Separate folders for JSON and JSONL', settings.formatFolders, (v) =>

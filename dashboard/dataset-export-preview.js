@@ -81,7 +81,7 @@ export function datasetExportPreview(profile) {
       !records.some((sample) => sample.domain === domain && sample.type === type),
   );
   const manifest = {
-    schema: 'myself.md.export.v1',
+    schema: profile.export.schema,
     profileId: storedProfile.id,
     profileName: profile.name,
     interval,
@@ -92,8 +92,10 @@ export function datasetExportPreview(profile) {
     exportedAt: '2026-10-09T00:00:00.000Z',
   };
   const json =
-    fileHeader('json') +
-    records.map((sample, index) => recordChunk('json', sample, index)).join('') +
+    fileHeader('json', profile.export.schema) +
+    records
+      .map((sample, index) => recordChunk('json', sample, index, profile.export.schema))
+      .join('') +
     fileFooter('json', manifest);
   return { value: /** @type {Record<string,unknown>} */ (JSON.parse(json)), emptyTypes };
 }

@@ -24,10 +24,10 @@ steps:
   - await:
       idle: true
   - tap:
-      text: History
+      text: Logs
   - await:
       visible:
-        text: Your history starts here
+        text: Your logs start here
   - await:
       idle: true
   - tap:
@@ -45,7 +45,7 @@ steps:
   - await:
       idle: true
   - tap:
-      text: History
+      text: Logs
   - await:
       visible:
         text: Synthetic history refresh failed. Saved entries are still available.
@@ -69,10 +69,10 @@ steps:
   - await:
       idle: true
   - tap:
-      text: History
+      text: Logs
   - await:
       visible:
-        text: Loading history…
+        text: Loading logs…
   - await:
       idle: true
   - tap:

@@ -1,0 +1,38 @@
+# Gripe reports on your Mac
+
+Two-finger triple-tap → reviewed screenshot and comment → private Gripe inbox → local Codex session. The existing Gripe Worker stores reports while the Mac is asleep or offline. The Mac polls outward over HTTPS; it has no public HTTP listener and does not involve isobot. Each report starts a separate Codex session with `exec --worktree`, using the local Codex account and a managed Git worktree. Changes remain local for review. The source checkout must contain the code version being tested; commit changes before testing a build, because a worktree starts from committed code.
+
+This is a single trusted developer runner, not a multi-user ChatGPT login service. It requires a recent Codex CLI with `exec --worktree` and `--approve-for-me`, signed in using `codex login`. It uses workspace-write sandboxing and Codex approval review. Rejected privileged actions must be handled by the person reviewing the session. No OpenAI API key is required. macOS, Node 22.13+, and the repository's build dependencies are required. The runner processes one session at a time.
+
+## Enable it
+
+1. Merge/deploy the Mac inbox change in `CodyBontecou/gripe-backend`. Set its `GRIPE_MAC_REPOSITORY` variable to `CodyBontecou/myself.md` and install a dedicated `GRIPE_MAC_TOKEN` secret with `wrangler secret put GRIPE_MAC_TOKEN`. Use a random token, separate from the phone's `GRIPE_API_KEY`. The backend keeps GitHub issue submission for other repositories.
+2. Copy `.env.gripe-mac.example` to `.env.gripe-mac` and replace the inbox token. This file is ignored. Restrict it with `chmod 600 .env.gripe-mac`. The runner token stays on the Mac and Worker, never in the phone or coding subprocess. Keep the private state directory outside the repository.
+3. Set `GRIPE_REPOSITORY=CodyBontecou/myself.md` in the ignored phone-build `.env`, retaining its existing report key. Run `npm run prebuild -- --platform ios` and rebuild/install the iOS Debug app. Release/preview builds still disable Gripe; a JavaScript OTA cannot enable it.
+4. Run `npm run gripe:mac` while testing. Submit a reviewed report on the phone. Its receipt confirms that Gripe saved the report. The terminal prints the Codex session ID once its initial turn starts; open/resume that session to inspect its changes and results. The receipt does not mean a fix passed checks or was deployed.
+
+For a connected iPhone using Fast Refresh, `npm run build:ios:device-debug` creates a signed Debug app in `.local/xcode/ios-device-debug/Build/Products/Debug-iphoneos/myselfmd.app`, using the existing Apple credentials. Install it with `npm run ios -- --device <iPhone-UDID> --binary <absolute-app-path> --no-bundler`; keep Metro running with `npm run start`. Installation replaces the binary without uninstalling the app or resetting its data. Keep the phone unlocked for installation and launch.
+
+The inbox requires its dedicated bearer credential for listing, claiming and downloading screenshots. Public image routes cannot serve inbox images. The Mac never supplies a repository path or shell command from the report: its destination comes from local configuration. Comment and image go to Codex as the requested task; app metadata is diagnostic context. Reports with the same repository, comment, metadata and PNG have the same ID, including native retry-queue submissions.
+
+## Restart and recovery
+
+The runner saves a private journal before launching Codex. Once the CLI confirms `turn.started`, it saves the session ID before acknowledging the report. A lost acknowledgment is retried using that journal without starting another task. Local JSONL logs may contain report content and code; treat them as private. Retain state while the report exists in the inbox. Never delete it to retry a task.
+
+A `dispatching` journal without a confirmed session ID is uncertain. The runner stops and leaves the report claimed. Inspect its log and local Codex sessions for the report's ID before deciding whether it ran. Do not clear the claim or journal without reconciliation. Reports claimed by another Mac are skipped. Claims do not automatically expire, because an offline coding process may still be running.
+
+Only one runner may use a state directory. After stopping or a crash, check the PID recorded in `~/.gripe-mac/bridge.lock` and ensure that runner and its Codex child have stopped, then remove only `bridge.lock` and restart. Keep all receipt journals. The runner stops on transport/authentication errors; restart after fixing the cause. Sleeping the Mac delays execution but preserves queued reports.
+
+Private inbox objects have no automatic deletion yet. Rotate/revoke the Mac token to disable delivery, and remove corresponding `mac-inbox/` and `mac-images/` objects when you no longer need them. This does not remove local Codex history, worktrees or logs.
+
+## Verification
+
+`npm run verify:gripe-mac` exercises the real runner with a local fixture process: screenshot and prompt delivery, managed-worktree arguments, credential isolation, lost-acknowledgment recovery and refusal to resend uncertain work. `npm run verify:feedback` checks account/device/agent ownership and accepted receipt URLs through real MCP and phone endpoints. Backend tests cover deduplication, private image access and exclusive claims. These fixtures do not start an AI task or prove production delivery. Live delivery requires the deployed inbox, its secret, the rebuilt phone app and a running Mac bridge.
+
+The Debug simulator build compiled successfully after these changes. Native gestures and live phone-to-Mac delivery have not been re-exercised for this route. Backend change: [gripe-backend PR #1](https://github.com/CodyBontecou/gripe-backend/pull/1).
+
+On 10 October 2026, the inbox was deployed to `gripe.isolated.tech` as Worker version `922ca389-44be-4fde-8144-a1493d12aff8`, with `GRIPE_MAC_REPOSITORY=CodyBontecou/myself.md`. The dedicated token is configured on the Worker and in the ignored owner-only `.env.gripe-mac`. Live reads verified health, successful Mac authentication, denial of unauthenticated/phone-key inbox reads, no-store responses and denial of public inbox-image access. The inbox was empty. These checks did not submit a report or start Codex. The rebuilt Debug phone app and running bridge are still required for live task delivery. The deployment source is recorded on the PR branch; the PR remains unmerged.
+
+Later on 10 October 2026, the current checkout was regenerated with the live myself.md destination and dry-run disabled. The signed iPhone Debug build passed, its signature and embedded reporting configuration were verified without displaying credentials, and Expo installed it on the owner’s connected iPhone 17 Pro. Metro served the JavaScript bundle and listed `com.myself.md (iPhone)` as connected. Existing app data was preserved; no report was submitted and the Mac coding runner was not started. Metro was left running on port 8081 for Fast Refresh.
+
+The runner uses `--approve-for-me` by itself to select automatic review and workspace-write sandboxing. Combining it with `--sandbox` is rejected by the installed Codex CLI before creating a session. The runner fixture checks this incompatible combination.

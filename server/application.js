@@ -1,10 +1,18 @@
+import {
+  publicResponse,
+  unknownPublicPath,
+  notFoundMarkdown,
+  publicApiPath,
+  createPublicReadLimiter,
+} from './public-site.js';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { existingCustomerGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
-import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { Client } from '@modelcontextprotocol/client';
+import { McpServer, createMcpHandler, InMemoryTransport } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { z } from 'zod';
 import { parseProfile } from '../core/profiles.js';
@@ -28,7 +36,7 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
@@ -36,6 +44,10 @@ async function bodyBytes(req, limit) {
 export function createApplication(
   config,
   {
+    supportApi,
+    registerSupportTools,
+    supportV1Api,
+    registerSupportV1Tools,
     accountApi,
     qrPng,
     billing,
@@ -97,6 +109,8 @@ export function createApplication(
     new URL(`${issuer}/protocol/openid-connect/certs`),
     options.jwksFetch ? { [customFetch]: options.jwksFetch } : {},
   );
+  const limitPublicRead = createPublicReadLimiter();
+  const limitAgentRest = createPublicReadLimiter();
   const metadata = {
     resource,
     authorization_servers: [issuer],
@@ -118,6 +132,51 @@ export function createApplication(
   /** @param {string} subject @param {string|null} client */
   async function makeMcp(subject, client) {
     const mcp = new McpServer({ name: 'myself.md', version: '1.0.0' });
+    mcp.registerTool(
+      'get_public_dataset_catalog',
+      {
+        description:
+          'Read the public dataset adapter catalog. Contains no personal records. Follow nextCursor until hasMore is false.',
+        inputSchema: z
+          .object({
+            limit: z.number().int().min(1).max(3).optional(),
+            cursor: z
+              .string()
+              .regex(/^catalog-v1:[0-3]$/)
+              .optional(),
+          })
+          .strict(),
+        annotations: { readOnlyHint: true },
+      },
+      async (input) => {
+        const params = new URLSearchParams();
+        if (input.limit !== undefined) params.set('limit', String(input.limit));
+        if (input.cursor !== undefined) params.set('cursor', input.cursor);
+        const result = JSON.parse(
+          publicResponse('/dataset-catalog', '', issuer ?? '', resource, params)?.body ?? '{}',
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      },
+    );
+    mcp.registerTool(
+      'get_public_documentation',
+      {
+        description: 'Read the public developer documentation.',
+        inputSchema: z.object({}).strict(),
+        annotations: { readOnlyHint: true },
+      },
+      async () => ({
+        content: [
+          {
+            type: 'text',
+            text: publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? '',
+          },
+        ],
+      }),
+    );
     for (const name of ['get_account_deletion', 'request_account_deletion']) {
       mcp.registerTool(
         name,
@@ -270,6 +329,8 @@ export function createApplication(
     );
     registerDataTools(mcp, subject, client);
     registerCloudTools(mcp, subject, client);
+    registerSupportTools?.(mcp, subject, client);
+    if (registerSupportV1Tools) registerSupportV1Tools(mcp, subject, client);
     return mcp;
   }
   const handler = toNodeHandler(
@@ -285,6 +346,32 @@ export function createApplication(
       const requestOrigin =
         publicUrls.find((origin) => new URL(origin).host === req.headers.host) ?? publicUrl;
       const requestResource = `${requestOrigin}/mcp`;
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        const limit = publicApiPath(url.pathname)
+          ? limitPublicRead(req.socket.remoteAddress ?? 'unknown')
+          : null;
+        if (limit)
+          for (const [name, value] of Object.entries(limit.headers)) res.setHeader(name, value);
+        if (limit && !limit.allowed) {
+          res.setHeader('Retry-After', limit.headers['RateLimit-Reset']);
+          json(res, 429, {
+            error: 'Public read rate limit exceeded. Retry after the indicated delay.',
+          });
+          return;
+        }
+        const page = publicResponse(
+          url.pathname,
+          req.headers.accept ?? '',
+          issuer,
+          requestResource,
+          url.searchParams,
+        );
+        if (page) {
+          res.writeHead(page.status, page.headers);
+          res.end(req.method === 'HEAD' ? undefined : page.body);
+          return;
+        }
+      }
       if (config.AUTH_PROXY === '1' && url.pathname.startsWith('/auth/')) {
         proxyAuth(req, res, url, new URL(issuer).origin);
         return;
@@ -324,6 +411,15 @@ export function createApplication(
         (await dashboardAsset(url.pathname, res, issuer))
       )
         return;
+      if (unknownPublicPath(url.pathname)) {
+        res.writeHead(404, {
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'Cache-Control': 'no-store',
+          Vary: 'Accept',
+        });
+        res.end(req.method === 'HEAD' ? undefined : notFoundMarkdown);
+        return;
+      }
       if (url.pathname === '/dashboard/config') {
         json(res, 200, { issuer, clientId: 'qr-dashboard' });
         return;
@@ -481,6 +577,70 @@ export function createApplication(
       )
         throw new PairingError(410, 'This account is being deleted or has been deleted.');
 
+      if (url.pathname === '/api/v1/queries' || url.pathname.startsWith('/api/v1/queries/')) {
+        if (typeof payload.azp !== 'string' || ['qr-phone', 'qr-dashboard'].includes(payload.azp))
+          throw new PairingError(403, 'Agent OAuth client required.');
+        cloud.observeAgent(subject, payload.azp);
+        const quota = limitAgentRest(JSON.stringify([subject, payload.azp]));
+        for (const [name, value] of Object.entries(quota.headers)) res.setHeader(name, value);
+        if (!quota.allowed) {
+          res.setHeader('Retry-After', quota.headers['RateLimit-Reset']);
+          json(res, 429, { error: 'Agent REST rate limit exceeded. Honor Retry-After.' });
+          return;
+        }
+        let name;
+        let args;
+        if (url.pathname === '/api/v1/queries' && req.method === 'POST') {
+          const requestKey = z.string().min(1).max(200).parse(req.headers['idempotency-key']);
+          const input = z
+            .record(z.string(), z.unknown())
+            .parse(JSON.parse((await bodyBytes(req, 16384)).toString()));
+          if ('requestKey' in input) throw new PairingError(400, 'Use the Idempotency-Key header.');
+          name = 'query_phone_data';
+          args = { ...input, requestKey };
+        } else if (req.method === 'GET' && url.pathname.startsWith('/api/v1/queries/')) {
+          name = 'get_phone_request';
+          args = {
+            requestId: z.string().uuid().parse(url.pathname.slice('/api/v1/queries/'.length)),
+          };
+        } else {
+          res.setHeader('Allow', url.pathname === '/api/v1/queries' ? 'POST' : 'GET');
+          json(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+        const server = await makeMcp(subject, payload.azp);
+        const agent = new Client({ name: 'myself-rest-adapter', version: '1.0.0' });
+        const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+        try {
+          await server.connect(serverTransport);
+          await agent.connect(clientTransport);
+          const result = await agent.callTool({ name, arguments: args });
+          if (result.isError) {
+            json(res, 422, {
+              error: result.content
+                .filter((part) => part.type === 'text')
+                .map((part) => part.text)
+                .join('\n'),
+            });
+          } else {
+            const output = result.structuredContent;
+            if (
+              name === 'query_phone_data' &&
+              output &&
+              typeof output === 'object' &&
+              'requestId' in output &&
+              typeof output.requestId === 'string'
+            )
+              res.setHeader('Location', `/api/v1/queries/${output.requestId}`);
+            json(res, name === 'query_phone_data' ? 202 : 200, output);
+          }
+        } finally {
+          await agent.close();
+          await server.close();
+        }
+        return;
+      }
+
       if (url.pathname === '/api/migration/claim' && req.method === 'POST') {
         if (payload.azp !== 'qr-dashboard' && payload.azp !== 'qr-phone')
           throw new PairingError(403, 'First-party sign-in required.');
@@ -497,6 +657,26 @@ export function createApplication(
           200,
           await billingApi(subject, JSON.parse((await bodyBytes(req, 40000)).toString())),
         );
+        return;
+      }
+      if (url.pathname === '/api/support/v1') {
+        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+          throw new PairingError(403, 'Use the support MCP tools with an agent client.');
+        if (!supportV1Api) throw new PairingError(503, 'Isobot support is not configured.');
+        const input =
+          req.method === 'POST' ? JSON.parse((await bodyBytes(req, 200000)).toString()) : null;
+        json(res, 200, await supportV1Api(subject, req.method ?? 'GET', url.searchParams, input));
+        return;
+      }
+      if (url.pathname === '/api/support') {
+        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+          throw new PairingError(403, 'Use the support MCP tools with an agent client.');
+        if (!supportApi) throw new PairingError(503, 'Support chat is not configured yet.');
+        const body =
+          req.method === 'POST' || req.method === 'PUT'
+            ? JSON.parse((await bodyBytes(req, 16384)).toString())
+            : null;
+        json(res, 200, await supportApi(subject, req.method ?? 'GET', url.searchParams, body));
         return;
       }
       if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {

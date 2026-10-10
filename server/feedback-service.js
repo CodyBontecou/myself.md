@@ -11,7 +11,9 @@ export const feedbackSchema = z.object({
       issueUrl: z
         .string()
         .url()
-        .regex(/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/)
+        .regex(
+          /^https:\/\/(?:github\.com\/[^/]+\/[^/]+\/issues\/\d+|gripe\.isolated\.tech\/reports\/[a-f0-9]{64})$/,
+        )
         .optional(),
     })
     .nullable(),
@@ -67,7 +69,7 @@ export function createFeedbackService({ own, phones, operations }) {
       'request_phone_feedback',
       {
         description:
-          'Request the same native bug-report flow as Report a bug on an owned iOS dev phone. Use a fresh UUID operationId; repeat it to safely inspect/retry dispatch. Phone asks the user before capture; user crops/annotates/submits. Accepted or opened is not a filed ticket. Expires in five minutes. Poll get_phone_feedback_operation for completion and issue URL. Does not read or grant personal data.',
+          'Request the same native bug-report flow as Report a bug on an owned iOS dev phone. Use a fresh UUID operationId; repeat it to safely inspect/retry dispatch. Phone asks the user before capture; user crops/annotates/submits. Accepted or opened does not confirm submission. Expires in five minutes. Poll get_phone_feedback_operation for submission completion and its issue or Gripe receipt URL. Completion never means a coding fix finished. Does not read or grant personal data.',
         inputSchema: z.object({ deviceId: z.string().uuid(), operationId: z.string().uuid() }),
       },
       async ({ deviceId, operationId }) => {
@@ -111,7 +113,7 @@ export function createFeedbackService({ own, phones, operations }) {
       'get_phone_feedback_operation',
       {
         description:
-          'Inspect a feedback request initiated by this agent. Completed requires a GitHub issue URL observed on the phone. Failed submissions may remain in the SDK retry queue; do not create another report after uncertain delivery. Expired requests cannot initiate a capture; an already approved manual flow may still be open on the phone.',
+          'Inspect a feedback request initiated by this agent. Completed means report submission confirmed on the phone by a GitHub issue or Gripe receipt URL; it does not mean a coding fix completed. Failed submissions may remain in the SDK retry queue; do not create another report after uncertain delivery. Expired requests cannot initiate a capture; an already approved manual flow may still be open on the phone.',
         inputSchema: z.object({ operationId: z.string().uuid() }),
         annotations: { readOnlyHint: true },
       },

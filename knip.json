@@ -12,7 +12,8 @@
     "dashboard/**/*.js",
     "!dashboard/dist/**",
     "dashboard/**/*.css",
-    "worker/**/*.js"
+    "worker/**/*.js",
+    "packages/support-chat/**/*.js"
   ],
   "ignoreDependencies": ["@types/punycode", "cloudflare"],
   "ignoreBinaries": ["fly"],
@@ -23,6 +24,12 @@
     "src/app/**/*.js",
     "dashboard/app.js",
     "dashboard/style.css",
-    "worker/index.js"
+    "worker/index.js",
+    "fingerprint.config.cjs",
+    "packages/support-chat/index.js",
+    "packages/support-chat/native.js",
+    "packages/support-chat/web.js",
+    "packages/support-chat/support-native.js",
+    "packages/support-chat/support-web.js"
   ]
 }

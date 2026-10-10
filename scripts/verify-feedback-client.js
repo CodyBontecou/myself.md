@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 /** @type {{status:string,operationId:string,outcome:string,issueUrl:string}} */
 let native = { status: 'ready', operationId: '', outcome: 'idle', issueUrl: '' };
 let captures = 0;
+let alertMessage = '';
 /** @type {Array<{text:string,onPress?:()=>void}>} */
 let buttons = [];
 const appState = { currentState: 'active' };
@@ -34,6 +35,7 @@ async function load(dev) {
             Alert: {
               /** @param {string} _title @param {string} _message @param {Array<{text:string,onPress?:()=>void}>} [actions] */
               alert: (_title, _message, actions) => {
+                alertMessage = _message;
                 buttons = actions ?? [];
               },
             },
@@ -47,7 +49,7 @@ async function load(dev) {
     );
   });
   await source.evaluate();
-  return /** @type {{requestFeedback:(request:{id:string,expiresAt:number}|null,authorize:()=>Promise<unknown>)=>Promise<void>,feedbackState:()=>Promise<{availability:string,operation:null|{status:string,issueUrl?:string}}>}} */ (
+  return /** @type {{openFeedback:()=>Promise<void>,requestFeedback:(request:{id:string,expiresAt:number}|null,authorize:()=>Promise<unknown>)=>Promise<void>,feedbackState:()=>Promise<{availability:string,operation:null|{status:string,issueUrl?:string}}>}} */ (
     source.namespace
   );
 }
@@ -84,6 +86,15 @@ native = { ...native, outcome: 'dry_run', issueUrl: '' };
 assert.equal((await client.feedbackState()).operation?.status, 'failed');
 const release = await load(false);
 assert.equal((await release.feedbackState()).availability, 'unavailable');
+await release.openFeedback();
+assert.equal(
+  alertMessage,
+  'Screenshot feedback is disabled in this build. It currently requires an iOS Debug build.',
+);
+assert.equal(captures, 1);
+native = { ...native, status: 'missing_key' };
+await client.openFeedback();
+assert.equal(alertMessage, 'Configure GRIPE_API_KEY and rebuild the iOS Debug app.');
 console.log(
   'Feedback client: approval before capture, revocation denial, duplicate dispatch, native completion, dry-run isolation and Release gating pass.',
 );

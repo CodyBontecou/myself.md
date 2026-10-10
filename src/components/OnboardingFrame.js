@@ -1,3 +1,4 @@
+import { errorJSON } from '../../packages/support-chat/errors.js';
 import { Stack } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -78,8 +79,8 @@ export default function OnboardingFrame({ title, body, children, footer, testID 
           {error ? (
             <View testID="onboarding-error" accessibilityRole="alert" style={styles.error}>
               <Copy style={styles.errorTitle}>Setup could not be saved</Copy>
-              <Copy muted style={styles.body}>
-                {error}
+              <Copy muted style={styles.body} selectable>
+                {errorJSON(error)}
               </Copy>
             </View>
           ) : null}

@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
@@ -51,7 +52,7 @@ function ProfileExportControls({ session, profile, disabled, quick = false }) {
       setState(scheduleState(session.deviceId, profile));
       setMessage('');
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Export failed.');
+      setMessage(errorJSON(e));
     } finally {
       running.current = false;
       setBusy(false);

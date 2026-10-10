@@ -1,4 +1,6 @@
+import { notifyLogs } from './log-updates.js';
 import { phoneDatabase } from './phone-database.js';
+import { recordDebug } from './debug-log.js';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
 import { relatedHistoryEvents } from '../core/history-display.js';
 import { api } from './session.js';
@@ -23,9 +25,10 @@ for (const row of /** @type {{owner:string,device:string,id:string,value:string}
       row.id,
     );
     console.warn('An invalid saved history entry was removed.');
+    recordDebug({ owner: row.owner, deviceId: row.device }, 'history', 'failed');
     continue;
   }
-  if (event.actor === 'manual' && event.status === 'running')
+  if (event.actor === 'manual' && event.status === 'running') {
     db.runSync(
       "UPDATE activity_history SET value=? WHERE owner=? AND device=? AND origin='local' AND id=?",
       JSON.stringify({
@@ -38,6 +41,8 @@ for (const row of /** @type {{owner:string,device:string,id:string,value:string}
       row.device,
       row.id,
     );
+    recordDebug({ owner: row.owner, deviceId: row.device }, 'export', 'interrupted');
+  }
 }
 /** @param {Context} context @param {HistoryEvent} event @param {string} [origin] */
 function save(context, event, origin = 'local') {
@@ -51,6 +56,7 @@ function save(context, event, origin = 'local') {
     event.startedAt,
     JSON.stringify(validated),
   );
+  notifyLogs(context);
 }
 /** @param {Context} context @param {string} id @returns {HistoryEvent|null} */
 function get(context, id) {
@@ -85,6 +91,7 @@ export function beginExport(
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
   save(context, { ...event, status: 'running', error: null, updatedAt: new Date().toISOString() });
+  recordDebug(context, 'export', 'started');
   return id;
 }
 /** @param {Context} context @param {string} id @param {import('../core/history.js').HistoryArtifact} artifact */
@@ -102,6 +109,17 @@ export function finishExport(context, id, status, error = null) {
       error,
       updatedAt: new Date().toISOString(),
     });
+  if (event)
+    recordDebug(
+      context,
+      'export',
+      status === 'complete'
+        ? event.artifacts.some((a) => a.partial)
+          ? 'partial'
+          : 'succeeded'
+        : status,
+      error === null ? {} : { error },
+    );
 }
 /** @param {Context} context @param {HistoryEvent} event */
 export function saveShareEvent(context, event) {
@@ -147,9 +165,9 @@ async function publishHistory(session, offset = 0) {
   if (rows.length === 50) await publishHistory(session, offset + rows.length);
 }
 /** Publish phone export metadata and fetch server history; cached entries remain available offline.
- * @param {import('./session.js').Session} session @param {number} [offset] */
-export async function syncHistory(session, offset = 0) {
-  if (offset === 0) await publishHistory(session);
+ * @param {import('./session.js').Session} session @param {number} [offset] @param {boolean} [publish] */
+export async function syncHistory(session, offset = 0, publish = true) {
+  if (offset === 0 && publish) await publishHistory(session);
   const result = /** @type {{events:unknown[],hasMore:boolean}} */ (
     await api(
       session,

@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { requireOptionalNativeModule } from 'expo';
 import { Alert, AppState, Platform } from 'react-native';
 
@@ -21,16 +22,21 @@ export async function feedbackState() {
 export async function openFeedback() {
   const state = await feedbackState();
   if (state.availability !== 'ready') {
-    Alert.alert('Feedback unavailable', 'Configure GRIPE_API_KEY and rebuild the iOS Debug app.');
+    const message =
+      Platform.OS !== 'ios'
+        ? 'Screenshot feedback currently requires an iOS Debug build.'
+        : !__DEV__ || state.availability === 'release_disabled'
+          ? 'Screenshot feedback is disabled in this build. It currently requires an iOS Debug build.'
+          : state.availability === 'missing_key'
+            ? 'Configure GRIPE_API_KEY and rebuild the iOS Debug app.'
+            : 'This build does not include screenshot feedback. Install an iOS Debug build with the Gripe module.';
+    Alert.alert('Feedback unavailable', errorJSON(message));
     return;
   }
   try {
     await bridge?.open(`local-${Date.now()}`);
-  } catch {
-    Alert.alert(
-      'Feedback unavailable',
-      'Finish any open report and keep myself.md in the foreground.',
-    );
+  } catch (error) {
+    Alert.alert('Feedback unavailable', errorJSON(error));
   }
 }
 
@@ -47,7 +53,7 @@ export async function requestFeedback(request, authorize) {
   pending = { ...request, status: 'awaiting_user' };
   Alert.alert(
     'Agent requested a bug report',
-    'Open screenshot feedback? Review and crop the image before submitting it to GitHub. Your agent receives only the outcome and issue link.',
+    'Open screenshot feedback? Review and crop the image before submitting it to the configured feedback destination. Your agent receives only the submission outcome and receipt link.',
     [
       {
         text: 'Cancel',

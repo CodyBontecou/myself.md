@@ -85,6 +85,9 @@ let storage = 'old-session';
 let refresh;
 const context = vm.createContext({
   URL,
+  Headers,
+  recordDebug: () => {},
+  debugOperation: () => 'other',
   AbortController,
   setTimeout,
   clearTimeout,

@@ -1,3 +1,4 @@
+import { SupportNotifications } from '../../client/support-notifications.js';
 import { useEffect, useSyncExternalStore } from 'react';
 import { feedbackState } from '../../client/gripe.js';
 import QaPhoneProvider from '../../client/QaPhoneProvider.js';
@@ -45,6 +46,7 @@ function RootStack() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <Provider>
           {!qaEnabled && <BillingPaywalls />}
+          {!qaEnabled && <SupportNotifications />}
           <Stack
             screenOptions={{
               headerStyle: { backgroundColor: colors.background },
@@ -72,6 +74,7 @@ function RootStack() {
             <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
             <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
             <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
+            <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
           </Stack>
         </Provider>
       </ThemeProvider>

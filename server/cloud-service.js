@@ -44,6 +44,7 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
         const event = {
           id,
           kind: 'access',
+          schema: metadata.profile.export.schema,
           startedAt: stamp,
           updatedAt: stamp,
           status: 'running',

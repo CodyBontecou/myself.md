@@ -13,7 +13,7 @@ export default function ProfilesLayout() {
         />
         <Stack.Screen name="editor/data" options={{ title: 'Data selection' }} />
         <Stack.Screen name="[id]" options={{ title: 'Profile' }} />
-        <Stack.Screen name="history/index" options={{ title: 'Profile history' }} />
+        <Stack.Screen name="history/index" options={{ title: 'Profile logs' }} />
         <Stack.Screen name="history/[id]" options={{ title: 'Activity details' }} />
       </AppStack>
     </ProfileEditorProvider>

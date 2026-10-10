@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { useState, useSyncExternalStore } from 'react';
 import { PermissionStatus } from 'expo-camera';
 import { router } from 'expo-router';
@@ -37,7 +38,7 @@ export default function QaPhoneProvider({ children }) {
   /** @param {()=>Promise<void>} _action */
   async function run(_action) {
     // Source-screen callbacks can contain direct native calls. Never execute them in fixtures.
-    setError('This operation requires a normal build for integration QA.');
+    setError(errorJSON('This operation requires a normal build for integration QA.'));
     setMessage('This operation requires a normal build for integration QA.');
   }
   /** @param {import('../core/data.js').Domain} domain */
@@ -74,7 +75,7 @@ export default function QaPhoneProvider({ children }) {
         connected: false,
         permission: null,
         requestPermission: async () => {
-          setError('Camera access requires a normal build for integration QA.');
+          setError(errorJSON('Camera access requires a normal build for integration QA.'));
           return {
             status: PermissionStatus.UNDETERMINED,
             granted: false,
@@ -87,7 +88,7 @@ export default function QaPhoneProvider({ children }) {
         error,
         link,
         setLink,
-        scan: () => setError('Pairing requires a normal build.'),
+        scan: () => setError(errorJSON('Pairing requires a normal build.')),
         confirm: unavailable,
         refresh: unavailable,
         disconnect: unavailable,

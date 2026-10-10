@@ -1,4 +1,6 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
+import { debugReport, recordDebug } from './debug-log.js';
 import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Linking, StyleSheet, View } from 'react-native';
@@ -37,6 +39,9 @@ export function PhoneDataProvider(props) {
 }
 /** @param {DataProviderProps} props */
 function usePhoneDataState({ session, incoming, onDismiss }) {
+  useEffect(() => {
+    recordDebug(session, 'app', 'started');
+  }, [session]);
   const [grants, setGrants] = useState(() => loadGrants(session.deviceId));
   const allowed = useRef(grants);
   const [profiles, setProfiles] = useState(() => loadProfiles(session.deviceId));
@@ -108,8 +113,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       profileState.current = initial;
       setProfiles(initial);
     }
+    let diagnostics;
+    try {
+      diagnostics = debugReport(session, true);
+    } catch {
+      /* Optional diagnostics must not prevent data dispatch. */
+    }
     return {
       ...raw,
+      diagnostics,
       feedback: await feedbackState(),
       profiles: profileState.current.profiles,
       acceptProfiles: !reviewing.current,
@@ -160,9 +172,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           } else setMessage('Choose Always in location settings, then start recording again.');
         }
       } catch (error) {
-        setLocationInfo(
-          error instanceof Error ? error.message : 'Could not check location access.',
-        );
+        setLocationInfo(errorJSON(error));
       }
     };
     void refresh();
@@ -195,7 +205,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   }, [session, phoneCatalog]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void publish().catch((error) => setMessage(String(error)));
+      if (state === 'active') void publish().catch((error) => setMessage(errorJSON(error)));
     });
     return () => subscription.remove();
   }, [publish]);
@@ -203,7 +213,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     if (!session.server) {
       void Promise.resolve()
         .then(publish)
-        .catch((e) => setMessage(String(e)));
+        .catch((e) => setMessage(errorJSON(e)));
       return;
     }
     let active = true,
@@ -261,12 +271,23 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         ) {
           setMessage(`Your chat requested ${request.query.domain} data.`);
           let body;
+          recordDebug(session, 'query', 'started');
           try {
-            body = { id: request.id, page: await readPage(session.owner, request.query, profile) };
+            const page = await readPage(session.owner, request.query, profile);
+            recordDebug(session, 'query', 'succeeded', {
+              records: {
+                domain: request.query.domain,
+                type: request.query.type,
+                profileId: profile.id,
+                values: page.records,
+              },
+            });
+            body = { id: request.id, page };
           } catch (error) {
+            recordDebug(session, 'query', 'failed', { error });
             body = {
               id: request.id,
-              error: error instanceof Error ? error.message : 'Read failed.',
+              error: errorJSON(error),
             };
           }
           if (active && current === version.current && allowed.current[request.query.domain]) {
@@ -278,8 +299,8 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           }
         }
       } catch (error) {
-        if (active)
-          setMessage(error instanceof Error ? error.message : 'Could not reach your server.');
+        recordDebug(session, 'connection', 'failed', { error });
+        if (active) setMessage(errorJSON(error));
       } finally {
         running = false;
         if (active) timer = setTimeout(() => void poll(), 2000);
@@ -297,10 +318,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     try {
       await action();
     } catch (error) {
-      Alert.alert(
-        'Could not complete this request',
-        error instanceof Error ? error.message : 'Please retry.',
-      );
+      Alert.alert('Could not complete this request', errorJSON(error));
     } finally {
       setBusy(false);
     }
@@ -363,13 +381,14 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     version.current++;
     saveProfiles(session.deviceId, next);
+    recordDebug(session, 'profile', 'succeeded');
     profileState.current = next;
     setProfiles(next);
-    void reconcileExports().catch((e) => setMessage(`Profile saved. ${String(e)}`));
+    void reconcileExports().catch((e) => setMessage(errorJSON(e)));
     try {
       await publish();
-    } catch {
-      setMessage('Profile saved locally. Server access updates when this phone reconnects.');
+    } catch (failure) {
+      setMessage(errorJSON(failure));
     }
   }
   return {

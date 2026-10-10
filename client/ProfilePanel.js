@@ -1,3 +1,6 @@
+import { defaultExportSchema } from '../core/export-schemas.js';
+import { parseExportSettings } from '../core/export-files.js';
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -136,8 +139,8 @@ export default function ProfilePanel({
               />
             )}
             {error ? (
-              <Copy testID="profile-inline-error" accessibilityRole="alert">
-                {error}
+              <Copy testID="profile-inline-error" accessibilityRole="alert" selectable>
+                {errorJSON(error)}
               </Copy>
             ) : null}
             {dirty && (
@@ -218,7 +221,7 @@ export default function ProfilePanel({
       setWorking(true);
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile.');
+      setError(errorJSON(e));
     } finally {
       actionRunning.current = false;
       setWorking(false);
@@ -334,6 +337,12 @@ export default function ProfilePanel({
           <SectionHeader compact title="Output" />
           <Group compact>
             {setting(
+              'Schema version',
+              profile.export.schema.split('.').at(-1) ?? 'v1',
+              'output',
+              'schema',
+            )}
+            {setting(
               'Formats',
               profile.export.formats.join(' + ').toUpperCase(),
               'output',
@@ -396,7 +405,7 @@ export default function ProfilePanel({
             <Row
               compact
               testID="profile-view-history"
-              title="View history"
+              title="View logs"
               subtitle="Exports and agent access for this profile"
               onPress={() =>
                 router.push({ pathname: '/profiles/history', params: { profileId: profile.id } })
@@ -507,6 +516,7 @@ export default function ProfilePanel({
               edit({
                 schema: 'myself.md.profile.v1',
                 name: 'Profile',
+                export: parseExportSettings({ schema: defaultExportSchema }),
                 selection: { health: [], time: [], location: [] },
               })
             }
@@ -564,7 +574,7 @@ export default function ProfilePanel({
       ) : null}
       {error && !editing ? (
         <Text testID="profile-error" accessibilityRole="alert">
-          {error}
+          {errorJSON(error)}
         </Text>
       ) : null}
     </View>

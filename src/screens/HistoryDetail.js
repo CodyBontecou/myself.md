@@ -1,3 +1,4 @@
+import { errorJSON } from '../../packages/support-chat/errors.js';
 import { Alert, StyleSheet, View } from 'react-native';
 import { Stack, router, useLocalSearchParams, usePathname } from 'expo-router';
 import { File } from 'expo-file-system';
@@ -20,10 +21,7 @@ async function shareFile(artifact) {
       throw new Error('File sharing is unavailable on this phone.');
     await Sharing.shareAsync(file.uri);
   } catch (error) {
-    Alert.alert(
-      'File unavailable',
-      error instanceof Error ? error.message : 'This file could not be opened.',
-    );
+    Alert.alert('File unavailable', errorJSON(error));
   }
 }
 export default function HistoryDetail() {
@@ -79,7 +77,7 @@ export default function HistoryDetail() {
       {event.error ? (
         <Notice
           title="This activity did not finish"
-          body={event.error}
+          body={errorJSON(event.error)}
           icon="alert-circle-outline"
         />
       ) : null}
@@ -106,6 +104,7 @@ export default function HistoryDetail() {
                 : `${event.recordCount.toLocaleString()}${event.kind === 'access' ? ' in this response page' : ''}`
             }
           />
+          <Row title="Schema" subtitle={event.schema ?? 'myself.md.export.v1'} />
           <Row title="Format" subtitle={event.formats.map((f) => f.toUpperCase()).join(', ')} />
         </Group>
         {selected.map(([domain, types]) => (

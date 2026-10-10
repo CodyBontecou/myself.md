@@ -1,3 +1,6 @@
+import { createMyselfClient } from '../dashboard/public-client.js';
+import { registerPublicTools } from '../dashboard/webmcp.js';
+import { exportSchemas } from '../core/export-schemas.js';
 import { r2Fixture } from './r2-fixture.js';
 import { BillingStore } from '../server/billing-store.js';
 import { z } from 'zod';
@@ -83,6 +86,7 @@ async function token(subject, azp, audience = `${origin}/mcp`) {
 const phoneToken = await token('alice', 'qr-phone'),
   chatToken = await token('alice', 'fixture-chat'),
   bobToken = await token('bob', 'qr-phone'),
+  bobAgentToken = await token('bob', 'fixture-bob-agent'),
   dashboardToken = await token('alice', 'qr-dashboard'),
   bobDashboardToken = await token('bob', 'qr-dashboard');
 /** @param {string} path @param {string|null} bearer @param {string} [method] @param {unknown} [body] */
@@ -299,8 +303,83 @@ try {
       requestInit: { headers: { Authorization: `Bearer ${chatToken}` } },
     }),
   );
+  // Verify the standalone CLI bundle against the same authenticated service, not a stub.
+  /** @param {string[]} args @param {string} [input] */
+  async function runCli(args, input = '') {
+    const cliProcess = spawn(process.execPath, ['dashboard/dist/myself.mjs', ...args], {
+      env: { ...process.env, MYSELF_URL: origin, MYSELF_TOKEN: chatToken },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let output = '';
+    cliProcess.stdout.on('data', (chunk) => {
+      output += chunk;
+    });
+    cliProcess.stderr.on('data', (chunk) => {
+      output += chunk;
+    });
+    cliProcess.stdin.end(input);
+    const [code] = await once(cliProcess, 'close');
+    assert.equal(code, 0, output);
+    return JSON.parse(output);
+  }
+  assert.equal((await runCli(['health'])).ok, true);
+  assert.ok(
+    (await runCli(['tools'])).tools.some(
+      (/** @type {{name:string}} */ tool) => tool.name === 'get_privacy_policy',
+    ),
+  );
+  assert.ok((await runCli(['call', 'get_privacy_policy'], '{}')).content.length > 0);
+  await Promise.all(
+    ['/health', '/config', '/dashboard/config', '/.well-known/oauth-protected-resource/mcp'].map(
+      async (path) => {
+        const versioned = await fetch(`${origin}/v1${path}`);
+        assert.equal(versioned.status, 200);
+        assert.equal(versioned.headers.get('ratelimit-limit'), '120');
+        assert.deepEqual(await versioned.json(), (await request(path, null)).value);
+      },
+    ),
+  );
+  assert.equal((await fetch(`${origin}/v1/mcp`)).status, 404);
   const tools = await client.listTools();
   assert.ok(tools.tools.some((t) => t.name === 'read_cloud_export'));
+  assert.ok(tools.tools.some((t) => t.name === 'list_export_schemas'));
+  const schemaResult = await client.callTool({ name: 'list_export_schemas', arguments: {} });
+  assert.equal(schemaResult.isError, undefined);
+  const schemaContent = schemaResult.content;
+  assert.ok(Array.isArray(schemaContent));
+  const schemaText = schemaContent[0];
+  assert.ok(schemaText && schemaText.type === 'text');
+  assert.deepEqual(JSON.parse(schemaText.text), exportSchemas());
+  const unsupportedProfile = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: {
+        schema: 'myself.md.profile.v1',
+        name: 'Unsupported',
+        selection: { health: [], time: [], location: [] },
+        export: { schema: 'myself.md.export.v2' },
+      },
+    },
+  });
+  assert.equal(unsupportedProfile.isError, true);
+  const pinnedProfile = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: {
+        schema: 'myself.md.profile.v1',
+        name: 'Pinned',
+        selection: { health: [], time: [], location: [] },
+        export: { schema: 'myself.md.export.v1' },
+      },
+    },
+  });
+  assert.equal(pinnedProfile.isError, undefined);
+  const pinnedContent = pinnedProfile.content;
+  assert.ok(Array.isArray(pinnedContent));
+  const pinnedText = pinnedContent.find((item) => item.type === 'text');
+  assert.ok(pinnedText?.type === 'text');
+  assert.equal(JSON.parse(pinnedText.text).profile.export.schema, 'myself.md.export.v1');
+
   assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
   assert.ok(tools.tools.some((t) => t.name === 'get_privacy_policy'));
   const policyResult = await client.callTool({ name: 'get_privacy_policy', arguments: {} });
@@ -471,6 +550,18 @@ try {
     start: null,
     end: null,
     native: { synthetic: true },
+    timeSeries: {
+      samples: [
+        {
+          timestamp: '2026-10-08T00:00:00.000Z',
+          value: 72,
+          unit: 'count/min',
+          metadata: { arbitrary: ['kept', 1] },
+        },
+        { timestamp: '2026-10-08T00:00:00.000Z', value: 72, unit: 'count/min' },
+        { timestamp: null, value: { unknown: [0, false] } },
+      ],
+    },
   };
   if (r2) {
     r2.state.failPut = true;
@@ -653,6 +744,69 @@ try {
     (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
     200,
   );
+  const diagnosticsPath = `/api/phones/${deviceId}/diagnostics`;
+  const debugReport = {
+    schema: 'myself.md.debug.v1',
+    content: { records: false, credentials: true, urls: true },
+    generatedAt: Date.now(),
+    revision: 1,
+    shared: true,
+    platform: 'ios',
+    entries: [
+      {
+        time: Date.now(),
+        operation: 'connection',
+        outcome: 'failed',
+        error: 'fixture raw server failure',
+        credentials: { Authorization: 'Bearer fixture-log-credential' },
+        url: 'https://fixture.test/private',
+        durationMs: 12,
+        httpStatus: 503,
+      },
+    ],
+  };
+  assert.equal(
+    z
+      .object({ report: z.unknown() })
+      .parse(
+        (await client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }))
+          .structuredContent,
+      ).report,
+    null,
+  );
+  assert.equal((await request(diagnosticsPath, chatToken, 'POST', debugReport)).status, 403);
+  assert.equal((await request(diagnosticsPath, dashboardToken, 'POST', debugReport)).status, 403);
+  assert.equal((await request(diagnosticsPath, bobToken, 'POST', debugReport)).status, 404);
+  assert.equal((await request(diagnosticsPath, phoneToken, 'POST', debugReport)).status, 200);
+  assert.deepEqual(
+    z
+      .object({ report: z.unknown() })
+      .parse(
+        (await client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }))
+          .structuredContent,
+      ).report,
+    debugReport,
+  );
+  assert.equal(
+    (
+      await request(diagnosticsPath, phoneToken, 'POST', {
+        ...debugReport,
+        shared: false,
+        revision: 2,
+        entries: [],
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    z
+      .object({ report: z.unknown() })
+      .parse(
+        (await client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }))
+          .structuredContent,
+      ).report,
+    null,
+  );
   assert.equal(
     (
       await client.callTool({
@@ -806,7 +960,13 @@ try {
     (
       await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
         id: chosenId,
-        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+        page: {
+          records: [record],
+          nextCursor: null,
+          warnings: [],
+          capture: 'synthetic',
+          complete: false,
+        },
       })
     ).status,
     200,
@@ -819,6 +979,15 @@ try {
     z.object({ status: z.string() }).parse(retained.structuredContent).status,
     'complete',
   );
+  const retainedPage = z
+    .object({
+      result: z.object({
+        page: z.object({ records: z.array(z.unknown()), complete: z.boolean() }),
+      }),
+    })
+    .parse(retained.structuredContent).result.page;
+  assert.deepEqual(retainedPage.records, [record]);
+  assert.equal(retainedPage.complete, false);
   const runningId = queryId((await queryProfile('secondary')).structuredContent);
   await pollPhone(multiCatalog);
   const queuedId = queryId((await queryProfile('secondary')).structuredContent);
@@ -840,6 +1009,14 @@ try {
       true,
       'Revocation discards queued, running and retained responses',
     );
+  const partialHistory = z
+    .object({ event: z.object({ status: z.string() }) })
+    .parse((await request(`/api/dashboard/history/entry?id=${chosenId}`, dashboardToken)).value);
+  assert.equal(
+    partialHistory.event.status,
+    'partial',
+    'Revocation preserves the completed partial-capture audit outcome',
+  );
   assert.equal(
     (
       await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
@@ -881,6 +1058,92 @@ try {
     true,
   );
   await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+  const publicSdk = createMyselfClient({ origin });
+  const sdk = createMyselfClient({ origin, token: chatToken });
+  const firstCatalog = z
+    .object({
+      items: z.array(z.object({ slug: z.string() })),
+      nextCursor: z.string(),
+      hasMore: z.literal(true),
+    })
+    .parse(await publicSdk.datasets({ limit: 1 }));
+  assert.equal(firstCatalog.items.length, 1);
+  const secondCatalog = z
+    .object({ items: z.array(z.object({ slug: z.string() })) })
+    .parse(await publicSdk.datasets({ limit: 1, cursor: firstCatalog.nextCursor }));
+  assert.notEqual(firstCatalog.items[0]?.slug, secondCatalog.items[0]?.slug);
+  assert.equal((await fetch(origin + '/v1/dataset-catalog?cursor=invalid')).status, 400);
+  /** @type {import('../dashboard/webmcp.js').BrowserTool[]} */
+  const browserTools = [];
+  await registerPublicTools(
+    {
+      registerTool: (tool) => {
+        browserTools.push(tool);
+      },
+    },
+    publicSdk,
+  );
+  assert.equal(browserTools.length, 2);
+  assert.ok(
+    String(
+      z.object({ markdown: z.string() }).parse(await browserTools[0]?.execute({})).markdown,
+    ).includes('OAuth'),
+  );
+  assert.deepEqual(
+    await browserTools[1]?.execute({ limit: 1 }),
+    await publicSdk.datasets({ limit: 1 }),
+  );
+  await assert.rejects(async () => browserTools[1]?.execute({ limit: 0 }));
+  await assert.rejects(async () => browserTools[0]?.execute({ token: 'forbidden' }));
+  const restInput = {
+    deviceId,
+    profileId: profile.id,
+    domain: 'health',
+    type: 'sleep',
+    source: 'native',
+    start: '2026-10-08T00:00:00.000Z',
+    end: '2026-10-09T00:00:00.000Z',
+  };
+  const restJob = z
+    .object({ requestId: z.string(), status: z.literal('queued') })
+    .parse(await sdk.query(restInput, 'fixture-retry'));
+  const restRetry = z
+    .object({ requestId: z.string() })
+    .parse(await sdk.query(restInput, 'fixture-retry'));
+  assert.equal(restRetry.requestId, restJob.requestId);
+  await assert.rejects(() => sdk.query({ ...restInput, limit: 1 }, 'fixture-retry'), /422/);
+  await assert.rejects(
+    () => createMyselfClient({ origin, token: phoneToken }).query(restInput, 'phone-rejected'),
+    /403/,
+  );
+  await assert.rejects(() => publicSdk.query(restInput, 'unauthorized'), /OAuth/);
+  await assert.rejects(
+    () => createMyselfClient({ origin, token: bobAgentToken }).request(restJob.requestId),
+    /422/,
+  );
+  const restQueued = z
+    .object({ status: z.literal('queued') })
+    .parse(await sdk.request(restJob.requestId));
+  assert.equal(restQueued.status, 'queued');
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+  await request(`/api/phones/${deviceId}/result`, phoneToken, 'POST', {
+    id: restJob.requestId,
+    page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+  });
+  assert.equal(
+    z.object({ status: z.literal('complete') }).parse(await sdk.request(restJob.requestId)).status,
+    'complete',
+  );
+  assert.equal(
+    z.object({ requestId: z.string() }).parse(await sdk.query(restInput, 'fixture-retry'))
+      .requestId,
+    restJob.requestId,
+  );
+  await client.callTool({
+    name: 'forget_phone_request',
+    arguments: { requestId: restJob.requestId },
+  });
+  await assert.rejects(() => sdk.query(restInput, 'fixture-retry'), /422/);
   const queried = await client.callTool({
     name: 'query_phone_data',
     arguments: {
@@ -935,6 +1198,10 @@ try {
     client: 'fixture-chat',
     blocked: true,
   });
+  await assert.rejects(
+    client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }),
+    /blocked/,
+  );
   await request('/api/dashboard/agents', dashboardToken, 'PUT', {
     client: 'fixture-chat',
     blocked: false,
@@ -1240,6 +1507,18 @@ try {
     dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
     0,
   );
+  const publicReads = await Promise.all(
+    Array.from({ length: 125 }, () => fetch(`${origin}/v1/health`)),
+  );
+  const rejectedRead = publicReads.find((response) => response.status === 429);
+  assert.ok(rejectedRead, 'Public read limit must be enforced.');
+  assert.ok(Number(rejectedRead.headers.get('retry-after')) > 0);
+  assert.equal(
+    typeof z.object({ error: z.string() }).parse(await rejectedRead.json()).error,
+    'string',
+  );
+  assert.equal((await fetch(`${origin}/mcp`)).status, 401);
+  assert.ok(!(await client.callTool({ name: 'get_privacy_policy', arguments: {} })).isError);
   console.log(
     'HTTP/MCP: OAuth resource metadata, real SDK transport, lifetime-access handoff and verified claim completion, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
   );

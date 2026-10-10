@@ -1,3 +1,4 @@
+import { publicHTML, publicPages } from '../core/public-site.js';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createDashboardService } from './dashboard-service.js';
@@ -13,13 +14,24 @@ export function dashboardAsset(path, res, issuer) {
   res.writeHead(200, {
     'Content-Type': `${asset[1]}; charset=utf-8`,
     'Cache-Control': 'no-store',
+    Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin}; img-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const content = readFileSync(new URL(`../dashboard/dist/${asset[0]}`, import.meta.url));
   res.end(
-    asset[1] === 'text/html' ? content.toString('utf8').replace('__STYLE_NONCE__', nonce) : content,
+    asset[1] === 'text/html'
+      ? content
+          .toString('utf8')
+          .replace('__STYLE_NONCE__', nonce)
+          .replace(
+            '__PUBLIC_CONTENT__',
+            publicHTML(
+              publicPages.get(path.replace(/\/$/, '') || '/') ?? publicPages.get('/') ?? '',
+            ),
+          )
+      : content,
   );
   return true;
 }

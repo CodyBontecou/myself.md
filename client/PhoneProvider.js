@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import {
   deleteLocalAccount,
   queueAccountCleanup,
@@ -101,12 +102,12 @@ function usePhoneState() {
           setError('');
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Invalid app link.');
+        setError(errorJSON(e));
       }
     };
     void Linking.getInitialURL()
       .then(receive)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(errorJSON(e)));
     const listener = Linking.addEventListener('url', ({ url }) => receive(url));
     return () => listener.remove();
   }, []);
@@ -127,15 +128,15 @@ function usePhoneState() {
         } else setSession(loaded);
         return undefined;
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorJSON(e)))
       .finally(() => setReady(true));
   }, []);
   useEffect(() => {
     if (!ready) return;
     saveExportContext(session?.deviceId ? session : localSession);
-    void reconcileExports().catch((e) => setError(String(e)));
+    void reconcileExports().catch((e) => setError(errorJSON(e)));
     const tick = () => {
-      void runScheduledExports().catch((e) => setError(String(e)));
+      void runScheduledExports().catch((e) => setError(errorJSON(e)));
     };
     tick();
     const timer = setInterval(tick, 30000);
@@ -151,11 +152,13 @@ function usePhoneState() {
             cancelExports();
             clearAccountAllowance();
             setSession(null);
-            setError('Your session expired after 30 days of inactivity. Please sign in again.');
+            setError(
+              errorJSON('Your session expired after 30 days of inactivity. Please sign in again.'),
+            );
           }
           return valid ? renewCloudAuthorizations(session) : undefined;
         })
-        .catch((e) => setError(String(e)));
+        .catch((e) => setError(errorJSON(e)));
     };
     active();
     const listener = AppState.addEventListener('change', active);
@@ -174,7 +177,7 @@ function usePhoneState() {
       locked.current = true;
       setError('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid QR code.');
+      setError(errorJSON(e));
     }
   }
   /** @param {() => Promise<void>} action */
@@ -184,7 +187,7 @@ function usePhoneState() {
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
+      setError(errorJSON(e));
     } finally {
       setBusy(false);
     }
@@ -234,12 +237,10 @@ function usePhoneState() {
       previous.deviceId ? revokeDevice(previous) : Promise.resolve(),
     ]).then(([tracking, remote]) => {
       const failures = [
-        tracking.status === 'rejected' ? 'Location shutdown failed; check location settings.' : '',
-        remote.status === 'rejected'
-          ? 'The old server could not confirm revocation. Its device pairing may still exist.'
-          : '',
+        tracking.status === 'rejected' ? errorJSON(tracking.reason) : '',
+        remote.status === 'rejected' ? errorJSON(remote.reason) : '',
       ].filter(Boolean);
-      if (failures.length) Alert.alert('Signed out on this phone', failures.join('\n'));
+      if (failures.length) Alert.alert('Signed out on this phone', errorJSON(failures.join('\n')));
       return undefined;
     });
   }
@@ -288,8 +289,9 @@ function usePhoneState() {
         result.state === 'completed' ? 'Account deleted' : 'Account deletion started',
         result.state === 'completed'
           ? 'Your account and cloud data were deleted.'
-          : (result.error ??
-              'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.'),
+          : result.error
+            ? errorJSON(result.error)
+            : 'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.',
       );
     },
     run,

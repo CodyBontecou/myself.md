@@ -3,6 +3,8 @@ import * as HK from '@kingstinct/react-native-healthkit';
 import * as HC from 'react-native-health-connect';
 import { quantities, categories, androidTypes, special } from './health-types.js';
 import { record } from '../core/data.js';
+import { captureQuantitySeries } from './health-series.js';
+import { captureWorkout } from './workout-series.js';
 /** @typedef {import('@kingstinct/react-native-healthkit').ObjectTypeIdentifier} HKType */
 /** @returns {Promise<string[]>} */
 export async function healthTypes() {
@@ -98,13 +100,7 @@ export async function healthPage(query, token) {
   else if (query.type === 'HKWorkoutTypeIdentifier') {
     const workouts = await HK.queryWorkoutSamplesWithAnchor(options);
     // Workout proxies must be explicitly serialized to preserve fields.
-    const samples = await Promise.all(
-      workouts.workouts.map(async (w) => ({
-        ...w.toJSON(),
-        statistics: await w.getAllStatistics(),
-        routes: await w.getWorkoutRoutes(),
-      })),
-    );
+    const samples = await Promise.all(workouts.workouts.map(captureWorkout));
     result = { ...workouts, samples };
   } else if (query.type.startsWith('HKCorrelation')) {
     const correlations = await HK.queryCorrelationSamplesWithAnchor(
@@ -125,17 +121,30 @@ export async function healthPage(query, token) {
     result = await HK.queryStateOfMindSamplesWithAnchor(options);
   else throw new Error('Unsupported HealthKit query.');
   // JSON serialization turns Date values into ISO instants; units and metadata remain native.
-  const samples = /** @type {unknown[]} */ (JSON.parse(JSON.stringify(result.samples)));
+  let samples = /** @type {Record<string,unknown>[]} */ (
+    JSON.parse(JSON.stringify(result.samples))
+  );
+  if (quantities.includes(query.type) || query.type.startsWith('HKCorrelation'))
+    samples = await captureQuantitySeries(samples);
+  const complete = !samples.some(
+    (sample) => Array.isArray(sample.captureFailures) && sample.captureFailures.length,
+  );
   const full = samples.length >= query.limit || result.deletedSamples.length >= query.limit;
   return {
     records: samples
       .map((r) => record('health', query.type, 'healthkit', r))
-      .filter((r) => r.start !== null && r.start >= query.start && r.start < query.end),
+      .filter((r) => r.start === null || (r.start >= query.start && r.start < query.end)),
     nextCursor: full ? result.newAnchor : null,
     capture: 'native-readable-samples',
+    complete,
     warnings: [
       'HealthKit hides read denial. An empty result can mean no data or no authorization; it is not proof of full access.',
       'This adapter does not capture clinical FHIR, attachments, audiograms, medications or vision prescriptions. Those fields are unavailable through this adapter.',
+      ...(!complete
+        ? [
+            'Some nested health detail could not be captured. Parent samples are retained; inspect native.captureFailures.',
+          ]
+        : []),
       ...(result.deletedSamples.length
         ? [`Deleted native sample IDs: ${JSON.stringify(result.deletedSamples)}`]
         : []),

@@ -16,6 +16,9 @@ class Clock extends Date {
 }
 const context = vm.createContext({
   canonicalServiceOrigin,
+  Headers,
+  recordDebug: () => {},
+  debugOperation: () => 'other',
   Date: Clock,
   URL,
   AbortController,

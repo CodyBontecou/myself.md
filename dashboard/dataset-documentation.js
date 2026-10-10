@@ -1,8 +1,8 @@
+import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'radix-ui';
 import { IconChevronRight, IconSearch, IconX } from '@tabler/icons-react';
 import { datasets } from './dataset-catalog.js';
-import { record } from '../core/data.js';
 import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
@@ -24,17 +24,6 @@ function typeLabel(key) {
     .replace(/^native:/, '')
     .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
-}
-/** @param {{title:string,value:unknown}} props */
-function JsonExample({ title, value }) {
-  return (
-    <section className="space-y-3">
-      <h3 className="text-base font-medium">{title}</h3>
-      <pre className="overflow-x-auto rounded-lg border bg-muted/30 p-4 text-xs leading-relaxed">
-        <code>{JSON.stringify(value, null, 2)}</code>
-      </pre>
-    </section>
-  );
 }
 /** @param {{dataset:string}} props */
 export function DatasetDocumentation({ dataset }) {
@@ -68,7 +57,7 @@ export function DatasetDocumentation({ dataset }) {
   const included = Object.values(datasets);
   const data = {
     ...datasets.health,
-    sources: included.map((item) => `${item.title}: ${item.sources}`).join(' '),
+    sources: included.map((item) => `${item.title}: ${item.sources}`).join('\n'),
     limitations: included.flatMap((item) => item.limitations),
   };
   const selectable =
@@ -141,13 +130,11 @@ export function DatasetDocumentation({ dataset }) {
     (total, item) => total + new Set(item.groups.flatMap((group) => group.keys)).size,
     0,
   );
-  const examples = included.map((item) =>
-    record(item.domain, item.sampleType, item.sampleSource, item.sample),
-  );
   const profile = parseProfile({
     schema: 'myself.md.profile.v1',
     name: 'Example export',
     selection: selected,
+    export: { schema: defaultExportSchema },
   });
   const preview = datasetExportPreview(profile);
   const exportPreview = (
@@ -226,6 +213,9 @@ export function DatasetDocumentation({ dataset }) {
                   ))}
                 </Tabs.Root>
                 <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
+                  <a href="/docs">Developer docs</a>
+                  <a href="/about">About</a>
+                  <a href="/contact">Contact</a>
                   <a href={privacyPolicy.url}>Privacy policy</a>
                   <a href={privacyPolicy.supportUrl}>Support</a>
                 </nav>
@@ -418,111 +408,8 @@ export function DatasetDocumentation({ dataset }) {
             <h2 id="sources-title" className="text-2xl font-medium tracking-tight">
               What this dataset contains
             </h2>
-            <p className="text-base leading-8 text-muted-foreground sm:text-lg">{data.sources}</p>
-            <p className="text-base leading-8 text-muted-foreground sm:text-lg">
-              Each record has a shared envelope. Its native payload keeps the original source
-              fields; it is not converted into one universal schema. All examples here use fictional
-              data.
-            </p>
-          </section>
-          <section className="space-y-6" aria-labelledby="json-title">
-            <h2 id="json-title" className="text-2xl font-medium tracking-tight">
-              JSON structures
-            </h2>
-            <dl className="space-y-6">
-              {[
-                ['domain', 'health, time, or location.'],
-                ['type', 'The source metric or collection identifier.'],
-                [
-                  'source',
-                  'The platform adapter, such as healthkit, health-connect, native-usage, or expo-location.',
-                ],
-                [
-                  'start / end',
-                  'ISO UTC timestamps, or null when the source has no valid timestamp. When no end is supplied, end falls back to start.',
-                ],
-                [
-                  'native',
-                  'The unchanged source payload. Its fields depend on the platform and dataset type.',
-                ],
-                [
-                  'Selection keys',
-                  'Profiles use native:<type>. These authorization keys differ from the source value stored on a record.',
-                ],
-              ].map(([label, description]) => (
-                <div key={label}>
-                  <dt className="font-mono text-base font-medium">{label}</dt>
-                  <dd className="mt-2 text-base leading-8 text-muted-foreground sm:text-lg">
-                    {description}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <details className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-base font-medium [&::-webkit-details-marker]:hidden">
-                Example JSON records
-                <IconChevronRight
-                  className="size-4 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              </summary>
-              <div className="mt-6 space-y-8">
-                {included.map((item, index) => (
-                  <JsonExample
-                    key={item.domain}
-                    title={`${item.title} · example record`}
-                    value={examples[index]}
-                  />
-                ))}
-                {included.some((item) => item.domain === 'time') && (
-                  <JsonExample
-                    title="Android application record"
-                    value={record('time', 'applications', 'native-usage', {
-                      identifier: 'com.example.reader',
-                      startMs: 1791417600000,
-                      endMs: 1791504000000,
-                      lastTimeUsedMs: 1791446400000,
-                      durationMs: 1200000,
-                      granularity: 'system-daily-aggregate',
-                    })}
-                  />
-                )}
-                {included.some((item) => item.domain === 'health') && (
-                  <JsonExample
-                    title="Android Health Connect record · Steps"
-                    value={record('health', 'Steps', 'health-connect', {
-                      startTime: '2026-10-08T08:00:00.000Z',
-                      endTime: '2026-10-08T08:30:00.000Z',
-                      count: 1250,
-                    })}
-                  />
-                )}
-                <JsonExample
-                  title="JSON export file · completed daily profile export"
-                  value={{
-                    schema: 'myself.md.export.v1',
-                    records: examples,
-                    profileId: 'example-profile',
-                    profileName: profile.name,
-                    interval: {
-                      day: '2026-10-08',
-                      start: '2026-10-08T00:00:00.000Z',
-                      end: '2026-10-09T00:00:00.000Z',
-                    },
-                    recordCount: examples.length,
-                    captures: [],
-                    status: 'complete',
-                    failures: [],
-                    exportedAt: '2026-10-09T00:00:00.000Z',
-                  }}
-                />
-              </div>
-            </details>
-            <p className="text-base leading-8 text-muted-foreground sm:text-lg">
-              JSONL writes one record envelope per line, with daily metadata in a separate
-              .jsonl.manifest.json file. JSON places records and metadata in one document. The
-              captures and failures arrays report source coverage; a file can have partial status
-              when some selected sources could not be read.
+            <p className="text-base leading-8 whitespace-pre-line text-muted-foreground sm:text-lg">
+              {data.sources}
             </p>
           </section>
           <section className="space-y-6" aria-labelledby="limits-title">

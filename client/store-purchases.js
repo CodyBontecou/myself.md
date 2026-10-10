@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { Platform } from 'react-native';
 import { lifetimeProductId } from '../core/billing.js';
 import { savePurchase, clearNativePurchase } from './billing.js';
@@ -28,12 +29,10 @@ async function deliver(purchase) {
 export async function connectStore(onError) {
   const iap = await store();
   const updates = iap.purchaseUpdatedListener((purchase) => {
-    void deliver(purchase).catch((error) =>
-      onError(error instanceof Error ? error.message : 'Purchase verification failed.'),
-    );
+    void deliver(purchase).catch((error) => onError(errorJSON(error)));
   });
   const errors = iap.purchaseErrorListener((error) => {
-    if (error.code !== 'user-cancelled') onError(error.message);
+    if (error.code !== 'user-cancelled') onError(errorJSON(error));
   });
   try {
     connection ??= iap.initConnection();

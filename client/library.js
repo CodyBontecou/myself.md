@@ -1,4 +1,5 @@
 import { phoneDatabase } from './phone-database.js';
+import { explicitTimeSeries } from '../core/time-series.js';
 const db = phoneDatabase();
 db.execSync(`CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, owner TEXT, domain TEXT, type TEXT, start TEXT, end TEXT, source TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS record_query ON records(owner,domain,type,id);
@@ -56,14 +57,18 @@ export function localPage(owner, query, token) {
         ),
     );
   return {
-    records: selected.map((row) => ({
-      domain: row.domain,
-      type: row.type,
-      source: row.source,
-      start: row.start,
-      end: row.end,
-      native: JSON.parse(row.payload),
-    })),
+    records: selected.map((row) => {
+      const native = JSON.parse(row.payload);
+      return {
+        domain: row.domain,
+        type: row.type,
+        source: row.source,
+        start: row.start,
+        end: row.end,
+        native,
+        timeSeries: explicitTimeSeries(native, row.start),
+      };
+    }),
     nextCursor: rows.length > query.limit ? String(selected.at(-1)?.id) : null,
     capture: 'recorded-location-points',
     warnings: [

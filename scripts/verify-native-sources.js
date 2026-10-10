@@ -4,6 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
 import * as profiles from '../core/profiles.js';
 import * as data from '../core/data.js';
+import * as exportFiles from '../core/export-files.js';
+import * as timeSeries from '../core/time-series.js';
+import * as errors from '../packages/support-chat/errors.js';
 import * as schedules from '../core/schedules.js';
 import * as diagnostics from '../core/diagnostics.js';
 import { localCalendar } from '../client/calendar.js';
@@ -24,7 +27,8 @@ const sqlite = {
 async function load(path, dependencies) {
   const module = new SourceTextModule(await readFile(new URL(path, import.meta.url), 'utf8'));
   await module.link((specifier) => {
-    const values = dependencies[specifier];
+    const values =
+      specifier === '../packages/support-chat/errors.js' ? errors : dependencies[specifier];
     assert.ok(values, `Missing dependency: ${specifier}`);
     return new SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
@@ -36,6 +40,7 @@ async function load(path, dependencies) {
 const library =
   /** @type {{saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
     await load('../client/library.js', {
+      '../core/time-series.js': timeSeries,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
     })
   );
@@ -309,6 +314,8 @@ let billed = false;
 const share =
   /** @type {{shareDomain:(context:{owner:string,deviceId:string,server:string},grants:Record<import('../core/data.js').Domain,boolean>,domain:import('../core/data.js').Domain,profile:import('../core/profiles.js').ExportProfile,days:number,progress:(message:string)=>void)=>Promise<number>}} */ (
     await load('../client/export.js', {
+      '../core/export-files.js': exportFiles,
+      './debug-log.js': { recordDebug: () => {} },
       './billing.js': {
         reserveExport: async () => {},
         settleExport: async (

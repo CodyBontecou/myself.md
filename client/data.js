@@ -51,6 +51,7 @@ export async function catalog(_owner, grants, profile) {
         domain === 'health'
           ? [
               'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions are not captured by this adapter.',
+              'Exports preserve native records and explicit timeSeries without summaries. Workout selection includes genuinely associated heart-rate/form series and routes. Nested capture failures mark exports partial. Health Connect series remain intact; Android exercise membership is not inferred from overlapping times.',
             ]
           : domain === 'time'
             ? [

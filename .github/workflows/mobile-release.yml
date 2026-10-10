@@ -1,0 +1,49 @@
+name: Mobile preview
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Publish an update or create an installable native build
+        type: choice
+        options: [update, build]
+        default: update
+      platform:
+        description: Target platform
+        type: choice
+        options: [ios, android, all]
+        default: ios
+permissions:
+  contents: read
+concurrency:
+  group: mobile-preview
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_NO_DOTENV: '1'
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      RELEASE_ACTION: ${{ inputs.action || 'update' }}
+      RELEASE_PLATFORM: ${{ inputs.platform || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Require Expo authorization
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo 'Add the EXPO_TOKEN repository secret before releasing mobile previews.' >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run check
+      - name: Publish preview update
+        if: env.RELEASE_ACTION == 'update'
+        run: npm run update:preview -- --platform "$RELEASE_PLATFORM" --message "$GITHUB_SHA"
+      - name: Build preview app
+        if: env.RELEASE_ACTION == 'build'
+        run: npm run build:preview -- --platform "$RELEASE_PLATFORM"

@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync, cpSync } from 'node:fs';
+import { mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
@@ -15,6 +15,51 @@ await build({
   loader: { '.js': 'jsx' },
   define: { 'process.env.NODE_ENV': '"production"' },
 });
+const cliBundle = await build({
+  metafile: true,
+  entryPoints: ['scripts/myself.js'],
+  outfile: 'dashboard/dist/myself.mjs',
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: ['node22'],
+  banner: {
+    js: "import { createRequire as cliCreateRequire } from 'node:module'; const require = cliCreateRequire(import.meta.url);",
+  },
+});
+await build({
+  entryPoints: ['dashboard/public-client.js'],
+  outfile: 'dashboard/dist/myself-sdk.mjs',
+  bundle: true,
+  format: 'esm',
+  platform: 'neutral',
+  target: ['es2022'],
+});
+const bundledPackages = new Set(
+  Object.keys(cliBundle.metafile.inputs).flatMap((input) => {
+    const directory = input.match(/^(.*node_modules\/(?:@[^/]+\/)?[^/]+)\//)?.[1];
+    return directory ? [directory] : [];
+  }),
+);
+const cliNotices = [...bundledPackages]
+  .map((directory) => {
+    const manifest = JSON.parse(readFileSync(`${directory}/package.json`, 'utf8'));
+    const licensePath = [
+      'LICENSE',
+      'LICENSE.md',
+      'LICENSE.txt',
+      'LICENSE-MIT',
+      'license',
+      'license.md',
+    ]
+      .map((name) => `${directory}/${name}`)
+      .find((path) => existsSync(path));
+    if (!licensePath) throw new Error(`Missing bundled dependency license: ${manifest.name}`);
+    return `${manifest.name} (${manifest.version})\n\n${readFileSync(licensePath, 'utf8')}`;
+  })
+  .join('\n\n---\n\n');
+writeFileSync('dashboard/dist/cli-notices.txt', cliNotices);
+
 const require = createRequire(import.meta.url);
 const css = spawnSync(
   process.execPath,

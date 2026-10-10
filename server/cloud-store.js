@@ -1,3 +1,4 @@
+import { parseExportSchema } from '../core/export-schemas.js';
 import { Buffer } from 'node:buffer';
 import { database, transaction } from './database.js';
 import { randomBytes, randomUUID, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ const metadataSchema = z.object({
   format: z.enum(['json', 'jsonl']),
   manifest: z.record(z.string(), z.unknown()),
 });
-/** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null}} Row */
+/** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',schema:string,created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null}} Row */
 export class CloudStore {
   /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] */
   constructor(path, key, objects = null) {
@@ -31,6 +32,10 @@ export class CloudStore {
         .all()
         .map((column) => column.name),
     );
+    if (!columns.has('schema'))
+      this.db.exec(
+        "ALTER TABLE exports ADD COLUMN schema TEXT NOT NULL DEFAULT 'myself.md.export.v1'",
+      );
     if (!columns.has('object_key')) this.db.exec('ALTER TABLE exports ADD COLUMN object_key TEXT');
     if (!columns.has('content_hash'))
       this.db.exec('ALTER TABLE exports ADD COLUMN content_hash TEXT');
@@ -209,19 +214,23 @@ export class CloudStore {
     this.cleanup();
     const input = metadataSchema.parse(value),
       profile = Object.assign(parseProfile(input.profile), { id: profileId });
+    const schema = parseExportSchema(input.manifest.schema);
+    if (schema !== profile.export.schema)
+      throw new PairingError(400, 'Manifest schema does not match the profile.');
+    input.manifest.schema = schema;
     if (input.manifest.profileId !== profileId)
       throw new PairingError(400, 'Manifest profile does not match upload.');
     this.db
       .prepare(
-        'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND content IS NULL AND object_key IS NULL',
+        'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND content IS NULL AND object_key IS NULL',
       )
-      .run(subject, device, profileId, input.day, input.format);
+      .run(subject, device, profileId, input.day, input.format, schema);
     const previous = /** @type {{size:number}|undefined} */ (
       this.db
         .prepare(
-          'SELECT size FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+          'SELECT size FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
         )
-        .get(subject, device, profileId, input.day, input.format)
+        .get(subject, device, profileId, input.day, input.format, schema)
     );
     const usage = /** @type {{bytes:number,count:number}} */ (
       this.db
@@ -236,7 +245,7 @@ export class CloudStore {
     const id = randomUUID();
     this.db
       .prepare(
-        'INSERT INTO exports(id,subject,device,profile,day,format,created,content,metadata,size) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO exports(id,subject,device,profile,day,format,schema,created,content,metadata,size) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       )
       .run(
         id,
@@ -245,6 +254,7 @@ export class CloudStore {
         profileId,
         input.day,
         input.format,
+        schema,
         Math.max(
           Date.now(),
           Number(
@@ -273,7 +283,10 @@ export class CloudStore {
   }
   /** @param {Row} row @param {Uint8Array} bytes */
   records(row, bytes) {
+    const schema = parseExportSchema(row.schema);
     const text = Buffer.from(bytes).toString('utf8');
+    if (row.format === 'json' && parseExportSchema(JSON.parse(text).schema) !== schema)
+      throw new PairingError(400, 'File schema does not match the manifest.');
     const records =
       row.format === 'json'
         ? JSON.parse(text).records
@@ -295,7 +308,24 @@ export class CloudStore {
           start: z.string().nullable(),
           end: z.string().nullable(),
           native: z.unknown(),
+          timeSeries: z
+            .record(
+              z.string(),
+              z.array(
+                z
+                  .object({
+                    timestamp: z.string().nullable(),
+                    value: z.unknown(),
+                    unit: z.string().optional(),
+                    metadata: z.unknown().optional(),
+                    offsetSeconds: z.number().optional(),
+                  })
+                  .passthrough(),
+              ),
+            )
+            .optional(),
         })
+        .passthrough()
         .parse(r);
       if (record.source.startsWith('imported') || record.type === 'archive')
         throw new PairingError(400, 'Imported data is no longer supported.');
@@ -364,9 +394,9 @@ export class CloudStore {
             throw new PairingError(409, 'Upload expired. Start a new upload.');
           const newer = this.db
             .prepare(
-              'SELECT id FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND created>?',
+              'SELECT id FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND created>?',
             )
-            .get(subject, device, profile, row.day, row.format, row.created);
+            .get(subject, device, profile, row.day, row.format, row.schema, row.created);
           if (newer) throw new PairingError(409, 'A newer daily export was already committed.');
           const usage = Number(
             this.db
@@ -376,17 +406,17 @@ export class CloudStore {
           const replaced = Number(
             this.db
               .prepare(
-                'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+                'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
               )
-              .get(subject, device, profile, row.day, row.format)?.bytes ?? 0,
+              .get(subject, device, profile, row.day, row.format, row.schema)?.bytes ?? 0,
           );
           if (usage - replaced + bytes.length > 256 * 1024 * 1024)
             throw new PairingError(413, 'Cloud quota reached.');
           this.db
             .prepare(
-              'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',
+              'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',
             )
-            .run(subject, device, profile, row.day, row.format, id);
+            .run(subject, device, profile, row.day, row.format, row.schema, id);
           this.db
             .prepare('UPDATE exports SET content=?,object_key=?,content_hash=?,size=? WHERE id=?')
             .run(objectKey ? null : encrypted, objectKey, hash, bytes.length, id);
@@ -505,6 +535,7 @@ export class CloudStore {
         deviceId: r.device,
         day: r.day,
         format: r.format,
+        schema: r.schema,
         bytes: r.size,
         created: r.created,
         shared: this.permission(subject, r.device, r.profile).shared,
@@ -538,10 +569,11 @@ export class CloudStore {
       size += bytes;
     }
     return {
+      schema: row.schema,
       records: page,
       nextCursor: offset + page.length < records.length ? String(offset + page.length) : null,
       manifest: forMcp
-        ? { profileId: row.profile, recordCount: records.length }
+        ? { schema: row.schema, profileId: row.profile, recordCount: records.length }
         : this.metadata(row).manifest,
     };
   }

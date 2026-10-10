@@ -1,5 +1,6 @@
 @import 'tailwindcss' source(none);
 @source "./**/*.js";
+@source "../packages/support-chat/support-web.js";
 @custom-variant dark (@media (prefers-color-scheme: dark));
 :root {
   color-scheme: light dark;
@@ -251,6 +252,8 @@ select:not([multiple]):not([size]) {
 }
 @media (min-width: 64rem) {
   aside .export-json-pane {
+    /* Extend through the centered page gutter to fade at the viewport edge. */
+    width: calc(100% + max(2rem, (100vw - 80rem) / 2 + 2rem));
     height: calc(100dvh - 1.5rem);
     max-height: none;
   }

@@ -1,3 +1,9 @@
+import { createMyselfClient } from './public-client.js';
+import { registerPublicTools } from './webmcp.js';
+
+import { errorJSON } from '../packages/support-chat/errors.js';
+import { WebSupport } from '../packages/support-chat/web.js';
+import { createSupportClient } from '../packages/support-chat/index.js';
 import {
   createContext,
   useContext,
@@ -101,9 +107,40 @@ import {
 } from './components/ui/dropdown-menu.js';
 /** @typedef {import('./workspace.js').Workspace} Workspace */
 /** @typedef {import('./workspace.js').StoredExport} StoredExport */
-/** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'} View */
+/** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'|'support'} View */
 /** @typedef {{title:string,description:string,label:string,action:()=>Promise<void>}} Confirmation */
+const supportRequest = createSupportClient((path, options) =>
+  api(path, options.method, options.body === undefined ? undefined : JSON.parse(options.body)),
+);
+const supportData = {
+  /** @param {import('../packages/support-chat/support-client.js').SupportDataRequest|null} request */
+  collect: async (request) => ({
+    category: request?.selector.category ?? 'manual',
+    capturedAt: Date.now(),
+    content: JSON.stringify(
+      {
+        note: 'Paste only the information you want to share. Phone logs can be reviewed on your phone.',
+        requested: request?.reason ?? '',
+        data: null,
+      },
+      null,
+      2,
+    ),
+  }),
+  /** @param {string} content */
+  digest: async (content) =>
+    Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))),
+      (b) => b.toString(16).padStart(2, '0'),
+    ).join(''),
+};
 const views = [
+  {
+    id: /** @type {const} */ ('support'),
+    title: 'Support',
+    description: 'Ask Isobot a question or report a problem.',
+    icon: IconRobot,
+  },
   {
     id: /** @type {const} */ ('exports'),
     title: 'Stored data',
@@ -892,7 +929,7 @@ function LoginCard({ ready }) {
     try {
       await signIn(provider);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Sign-in failed. Please try again.');
+      setError(errorJSON(reason));
       setBusy(false);
     }
   }
@@ -913,9 +950,12 @@ function LoginCard({ ready }) {
         </CardHeader>
         <CardContent className="space-y-5">
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <pre
+              role="alert"
+              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+            >
+              {errorJSON(error)}
+            </pre>
           )}
           <Button
             type="button"
@@ -1036,13 +1076,16 @@ function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
   const query = new URLSearchParams(search);
-  const view = query.has('history')
-    ? 'history'
-    : query.get('view') === 'profiles'
-      ? 'profiles'
-      : query.get('view') === 'agents'
-        ? 'agents'
-        : 'exports';
+  const view =
+    query.get('view') === 'support'
+      ? 'support'
+      : query.has('history')
+        ? 'history'
+        : query.get('view') === 'profiles'
+          ? 'profiles'
+          : query.get('view') === 'agents'
+            ? 'agents'
+            : 'exports';
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
   const [confirmation, setConfirmation] = useState(/** @type {Confirmation|null} */ (null));
@@ -1063,7 +1106,7 @@ function App() {
     try {
       await action();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Request failed. Please try again.');
+      setNotice(errorJSON(error));
       if (!hasSession()) {
         setWorkspace(null);
       }
@@ -1088,8 +1131,7 @@ function App() {
           }
         }
       } catch (error) {
-        if (active)
-          setNotice(error instanceof Error ? error.message : 'Sign-in could not be completed.');
+        if (active) setNotice(errorJSON(error));
       } finally {
         if (active) {
           setReady(true);
@@ -1152,7 +1194,10 @@ function App() {
                 </header>
               )}
               {notice && (
-                <div role="status" className="mx-4 rounded-lg border bg-muted p-4 text-sm lg:mx-6">
+                <div
+                  role="status"
+                  className="mx-4 whitespace-pre-wrap break-words rounded-lg border bg-muted p-4 text-sm lg:mx-6"
+                >
                   {notice}
                 </div>
               )}
@@ -1167,7 +1212,13 @@ function App() {
                     />
                   ) : (
                     <>
-                      {view === 'history' ? (
+                      {view === 'support' ? (
+                        isDemo ? (
+                          <p className="p-6">Sign in to contact support.</p>
+                        ) : (
+                          <WebSupport request={supportRequest} data={supportData} Button={Button} />
+                        )
+                      ) : view === 'history' ? (
                         <HistoryView
                           workspace={workspace}
                           search={search}
@@ -1295,3 +1346,14 @@ function Page() {
   );
 }
 createRoot(root).render(<Page />);
+
+const browserContext =
+  /** @type {Document & {modelContext?:import('./webmcp.js').ModelContext}} */ (document)
+    .modelContext ??
+  /** @type {Navigator & {modelContext?:import('./webmcp.js').ModelContext}} */ (navigator)
+    .modelContext;
+void registerPublicTools(browserContext, createMyselfClient({ origin: location.origin })).catch(
+  () => {
+    console.warn('Public browser tools could not be registered. Use /mcp or /docs.');
+  },
+);

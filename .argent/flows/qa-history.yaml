@@ -10,7 +10,7 @@ steps:
       idle: true
   - run: qa-reset-populated.yaml
   - tap:
-      text: History
+      text: Logs
   - await:
       visible:
         identifier: history-event-qa-export
@@ -48,14 +48,14 @@ steps:
       platform: ios
     steps:
       - tap:
-          text: Agent access
+          text: Agents
           within:
             id: history-filter
   - when:
       platform: android
     steps:
       - tap:
-          text: Agent access
+          text: Agents
           within:
             id: history-list
   - await:

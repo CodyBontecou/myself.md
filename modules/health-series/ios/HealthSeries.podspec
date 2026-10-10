@@ -1,0 +1,17 @@
+Pod::Spec.new do |s|
+  s.name = 'HealthSeries'
+  s.version = '1.0.0'
+  s.summary = 'Read-only HealthKit quantity-series bridge'
+  s.description = s.summary
+  s.license = 'MIT'
+  s.author = 'myself.md'
+  s.homepage = 'https://github.com/expo/expo'
+  s.platforms = { :ios => '16.0' }
+  s.swift_version = '5.9'
+  s.source = { :path => '.' }
+  s.static_framework = true
+  s.dependency 'ExpoModulesCore'
+  s.frameworks = 'HealthKit'
+  s.source_files = '**/*.swift'
+  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
+end

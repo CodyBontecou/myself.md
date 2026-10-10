@@ -48,7 +48,13 @@
   },
   "overrides": [
     {
-      "files": ["App.js", "index.js", "client/**/*.js", "src/**/*.js"],
+      "files": [
+        "App.js",
+        "index.js",
+        "client/**/*.js",
+        "src/**/*.js",
+        "packages/support-chat/**/*.js"
+      ],
       "env": {
         "browser": true
       },

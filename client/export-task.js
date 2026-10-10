@@ -1,3 +1,4 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { reserveExport, settleExport } from './billing.js';
 import { exportFailureMessage } from '../core/diagnostics.js';
 import * as BackgroundTask from 'expo-background-task';
@@ -307,7 +308,7 @@ export async function runScheduledExports() {
         }
         finishExport(session, historyId, valid() ? 'failed' : 'cancelled', exportFailureMessage(e));
         if (valid()) {
-          state.message = e instanceof Error ? e.message : 'Export failed.';
+          state.message = errorJSON(e);
           state.retryAt = Date.now() + 300000;
           store(session.deviceId, profile.id, state);
         }

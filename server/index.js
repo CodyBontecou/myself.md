@@ -1,3 +1,5 @@
+import { createRemoteSupport } from './support-remote.js';
+import { supportApi, registerSupportTools } from './support.js';
 import { billing, billingApi, refreshEntitlement } from './billing.js';
 import { verifyMigrationPurchase } from './migration-purchases.js';
 import { createServer } from 'node:http';
@@ -11,6 +13,11 @@ import { createApplication } from './application.js';
 createServer(
   { requestTimeout: 60000, headersTimeout: 15000 },
   createApplication(process.env, {
+    supportApi,
+    registerSupportTools,
+    ...createRemoteSupport(process.env, (subject, agent) => {
+      cloud.observeAgent(subject, agent);
+    }),
     qrPng: (value, options) => QRCode.toBuffer(value, options),
     billing,
     billingApi,

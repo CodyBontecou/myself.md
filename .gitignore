@@ -22,6 +22,7 @@ expo-env.d.ts
 .metro-health-check*
 
 # debug
+/error.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
@@ -77,3 +78,6 @@ modules/*/android/build/
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# Local Gripe inbox credential and runner configuration
+.env.gripe-mac

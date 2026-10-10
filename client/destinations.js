@@ -1,3 +1,4 @@
+import { recordDebug } from './debug-log.js';
 import * as SecureStore from 'expo-secure-store';
 import { fetch } from 'expo/fetch';
 import { api, loadSession } from './session.js';
@@ -114,6 +115,12 @@ export async function deliverExport(context, profile, file, format, manifest, va
       throw new Error('Use an HTTPS endpoint without credentials or fragments.');
     if (credential?.token && credential.url !== url.href)
       throw new Error('Save the HTTP credential for this endpoint before exporting.');
+    recordDebug(context, 'export', 'started', {
+      url: url.href,
+      ...(credential?.token
+        ? { credentials: { Authorization: `Bearer ${credential.token}` } }
+        : {}),
+    });
     const response = await send(url.href, {
       method: 'POST',
       body: file,
@@ -136,6 +143,10 @@ export async function deliverExport(context, profile, file, format, manifest, va
   if (file.size > 16 * 1024 * 1024)
     throw new Error('Cloud daily files are limited to 16 MiB. Reduce selected types.');
   const authorization = `Upload ${credential.token}`;
+  recordDebug(context, 'cloud', 'started', {
+    url: `${credential.server}/api/cloud/uploads`,
+    credentials: { Authorization: authorization },
+  });
   const begin = await send(`${credential.server}/api/cloud/uploads`, {
     method: 'POST',
     headers: { Authorization: authorization, 'Content-Type': 'application/json' },
@@ -145,6 +156,10 @@ export async function deliverExport(context, profile, file, format, manifest, va
   if (!begin.ok) throw await uploadFailure(begin, 'Cloud upload could not start');
   const { id } = /** @type {{id:string}} */ (await begin.json());
   if (!valid()) throw new Error('Export cancelled before upload.');
+  recordDebug(context, 'cloud', 'started', {
+    url: `${credential.server}/api/cloud/uploads/${id}`,
+    credentials: { Authorization: authorization },
+  });
   const result = await send(`${credential.server}/api/cloud/uploads/${id}`, {
     method: 'PUT',
     body: file,

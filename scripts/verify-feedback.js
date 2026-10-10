@@ -144,6 +144,33 @@ try {
     (await call(owner, 'get_phone_feedback_operation', { operationId: successId })).value?.issueUrl,
     issueUrl,
   );
+  const receiptId = randomUUID();
+  await call(owner, 'request_phone_feedback', { deviceId, operationId: receiptId });
+  const receiptUrl = `https://gripe.isolated.tech/reports/${'a'.repeat(64)}`;
+  heartbeat({
+    availability: 'ready',
+    operation: {
+      id: receiptId,
+      expiresAt: Date.now() + 10000,
+      status: 'completed',
+      issueUrl: receiptUrl,
+    },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: receiptId })).value?.issueUrl,
+    receiptUrl,
+  );
+  assert.throws(() =>
+    heartbeat({
+      availability: 'ready',
+      operation: {
+        id: receiptId,
+        expiresAt: Date.now() + 10000,
+        status: 'completed',
+        issueUrl: 'https://attacker.example/reports/123',
+      },
+    }),
+  );
   const expiredId = randomUUID();
   await call(owner, 'request_phone_feedback', { deviceId, operationId: expiredId });
   const expired = operations.get(expiredId);

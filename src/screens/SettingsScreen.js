@@ -52,6 +52,20 @@ export default function SettingsScreen() {
       </Group>
       <SectionHeader title="Privacy & support" />
       <Group>
+        <Row
+          testID="settings-diagnostics"
+          title="Log sharing"
+          subtitle="Review app events and share a debug report"
+          onPress={() => router.push('/diagnostics')}
+        />
+        <Divider />
+        <Row
+          testID="settings-support"
+          title="Contact support"
+          subtitle="Ask Isobot a question or report a problem"
+          onPress={() => router.push('/support')}
+        />
+        <Divider />
         <PrivacyLinks />
       </Group>
       <Copy variant="caption" muted>

@@ -1,3 +1,5 @@
+import { defaultExportSchema } from '../core/export-schemas.js';
+import { errorJSON } from '../packages/support-chat/errors.js';
 import { createContext, useContext, useRef, useState } from 'react';
 import { parseProfile } from '../core/profiles.js';
 
@@ -9,6 +11,7 @@ function useEditorState() {
     parseProfile({
       schema: 'myself.md.profile.v1',
       name: 'Profile',
+      export: { schema: defaultExportSchema },
       selection: { health: [], time: [], location: [] },
     }),
   );
@@ -35,7 +38,7 @@ function useEditorState() {
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile.');
+      setError(errorJSON(e));
     } finally {
       running.current = false;
       setWorking(false);

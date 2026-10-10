@@ -1,3 +1,5 @@
+import { errorJSON } from '../packages/support-chat/errors.js';
+import { recordDebug } from './debug-log.js';
 import { Directory, File, Paths } from 'expo-file-system';
 import { domains } from '../core/data.js';
 import { exportBasename, fileHeader, recordChunk, fileFooter } from '../core/export-files.js';
@@ -32,7 +34,7 @@ export async function exportProfileDay(
     const target = new File(folder, `${exportBasename(settings, interval.day)}.${format}`);
     const stage = new File(folder, `${exportBasename(settings, interval.day)}.${format}.partial`);
     stage.create({ overwrite: true });
-    stage.write(fileHeader(format));
+    stage.write(fileHeader(format, settings.schema));
     return { format, target, stage };
   });
   let count = 0;
@@ -82,14 +84,18 @@ export async function exportProfileDay(
               profile,
               false,
             );
+            recordDebug(session, 'export', 'succeeded', {
+              records: { domain, type, profileId: profile.id, values: page.records },
+            });
           } catch (error) {
+            recordDebug(session, 'export', 'failed', { error });
             if (!valid())
               throw new Error('Export cancelled: profile or schedule changed.', { cause: error });
             failures.push({
               domain,
               type,
               source,
-              message: error instanceof Error ? error.message : 'Source could not be read.',
+              message: errorJSON(error),
               recordCount: count - sourceStart,
             });
             failed = true;
@@ -97,8 +103,19 @@ export async function exportProfileDay(
           }
           for (const row of page.records) {
             for (const f of files)
-              f.stage.write(recordChunk(f.format, row, count), { append: true });
+              f.stage.write(recordChunk(f.format, row, count, settings.schema), { append: true });
             count++;
+          }
+          if (page.complete === false && !failed) {
+            failed = true;
+            failures.push({
+              domain,
+              type,
+              source,
+              message:
+                'Nested source detail could not be fully read. Inspect record captureFailures.',
+              recordCount: page.records.length,
+            });
           }
           captures.push({ domain, type, source, capture: page.capture, warnings: page.warnings });
           for (const warning of page.warnings)
@@ -111,7 +128,7 @@ export async function exportProfileDay(
     if (!completedSources && !count)
       throw new Error('No selected sources could be read. Review permissions or edit the profile.');
     const manifest = {
-      schema: 'myself.md.export.v1',
+      schema: settings.schema,
       billingOperationId,
       profileId: profile.id,
       profileName: profile.name,
@@ -149,6 +166,7 @@ export async function exportProfileDay(
           day: interval.day,
           name: f.target.name,
           format: f.format,
+          schema: settings.schema,
           recordCount: count,
           bytes,
           uri: null,
@@ -176,6 +194,7 @@ export async function exportProfileDay(
         day: interval.day,
         name: f.target.name,
         format: f.format,
+        schema: settings.schema,
         recordCount: count,
         bytes,
         uri: f.target.uri,
@@ -185,7 +204,11 @@ export async function exportProfileDay(
         warnings,
       });
     }
-    return { count, files: saved, failedSources: failures.length };
+    return {
+      count,
+      files: saved,
+      failedSources: new Set(failures.map((failure) => `${failure.domain}:${failure.type}`)).size,
+    };
   } finally {
     for (const f of files)
       if (f.stage.name.endsWith('.partial') && f.stage.exists) f.stage.delete();

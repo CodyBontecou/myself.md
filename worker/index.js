@@ -1,3 +1,11 @@
+import {
+  publicResponse,
+  unknownPublicPath,
+  notFoundMarkdown,
+  publicApiPath,
+  createPublicReadLimiter,
+} from '../server/public-site.js';
+import { publicHTML, publicPages } from '../core/public-site.js';
 import { z } from 'zod';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
@@ -27,6 +35,7 @@ async function publicAsset(request, env) {
   const headers = new Headers({
     'Content-Type': `${asset[1]}; charset=utf-8`,
     'Cache-Control': 'no-store',
+    Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin}; img-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
@@ -35,7 +44,16 @@ async function publicAsset(request, env) {
     request.method === 'HEAD'
       ? null
       : asset[1] === 'text/html'
-        ? (await response.text()).replace('__STYLE_NONCE__', nonce)
+        ? (await response.text())
+            .replace('__STYLE_NONCE__', nonce)
+            .replace(
+              '__PUBLIC_CONTENT__',
+              publicHTML(
+                publicPages.get(new URL(request.url).pathname.replace(/\/$/, '') || '/') ??
+                  publicPages.get('/') ??
+                  '',
+              ),
+            )
         : response.body;
   return new Response(body, { headers });
 }
@@ -44,6 +62,7 @@ async function boundedJson(request, limit) {
   const bytes = await readBytes(request, limit);
   return /** @type {unknown} */ (JSON.parse(new TextDecoder().decode(bytes)));
 }
+const limitPublicRead = createPublicReadLimiter();
 export default {
   /** @param {ScheduledController} _controller @param {Env} env */
   async scheduled(_controller, env) {
@@ -65,6 +84,34 @@ export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        const limit = publicApiPath(url.pathname)
+          ? limitPublicRead(request.headers.get('cf-connecting-ip') ?? 'unknown')
+          : null;
+        if (limit && !limit.allowed)
+          return Response.json(
+            { error: 'Public read rate limit exceeded. Retry after the indicated delay.' },
+            {
+              status: 429,
+              headers: {
+                ...limit.headers,
+                'Retry-After': limit.headers['RateLimit-Reset'],
+                'Cache-Control': 'no-store',
+              },
+            },
+          );
+        const page = publicResponse(
+          url.pathname,
+          request.headers.get('accept') ?? '',
+          env.OAUTH_ISSUER,
+          `${publicOrigin(request, env)}/mcp`,
+          url.searchParams,
+        );
+        if (page && publicApiPath(url.pathname) === '/health')
+          page.body = JSON.stringify({ ok: true, platform: 'cloudflare' });
+        if (page && limit) Object.assign(page.headers, limit.headers);
+        if (page) return new Response(request.method === 'HEAD' ? null : page.body, page);
+      }
       if (url.pathname === '/__migration' && request.method === 'POST') {
         if (env.MIGRATION_ENABLED !== '1') return json({ error: 'Not found.' }, 404);
         return json(await migrationRequest(request, env, await boundedJson(request, 1024 * 1024)));
@@ -128,6 +175,15 @@ export default {
         const asset = await publicAsset(request, env);
         if (asset) return asset;
       }
+      if (unknownPublicPath(url.pathname))
+        return new Response(request.method === 'HEAD' ? null : notFoundMarkdown, {
+          status: 404,
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
+            'Cache-Control': 'no-store',
+            Vary: 'Accept',
+          },
+        });
       if (url.pathname === '/pair')
         return new Response(pairingPage, {
           headers: {

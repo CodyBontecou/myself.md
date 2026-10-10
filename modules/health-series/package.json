@@ -1,0 +1,6 @@
+{
+  "name": "health-series",
+  "version": "1.0.0",
+  "description": "Read-only HealthKit quantity-series bridge",
+  "license": "MIT"
+}

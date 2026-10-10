@@ -1,3 +1,5 @@
+import { exportSchemas, parseExportSchema } from '../core/export-schemas.js';
+import { parseProfile, profileLink, profileFromLink } from '../core/profiles.js';
 import assert from 'node:assert/strict';
 import {
   parseSchedule,
@@ -115,7 +117,7 @@ for (const format of /** @type {const} */ (['json', 'jsonl'])) {
 }
 assert.equal(
   exportBasename(parseExportSettings({ filenameTemplate: '{year}_{month}_{day}' }), '2026-03-09'),
-  '2026_03_09',
+  '2026_03_09.v1',
 );
 for (const value of [
   { formats: ['csv'] },
@@ -126,4 +128,37 @@ for (const value of [
   assert.throws(() => parseExportSettings(value));
 console.log(
   'Profile exports: calendar cadence, opt-in, independent refresh, DST and JSON/JSONL verified.',
+);
+
+const registry = exportSchemas();
+assert.deepEqual(
+  registry.versions.map((v) => v.id),
+  ['myself.md.export.v1'],
+);
+assert.equal(registry.recommended, 'myself.md.export.v1');
+const firstSchema = registry.versions[0];
+assert.ok(firstSchema);
+firstSchema.title = 'mutated';
+const originalSchema = exportSchemas().versions[0];
+assert.ok(originalSchema);
+assert.equal(originalSchema.title, 'Original');
+const pinned = parseProfile({
+  schema: 'myself.md.profile.v1',
+  name: 'Pinned',
+  selection: { health: [], time: [], location: [] },
+});
+assert.equal(pinned.export.schema, 'myself.md.export.v1');
+assert.equal(profileFromLink(profileLink(pinned)).export.schema, pinned.export.schema);
+for (const schema of ['myself.md.export.v2', 'latest', null, 'v1']) {
+  assert.throws(() => parseExportSchema(schema), /Unsupported export schema/);
+  assert.throws(() => parseExportSettings({ schema }), /Unsupported export schema/);
+}
+assert.equal(
+  JSON.parse(
+    fileHeader('json', pinned.export.schema) + fileFooter('json', { schema: pinned.export.schema }),
+  ).schema,
+  pinned.export.schema,
+);
+console.log(
+  'Export schemas: released registry, immutable descriptors, profile pinning, share-link round trip and unsupported-version rejection passed.',
 );

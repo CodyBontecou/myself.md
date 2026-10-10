@@ -1,7 +1,7 @@
 /** Shared public disclosures for the phone, website and MCP. */
 export const privacyPolicy = {
   title: 'myself.md Privacy Policy',
-  updated: '2026-10-09',
+  updated: '2026-10-10',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/support',
   supportEmail: 'cody@iolated.tech',
@@ -34,6 +34,14 @@ export const privacyPolicy = {
     {
       title: 'Limited records after account deletion',
       body: 'A deletion-status receipt is retained for seven days. A minimal deletion tombstone rejects old credentials. Purchase identifiers remain without the account association or receipt proof to prevent duplicate claims. Deletion does not cancel store subscriptions or issue refunds. Copies in external destinations, AI providers or your own backups require separate deletion through those services.',
+    },
+    {
+      title: 'Debug logs',
+      body: 'Logs → Share & agent access shows up to 300 recent app events retained locally for seven days: event times, operations, outcomes, request durations and HTTP status. Raw error messages are always recorded and may themselves include sensitive information. Records, request credentials and URLs have separate phone-owner inclusion switches, off by default. Enabled fields are captured for future logged events; disabling removes retained structured fields but does not redact error text. Credentials can grant access to accounts. Records are bounded excerpts, not full exports. You can review and manually share a JSON report using the phone’s share sheet. Agent log access is off by default and requires approval on the phone. Enabling it sends the configured report to the paired service while the app is open; reports are held in memory for up to five minutes and agent reads require a heartbeat within 15 seconds. Turn it off to stop future access. Copies already sent to a recipient or AI service remain under that recipient’s retention policy. Native crashes are not captured.',
+    },
+    {
+      title: 'Support conversations',
+      body: 'If you use support chat in the app or web dashboard, your message text is stored with your account and relayed through our bot to a private Discord support channel. Designated support staff can reply there; their text replies appear in your conversation. Support messages are encrypted in the myself.md account store and retained until account deletion. Discord processes a separate copy under its terms and privacy policy; this is not end-to-end encrypted. Account deletion removes the app conversation and its Discord thread, with failed cleanup retried before completion. Discord backups and any copies staff made outside that thread may remain under their own retention rules. Connected agents can read and send support messages only after you enable support access; blocking an agent or revoking support access stops future access. Do not include health records, precise location, credentials or receipts. Email and public GitHub issues remain alternative support channels.',
     },
     {
       title: 'Support and policy changes',

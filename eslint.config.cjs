@@ -24,7 +24,11 @@ module.exports = defineConfig([
   },
   {
     files: ['**/*.{js,jsx}'],
-    ignores: ['dashboard/**'],
+    ignores: [
+      'dashboard/**',
+      'packages/support-chat/web.js',
+      'packages/support-chat/support-web.js',
+    ],
     plugins: { 'react-native': reactNative },
     rules: {
       'react-native/no-raw-text': ['error', { skip: ['Copy', 'NativeTabs.Trigger.Label'] }],

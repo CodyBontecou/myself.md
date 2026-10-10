@@ -63,7 +63,7 @@ final class SuccessVC: UIViewController {
         confetti.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = UILabel()
-        titleLabel.text = "Issue created"
+        titleLabel.text = issueURL.host == "gripe.isolated.tech" ? "Report submitted" : "Issue created"
         titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
         titleLabel.textColor = GripeColor.textPrimary
         titleLabel.textAlignment = .center
@@ -77,7 +77,7 @@ final class SuccessVC: UIViewController {
 
         let card = makeMetadataCard()
 
-        let openButton = GripePrimaryButton(title: "Open in GitHub", systemImage: "arrow.up.right.square")
+        let openButton = GripePrimaryButton(title: issueURL.host == "gripe.isolated.tech" ? "View receipt" : "Open in GitHub", systemImage: "arrow.up.right.square")
         openButton.addTarget(self, action: #selector(handleOpen), for: .touchUpInside)
 
         copyButton.addTarget(self, action: #selector(handleCopy), for: .touchUpInside)

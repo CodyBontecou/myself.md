@@ -24,7 +24,7 @@ export default function TabLayout() {
         testID="history-tab"
         contentStyle={{ backgroundColor: colors.background }}
       >
-        <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Logs</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="clock.arrow.circlepath" md="history" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger

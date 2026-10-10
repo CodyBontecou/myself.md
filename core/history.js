@@ -1,8 +1,9 @@
+import { parseExportSchema } from './export-schemas.js';
 import { parseProfile } from './profiles.js';
 /** @typedef {'running'|'ready'|'complete'|'partial'|'failed'|'cancelled'|'expired'|'interrupted'} HistoryStatus */
 /** @typedef {{id:string,name:string,selection:Record<import('./data.js').Domain,string[]>}} ProfileSnapshot */
-/** @typedef {{day:string,name:string,format:string,recordCount:number,bytes:number,uri:string|null,cloudId:string|null,checksum:string|null,partial:boolean,warnings?:string[]}} HistoryArtifact */
-/** @typedef {{id:string,kind:'export'|'access',startedAt:string,updatedAt:string,status:HistoryStatus,actor:'manual'|'schedule'|'agent',client:string|null,target:'local'|'http'|'cloud'|'phone'|'share',destination:string,profile:ProfileSnapshot,interval:{start:string,end:string},timezone:string,formats:string[],recordCount:number|null,artifacts:HistoryArtifact[],warnings:string[],relatedId:string|null,error:string|null,request?:{domain:string,source:string,type:string}|null}} HistoryEvent */
+/** @typedef {{schema?:import('./export-schemas.js').ExportSchema,day:string,name:string,format:string,recordCount:number,bytes:number,uri:string|null,cloudId:string|null,checksum:string|null,partial:boolean,warnings?:string[]}} HistoryArtifact */
+/** @typedef {{requestHash?:string,schema?:import('./export-schemas.js').ExportSchema,id:string,kind:'export'|'access',startedAt:string,updatedAt:string,status:HistoryStatus,actor:'manual'|'schedule'|'agent',client:string|null,target:'local'|'http'|'cloud'|'phone'|'share',destination:string,profile:ProfileSnapshot,interval:{start:string,end:string},timezone:string,formats:string[],recordCount:number|null,artifacts:HistoryArtifact[],warnings:string[],relatedId:string|null,error:string|null,request?:{domain:string,source:string,type:string}|null}} HistoryEvent */
 /** Metadata snapshots deliberately exclude credentials, records, and destination URL paths.
  * @param {{id:string,profile:import('./profiles.js').ExportProfile,actor:'manual'|'schedule',interval:HistoryEvent['interval'],stamp:string,timezone:string}} input
  * @returns {HistoryEvent} */
@@ -10,6 +11,7 @@ export function exportEvent({ id, profile, actor, interval, stamp, timezone }) {
   return {
     id,
     kind: 'export',
+    schema: profile.export.schema,
     startedAt: stamp,
     updatedAt: stamp,
     status: 'running',
@@ -46,7 +48,10 @@ function destinationHost(value) {
  * @param {HistoryEvent} event @param {HistoryArtifact} artifact @param {string} stamp @returns {HistoryEvent} */
 export function addArtifact(event, artifact, stamp) {
   const artifacts = event.artifacts.filter(
-    (a) => a.day !== artifact.day || a.format !== artifact.format,
+    (a) =>
+      a.day !== artifact.day ||
+      a.format !== artifact.format ||
+      (a.schema ?? event.schema) !== (artifact.schema ?? event.schema),
   );
   artifacts.push(artifact);
   const counts = new Map(artifacts.map((a) => [a.day, a.recordCount]));
@@ -118,7 +123,14 @@ export function parseHistoryEvent(value) {
     end = historyString(interval.end);
   if ([startedAt, updatedAt, start, end].some((s) => !Number.isFinite(Date.parse(s))))
     throw new Error('Invalid history date.');
+  if (
+    v.requestHash !== undefined &&
+    (typeof v.requestHash !== 'string' || !/^[a-f0-9]{64}$/.test(v.requestHash))
+  )
+    throw new Error('Invalid history request fingerprint.');
   return {
+    ...(typeof v.requestHash === 'string' ? { requestHash: v.requestHash } : {}),
+    schema: parseExportSchema(v.schema),
     id: historyString(v.id),
     kind: /** @type {HistoryEvent['kind']} */ (v.kind),
     actor: /** @type {HistoryEvent['actor']} */ (v.actor),
@@ -148,6 +160,7 @@ export function parseHistoryEvent(value) {
       if (!raw || typeof raw !== 'object') throw new Error('Invalid history file.');
       const a = /** @type {Record<string,unknown>} */ (raw);
       return {
+        schema: parseExportSchema(a.schema ?? v.schema),
         day: historyString(a.day),
         name: historyString(a.name),
         format: historyString(a.format),

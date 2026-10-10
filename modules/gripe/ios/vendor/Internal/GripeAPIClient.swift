@@ -74,6 +74,67 @@ enum GripeError: LocalizedError {
     }
 }
 
+// Project diagnostic fields only; never serialize requests, headers or arbitrary userInfo.
+enum GripeErrorDetails {
+    static func json(_ error: Error, redacting apiKey: String = "") -> String {
+        func scrub(_ value: String) -> String {
+            let text = String(value.prefix(16000))
+            return apiKey.isEmpty ? text : text.replacingOccurrences(of: apiKey, with: "[redacted]")
+        }
+        func native(_ error: NSError, depth: Int = 0) -> [String: Any] {
+            var value: [String: Any] = [
+                "name": "NSError",
+                "domain": error.domain,
+                "code": error.code,
+                "message": scrub(error.localizedDescription)
+            ]
+            if let suggestion = error.localizedRecoverySuggestion {
+                value["recoverySuggestion"] = scrub(suggestion)
+            }
+            if depth < 4, let cause = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+                value["cause"] = native(cause, depth: depth + 1)
+            }
+            return value
+        }
+        var details: [String: Any] = ["name": String(describing: type(of: error)), "message": scrub(error.localizedDescription)]
+        if let gripe = error as? GripeError {
+            details["retryable"] = gripe.isTransient
+            switch gripe {
+            case .notConfigured: details["code"] = "not_configured"
+            case .encodingFailed: details["code"] = "encoding_failed"
+            case .unauthorized: details["code"] = "unauthorized"
+            case .rateLimited(let after):
+                details["code"] = "rate_limited"
+                if let after, after.isFinite { details["retryAfterSeconds"] = after }
+            case .serverError(let status, let body):
+                details["code"] = "http_error"
+                details["status"] = status
+                if let body {
+                    // Preserve JSON payloads as JSON and keep non-JSON responses as text.
+                    details["response"] = (try? JSONSerialization.jsonObject(with: Data(scrub(body).utf8), options: [.fragmentsAllowed])) ?? scrub(body)
+                    if body.count > 16000 { details["responseTruncated"] = true }
+                }
+            case .invalidResponse: details["code"] = "invalid_response"
+            case .network(let underlying):
+                details["code"] = "network_error"
+                details["cause"] = native(underlying as NSError)
+            }
+        } else {
+            details["cause"] = native(error as NSError)
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["error": details], options: [.prettyPrinted, .sortedKeys]),
+              let result = String(data: data, encoding: .utf8) else {
+            return "{\"error\":{\"name\":\"ErrorSerializationError\",\"message\":\"Error details could not be serialized.\"}}"
+        }
+        if data.count > 16000 {
+            var bounded: [String: Any] = ["name": String(describing: type(of: error)), "message": String(scrub(error.localizedDescription).prefix(1000)), "truncated": true]
+            for key in ["code", "status", "retryable", "retryAfterSeconds"] { if let value = details[key] { bounded[key] = value } }
+            if let data = try? JSONSerialization.data(withJSONObject: ["error": bounded], options: [.prettyPrinted, .sortedKeys]), let json = String(data: data, encoding: .utf8) { return json }
+        }
+        return result
+    }
+}
+
 final class GripeAPIClient {
     static let shared = GripeAPIClient()
     static let protocolVersion = "1"
