@@ -39,3 +39,7 @@ JetBrains Mono retains its SIL Open Font License in `assets/fonts/JetBrainsMono-
 The App Store and Google Play artwork is provided by Apple and Google respectively. Store names, logos, and badges remain the property of their owners; the project AGPL license does not apply to those trademarks or artwork. The badge files were retrieved from healthmd.app, the requested design reference.
 
 The unmodified GitHub logo comes from the [GitHub Brand Toolkit](https://brand.github.com/foundations/logo). GitHub’s trademarks and artwork remain the property of GitHub, Inc., and are excluded from the project AGPL license.
+
+## Geist documentation font
+
+Geist by Vercel is distributed under the SIL Open Font License 1.1. The documentation serves regular, medium and semibold files locally, downloaded from Google Fonts. The complete license is included in dashboard/geist-license.txt and served alongside the font assets.

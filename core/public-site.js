@@ -1,3 +1,4 @@
+import { freeExports } from './billing.js';
 import { privacyPolicy } from './privacy.js';
 
 const home = `# myself.md — Personal data for AI agents
@@ -11,6 +12,10 @@ Use myself.md when a person wants an AI agent to analyze their approved health r
 ## Try the free public sandbox
 
 The demo at https://myself.md/demo is a free, read-only sandbox with fictional datasets and example exports. It needs no account, API key or sales conversation. Preview supported data at https://myself.md/datasets. Mobile store distribution is coming soon; source and self-hosting instructions are available at https://github.com/CodyBontecou/myself.md.
+
+## JavaScript integration
+
+Install the official SDK with npm install myself-md-sdk. Package: https://www.npmjs.com/package/myself-md-sdk. The official CLI is https://www.npmjs.com/package/myself-md-cli; run npx myself-md-cli health for a public service check. The SDK provides public discovery, dataset pagination and authorized asynchronous phone-query methods.
 
 ## Connect an AI agent
 
@@ -29,7 +34,7 @@ export const publicFAQs = [
   {
     question: 'Can I try myself.md without an account?',
     answer:
-      'Yes. The public demo uses fictional records and requires no account. It does not connect a phone or authorize private reads.',
+      'Yes. The app is free to use without an account, with an optional one-time lifetime purchase for unlimited exports and queries. Optional cloud storage requires an account.',
   },
   {
     question: 'Which data can myself.md export?',
@@ -42,51 +47,223 @@ export const publicFAQs = [
       'Review and revoke sharing permissions in the phone app or authenticated dashboard. Revocation prevents future reads but cannot recall copies already delivered.',
   },
 ];
-const guide = `# myself.md developer documentation — MCP and OAuth 2.0
+const publicLifetimePrice = '$19.99';
+const publicCloudPlans = [
+  { capacity: '50 MB', price: 'Included with Lifetime', billing: 'No storage subscription' },
+  { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
+  { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
+];
+const publicPricing = `The public demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The planned US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Mobile store distribution is coming soon. Eligible existing health.md and iso.me purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
+const faqMarkdown = publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n');
+const overview = `# Get started
 
-## When to use this
+Connect your AI assistant to the health, screen time and location data you choose to share. Or use the SDK and CLI to build your own integration.
 
-Use myself.md to query user-approved health, screen time and recorded location data through semantic MCP tools. For public evaluation, use the free fictional-data sandbox at https://myself.md/demo and the dataset catalog at https://myself.md/datasets. The sandbox does not connect a phone or authorize private reads.
+## Connect an AI assistant
 
-## JavaScript SDK and browser tools
+Add this URL as a remote MCP server in your assistant’s settings. MCP is the connection that lets an assistant use myself.md tools.
 
-Download the dependency-free JavaScript SDK from https://myself.md/sdk/myself.mjs. Import createMyselfClient and call health(), config(), docs(), or datasets({limit: 1}). Pass nextCursor as cursor for subsequent catalog pages; a null cursor and hasMore false mark completion. The public catalog describes adapter capabilities, never personal records. Browsers supporting WebMCP expose myself_public_documentation and myself_dataset_catalog through document.modelContext, with a navigator.modelContext compatibility fallback.
+\`\`\`text
+https://myself.md/mcp
+\`\`\`
 
-For approved phone queries, createMyselfClient({token}) exposes query(input, idempotencyKey) and request(requestId). The token must belong to an agent OAuth client with qr-connect scope. Never put tokens in browser URLs or public source. Registry publication is pending; download the SDK from the official domain until a package is published.
+1. Sign in when your assistant opens the connection flow.
+2. Pair your phone with the same account.
+3. Approve the profiles and data types you want to share.
 
-## Asynchronous REST queries and safe retries
+Your assistant can read only what you approve. Phone reads may need the app open and operating-system permissions enabled.
 
-POST https://myself.md/api/v1/queries with an agent bearer token, Content-Type: application/json and an Idempotency-Key of 1–200 characters. The JSON arguments are those of query_phone_data, excluding requestKey. Discover the actual phone, approved profile and supported type through MCP first. A successful submission returns HTTP 202, requestId, status and expiresAt, with Location pointing to GET /api/v1/queries/{requestId}. Poll with the same authorization. queued and running indicate pending work; complete includes the actual page and capture warnings; failed includes an error. Request metadata and results expire after five minutes. A 202 response never proves the phone read succeeded.
+## Use the JavaScript SDK
 
-Reuse the same key and identical arguments after a lost response. A live retry returns the original request and creates no additional phone job or billing reservation. Keys are scoped to the account and OAuth client. Changed arguments fail, and revoked grants, forgotten jobs, expired jobs or a service restart cannot cause an old request to dispatch again while its activity fingerprint is retained (90 days). If the original request is still initializing, a retry may fail until that submission finishes; inspect the original result before choosing a new key. Keep keys unique beyond the retention window. Tool validation and permission failures return HTTP 422 with an error; authentication failures return 401/403. Consult /openapi.json for typed inputs and responses. Both REST and MCP use the same validation, grants, billing, history and phone execution logic.
+Install the [official SDK](https://www.npmjs.com/package/myself-md-sdk):
 
-## Authentication and onboarding
+\`\`\`sh
+npm install myself-md-sdk
+\`\`\`
 
-Connect a Streamable HTTP MCP client to https://myself.md/mcp. Discover OAuth protected-resource metadata at https://myself.md/.well-known/oauth-protected-resource/mcp and authorization-server metadata at https://myself.md/.well-known/oauth-authorization-server. Use the returned issuer, registration, authorization and token endpoints with authorization code and PKCE. Request the qr-connect scope for the MCP resource. The owner completes sign-in and consent; no shared API key or agent-created grant replaces that approval. A missing or expired bearer token returns HTTP 401 with a WWW-Authenticate discovery header.
+Start with the public dataset catalog. It needs no account or token.
 
-## Discover, choose, act and verify
+\`\`\`js
+import { createMyselfClient } from 'myself-md-sdk';
 
-After MCP initialization, call tools/list for the current tool schemas. Discover owned phones and call get_phone_data_catalog before choosing a data type or profile. create_phone_export_profile proposes a profile for owner review; it never grants access. Use the catalog's approved profile and domain grants to request records. Poll get_phone_request for the actual result and follow every pagination cursor. Missing records do not prove HealthKit authorization. Read tool descriptions for exact inputs, limits and availability rather than guessing identifiers.
+const myself = createMyselfClient();
+const datasets = await myself.datasets();
+console.log(datasets.items);
+\`\`\`
 
-Phone operations distinguish acceptance from completion. A paired foreground phone may be required. User approval, OS permissions, purchases and system sharing remain device handoffs. Do not retry an uncertain write with a new identifier; check its status first. Blocking an agent or revoking a grant stops future authorized access. Existing results in an AI provider are outside myself.md's control.
+For private phone queries, use an existing agent OAuth token and an approved profile. The [API reference](/docs/reference) covers authentication, queries and results.
 
-## Public discovery API
+## Use the CLI
 
-Read https://myself.md/openapi.json for the public HTTP discovery API. The agent catalog at https://myself.md/.well-known/ard.json points to the MCP server card at https://myself.md/mcp/server-card. These documents describe connection metadata, not private tools or granted records. Use the live MCP tools/list response after authentication for current private operations.
+Check that the service is available with the [official CLI](https://www.npmjs.com/package/myself-md-cli). Requires Node.js 22.13 or later.
 
-## API compatibility and rate limits
+\`\`\`sh
+npx myself-md-cli health
+\`\`\`
 
-Public discovery reads are available under https://myself.md/v1 (for example /v1/health and /v1/config). The existing unversioned URLs remain compatibility aliases with the same v1 contract. Additive response fields are compatible; consumers should ignore unknown fields. Breaking changes require a new major path. We announce deprecations here at least 90 days before removal and send Deprecation and Sunset headers on affected routes. No v1 route is currently deprecated. MCP uses its negotiated protocol version and live tools/list schemas independently of this public HTTP version.
+Run \`npx myself-md-cli help\` to see the commands. Private tool calls need an owner-authorized token in \`MYSELF_TOKEN\`.
 
-The seven OpenAPI public reads share a limit of 120 requests per 60 seconds per source IP, per Node process or Worker isolate. It is a best-effort local abuse limit, not a global account quota; shared networks share a bucket and process restarts reset it. RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset (seconds) and RateLimit-Policy report the current local window. HTTP 429 returns a JSON error and Retry-After in seconds. Back off for that delay; avoid concurrent retries. The REST query adapter applies a separate 120-per-minute local window per account and agent client, including polling. X-RateLimit compatibility headers report the same quota with an epoch-seconds reset time. Private MCP and owner APIs retain their existing authorization and limits.
+## Read your phone data
 
-## Official CLI
+Ask your assistant to discover your phone’s available data and approved profiles, then request the records you need. A query starts a job; wait for its completed result before using the data.
 
-Download the standalone Node.js 22+ CLI from https://myself.md/cli/myself.mjs and run node myself.mjs help. Dependency notices are at https://myself.md/cli/notices.txt. Review the downloaded file before running it. The same JavaScript source ships in scripts/myself.js in the project checkout. After installing the repository dependencies, run npm run myself -- health, config, docs, openapi or tools. Run npm run myself -- call TOOL with a JSON argument object on standard input. MYSELF_URL selects an HTTPS service origin; MYSELF_TOKEN provides an existing owner-approved OAuth access token for tools and call. The CLI never stores tokens or grants access. Discover the live tool schemas before calling operations and verify queued phone completion through get_phone_request. The CLI is distributed directly from myself.md; no npm registry package is published yet.
+- Follow every returned cursor to read the next page.
+- Review capture warnings. Missing records can reflect limited permissions.
+- Revoke future access in the app or dashboard whenever you need to.
 
-## Privacy and support
+See [supported datasets](/datasets) for platform availability. Data already delivered to another service follows that service’s retention policy.
 
-get_privacy_policy returns the shared policy and support contacts without a data grant, under the existing MCP account authentication. Read https://myself.md/privacy before sharing sensitive records. Public support is at https://myself.md/support. Source: https://github.com/CodyBontecou/myself.md. This service provides data access, not medical advice.
+## Keep going
+
+Read the [API reference](/docs/reference) for request formats, safe retries and rate limits, or explore the [OpenAPI specification](/openapi.json).
+
+For product questions, see [pricing](/pricing), the [privacy policy](/privacy) or [contact support](/contact).
+`;
+const guide = `# API reference
+
+Use MCP to discover approved phone data, then read it through MCP or REST. Public catalog and documentation requests need no account. For setup, start with [Getting started](/docs).
+
+## Authenticate
+
+Connect a Streamable HTTP MCP client to:
+
+\`\`\`text
+https://myself.md/mcp
+\`\`\`
+
+Use [protected-resource metadata](/.well-known/oauth-protected-resource/mcp) and [authorization-server metadata](/.well-known/oauth-authorization-server) to find the issuer and registration, authorization and token endpoints.
+
+Sign in with the authorization-code flow and PKCE. Request the \`qr-connect\` scope for the MCP resource. The owner completes sign-in and consent, pairs a phone, and approves the profiles and data types the agent can read. An agent cannot grant itself access, and a shared API key cannot replace consent.
+
+Private requests need an agent OAuth bearer token. Missing or expired tokens return HTTP \`401\` with a \`WWW-Authenticate\` discovery header. Keep tokens out of URLs and public source code.
+
+## Discover available data
+
+After MCP initialization, call \`tools/list\` for the current schemas, inputs and limits.
+
+1. Discover the owner’s paired phones.
+2. Call \`get_phone_data_catalog\` for available data types and approved profiles.
+3. Choose a supported type covered by the profile and its data grants.
+4. Call \`query_phone_data\`, then poll \`get_phone_request\` for the result.
+
+Use the returned identifiers rather than guessing them. \`create_phone_export_profile\` submits a profile for owner review; it does not grant access.
+
+A phone read may need the app open and OS permissions enabled. Sign-in, permission prompts, purchases and system sharing require the owner on the device. Empty HealthKit results can mean missing records or limited permission; they do not prove authorization.
+
+Try the [fictional-data demo](/demo) or browse [Datasets](/datasets) before connecting a phone. Neither authorizes private reads.
+
+## Query through REST
+
+Submit a query to \`POST /api/v1/queries\`. Use the JSON arguments from \`query_phone_data\`, leaving out \`requestKey\`. The [OpenAPI specification](/openapi.json) lists the request and response fields.
+
+Save those arguments in \`query.json\`, then send:
+
+\`\`\`sh
+curl https://myself.md/api/v1/queries \\
+  -H "Authorization: Bearer $MYSELF_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: $QUERY_KEY" \\
+  --data @query.json
+\`\`\`
+
+Set \`QUERY_KEY\` to a unique value of 1–200 characters. Use the phone, profile and type discovered through MCP.
+
+HTTP \`202\` means the request was accepted. The response includes \`requestId\`, \`status\` and \`expiresAt\`; the \`Location\` header points to \`GET /api/v1/queries/{requestId}\`. Set \`REQUEST_ID\` to the returned \`requestId\`, then poll with the same authorization:
+
+\`\`\`sh
+curl "https://myself.md/api/v1/queries/$REQUEST_ID" \\
+  -H "Authorization: Bearer $MYSELF_TOKEN"
+\`\`\`
+
+- \`queued\` or \`running\`: wait for the phone.
+- \`complete\`: read the result page and capture warnings.
+- \`failed\`: inspect the error.
+
+Request metadata and results expire after five minutes. Wait for \`complete\` before treating a read as successful. REST and MCP share validation, permissions, billing, history and phone execution.
+
+## Retry safely
+
+If a response is lost, resend the same arguments with the same \`Idempotency-Key\`. A live retry returns the original request without another phone job or billing reservation. Keys are scoped to the account and agent OAuth client.
+
+- Changing the arguments with the same key fails.
+- Revoked grants or an unavailable original request fail rather than dispatching the old request again.
+- While the original request is initializing, a retry may fail. Check its result before using a new key.
+
+The service retains an activity fingerprint for 90 days to prevent redispatch after a job is forgotten, expires, or the service restarts. Keep keys unique beyond that period. For any write with an uncertain outcome, check its status before retrying with a new identifier.
+
+Validation and permission failures return HTTP \`422\` with an error. Authentication failures return \`401\` or \`403\`.
+
+## Use the SDK
+
+The [JavaScript SDK](https://www.npmjs.com/package/myself-md-sdk) has no runtime dependencies. Import \`createMyselfClient\` from \`myself-md-sdk\`, or use the [standalone module](/sdk/myself.mjs).
+
+Public methods need no token:
+
+- \`health()\` checks service availability.
+- \`config()\` reads public configuration.
+- \`docs()\` reads the getting-started guide.
+- \`datasets({ limit: 1 })\` reads a catalog page.
+
+Pass \`nextCursor\` as \`cursor\` to get the next catalog page. Stop when \`nextCursor\` is null and \`hasMore\` is false. The catalog describes adapter capabilities; it contains no personal records.
+
+For private queries, create a client with an existing agent token:
+
+\`\`\`js
+import { createMyselfClient } from 'myself-md-sdk';
+
+const myself = createMyselfClient({ token });
+const job = await myself.query(input, idempotencyKey);
+const status = await myself.request(job.requestId);
+\`\`\`
+
+Use the discovered query arguments for \`input\` and the same retry rules described above. \`request()\` reads the current status once; continue polling until the job finishes. For phone results, follow every returned pagination cursor and review capture warnings.
+
+Browsers with WebMCP expose \`myself_public_documentation\` and \`myself_dataset_catalog\` through \`document.modelContext\`, with \`navigator.modelContext\` as a compatibility fallback.
+
+## Use the CLI
+
+The [official CLI](https://www.npmjs.com/package/myself-md-cli) requires Node.js 22.13 or later:
+
+\`\`\`sh
+npx myself-md-cli help
+\`\`\`
+
+Or install it globally with \`npm install --global myself-md-cli\` and run \`myself help\`.
+
+Use \`health\`, \`config\`, \`docs\` and \`openapi\` for public reads. \`tools\` lists the live MCP schemas; \`call TOOL\` reads a JSON argument object from standard input. Private commands need an existing owner-approved OAuth token in \`MYSELF_TOKEN\`. \`MYSELF_URL\` selects an HTTPS service origin. The CLI does not store tokens or grant access.
+
+A [standalone download](/cli/myself.mjs) runs with \`node myself.mjs help\`; review the file before running it. Read its [dependency notices](/cli/notices.txt). The repository source is \`scripts/myself.js\`; after installing dependencies, run \`npm run myself -- help\` or \`npm run myself -- call TOOL\`. Both distributions expose the same public reads and authorized MCP operations. Check \`get_phone_request\` to verify that queued phone work completed.
+
+## Rate limits
+
+Public OpenAPI reads share a limit of 120 requests per 60 seconds per source IP. REST queries, including polling, have a separate limit of 120 per minute per account and agent client.
+
+These limits apply locally to each Node process or Worker isolate. They are best-effort abuse limits, not global account quotas. Shared networks share a public bucket, and restarting a process resets its window.
+
+Read the response headers to check the current window:
+
+- \`RateLimit-Limit\`: request limit.
+- \`RateLimit-Remaining\`: requests left.
+- \`RateLimit-Reset\`: seconds until reset.
+- \`RateLimit-Policy\`: window policy.
+
+HTTP \`429\` returns a JSON error and \`Retry-After\` in seconds. Wait that long before retrying, and avoid concurrent retries. The \`X-RateLimit\` compatibility headers describe the same quota, with the reset expressed in epoch seconds. Private MCP and owner APIs keep their existing authorization and limits.
+
+## API versions
+
+Public discovery reads use \`/v1\`, such as \`/v1/health\` and \`/v1/config\`. Unversioned URLs remain aliases for the same contract. Clients should ignore unknown response fields; a breaking change requires a new major path.
+
+Deprecations are announced here at least 90 days before removal. Affected routes return \`Deprecation\` and \`Sunset\` headers. No v1 route is currently deprecated. MCP negotiates its protocol version separately and uses the live \`tools/list\` schemas.
+
+The [OpenAPI specification](/openapi.json) covers public discovery and REST phone queries. The [agent catalog](/.well-known/ard.json) links to the [MCP server card](/mcp/server-card) for connection metadata. These documents expose no private records; discover current private operations through authenticated \`tools/list\`.
+
+## Privacy and help
+
+Blocking an agent or revoking its grant stops future reads. Copies already delivered to an AI provider follow that provider’s retention policy.
+
+\`get_privacy_policy\` returns the shared policy and support contacts under MCP account authentication, without a data grant. Read the [privacy policy](/privacy) before sharing sensitive records. myself.md provides data access, not medical advice.
+
+See [pricing](/pricing) and [common questions](/faq) for product details, or [contact support](/support) for help. The [source code](https://github.com/CodyBontecou/myself.md) is public.
 `;
 const contact = `# Contact myself.md support
 
@@ -96,8 +273,10 @@ Do not include health records, precise location, access tokens, passwords, purch
 `;
 /** Public descriptions contain no account records or credentials. */
 export const publicPages = new Map([
-  ['/', home],
-  ['/docs', guide],
+  ['/', `${home}\n## Pricing\n\n${publicPricing}\n\n${faqMarkdown}`],
+  ['/docs', overview],
+  ['/docs/reference', guide],
+  ['/pricing', `# myself.md pricing\n\n${publicPricing}`],
   [
     '/faq',
     `# Frequently asked questions\n\n${publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n')}`,
@@ -133,5 +312,5 @@ export function publicHTML(markdown) {
     })
     .join(
       '\n',
-    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/demo">Demo</a> · <a href="/docs">Developers</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a></nav></main>`;
+    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/demo">Demo</a> · <a href="/docs">Developers</a> · <a href="https://www.npmjs.com/package/myself-md-sdk">JavaScript SDK</a> · <a href="https://www.npmjs.com/package/myself-md-cli">CLI</a> · <a href="/pricing">Pricing</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a></nav></main>`;
 }

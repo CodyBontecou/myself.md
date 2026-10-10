@@ -25,8 +25,8 @@ function typeLabel(key) {
     .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }
-/** @param {{dataset:string}} props */
-export function DatasetDocumentation({ dataset }) {
+/** @param {{dataset:string, landing?:boolean}} props */
+export function DatasetDocumentation({ dataset, landing = false }) {
   const [filter, setFilter] = useState(dataset);
   const datasetPane = useRef(/** @type {HTMLDivElement|null} */ (null));
   useEffect(() => {
@@ -154,73 +154,91 @@ export function DatasetDocumentation({ dataset }) {
       <main className="space-y-10 py-8 sm:py-12">
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="min-w-0 space-y-10">
-            <div className="space-y-4">
-              <DownloadBadges />
-              <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
-                <h1
-                  id="landing-title"
-                  className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-                >
-                  File over app.
-                  <br />
-                  Yours to keep.
-                </h1>
-                <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                  Save your health, screen time, and location as files you can read, back up, and
-                  take with you. Keep your history, even when you change apps.
-                </p>
-                <Tabs.Root defaultValue="launch" className="space-y-4">
-                  <Tabs.List
-                    aria-label="Video tutorials"
-                    className="inline-flex max-w-full items-center divide-x divide-border"
+            {landing ? (
+              <div className="space-y-4">
+                <DownloadBadges />
+                <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
+                  <h1
+                    id="landing-title"
+                    className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
                   >
+                    File over app.
+                    <br />
+                    Yours to keep.
+                  </h1>
+                  <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+                    Save your health, screen time, and location as files you can read, back up, and
+                    take with you. Keep your history, even when you change apps.
+                  </p>
+                  <Tabs.Root defaultValue="launch" className="space-y-4">
+                    <Tabs.List
+                      aria-label="Video tutorials"
+                      className="inline-flex max-w-full items-center divide-x divide-border"
+                    >
+                      {tutorials.map((tutorial) => (
+                        <Tabs.Trigger
+                          key={tutorial.id}
+                          value={tutorial.id}
+                          className="cursor-pointer px-3 text-sm font-medium text-muted-foreground outline-none first:pl-0 last:pr-0 hover:text-foreground focus-visible:underline focus-visible:underline-offset-4 data-[state=active]:text-foreground"
+                        >
+                          {tutorial.label}
+                        </Tabs.Trigger>
+                      ))}
+                    </Tabs.List>
                     {tutorials.map((tutorial) => (
-                      <Tabs.Trigger
+                      <Tabs.Content
                         key={tutorial.id}
                         value={tutorial.id}
-                        className="cursor-pointer px-3 text-sm font-medium text-muted-foreground outline-none first:pl-0 last:pr-0 hover:text-foreground focus-visible:underline focus-visible:underline-offset-4 data-[state=active]:text-foreground"
+                        className="outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        {tutorial.label}
-                      </Tabs.Trigger>
+                        <figure className="space-y-3">
+                          {/* oxlint-disable react/iframe-missing-sandbox -- Cross-origin YouTube needs scripts and its own origin for playback; it cannot access this page. */}
+                          <iframe
+                            className="block aspect-video min-h-[200px] w-full rounded-lg border-0 bg-black shadow-2xl shadow-black/25 dark:shadow-black/60"
+                            src={`https://www.youtube-nocookie.com/embed/${tutorial.videoId}?playsinline=1&rel=0`}
+                            title={`${tutorial.label} — Rick Astley placeholder`}
+                            loading="lazy"
+                            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                          {/* oxlint-enable react/iframe-missing-sandbox */}
+                          <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <span>
+                              {tutorial.label} coming soon. Enjoy a little Rick Astley for now.
+                            </span>
+                          </figcaption>
+                        </figure>
+                      </Tabs.Content>
                     ))}
-                  </Tabs.List>
-                  {tutorials.map((tutorial) => (
-                    <Tabs.Content
-                      key={tutorial.id}
-                      value={tutorial.id}
-                      className="outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <figure className="space-y-3">
-                        {/* oxlint-disable react/iframe-missing-sandbox -- Cross-origin YouTube needs scripts and its own origin for playback; it cannot access this page. */}
-                        <iframe
-                          className="block aspect-video min-h-[200px] w-full rounded-lg border-0 bg-black shadow-2xl shadow-black/25 dark:shadow-black/60"
-                          src={`https://www.youtube-nocookie.com/embed/${tutorial.videoId}?playsinline=1&rel=0`}
-                          title={`${tutorial.label} — Rick Astley placeholder`}
-                          loading="lazy"
-                          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                        />
-                        {/* oxlint-enable react/iframe-missing-sandbox */}
-                        <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <span>
-                            {tutorial.label} coming soon. Enjoy a little Rick Astley for now.
-                          </span>
-                        </figcaption>
-                      </figure>
-                    </Tabs.Content>
-                  ))}
-                </Tabs.Root>
-                <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
-                  <a href="/docs">Developer docs</a>
-                  <a href="/about">About</a>
-                  <a href="/contact">Contact</a>
-                  <a href={privacyPolicy.url}>Privacy policy</a>
-                  <a href={privacyPolicy.supportUrl}>Support</a>
+                  </Tabs.Root>
+                  <nav className="flex gap-4 text-sm underline" aria-label="Privacy and support">
+                    <a href="/docs">Developer docs</a>
+                    <a href="/about">About</a>
+                    <a href="/contact">Contact</a>
+                    <a href={privacyPolicy.url}>Privacy policy</a>
+                    <a href={privacyPolicy.supportUrl}>Support</a>
+                  </nav>
+                </section>
+              </div>
+            ) : (
+              <header className="space-y-4">
+                <nav className="flex gap-4 text-sm text-muted-foreground" aria-label="Site">
+                  <a className="underline underline-offset-4" href="/">
+                    myself.md
+                  </a>
+                  <a className="underline underline-offset-4" href="/docs">
+                    Docs
+                  </a>
                 </nav>
-              </section>
-            </div>
+                <h1 className="text-4xl font-semibold tracking-tight">Datasets</h1>
+                <p className="max-w-xl text-base leading-relaxed text-muted-foreground">
+                  Explore supported data types and see how they appear in an export. Select a type
+                  to update the fictional example.
+                </p>
+              </header>
+            )}
             <section id="dataset-types" className="min-w-0 space-y-5" aria-label="Dataset types">
               <div className="bg-background py-3">
                 <div className="relative">

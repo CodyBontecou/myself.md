@@ -229,6 +229,14 @@ try {
         await page.close();
       }),
     );
+    const catalogPage = await browser.newPage();
+    await catalogPage.goto(`${origin}/docs`);
+    await catalogPage.getByRole('link', { name: 'Datasets', exact: true }).click();
+    await catalogPage.getByRole('heading', { name: 'Datasets', exact: true }).waitFor();
+    assert.equal(await catalogPage.getByRole('tablist', { name: 'Video tutorials' }).count(), 0);
+    await catalogPage.goto(origin);
+    await catalogPage.getByRole('heading', { name: 'File over app. Yours to keep.' }).waitFor();
+    await catalogPage.close();
   } finally {
     await browser.close();
   }
@@ -1058,6 +1066,22 @@ try {
     true,
   );
   await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+  await Promise.all(
+    ['/docs', '/docs/reference', '/v1/docs', '/v1/docs/reference'].map(async (path) => {
+      const page = await fetch(origin + path);
+      assert.equal(page.status, 200);
+      assert.match(await page.text(), /class="docs-page"/);
+      const markdown = await fetch(origin + path, { headers: { Accept: 'text/markdown' } });
+      assert.equal(markdown.status, 200);
+      assert.match(
+        await markdown.text(),
+        path.endsWith('/reference') ? /Idempotency-Key/ : /# Get started/,
+      );
+    }),
+  );
+  const documentation = await client.callTool({ name: 'get_public_documentation', arguments: {} });
+  assert.match(JSON.stringify(documentation), /# Get started/);
+  assert.match(JSON.stringify(documentation), /Idempotency-Key/);
   const publicSdk = createMyselfClient({ origin });
   const sdk = createMyselfClient({ origin, token: chatToken });
   const firstCatalog = z
@@ -1107,10 +1131,16 @@ try {
   const restJob = z
     .object({ requestId: z.string(), status: z.literal('queued') })
     .parse(await sdk.query(restInput, 'fixture-retry'));
+  const retryBilling = new BillingStore(join(directory, 'billing.sqlite'));
+  const beforeRetry = retryBilling.snapshot(`${accountNamespace}|alice`);
   const restRetry = z
     .object({ requestId: z.string() })
     .parse(await sdk.query(restInput, 'fixture-retry'));
   assert.equal(restRetry.requestId, restJob.requestId);
+  const afterRetry = retryBilling.snapshot(`${accountNamespace}|alice`);
+  assert.equal(afterRetry.used, beforeRetry.used);
+  assert.equal(afterRetry.reserved, beforeRetry.reserved);
+  retryBilling.db.close();
   await assert.rejects(() => sdk.query({ ...restInput, limit: 1 }, 'fixture-retry'), /422/);
   await assert.rejects(
     () => createMyselfClient({ origin, token: phoneToken }).query(restInput, 'phone-rejected'),
@@ -1139,6 +1169,12 @@ try {
       .requestId,
     restJob.requestId,
   );
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+    ...catalog,
+    domains: catalog.domains.map((domain) => ({ ...domain, enabled: false, types: [] })),
+  });
+  await assert.rejects(() => sdk.query(restInput, 'fixture-retry'), /422/);
+  await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
   await client.callTool({
     name: 'forget_phone_request',
     arguments: { requestId: restJob.requestId },
@@ -1520,7 +1556,7 @@ try {
   assert.equal((await fetch(`${origin}/mcp`)).status, 401);
   assert.ok(!(await client.callTool({ name: 'get_privacy_policy', arguments: {} })).isError);
   console.log(
-    'HTTP/MCP: OAuth resource metadata, real SDK transport, lifetime-access handoff and verified claim completion, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
+    'HTTP/MCP: paginated public catalog, SDK/browser tool calls, authenticated REST jobs, idempotent retries without duplicate billing, revoked-grant and cross-account denials, OAuth resource metadata, real SDK transport, lifetime-access handoff and verified claim completion, tenant isolation, upload-only credentials, explicit cloud sharing device revocation, dashboard client/tenant isolation, owner reads/deletion, profile sharing and agent blocking passed.',
   );
 } finally {
   await accessClient.close();

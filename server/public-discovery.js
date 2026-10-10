@@ -84,10 +84,7 @@ const openapi = {
       url: `${origin}/contact`,
     },
   },
-  servers: [
-    { url: `${origin}/v1` },
-    { url: origin, description: 'Compatibility aliases; same v1 contract.' },
-  ],
+  servers: [{ url: origin }],
   externalDocs: {
     description: 'MCP authentication and owner approval workflow',
     url: `${origin}/docs`,
@@ -116,62 +113,67 @@ const openapi = {
     },
   },
   paths: {
-    '/dataset-catalog': {
-      ...readOperation(
-        'listPublicDatasets',
-        'List supported dataset adapters; follow nextCursor until hasMore is false. No personal records.',
-        {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['items', 'nextCursor', 'hasMore', 'total'],
-              properties: {
-                items: {
-                  type: 'array',
+    '/v1/dataset-catalog': {
+      get: {
+        ...readOperation(
+          'listPublicDatasets',
+          'List supported dataset adapters; follow nextCursor until hasMore is false. No personal records.',
+          {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['items', 'nextCursor', 'hasMore', 'total'],
+                properties: {
                   items: {
-                    type: 'object',
-                    required: ['slug', 'name', 'domain', 'description', 'url'],
-                    properties: {
-                      slug: { type: 'string' },
-                      name: { type: 'string' },
-                      domain: { type: 'string' },
-                      description: { type: 'string' },
-                      url: { type: 'string', format: 'uri' },
-                      sources: { type: 'string' },
-                      limitations: { type: 'array', items: { type: 'string' } },
-                      groups: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          required: ['title', 'keys'],
-                          properties: {
-                            title: { type: 'string' },
-                            keys: { type: 'array', items: { type: 'string' } },
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      required: ['slug', 'name', 'domain', 'description', 'url'],
+                      properties: {
+                        slug: { type: 'string' },
+                        name: { type: 'string' },
+                        domain: { type: 'string' },
+                        description: { type: 'string' },
+                        url: { type: 'string', format: 'uri' },
+                        sources: { type: 'string' },
+                        limitations: { type: 'array', items: { type: 'string' } },
+                        groups: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            required: ['title', 'keys'],
+                            properties: {
+                              title: { type: 'string' },
+                              keys: { type: 'array', items: { type: 'string' } },
+                            },
                           },
                         },
                       },
                     },
                   },
+                  nextCursor: { type: ['string', 'null'] },
+                  hasMore: { type: 'boolean' },
+                  total: { type: 'integer' },
                 },
-                nextCursor: { type: ['string', 'null'] },
-                hasMore: { type: 'boolean' },
-                total: { type: 'integer' },
               },
             },
           },
-        },
-      ),
-      parameters: [
-        {
-          name: 'limit',
-          in: 'query',
-          schema: { type: 'integer', minimum: 1, maximum: 3, default: 3 },
-        },
-        { name: 'cursor', in: 'query', schema: { type: 'string', pattern: '^catalog-v1:[0-3]$' } },
-      ],
+        ).get,
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 3, default: 3 },
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            schema: { type: 'string', pattern: '^catalog-v1:[0-3]$' },
+          },
+        ],
+      },
     },
     '/api/v1/queries': {
-      servers: [{ url: origin }],
       post: {
         operationId: 'createPhoneQuery',
         summary:
@@ -192,6 +194,10 @@ const openapi = {
           content: { 'application/json': { schema: phoneQueryBodySchema } },
         },
         responses: {
+          429: {
+            description: 'Agent REST local quota exceeded; honor Retry-After.',
+            headers: { 'Retry-After': { schema: { type: 'integer', minimum: 1 } } },
+          },
           202: {
             description: 'Query accepted, or original live query returned.',
             headers: { Location: { schema: { type: 'string' } } },
@@ -221,7 +227,6 @@ const openapi = {
       },
     },
     '/api/v1/queries/{requestId}': {
-      servers: [{ url: origin }],
       get: {
         operationId: 'getPhoneQuery',
         summary: 'Poll the actual phone query state and completed page.',
@@ -263,7 +268,7 @@ const openapi = {
         },
       },
     },
-    '/health': readOperation(
+    '/v1/health': readOperation(
       'getServiceHealth',
       'Check whether the hosted service can respond. Does not prove phone availability.',
       {
@@ -279,7 +284,7 @@ const openapi = {
         },
       },
     ),
-    '/dashboard/config': readOperation(
+    '/v1/dashboard/config': readOperation(
       'getDashboardConnectionConfiguration',
       'Discover the OAuth issuer and dashboard client ID. Sign-in and owner authorization remain required for dashboard actions.',
       {
@@ -292,7 +297,7 @@ const openapi = {
         },
       },
     ),
-    '/config': readOperation(
+    '/v1/config': readOperation(
       'getConnectionConfiguration',
       'Discover the OAuth issuer, phone client ID and MCP resource URL.',
       {
@@ -309,7 +314,7 @@ const openapi = {
         },
       },
     ),
-    '/.well-known/oauth-protected-resource/mcp': readOperation(
+    '/v1/.well-known/oauth-protected-resource/mcp': readOperation(
       'getMcpProtectedResource',
       'Discover OAuth authorization servers and scopes for the MCP resource.',
       {
@@ -332,12 +337,17 @@ const openapi = {
         },
       },
     ),
-    '/llms.txt': readOperation(
+    '/v1/llms.txt': readOperation(
       'getAgentInstructions',
       'Read public guidance on when to use myself.md and where to find developer resources.',
       { 'text/plain': { schema: { type: 'string' } } },
     ),
-    '/docs': readOperation(
+    '/v1/docs/reference': readOperation(
+      'getApiReference',
+      'Read detailed authentication, safe retries, pagination, asynchronous query and API compatibility rules. Send Accept: text/markdown.',
+      textContent,
+    ),
+    '/v1/docs': readOperation(
       'getDeveloperGuide',
       'Read MCP onboarding, authentication, consent and result verification guidance. Send Accept: text/markdown to request the documented Markdown representation.',
       textContent,

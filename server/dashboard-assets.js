@@ -1,5 +1,14 @@
 /** @type {Map<string, [string, string]>} */
 export const assets = new Map([
+  ['/dashboard/docs.css', ['docs.css', 'text/css']],
+  ...['regular', 'medium', 'semibold'].map(
+    (weight) =>
+      /** @type {[string,[string,string]]} */ ([
+        `/dashboard/geist-${weight}.ttf`,
+        [`geist-${weight}.ttf`, 'font/ttf'],
+      ]),
+  ),
+  ['/dashboard/geist-license.txt', ['geist-license.txt', 'text/plain']],
   ['/', ['index.html', 'text/html']],
   ['/demo', ['index.html', 'text/html']],
   ['/demo/', ['index.html', 'text/html']],
@@ -23,6 +32,7 @@ export const assets = new Map([
   ['/dashboard', ['index.html', 'text/html']],
   ['/dashboard/', ['index.html', 'text/html']],
   ['/dashboard/callback', ['index.html', 'text/html']],
+  ['/dashboard/public-tools.js', ['public-tools.js', 'text/javascript']],
   ['/sdk/myself.mjs', ['myself-sdk.mjs', 'text/javascript']],
   ['/cli/myself.mjs', ['myself.mjs', 'text/javascript']],
   ['/cli/notices.txt', ['cli-notices.txt', 'text/plain']],

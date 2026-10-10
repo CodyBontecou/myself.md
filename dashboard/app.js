@@ -1340,7 +1340,7 @@ function Page() {
       sessionStorage.getItem('myself-migration-ticket')) ? (
     <MigrationClaim />
   ) : dataset ? (
-    <DatasetDocumentation dataset={dataset} />
+    <DatasetDocumentation key={pathname} dataset={dataset} landing={pathname === '/'} />
   ) : (
     <App />
   );

@@ -164,7 +164,7 @@ export function createApplication(
     mcp.registerTool(
       'get_public_documentation',
       {
-        description: 'Read the public developer documentation.',
+        description: 'Read the public getting-started guide and full API reference.',
         inputSchema: z.object({}).strict(),
         annotations: { readOnlyHint: true },
       },
@@ -172,7 +172,7 @@ export function createApplication(
         content: [
           {
             type: 'text',
-            text: publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? '',
+            text: `${publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/docs/reference', 'text/markdown', issuer ?? '')?.body ?? ''}`,
           },
         ],
       }),

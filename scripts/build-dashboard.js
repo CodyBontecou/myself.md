@@ -1,3 +1,4 @@
+import { publicFAQs } from '../core/public-site.js';
 import { mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +15,15 @@ await build({
   jsx: 'automatic',
   loader: { '.js': 'jsx' },
   define: { 'process.env.NODE_ENV': '"production"' },
+});
+await build({
+  entryPoints: ['dashboard/browser-tools.js'],
+  outfile: 'dashboard/dist/public-tools.js',
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'browser',
+  target: ['es2022'],
 });
 const cliBundle = await build({
   metafile: true,
@@ -75,7 +85,30 @@ const css = spawnSync(
   { stdio: 'inherit' },
 );
 if (css.status !== 0) throw new Error('Dashboard stylesheet build failed.');
-copyFileSync('dashboard/index.html', 'dashboard/dist/index.html');
+writeFileSync(
+  'dashboard/dist/index.html',
+  readFileSync('dashboard/index.html', 'utf8').replace(
+    '"__PUBLIC_FAQ_SCHEMA__"',
+    JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: publicFAQs.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
+    }),
+  ),
+);
 copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
 cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');
+
+for (const asset of [
+  'docs.css',
+  'geist-regular.ttf',
+  'geist-medium.ttf',
+  'geist-semibold.ttf',
+  'geist-license.txt',
+])
+  copyFileSync(`dashboard/${asset}`, `dashboard/dist/${asset}`);
