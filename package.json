@@ -127,6 +127,7 @@
     "updates:configure": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 update:configure",
     "update:preview": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 update --channel preview --environment preview --non-interactive",
     "build:preview": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile preview --non-interactive",
+    "verify:support-task": "node scripts/verify-support-task.js",
     "verify:support": "node scripts/verify-support.js",
     "support:setup": "node --env-file-if-exists=.env scripts/setup-support.js",
     "gripe:mac": "node --env-file-if-exists=.env.gripe-mac scripts/gripe-mac.js",
