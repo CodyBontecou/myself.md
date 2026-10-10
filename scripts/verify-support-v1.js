@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -168,14 +169,35 @@ const server = createServer(async (req, res) => {
   if (body.action === 'list')
     result = {
       conversations: [...conversations.values()].map((item) =>
-        Object.assign({}, item, { unreadCount: 0 }),
+        Object.assign({}, item, {
+          unreadCount: item.messages.filter(
+            (message) => message.author !== 'user' && message.sequence > item.readThrough,
+          ).length,
+        }),
       ),
     };
   else if (body.action === 'create') {
     const template = conversations.get('b');
     assert.ok(template);
-    result = { ...structuredClone(template), id: body.id, title: body.title };
+    result = {
+      ...structuredClone(template),
+      id: body.id,
+      title: body.title,
+      messages: [
+        {
+          id: body.id,
+          author: /** @type {const} */ ('user'),
+          sequence: 1,
+          text: body.title,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
     conversations.set(body.id, result);
+  } else if (body.action === 'readCursor') {
+    assert.ok(c);
+    c.readThrough = body.readThrough;
+    result = c;
   } else if (body.action === 'read') result = c;
   else if (body.action === 'share') {
     assert.ok(c);
@@ -231,10 +253,11 @@ try {
     'Creating from an empty inbox must omit an empty conversation ID',
   );
   await page.getByRole('button', { name: 'Back to conversations', exact: true }).waitFor();
+  await page.getByRole('log').getByText('New support regression', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
   assert.equal(await page.getByLabel('Conversation title', { exact: true }).inputValue(), '');
-  await page.getByRole('button', { name: 'New support regression · open', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Export issue · open', exact: true }).click();
+  await page.getByRole('button', { name: 'New support regression', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Export issue', exact: true }).click();
   assert.equal(uploads.length, 0);
   await page.getByRole('button', { name: 'Review requested data', exact: true }).click();
   await page
@@ -257,7 +280,7 @@ try {
   await page.getByRole('log').getByText('First support question', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Your message', { exact: true }).inputValue(), '');
   await page.getByText('Conversation details', { exact: true }).click();
-  await page.getByRole('button', { name: 'Attach recent logs', exact: true }).click();
+  await page.getByRole('button', { name: 'Attach recent logs', exact: true }).last().click();
   await page
     .getByLabel('Data preview', { exact: true })
     .waitFor()
@@ -266,23 +289,70 @@ try {
       throw error;
     });
   await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
-  await page.getByRole('button', { name: 'Usage question · open', exact: true }).click();
+  await page.getByRole('button', { name: 'Usage question', exact: true }).click();
   assert.equal(
     await page.getByLabel('Data preview', { exact: true }).count(),
     0,
     'Preview must not cross conversations',
   );
   await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
-  await page.getByRole('button', { name: 'Export issue · open', exact: true }).click();
+  await page.getByRole('button', { name: 'Export issue', exact: true }).click();
   await page.getByText('Conversation details', { exact: true }).click();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: 'Archive conversation', exact: true }).click();
-  await page.getByRole('button', { name: 'Export issue · archived', exact: true }).click();
+  await page.getByRole('button', { name: 'Export issue', exact: true }).click();
   await page.getByText('logs attachment · Removed when archived', { exact: true }).waitFor();
   assert.equal(
     await page.getByRole('log').getByText('First support question', { exact: true }).count(),
     1,
   );
+  await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
+  const unseen = conversations.get('b');
+  assert.ok(unseen);
+  unseen.messages.push({
+    id: 'unseen-reply',
+    sequence: 1,
+    author: 'pi',
+    text: 'A new Isobot reply\n\n**Bold reply** and *italic reply* with ~~removed~~ and `inline code`.\n\n[Open ticket](https://example.com/ticket)\n\n![Support screenshot](https://markdown.test/screenshot.png)\n\n- First item\n- Second item\n\n```js\nconst answer = 42;\n```\n\n<script>alert("unsafe")</script>\n\n[Unsafe link](javascript:alert(1))',
+    createdAt: new Date().toISOString(),
+  });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const unreadRow = page.getByRole('button', { name: /Usage question.*New message/ });
+  await unreadRow.waitFor();
+  const seenResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/support/v1') &&
+      response.request().postDataJSON().action === 'readCursor',
+  );
+  await page.route('https://markdown.test/screenshot.png', (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1S8AAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }),
+  );
+  await unreadRow.click();
+  await page.getByRole('log').getByText('A new Isobot reply', { exact: true }).waitFor();
+  const messages = page.getByRole('log');
+  assert.equal(await messages.locator('strong').textContent(), 'Bold reply');
+  assert.equal(await messages.locator('em').textContent(), 'italic reply');
+  assert.equal(
+    await messages.getByRole('link', { name: 'Open ticket' }).getAttribute('href'),
+    'https://example.com/ticket',
+  );
+  const screenshot = messages.getByRole('img', { name: 'Support screenshot' });
+  await screenshot.waitFor();
+  await page.waitForFunction("document.querySelector('img')?.naturalWidth === 1");
+  assert.equal(await messages.locator('li').count(), 2);
+  assert.equal(await messages.locator('pre code').textContent(), 'const answer = 42;');
+  assert.equal(await messages.locator('script').count(), 0);
+  assert.equal(await messages.getByRole('link', { name: 'Unsafe link' }).count(), 0);
+  assert.equal((await seenResponse).status(), 200);
+  assert.equal(unseen.readThrough, 1, 'Viewing the latest message acknowledges it');
+  await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
+  await page.getByRole('button', { name: 'Usage question', exact: true }).waitFor();
   console.log(
     'PASS support v1 owner proxy, real MCP validation/blocking/handoffs, local preview, edited snapshot approval, conversation isolation, composer clearing and archive presentation. No live messages or data were sent.',
   );

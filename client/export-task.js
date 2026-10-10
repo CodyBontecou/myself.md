@@ -180,6 +180,7 @@ export async function exportNow(session, profile, progress) {
     store(session.deviceId, profile.id, latest);
     await settleExport(session, historyId, true);
     finishExport(session, historyId, 'complete');
+    return { days: dates.length, failedSources };
   } catch (error) {
     if (historyId) await settleExport(session, historyId, produced).catch(() => {});
     if (historyId)

@@ -1,3 +1,4 @@
+import { useToast } from '../src/components/Toast.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
@@ -13,11 +14,11 @@ import { domains } from '../core/data.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,agentAction?:import('react').ReactNode,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
 function ProfileExportControls({
   session,
   profile,
@@ -26,8 +27,11 @@ function ProfileExportControls({
   roomy = false,
   iconOnly = false,
   agentAction,
+  leadingAction,
+  trailingAction,
 }) {
   const { colors } = useTheme();
+  const showToast = useToast();
   const running = useRef(false);
   const [bearer, setBearer] = useState('');
   const [days, setDays] = useState('7');
@@ -51,8 +55,8 @@ function ProfileExportControls({
       clearInterval(timer);
     };
   }, [session.deviceId, profile]);
-  /** @param {()=>Promise<void>} action */
-  async function run(action) {
+  /** @param {()=>Promise<void>} action @param {string} [failureToast] */
+  async function run(action, failureToast) {
     if (running.current || disabled) return;
     running.current = true;
     setBusy(true);
@@ -62,10 +66,22 @@ function ProfileExportControls({
       setMessage('');
     } catch (e) {
       setMessage(errorJSON(e));
+      if (failureToast) showToast({ message: failureToast, kind: 'error' });
     } finally {
       running.current = false;
       setBusy(false);
     }
+  }
+  function exportProfile() {
+    void run(async () => {
+      const result = await exportNow(session, profile, setMessage);
+      showToast({
+        message: result.failedSources
+          ? `${profile.name} exported with ${result.failedSources} source failures. See export details.`
+          : `${profile.name} exported successfully.`,
+        kind: result.failedSources ? 'warning' : 'success',
+      });
+    }, `Could not export ${profile.name}. See the error below.`);
   }
   useEffect(() => {
     if (!quick && !qaEnabled && profile.export.destination === 'cloud')
@@ -77,6 +93,7 @@ function ProfileExportControls({
     return (
       <View style={styles.container}>
         <View style={[styles.quickActions, iconOnly && styles.inlineActions]}>
+          {leadingAction}
           <ProfileQuickAction
             testID={`profile-export-${profile.id}`}
             label={busy ? 'Exporting…' : 'Export'}
@@ -85,9 +102,10 @@ function ProfileExportControls({
             busy={busy}
             roomy={roomy}
             iconOnly={iconOnly}
-            onPress={() => void run(() => exportNow(session, profile, setMessage))}
+            onPress={exportProfile}
           />
           {agentAction}
+          {trailingAction}
         </View>
         {message || (state.message && state.message !== 'No exports yet.') ? (
           <Copy
@@ -145,7 +163,7 @@ function ProfileExportControls({
           testID="export-now"
           title={busy ? 'Exporting…' : 'Export profile now'}
           disabled={disabled || busy}
-          onPress={() => void run(() => exportNow(session, profile, setMessage))}
+          onPress={exportProfile}
         />
         <Row
           compact
@@ -331,7 +349,7 @@ function ProfileExportControls({
 
 const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  inlineActions: { flexWrap: 'nowrap' },
+  inlineActions: { flexWrap: 'nowrap', alignItems: 'center', gap: 0 },
   container: { gap: 8 },
   input: {
     minHeight: 44,

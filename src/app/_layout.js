@@ -1,3 +1,4 @@
+import { ToastProvider } from '../components/Toast.js';
 import { SupportNotifications } from '../../client/support-notifications.js';
 import { useEffect, useSyncExternalStore } from 'react';
 import { feedbackState } from '../../client/gripe.js';
@@ -44,39 +45,41 @@ function RootStack() {
         }}
       >
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <Provider>
-          {!qaEnabled && <BillingPaywalls />}
-          {!qaEnabled && <SupportNotifications />}
-          <Stack
-            screenOptions={{
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
-              headerTitleStyle: { color: colors.text },
-              headerLargeTitleStyle: { color: colors.text },
-              headerShadowVisible: false,
-              contentStyle: { backgroundColor: colors.background },
-              headerBackButtonDisplayMode: 'minimal',
-            }}
-          >
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Protected guard={qaEnabled}>
-              <Stack.Screen name="qa" options={{ title: 'QA fixtures' }} />
-            </Stack.Protected>
-            <Stack.Protected guard={!complete}>
-              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-            </Stack.Protected>
-            <Stack.Protected guard={complete}>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
-              <Stack.Screen name="manage" options={{ headerShown: false }} />
-            </Stack.Protected>
-            <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
-            <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
-            <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
-            <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
-            <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
-          </Stack>
-        </Provider>
+        <ToastProvider>
+          <Provider>
+            {!qaEnabled && <BillingPaywalls />}
+            {!qaEnabled && <SupportNotifications />}
+            <Stack
+              screenOptions={{
+                headerStyle: { backgroundColor: colors.background },
+                headerTintColor: colors.text,
+                headerTitleStyle: { color: colors.text },
+                headerLargeTitleStyle: { color: colors.text },
+                headerShadowVisible: false,
+                contentStyle: { backgroundColor: colors.background },
+                headerBackButtonDisplayMode: 'minimal',
+              }}
+            >
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Protected guard={qaEnabled}>
+                <Stack.Screen name="qa" options={{ title: 'QA fixtures' }} />
+              </Stack.Protected>
+              <Stack.Protected guard={!complete}>
+                <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+              </Stack.Protected>
+              <Stack.Protected guard={complete}>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="data/[domain]" options={{ title: 'Data source' }} />
+                <Stack.Screen name="manage" options={{ headerShown: false }} />
+              </Stack.Protected>
+              <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
+              <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
+              <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
+              <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
+              <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
+            </Stack>
+          </Provider>
+        </ToastProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

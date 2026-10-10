@@ -50,6 +50,12 @@ const existing = JSON.parse(
 const secrets = {
   ...existing,
   IDENTITY_SECRET: existing.IDENTITY_SECRET ?? randomBytes(32).toString('hex'),
+  ...(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET
+    ? {
+        GOOGLE_AUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
+        GOOGLE_AUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+      }
+    : {}),
   GITHUB_AUTH_CLIENT_ID: process.env.GITHUB_OAUTH_CLIENT_ID,
   GITHUB_AUTH_CLIENT_SECRET: process.env.GITHUB_OAUTH_CLIENT_SECRET,
   APPLE_AUTH_CLIENT_ID: process.env.APPLE_SERVICE_ID,
@@ -71,6 +77,8 @@ const config = {
   issuer,
   secret: secrets.IDENTITY_SECRET,
   resource: 'https://myself.md/mcp',
+  googleId: secrets.GOOGLE_AUTH_CLIENT_ID,
+  googleSecret: secrets.GOOGLE_AUTH_CLIENT_SECRET,
   githubId: secrets.GITHUB_AUTH_CLIENT_ID,
   githubSecret: secrets.GITHUB_AUTH_CLIENT_SECRET,
   appleId: secrets.APPLE_AUTH_CLIENT_ID,

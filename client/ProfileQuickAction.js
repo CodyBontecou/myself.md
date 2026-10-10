@@ -27,8 +27,8 @@ export default function ProfileQuickAction({
         roomy && styles.roomy,
         {
           borderColor: colors.border,
-          backgroundColor: pressed ? colors.subtle : colors.surface,
-          opacity: disabled ? 0.45 : 1,
+          backgroundColor: iconOnly ? 'transparent' : pressed ? colors.subtle : colors.surface,
+          opacity: disabled ? 0.45 : iconOnly && pressed ? 0.5 : 1,
         },
       ]}
     >

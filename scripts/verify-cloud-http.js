@@ -210,7 +210,7 @@ try {
         assert.equal(response?.status(), 200);
         await page
           .getByRole('heading', {
-            name: path.startsWith('/privacy') ? privacyPolicy.title : 'Contact support',
+            name: path.startsWith('/privacy') ? privacyPolicy.title : 'Contact',
             exact: true,
           })
           .waitFor();

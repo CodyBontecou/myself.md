@@ -1,4 +1,6 @@
+import { HeroDataFlow } from './hero-data-flow.js';
 import { SiteHeader } from './site-header.js';
+import { DownloadBadges } from './download-badges.js';
 import { publicFAQs } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
@@ -149,9 +151,9 @@ export function DatasetDocumentation({ dataset, landing = false }) {
     <div className="mx-auto max-w-7xl px-5 sm:px-8">
       <main className="space-y-10 py-8 sm:py-12">
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
-          <div className="min-w-0 space-y-10">
+          <div className="contents">
             {landing ? (
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
                 <SiteHeader />
                 <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
                   <h1
@@ -163,9 +165,14 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                     Yours to keep.
                   </h1>
                   <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                    Save your health, screen time, and location as files you can read, back up, and
-                    take with you. Keep your history, even when you change apps.
+                    Save health, screen time, and location data from your phone and wearables as
+                    files you can read, back up, and take with you.
                   </p>
+                  <div className="lg:hidden">
+                    <HeroDataFlow />
+                    {exportPreview}
+                  </div>
+                  <DownloadBadges />
                   <Tabs.Root defaultValue="launch" className="space-y-4">
                     <Tabs.List
                       aria-label="Video tutorials"
@@ -222,7 +229,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                 </section>
               </div>
             ) : (
-              <header className="space-y-4">
+              <header className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
                 <nav className="flex gap-4 text-sm text-muted-foreground" aria-label="Site">
                   <a className="underline underline-offset-4" href="/">
                     myself.md
@@ -238,7 +245,11 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                 </p>
               </header>
             )}
-            <section id="dataset-types" className="min-w-0 space-y-5" aria-label="Dataset types">
+            <section
+              id="dataset-types"
+              className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-2"
+              aria-label="Dataset types"
+            >
               <div className="bg-background py-3">
                 <div className="relative">
                   <div
@@ -413,12 +424,13 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                 )}
               </div>
             </section>
-            <div className="lg:hidden">{exportPreview}</div>
+            {!landing && <div className="lg:hidden">{exportPreview}</div>}
           </div>
           <aside
             aria-label="Live export JSON preview"
-            className="hidden min-w-0 lg:-mt-6 lg:block lg:sticky lg:top-6"
+            className={`hidden min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:block lg:sticky lg:top-6 ${landing ? 'hero-json-column' : 'lg:-mt-6'}`}
           >
+            {landing && <HeroDataFlow />}
             {exportPreview}
           </aside>
         </div>

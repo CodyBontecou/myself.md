@@ -10,14 +10,15 @@ import { usePhoneData } from '../../client/DataPanel.js';
 import { usePhone } from '../../client/PhoneProvider.js';
 import { api } from '../../client/session.js';
 import { debugReport } from '../../client/debug-log.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme.js';
-import { Screen, Copy, Button, Row, Group } from '../components/ui.js';
+import { Screen, Copy, Button, Row, Group, Icon } from '../components/ui.js';
 
 export default function SupportScreen() {
   const { session } = usePhone();
   return (
     <>
-      <Stack.Screen options={{ title: 'Support' }} />
+      <Stack.Screen options={{ title: 'Support', headerShown: !session }} />
       {session ? (
         <SupportInbox session={session} />
       ) : (
@@ -40,9 +41,10 @@ export default function SupportScreen() {
  * @param {{session:import('../../client/session.js').Session}} props */
 function SupportInbox({ session }) {
   const { session: logSession } = usePhoneData(),
-    { colors } = useTheme(),
+    { colors, isDark } = useTheme(),
     focused = useIsFocused();
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) =>
@@ -110,7 +112,23 @@ function SupportInbox({ session }) {
         }}
         data={data}
         newId={Crypto.randomUUID}
-        colors={colors}
+        colors={{ ...colors, subtle: isDark ? colors.subtle : '#EEF1FC' }}
+        bottomInset={insets.bottom}
+        topInset={insets.top}
+        onExit={() => router.back()}
+        renderIcon={(name) => (
+          <Icon
+            name={name}
+            size={name === 'folder-outline' ? 13 : 24}
+            color={
+              name === 'arrow-up'
+                ? colors.surface
+                : name === 'folder-outline'
+                  ? colors.secondary
+                  : colors.text
+            }
+          />
+        )}
         components={{ Screen, Copy, Button, Row, Group }}
       />
     </>

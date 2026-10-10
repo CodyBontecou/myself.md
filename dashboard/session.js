@@ -100,7 +100,7 @@ async function authorizationUrl() {
   }).toString();
   return url;
 }
-/** @param {'apple'|'github'} provider */
+/** @param {'apple'|'github'|'google'} provider */
 export async function signIn(provider) {
   if (!config) throw new Error('Sign-in is not ready.');
   const query = new URLSearchParams(location.search);

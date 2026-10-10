@@ -141,6 +141,19 @@ else
   console.log(
     'GitHub pending: set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET. Existing provider unchanged.',
   );
+const googleId = process.env.GOOGLE_OAUTH_CLIENT_ID,
+  googleSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+if (googleId && googleSecret)
+  await upsert('google', 'Continue with Google', {
+    clientId: googleId,
+    clientSecret: googleSecret,
+    defaultScope: 'openid profile email',
+    guiOrder: '2',
+  });
+else
+  console.log(
+    'Google pending: set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET. Existing provider unchanged.',
+  );
 const serviceId = process.env.APPLE_SERVICE_ID,
   teamId = process.env.APPLE_TEAM_ID,
   keyId = process.env.APPLE_KEY_ID,
@@ -172,7 +185,7 @@ await Promise.all(
   providers.map(async (provider) => {
     await admin(`/identity-provider/instances/${provider.alias}`, 'PUT', {
       ...provider,
-      enabled: ['apple', 'github'].includes(provider.alias) && provider.enabled,
+      enabled: ['apple', 'github', 'google'].includes(provider.alias) && provider.enabled,
       firstBrokerLoginFlowAlias: 'social first login',
     });
   }),
@@ -203,7 +216,7 @@ await admin('', 'PUT', settings);
 Object.assign(imported, socialAuth);
 imported.identityProviders = providers.map((provider) =>
   Object.assign(provider, {
-    enabled: ['apple', 'github'].includes(provider.alias) && provider.enabled,
+    enabled: ['apple', 'github', 'google'].includes(provider.alias) && provider.enabled,
     firstBrokerLoginFlowAlias: 'social first login',
   }),
 );

@@ -103,6 +103,13 @@ export default function AccountScreen() {
             disabled={busy}
             onPress={() => void run(() => signInAccount('github'))}
           />
+          <Button
+            testID="account-continue-with-google"
+            label="Continue with Google"
+            secondary
+            disabled={busy}
+            onPress={() => void run(() => signInAccount('google'))}
+          />
         </>
       )}
       {deletionStatusUrl && (

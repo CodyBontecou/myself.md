@@ -161,6 +161,14 @@ export function AccountDeletion() {
               >
                 Continue with GitHub
               </Button>
+              <Button
+                className="w-full"
+                variant="outline"
+                disabled={!ready || busy}
+                onClick={() => void run(() => signIn('google'))}
+              >
+                Continue with Google
+              </Button>
             </>
           )}
           <a className="block text-center underline" href="/">

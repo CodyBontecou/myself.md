@@ -2,13 +2,13 @@ import { freeExports } from './billing.js';
 import { privacyPolicy } from './privacy.js';
 
 export const publicNavigation = [
+  { label: 'Home', href: '/' },
   { label: 'Docs', href: '/docs' },
   { label: 'Pricing', href: '/#pricing' },
   { label: 'FAQ', href: '/faq' },
   { label: 'About', href: '/about' },
   { label: 'Contact', href: '/contact' },
   { label: 'Privacy', href: '/privacy' },
-  { label: 'Support', href: '/support' },
 ];
 
 const home = `# myself.md — Personal data for AI agents
@@ -277,21 +277,48 @@ Blocking an agent or revoking its grant stops future reads. Copies already deliv
 
 \`get_privacy_policy\` returns the shared policy and support contacts under MCP account authentication, without a data grant. Read the [privacy policy](/privacy) before sharing sensitive records. myself.md provides data access, not medical advice.
 
-See [pricing](/pricing) and [common questions](/faq) for product details, or [contact support](/support) for help. The [source code](https://github.com/CodyBontecou/myself.md) is public.
+See [pricing](/pricing) and [common questions](/faq) for product details, or [contact us](/contact) for help. The [source code](https://github.com/CodyBontecou/myself.md) is public.
 `;
-const contact = `# Contact myself.md support
+const about = `# About myself.md
 
-For app help, pairing problems, export failures, privacy questions or account deletion questions, use the support contacts below.
+Save your health, screen time and location as files you can keep. Share the data you choose with your AI assistant.
 
-## Get in touch
+## Choose what to save
 
-[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})
+Create a profile with the data types, date range and destination you want. Save files on your phone, send them to your own HTTPS endpoint, or use the paired cloud service. Available data depends on your phone and its permissions.
 
-Email composition and issue submission are external actions you complete yourself; reading this page does not send a message or create a report.
+## Connect your assistant
 
-## Reporting a problem
+Connect to [myself.md MCP](https://myself.md/mcp), sign in, and pair your phone. Then approve the profiles and data types your assistant can read. Use it to explore your health records, screen-time patterns or recorded location points.
 
-GitHub issues may be public. Describe the platform, the action you tried, the observed result and the time of the failure. Review screenshots and diagnostic information before sending them. Read https://myself.md/privacy for storage, retention and revocation details. For account deletion use https://myself.md/delete-account and follow the authenticated confirmation flow.
+Review sharing and activity in the app or dashboard. You can stop future access at any time. Copies already sent to another service follow that service’s retention policy.
+
+Cloud exports are encrypted in storage and expire after 30 days. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) for details.
+
+## Try it out
+
+Explore the [free demo](/demo) and [supported datasets](/datasets) without an account or API key. The demo is read only and uses fictional data.
+
+The mobile apps are coming soon. You can find the source code and self-hosting instructions on [GitHub](https://github.com/CodyBontecou/myself.md).
+
+## Build with myself.md
+
+Use the [JavaScript SDK](https://www.npmjs.com/package/myself-md-sdk) to browse datasets and query approved phone data. The [CLI](https://www.npmjs.com/package/myself-md-cli) gives you the same access from your terminal.
+
+Start with [Docs](/docs) for setup and examples.
+`;
+const contact = `# Contact
+
+Need help with the app, an export or your account? Get in touch.
+
+## Email
+
+[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail})
+
+You can also email us with privacy or account deletion questions.
+
+[GitHub issues (public)](${privacyPolicy.issuesUrl})
+
 `;
 /** Public descriptions contain no account records or credentials. */
 export const publicPages = new Map([
@@ -303,9 +330,8 @@ export const publicPages = new Map([
     '/faq',
     `# Frequently asked questions\n\n${publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n')}`,
   ],
-  ['/about', `# About myself.md\n\n${home.slice(home.indexOf('\n\n') + 2)}`],
+  ['/about', about],
   ['/contact', contact],
-  ['/support', contact.replace('# Contact myself.md support', '# Contact support')],
   [
     '/privacy',
     `# ${privacyPolicy.title}\n\nUpdated ${privacyPolicy.updated}\n\n${privacyPolicy.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\n## Support\n\n[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})\n`,

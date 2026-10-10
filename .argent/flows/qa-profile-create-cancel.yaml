@@ -10,10 +10,8 @@ steps:
       idle: true
   - run: qa-reset-populated.yaml
   - await:
-      text:
-        in:
-          identifier: profile-summary
-        equals: Saved profiles, 1
+      visible:
+        identifier: profile-row-qa-profile
   - await:
       idle: true
   - tap:
@@ -70,10 +68,11 @@ steps:
       - tap:
           text: Navigate up
   - await:
-      text:
-        in:
-          identifier: profile-summary
-        equals: Saved profiles, 2
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      visible:
+        text: Profile Argent
   - await:
       idle: true
   - tap:
@@ -132,10 +131,11 @@ steps:
       - tap:
           text: Navigate up
   - await:
-      text:
-        in:
-          identifier: profile-summary
-        equals: Saved profiles, 2
+      visible:
+        identifier: profile-row-qa-profile
+  - await:
+      visible:
+        text: Profile Argent
   - await:
       idle: true
   - tap:
@@ -152,9 +152,7 @@ steps:
         identifier: profile-name-input
   - run: qa-reset-populated.yaml
   - await:
-      text:
-        in:
-          identifier: profile-summary
-        equals: Saved profiles, 1
+      visible:
+        identifier: profile-row-qa-profile
   - await:
       idle: true

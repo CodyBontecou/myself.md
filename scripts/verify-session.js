@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { canonicalServiceOrigin } from '../core/hosting.js';
 import { CloudStore } from '../server/cloud-store.js';
 import { parseProfile } from '../core/profiles.js';
@@ -16,6 +17,7 @@ class Clock extends Date {
 }
 const context = vm.createContext({
   canonicalServiceOrigin,
+  readJSONResponse,
   Headers,
   recordDebug: () => {},
   debugOperation: () => 'other',
@@ -49,7 +51,7 @@ const context = vm.createContext({
       };
     },
   },
-  fetch: async () => ({ ok: true, json: async () => ({}) }),
+  fetch: async () => Response.json({}),
 });
 vm.runInContext(
   readFileSync('client/session.js', 'utf8')
@@ -141,9 +143,9 @@ context.fetch = async (url, options) => {
   if (url.endsWith('/api/cloud/credential/renew')) {
     renewals++;
     assert.equal(JSON.parse(options.body).expiresAt, now + 30 * day);
-    return { ok: true, json: async () => ({ expiresAt: now + 30 * day }) };
+    return Response.json({ expiresAt: now + 30 * day });
   }
-  return { ok: false, status, json: async () => ({ error: detail }) };
+  return Response.json({ error: detail }, { status });
 };
 vm.runInContext(
   readFileSync('client/destinations.js', 'utf8')

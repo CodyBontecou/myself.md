@@ -60,8 +60,13 @@ const context = {
     if (url === 'https://identity.example/realm/sign-in/social') {
       const body = JSON.parse(String(options.body));
       assert.equal(body.oauth_query, pendingOAuth);
-      assert.equal(body.provider, 'github');
-      return Response.json({ url: 'https://github.com/login/oauth/authorize' });
+      assert.ok(['github', 'google'].includes(body.provider));
+      return Response.json({
+        url:
+          body.provider === 'google'
+            ? 'https://accounts.google.com/o/oauth2/v2/auth'
+            : 'https://github.com/login/oauth/authorize',
+      });
     }
     assert.equal(url, 'https://identity.example/realm/protocol/openid-connect/token');
     const body = new URLSearchParams(String(options.body));
@@ -81,11 +86,11 @@ const context = {
 assert.ok(source.outputFiles[0]);
 runInNewContext(source.outputFiles[0].text, context);
 const session =
-  /** @type {{initializeSession:()=>Promise<boolean>,signIn:(provider:'apple'|'github')=>Promise<void>,hasSession:()=>boolean}} */ (
+  /** @type {{initializeSession:()=>Promise<boolean>,signIn:(provider:'apple'|'github'|'google')=>Promise<void>,hasSession:()=>boolean}} */ (
     exports.exports
   );
 await session.initializeSession();
-/** @param {'apple'|'github'} provider */
+/** @param {'apple'|'github'|'google'} provider */
 async function verifyProvider(provider) {
   const expectedReturn = location.pathname === '/claim' ? '/claim' : '/dashboard';
   await session.signIn(provider);
@@ -101,17 +106,19 @@ async function verifyProvider(provider) {
   await assert.rejects(session.initializeSession(), /could not be verified/);
   location.pathname = '/dashboard';
 }
+await verifyProvider('google');
 await verifyProvider('apple');
 await verifyProvider('github');
 location.pathname = '/login';
 location.search = '';
 await verifyProvider('github');
 assert.equal(returnedTo, '/dashboard');
-assert.equal(exchangeCount, 3);
+assert.equal(exchangeCount, 4);
 location.pathname = '/claim';
 location.search = '';
+await verifyProvider('google');
 await verifyProvider('apple');
-assert.equal(exchangeCount, 4);
+assert.equal(exchangeCount, 6);
 location.pathname = '/login';
 pendingOAuth = new URLSearchParams({
   client_id: 'agent-fixture',
@@ -125,15 +132,17 @@ pendingOAuth = new URLSearchParams({
 location.search = `?${pendingOAuth}`;
 await session.signIn('github');
 assert.equal(destination.hostname, 'github.com');
+await session.signIn('google');
+assert.equal(destination.hostname, 'accounts.google.com');
 assert.equal(storage.has('qr-dashboard-login'), false);
-assert.equal(exchangeCount, 4);
+assert.equal(exchangeCount, 6);
 location.pathname = '/claim';
 location.search = '';
 await session.signIn('github');
 location.pathname = '/dashboard/callback';
 location.search = '?code=fixture&state=wrong';
 await assert.rejects(session.initializeSession(), /could not be verified/);
-assert.equal(exchangeCount, 4);
+assert.equal(exchangeCount, 6);
 console.log(
-  'Dashboard OAuth: Apple/GitHub redirects, PKCE exchange, callback state and single-use attempts passed.',
+  'Dashboard OAuth: Apple/GitHub/Google redirects, PKCE exchange, callback state and single-use attempts passed.',
 );

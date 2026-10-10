@@ -3,7 +3,7 @@ import { jwt } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
- * @typedef {{issuer:string,secret:string,resource:string,githubId:string,githubSecret:string,appleId:string,appleSecret:string}} IdentityConfig
+ * @typedef {{issuer:string,secret:string,resource:string,githubId:string,githubSecret:string,appleId:string,appleSecret:string,googleId?:string,googleSecret?:string}} IdentityConfig
  */
 /** @param {import('better-auth').BetterAuthOptions['database']} database @param {IdentityConfig} config @returns {import('better-auth').BetterAuthOptions} */
 export function identityOptions(database, config) {
@@ -24,6 +24,18 @@ export function identityOptions(database, config) {
       cookies: { state: { attributes: { sameSite: /** @type {const} */ ('none'), secure: true } } },
     },
     socialProviders: {
+      ...(config.googleId && config.googleSecret
+        ? {
+            google: {
+              clientId: config.googleId,
+              clientSecret: config.googleSecret,
+              redirectURI: `${config.issuer}/broker/google/endpoint`,
+              disableIdTokenSignIn: true,
+              includeGrantedScopes: false,
+              prompt: 'select_account',
+            },
+          }
+        : {}),
       github: {
         clientId: config.githubId,
         clientSecret: config.githubSecret,

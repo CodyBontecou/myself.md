@@ -124,6 +124,13 @@ export default function PairScreen() {
                 disabled={busy}
                 onPress={() => void run(() => signIn('github'))}
               />
+              <Button
+                testID="pair-continue-with-google"
+                label="Continue with Google"
+                secondary
+                disabled={busy}
+                onPress={() => void run(() => signIn('google'))}
+              />
             </>
           )}
           <Button

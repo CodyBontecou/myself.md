@@ -303,7 +303,7 @@ function usePhoneState() {
       setPairing(next);
       locked.current = true;
     },
-    /** @param {'apple'|'github'} provider */
+    /** @param {'apple'|'github'|'google'} provider */
     signInAccount: async (provider) => {
       const next = await signIn(
         process.env.EXPO_PUBLIC_ACCOUNT_SERVER ?? 'https://myself.md',
@@ -316,7 +316,7 @@ function usePhoneState() {
     syncAccount: async () => {
       if (session) await syncBilling(session);
     },
-    /** @param {'apple'|'github'} provider */
+    /** @param {'apple'|'github'|'google'} provider */
     signIn: async (provider) => setSession(await signIn(pairing?.server ?? '', provider)),
   };
 }

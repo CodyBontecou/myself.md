@@ -255,8 +255,11 @@ assert.equal(
   'Legacy data must remain stored',
 );
 // Approval changes must not reset schedules, pending exports or existing files.
+let manualContext = /** @type {{owner:string,deviceId:string}|null} */ (null);
+let manualFailures = 0;
+let manualError = false;
 const exportTask =
-  /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string}}} */ (
+  /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
       './billing.js': { reserveExport: async () => {}, settleExport: async () => {} },
       '../core/diagnostics.js': diagnostics,
@@ -264,11 +267,16 @@ const exportTask =
       'expo-task-manager': { defineTask: () => {} },
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/schedules.js': schedules,
-      './export-context.js': { loadExportContext: () => null },
+      './export-context.js': { loadExportContext: () => manualContext },
       './profiles.js': storedProfiles,
       './calendar.js': { localCalendar },
       './history.js': { beginExport: () => {}, recordArtifact: () => {}, finishExport: () => {} },
-      './profile-export.js': { exportProfileDay: async () => {} },
+      './profile-export.js': {
+        exportProfileDay: async () => {
+          if (manualError) throw new Error('Synthetic export failure');
+          return { files: ['manual.json'], failedSources: manualFailures };
+        },
+      },
     })
   );
 const schedule = exportTask.scheduleState('phone', privateProfile);
@@ -288,6 +296,28 @@ assert.deepEqual(
   exportTask.scheduleState('phone', { ...privateProfile, agentAccess: true }),
   pendingSchedule,
 );
+// Toast feedback must distinguish complete, partial and rejected exports.
+manualContext = { owner: 'alice', deviceId: 'phone' };
+const manualProfile = {
+  ...privateProfile,
+  export: { ...privateProfile.export, lookbackDays: 1, includeToday: false },
+};
+storedProfiles.saveProfiles('phone', { ...migrated, profiles: [manualProfile] });
+assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
+  days: 1,
+  failedSources: 0,
+});
+manualFailures = 2;
+assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
+  days: 1,
+  failedSources: 2,
+});
+manualError = true;
+await assert.rejects(
+  exportTask.exportNow(manualContext, manualProfile, () => {}),
+  /Synthetic export failure/,
+);
+storedProfiles.saveProfiles('phone', migrated);
 // Exercise the domain export boundary using the viewed private profile and native reader.
 const exportedFiles = new Map();
 class ShareFile {

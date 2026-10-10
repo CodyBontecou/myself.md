@@ -7,7 +7,7 @@ export const socialAuth = {
   authenticationFlows: [
     {
       alias: 'social browser',
-      description: 'Apple and GitHub sign-in only; unhinted MCP requests use GitHub.',
+      description: 'Apple, GitHub and Google sign-in only; unhinted MCP requests use GitHub.',
       providerId: 'basic-flow',
       topLevel: true,
       builtIn: false,

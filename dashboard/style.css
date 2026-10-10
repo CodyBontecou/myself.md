@@ -302,3 +302,60 @@ summary.export-json-line:focus-visible {
     transition-duration: 125ms;
   }
 }
+
+/* Source categories flow into a file; the graphic never moves readable data. */
+.hero-data-flow {
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  color: var(--foreground);
+}
+.hero-data-flow svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.hero-flow-lines {
+  stroke: var(--border);
+}
+.hero-source-tile {
+  stroke: oklch(0.92 0 0);
+  stroke-width: 1;
+}
+.hero-flow-labels {
+  fill: var(--muted-foreground);
+  font-size: 14px;
+  font-family: inherit;
+}
+.hero-flow-pulse {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 63.99rem) {
+  .hero-data-flow {
+    max-width: 22rem;
+  }
+}
+@media (min-width: 64rem) {
+  .hero-json-column {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 1.5rem);
+  }
+  .hero-json-column > .hero-data-flow {
+    flex: none;
+  }
+  .hero-json-column > section,
+  .hero-json-column > section > section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .hero-json-column .export-json-pane {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+}

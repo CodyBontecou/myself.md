@@ -102,6 +102,7 @@ writeFileSync(
 );
 copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
 cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
+cpSync('dashboard/brand-icons', 'dashboard/dist/brand-icons', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');
 
 for (const asset of [

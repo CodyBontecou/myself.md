@@ -921,7 +921,7 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
 function LoginCard({ ready }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  /** @param {'apple'|'github'} provider */
+  /** @param {'apple'|'github'|'google'} provider */
   async function login(provider) {
     setBusy(true);
     setError('');
@@ -974,6 +974,15 @@ function LoginCard({ ready }) {
           >
             <IconBrandGithub aria-hidden="true" className="size-5" />
             Continue with GitHub
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            disabled={!ready || busy}
+            onClick={() => void login('google')}
+          >
+            Continue with Google
           </Button>
           <a
             href="/"

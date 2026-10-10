@@ -167,7 +167,7 @@ function trustedUrl(value) {
   if (url.username || url.password) throw new Error('Invalid server URL.');
   return url;
 }
-/** @param {string} server @param {'apple'|'github'} provider @returns {Promise<Session>} */
+/** @param {string} server @param {'apple'|'github'|'google'} provider @returns {Promise<Session>} */
 export async function signIn(server, provider) {
   server = canonicalServiceOrigin(server);
   trustedUrl(server);
@@ -226,43 +226,66 @@ export async function api(session, path, options) {
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
   if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout)
     throw new Error('Your session expired after 30 days of inactivity. Please sign in again.');
-  if (session.expires < Date.now() + 30000) {
-    if (!session.refreshToken) throw new Error('Please sign in again.');
-    const refreshKey = `${session.issuer}|${session.resource}|${session.refreshToken}`;
-    let pending = refreshes.get(refreshKey);
-    if (!pending) {
-      pending = (async () => {
-        const discovery = await AuthSession.fetchDiscoveryAsync(session.issuer);
-        return AuthSession.refreshAsync(
-          {
-            clientId: 'qr-phone',
-            refreshToken: session.refreshToken,
-            extraParams: { resource: session.resource },
-          },
-          discovery,
-        );
-      })().finally(() => refreshes.delete(refreshKey));
-      refreshes.set(refreshKey, pending);
-    }
-    const token = await pending;
-    if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
-    session.accessToken = token.accessToken;
-    session.refreshToken = token.refreshToken ?? session.refreshToken;
-    session.expires = (token.issuedAt + (token.expiresIn ?? 300)) * 1000;
-    await saveSession(session);
-  }
-  const body = await request(
-    `${session.server}${path}`,
-    {
-      ...options,
-      headers: {
-        ...options?.headers,
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
+  if (session.expires < Date.now() + 30000) await refreshSession(session);
+  const send = () =>
+    request(
+      `${session.server}${path}`,
+      {
+        ...options,
+        headers: {
+          ...options?.headers,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
       },
-    },
-    { session, operation: debugOperation(path) },
-  );
+      { session, operation: debugOperation(path) },
+    );
+  const rejectedToken = session.accessToken;
+  let body;
+  try {
+    body = await send();
+  } catch (error) {
+    if (
+      !session.refreshToken ||
+      !error ||
+      typeof error !== 'object' ||
+      !('status' in error) ||
+      error.status !== 401
+    )
+      throw error;
+    await refreshSession(session, rejectedToken);
+    body = await send();
+  }
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
   return /** @type {T} */ (body);
+}
+
+/** Refresh a rejected token once; concurrent requests share its rotation.
+ * @param {Session} session @param {string} [rejectedToken] */
+async function refreshSession(session, rejectedToken) {
+  if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
+  if (rejectedToken !== undefined && session.accessToken !== rejectedToken) return;
+  if (!session.refreshToken) throw new Error('Please sign in again.');
+  const refreshKey = `${session.issuer}|${session.resource}|${session.refreshToken}`;
+  let pending = refreshes.get(refreshKey);
+  if (!pending) {
+    pending = (async () => {
+      const discovery = await AuthSession.fetchDiscoveryAsync(session.issuer);
+      return AuthSession.refreshAsync(
+        {
+          clientId: 'qr-phone',
+          refreshToken: session.refreshToken,
+          extraParams: { resource: session.resource },
+        },
+        discovery,
+      );
+    })().finally(() => refreshes.delete(refreshKey));
+    refreshes.set(refreshKey, pending);
+  }
+  const token = await pending;
+  if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
+  session.accessToken = token.accessToken;
+  session.refreshToken = token.refreshToken ?? session.refreshToken;
+  session.expires = (token.issuedAt + (token.expiresIn ?? 300)) * 1000;
+  await saveSession(session);
 }

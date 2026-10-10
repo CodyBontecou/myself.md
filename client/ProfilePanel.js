@@ -1,3 +1,4 @@
+import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { parseExportSettings } from '../core/export-files.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
@@ -5,6 +6,7 @@ import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRef, useState } from 'react';
 import {
   Copy,
@@ -38,6 +40,8 @@ export default function ProfilePanel({
   profileId,
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const showToast = useToast();
   const { start } = useProfileEditor();
   const actionRunning = useRef(false);
   const [deletingProfile, setDeletingProfile] = useState(
@@ -213,16 +217,18 @@ export default function ProfilePanel({
     start(p, id, p === draft ? onDismiss : undefined);
     router.push({ pathname: '/profiles/editor', params: { section, field, domain } });
   }
-  /** @param {()=>Promise<void>|void} action */
-  async function run(action) {
+  /** @param {()=>Promise<void>|void} action @param {{success:string,failure:string}} [feedback] */
+  async function run(action, feedback) {
     if (actionRunning.current) return;
     actionRunning.current = true;
     try {
       setError('');
       setWorking(true);
       await action();
+      if (feedback) showToast({ message: feedback.success, kind: 'success' });
     } catch (e) {
       setError(errorJSON(e));
+      if (feedback) showToast({ message: feedback.failure, kind: 'error' });
     } finally {
       actionRunning.current = false;
       setWorking(false);
@@ -232,13 +238,18 @@ export default function ProfilePanel({
   function changeAgentAccess(target, enabled) {
     if (disabled || actionRunning.current) return;
     const save = () =>
-      void run(() =>
-        onChange({
-          ...state,
-          profiles: state.profiles.map((p) =>
-            p.id === target.id ? { ...p, agentAccess: enabled } : p,
-          ),
-        }),
+      void run(
+        () =>
+          onChange({
+            ...state,
+            profiles: state.profiles.map((p) =>
+              p.id === target.id ? { ...p, agentAccess: enabled } : p,
+            ),
+          }),
+        {
+          success: `${target.name} ${enabled ? 'unlocked for agents' : 'locked'}.`,
+          failure: `Could not ${enabled ? 'unlock' : 'lock'} ${target.name}. See the error below.`,
+        },
       );
     if (!enabled) return save();
     Alert.alert(
@@ -501,48 +512,52 @@ export default function ProfilePanel({
         </View>
       ) : null}
       {!profileId && (
-        <>
-          <View style={styles.intro}>
-            <Copy variant="heading">Choose what goes into your exports.</Copy>
-            <Copy muted>
-              Profiles keep your data selection, destination, and schedule together.
-            </Copy>
-          </View>
-          <BridgeButton
-            testID="profile-new-profile"
-            label="New profile"
-            icon="add"
-            disabled={disabled}
-            onPress={() =>
-              edit({
-                schema: 'myself.md.profile.v1',
-                name: 'Profile',
-                export: parseExportSettings({ schema: defaultExportSchema }),
-                selection: { health: [], time: [], location: [] },
-              })
-            }
-          />
-          <View
-            accessible
-            testID="profile-summary"
-            accessibilityRole="header"
-            accessibilityLabel={`Saved profiles, ${state.profiles.length}`}
-          >
-            <SectionHeader title="Saved profiles" count={state.profiles.length} />
-          </View>
-          <ProfileFeed
-            profiles={state.profiles}
-            session={session}
-            disabled={disabled}
-            onAgentAccess={changeAgentAccess}
-          />
-        </>
+        <ProfileFeed
+          profiles={state.profiles}
+          session={session}
+          disabled={disabled}
+          onAgentAccess={changeAgentAccess}
+        />
       )}
     </View>
   );
   return (
     <View style={!profileId && styles.feed}>
-      {profileId ? content : <Screen>{content}</Screen>}
+      {profileId ? (
+        content
+      ) : (
+        <Screen>
+          <View style={styles.feedContent}>{content}</View>
+        </Screen>
+      )}
+      {!profileId && (
+        <Pressable
+          testID="profile-new-profile"
+          accessibilityRole="button"
+          accessibilityLabel="New profile"
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={() =>
+            edit({
+              schema: 'myself.md.profile.v1',
+              name: 'Profile',
+              export: parseExportSettings({ schema: defaultExportSchema }),
+              selection: { health: [], time: [], location: [] },
+            })
+          }
+          style={({ pressed }) => [
+            styles.newProfile,
+            {
+              right: insets.right + 16,
+              bottom: insets.bottom + 16,
+              backgroundColor: colors.accent,
+              opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Icon name="add" size={28} color={colors.onAccent} />
+        </Pressable>
+      )}
       {shareLink ? (
         <Text selectable style={styles.detail}>
           {shareLink}
@@ -586,7 +601,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   container: { gap: 16 },
-  intro: { gap: 8 },
+  feedContent: { paddingBottom: 80 },
+  newProfile: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.16)',
+  },
   feed: { flex: 1 },
   card: {
     gap: 8,

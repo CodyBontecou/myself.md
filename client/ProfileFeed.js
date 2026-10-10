@@ -50,6 +50,24 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
               : profile.export.destination === 'http'
                 ? 'HTTPS endpoint'
                 : 'Cloud';
+          const header = (
+            <Pressable
+              testID={`profile-row-${profile.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${profile.name}, ${access}, open profile`}
+              onPress={() =>
+                router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
+              }
+              style={({ pressed }) => [
+                styles.header,
+                pressed && { backgroundColor: colors.subtle },
+              ]}
+            >
+              <View style={styles.identity}>
+                <Copy>{profile.name}</Copy>
+              </View>
+            </Pressable>
+          );
           return (
             <View
               key={profile.id}
@@ -57,37 +75,53 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
               style={[
                 styles.card,
                 { backgroundColor: colors.surface, borderColor: colors.border },
-                compact && [styles.compactCard, { backgroundColor: colors.background }],
+                compact && [
+                  styles.compactCard,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: 'transparent',
+                    borderBottomColor: colors.border,
+                  },
+                ],
               ]}
             >
-              <Pressable
-                testID={`profile-row-${profile.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${profile.name}, ${access}, open profile`}
-                onPress={() =>
-                  router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
-                }
-                style={({ pressed }) => [
-                  styles.header,
-                  compact && styles.compactHeader,
-                  large && styles.largeHeader,
-                  pressed && { backgroundColor: colors.subtle },
-                ]}
-              >
-                <View style={styles.identity}>
-                  <Copy variant={compact ? 'body' : large ? 'title' : 'heading'}>
-                    {profile.name}
-                  </Copy>
-                  {!compact && (
-                    <Copy variant="caption" muted>
-                      {access}
-                    </Copy>
-                  )}
-                </View>
-                <Icon name="chevron-forward" size={16} color={colors.secondary} />
-              </Pressable>
+              <View style={styles.headerActions}>
+                <ProfileExports
+                  session={session}
+                  profile={profile}
+                  disabled={disabled}
+                  quick
+                  iconOnly
+                  leadingAction={header}
+                  trailingAction={
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${profile.name}`}
+                      onPress={() =>
+                        router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
+                      }
+                      style={({ pressed }) => [styles.arrow, { opacity: pressed ? 0.5 : 1 }]}
+                    >
+                      <Icon name="chevron-forward" size={16} color={colors.secondary} />
+                    </Pressable>
+                  }
+                  agentAction={
+                    <ProfileQuickAction
+                      testID={`profile-agents-${profile.id}`}
+                      label={profile.agentAccess ? 'Disable agents' : 'Enable agents'}
+                      icon={profile.agentAccess ? 'lock-open-outline' : 'lock-closed-outline'}
+                      disabled={disabled}
+                      iconOnly
+                      onPress={() => onAgentAccess(profile, !profile.agentAccess)}
+                    />
+                  }
+                />
+              </View>
               {!compact && (
                 <View style={[styles.metadata, large && styles.largeMetadata]}>
+                  <Copy variant="caption" muted>
+                    {access}
+                  </Copy>
                   {large ? (
                     <>
                       <View style={styles.sources}>
@@ -135,34 +169,6 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
                   )}
                 </View>
               )}
-              <View
-                style={[
-                  styles.footer,
-                  { borderTopColor: colors.border, backgroundColor: colors.background },
-                  large && styles.largeFooter,
-                  compact && styles.compactFooter,
-                ]}
-              >
-                <ProfileExports
-                  session={session}
-                  profile={profile}
-                  disabled={disabled}
-                  quick
-                  roomy={large}
-                  iconOnly={compact}
-                  agentAction={
-                    <ProfileQuickAction
-                      testID={`profile-agents-${profile.id}`}
-                      label={profile.agentAccess ? 'Disable agents' : 'Enable agents'}
-                      icon={profile.agentAccess ? 'lock-open-outline' : 'lock-closed-outline'}
-                      disabled={disabled}
-                      roomy={large}
-                      iconOnly={compact}
-                      onPress={() => onAgentAccess(profile, !profile.agentAccess)}
-                    />
-                  }
-                />
-              </View>
             </View>
           );
         })}
@@ -192,23 +198,23 @@ const styles = StyleSheet.create({
   compactList: { gap: 0 },
   card: { borderWidth: 1, borderRadius: 12, borderCurve: 'continuous', overflow: 'hidden' },
   compactCard: {
-    borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderRadius: 0,
+  },
+  header: {
+    paddingVertical: 8,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
-  header: { padding: 16, minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 16 },
-  compactHeader: { minHeight: 52, paddingVertical: 8, paddingHorizontal: 0, gap: 8, flex: 1 },
-  largeHeader: { padding: 20 },
   identity: { flex: 1, gap: 4 },
-  metadata: { paddingHorizontal: 16, paddingBottom: 16 },
-  largeMetadata: { paddingHorizontal: 20, paddingBottom: 20, gap: 20 },
+  metadata: { paddingHorizontal: 16, paddingBottom: 16, gap: 4 },
+  largeMetadata: { paddingBottom: 20, gap: 20 },
   sources: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   source: { flex: 1, flexBasis: 80, gap: 4 },
   details: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   field: { flexGrow: 1, flexBasis: '44%', gap: 4 },
-  footer: { padding: 12, borderTopWidth: StyleSheet.hairlineWidth },
-  largeFooter: { padding: 16 },
-  compactFooter: { padding: 0, borderTopWidth: 0, width: 96 },
+  headerActions: { paddingHorizontal: 16 },
+  arrow: { width: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
 });

@@ -24,6 +24,8 @@ async function identity(env) {
     issuer: env.OAUTH_ISSUER,
     secret: env.IDENTITY_SECRET,
     resource: `${env.PUBLIC_URL}/mcp`,
+    googleId: env.GOOGLE_AUTH_CLIENT_ID,
+    googleSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
     githubId: env.GITHUB_AUTH_CLIENT_ID,
     githubSecret: env.GITHUB_AUTH_CLIENT_SECRET,
     appleId: env.APPLE_AUTH_CLIENT_ID,
@@ -69,8 +71,8 @@ export async function identityRequest(request, env) {
       if (path === '/login')
         return page(
           'Sign in to myself.md',
-          `<p>Use your existing Apple or GitHub account to keep your exports and purchases.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><button name="provider" value="apple">Continue with Apple</button><button name="provider" value="github">Continue with GitHub</button></form>`,
-          ['https://appleid.apple.com', 'https://github.com'],
+          `<p>Use your existing Apple, GitHub or Google account to keep your exports and purchases.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><button name="provider" value="apple">Continue with Apple</button><button name="provider" value="github">Continue with GitHub</button><button name="provider" value="google">Continue with Google</button></form>`,
+          ['https://appleid.apple.com', 'https://github.com', 'https://accounts.google.com'],
         );
       const client = await env.IDENTITY.prepare(
         'SELECT name, redirectUris FROM oauthClient WHERE clientId=?',
@@ -97,7 +99,7 @@ export async function identityRequest(request, env) {
     }
     const form = new URLSearchParams(new TextDecoder().decode(await readBytes(request, 16384)));
     const provider = form.get('provider');
-    if (path === '/login' && provider !== 'apple' && provider !== 'github')
+    if (path === '/login' && !['apple', 'github', 'google'].includes(provider ?? ''))
       return Response.json({ error: 'Unsupported provider.' }, { status: 400 });
     const target = new URL(
       env.OAUTH_ISSUER + (path === '/login' ? '/sign-in/social' : '/oauth2/consent'),
@@ -134,6 +136,7 @@ export async function identityRequest(request, env) {
     ['/clients-registrations/openid-connect', '/oauth2/register'],
     ['/broker/github/endpoint', '/callback/github'],
     ['/broker/apple/endpoint', '/callback/apple'],
+    ['/broker/google/endpoint', '/callback/google'],
   ]);
   const targetPath = aliases.get(path) ?? path;
   if (
@@ -144,6 +147,7 @@ export async function identityRequest(request, env) {
       '/sign-in/social',
       '/callback/github',
       '/callback/apple',
+      '/callback/google',
       '/get-session',
       '/sign-out',
       '/oauth2/authorize',

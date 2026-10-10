@@ -43,6 +43,8 @@ const auth = createIdentity(db, {
   issuer,
   secret,
   resource: `${origin}/mcp`,
+  googleId: 'fixture-google',
+  googleSecret: 'fixture',
   githubId: 'fixture-github',
   githubSecret: 'fixture',
   appleId: 'fixture.apple',
@@ -157,6 +159,8 @@ writeFileSync(
     CLOUD_ENCRYPTION_KEY: 'a'.repeat(64),
     IMPORT_SECRET: secret,
     IDENTITY_SECRET: secret,
+    GOOGLE_AUTH_CLIENT_ID: 'fixture-google',
+    GOOGLE_AUTH_CLIENT_SECRET: 'fixture',
     GITHUB_AUTH_CLIENT_ID: 'fixture-github',
     GITHUB_AUTH_CLIENT_SECRET: 'fixture',
     APPLE_AUTH_CLIENT_ID: 'fixture.apple',
@@ -192,14 +196,15 @@ async function ready(attempts) {
   await new Promise((done) => setTimeout(done, 100));
   return ready(attempts - 1);
 }
-/** @param {string} path @param {Record<string,string>} body @param {string} [sessionCookie] */
-function post(path, body, sessionCookie = '') {
+/** @param {string} path @param {Record<string,string>} body @param {string} [sessionCookie] @param {string} [sourceIP] */
+function post(path, body, sessionCookie = '', sourceIP = '') {
   return fetch(issuer + path, {
     method: 'POST',
     redirect: 'manual',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Origin: origin,
+      ...(sourceIP ? { 'cf-connecting-ip': sourceIP } : {}),
       ...(sessionCookie ? { Cookie: sessionCookie } : {}),
     },
     body: new URLSearchParams(body),
@@ -322,6 +327,39 @@ try {
   assert.equal(appleURL.hostname, 'appleid.apple.com');
   assert.equal(appleURL.searchParams.get('redirect_uri'), `${issuer}/broker/apple/endpoint`);
   assert.match(apple.headers.get('set-cookie') ?? '', /SameSite=None/i);
+  // Isolate Google's redirect assertion from the earlier provider rate-limit bucket.
+  const google = await post(
+    '/login',
+    {
+      provider: 'google',
+      oauth_query: loginURL.search.slice(1),
+    },
+    '',
+    '192.0.2.3',
+  );
+  assert.equal(google.status, 302, await google.clone().text());
+  const googleURL = new URL(google.headers.get('location') ?? '');
+  assert.equal(googleURL.hostname, 'accounts.google.com');
+  assert.equal(googleURL.searchParams.get('client_id'), 'fixture-google');
+  assert.equal(googleURL.searchParams.get('redirect_uri'), `${issuer}/broker/google/endpoint`);
+  assert.deepEqual(
+    new Set(googleURL.searchParams.get('scope')?.split(' ')),
+    new Set(['openid', 'profile', 'email']),
+  );
+  assert.equal(googleURL.searchParams.get('include_granted_scopes'), null);
+  assert.equal(googleURL.searchParams.get('prompt'), 'select_account');
+  assert.ok(googleURL.searchParams.get('state'));
+  const unsupportedProvider = await post('/login', {
+    provider: 'unknown',
+    oauth_query: loginURL.search.slice(1),
+  });
+  assert.equal(unsupportedProvider.status, 400);
+  const googleCallback = await fetch(
+    `${issuer}/broker/google/endpoint?code=fixture&state=invalid`,
+    { redirect: 'manual' },
+  );
+  assert.notEqual(googleCallback.status, 404);
+  assert.equal((await auth.$context).options.account?.accountLinking?.enabled, false);
   const phone = await authorize('qr-phone', true);
   const code = new URL(phone.response.headers.get('location') ?? '').searchParams.get('code');
   assert.ok(code);
@@ -722,7 +760,7 @@ try {
     'PASS account deletion: owner confirmation, agent handoff, R2 cleanup, stale-token denial, credential revocation, receipt isolation, identity/session/refresh removal and safe retries.',
   );
   console.log(
-    'PASS Cloudflare identity: Apple/GitHub callback URLs, signed login state, preserved subjects, native PKCE, code replay denial, refresh isolation, consent, MCP and first-party authorization.',
+    'PASS Cloudflare identity: Apple/GitHub/Google callback URLs, signed login state, preserved subjects, native PKCE, code replay denial, refresh isolation, consent, MCP and first-party authorization.',
   );
   passed = true;
 } finally {

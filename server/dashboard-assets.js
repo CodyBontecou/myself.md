@@ -24,8 +24,6 @@ export const assets = new Map([
   ['/delete-account', ['index.html', 'text/html']],
   ['/privacy', ['index.html', 'text/html']],
   ['/privacy/', ['index.html', 'text/html']],
-  ['/support', ['index.html', 'text/html']],
-  ['/support/', ['index.html', 'text/html']],
   ['/claim', ['index.html', 'text/html']],
   ['/login', ['index.html', 'text/html']],
   ['/login/', ['index.html', 'text/html']],
@@ -38,6 +36,13 @@ export const assets = new Map([
   ['/cli/notices.txt', ['cli-notices.txt', 'text/plain']],
   ['/dashboard/app.js', ['app.js', 'text/javascript']],
   ['/dashboard/style.css', ['style.css', 'text/css']],
+  ...['apple-health', 'google-maps', 'google-chrome'].map(
+    (name) =>
+      /** @type {[string, [string, string]]} */ ([
+        `/dashboard/brand-icons/${name}.png`,
+        [`brand-icons/${name}.png`, 'image/png'],
+      ]),
+  ),
   ['/dashboard/favicon.svg', ['favicon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/apple-icon.svg', ['store-badges/apple-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/github-icon.svg', ['store-badges/github-icon.svg', 'image/svg+xml']],

@@ -65,12 +65,12 @@ export function docsHTML(markdown, path) {
   const icons = `<div class="site-icons" aria-label="Get myself.md"><span tabindex="0" title="Coming soon" aria-label="App Store — coming soon"><img class="site-mono-icon" src="/dashboard/store-badges/apple-icon.svg" alt="" width="28" height="28"></span><span tabindex="0" title="Coming soon" aria-label="Google Play — coming soon"><svg viewBox="0 0 24 24" aria-hidden="true" width="28" height="28"><path fill="#4285F4" d="M3 2v20l10-10Z"/><path fill="#34A853" d="m3 2 12 7-5 3Z"/><path fill="#EA4335" d="m3 22 12-7-5-3Z"/><path fill="#FBBC04" d="m15 9 6 3-6 3-5-3Z"/></svg></span><a href="https://github.com/CodyBontecou/agent-bridge" target="_blank" rel="noopener noreferrer" aria-label="View myself.md on GitHub" title="View source on GitHub"><img class="site-mono-icon" src="/dashboard/store-badges/github-icon.svg" alt="" width="28" height="28"></a></div>`;
   const startLinks = documentation
     ? `<p>Start here</p><a href="/docs" ${reference ? '' : 'aria-current="page"'}>Getting started</a><a href="/docs/reference" ${reference ? 'aria-current="page"' : ''}>API reference</a>`
-    : `<p>myself.md</p><a href="/">Home</a>${links}`;
+    : `<p>myself.md</p>${links}`;
   const contents = headings.length
     ? `<p>On this page</p>${headings.map((heading) => `<a href="#${anchor(heading)}">${escape(heading)}</a>`).join('')}`
     : '';
   const footer = documentation
     ? `<a href="${reference ? '/docs' : '/docs/reference'}">${reference ? '← Getting started' : 'Continue to API reference →'}</a><a href="/contact">Need a hand?</a>`
     : '<a href="/">← Home</a><a href="/delete-account">Delete account</a>';
-  return `<div class="docs-page"><a class="docs-skip" href="#docs-content">Skip to content</a><header class="docs-header">${icons}<nav aria-label="Site">${links}</nav></header><div class="docs-layout"><aside class="docs-sidebar"><nav aria-label="${documentation ? 'Documentation' : 'Page navigation'}">${startLinks}${contents}${documentation ? '<p>Resources</p><a href="/datasets">Datasets</a><a href="/#pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/contact">Get help</a>' : ''}</nav></aside><main id="docs-content" class="docs-content">${content}<footer class="docs-footer">${footer}</footer></main></div></div>`;
+  return `<div class="docs-page"><a class="docs-skip" href="#docs-content">Skip to content</a><header class="docs-header"><div class="docs-header-inner"><nav aria-label="Site">${links}</nav>${icons}</div></header><div class="docs-layout"><aside class="docs-sidebar"><nav aria-label="${documentation ? 'Documentation' : 'Page navigation'}">${startLinks}${contents}${documentation ? '<p>Resources</p><a href="/datasets">Datasets</a><a href="/#pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/contact">Get help</a>' : ''}</nav></aside><main id="docs-content" class="docs-content">${content}<footer class="docs-footer">${footer}</footer></main></div></div>`;
 }

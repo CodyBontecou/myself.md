@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { errorJSON, readJSONResponse } from '../packages/support-chat/errors.js';
 import { createPairingUrl, createPairingDeepLink, parsePairingQr } from '../core/index.js';
 // Exercise the actual UI handler with native/network boundaries replaced.
 const app = readFileSync('client/PhoneProvider.js', 'utf8');
@@ -17,6 +18,8 @@ assert.ok(receive);
 let incomingPairing;
 let linkError = '';
 const linkContext = vm.createContext({
+  errorJSON,
+  readJSONResponse,
   parsePairingQr,
   router: { push: () => {} },
   profileFromLink: () => {},
@@ -47,6 +50,8 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
   let revocations = 0;
   let screen = 'connected';
   const context = vm.createContext({
+    errorJSON,
+    readJSONResponse,
     session: { deviceId: failure === 'account' ? '' : 'old-phone' },
     clearAccountAllowance: () => {
       allowanceCleared = true;
@@ -84,6 +89,8 @@ let storage = 'old-session';
 /** @type {((value:unknown)=>void)|undefined} */
 let refresh;
 const context = vm.createContext({
+  errorJSON,
+  readJSONResponse,
   URL,
   Headers,
   recordDebug: () => {},
@@ -109,7 +116,7 @@ const context = vm.createContext({
         refresh = resolve;
       }),
   },
-  fetch: async () => ({ ok: true, json: async () => ({}) }),
+  fetch: async () => Response.json({}),
 });
 vm.runInContext(source, context);
 const session = {
