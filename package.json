@@ -128,6 +128,8 @@
     "update:preview": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 update --channel preview --environment preview --non-interactive",
     "build:preview": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile preview --non-interactive",
     "verify:support": "node scripts/verify-support.js",
+    "verify:support-task": "node scripts/verify-support-task.js",
+    "verify:support-guest": "node scripts/verify-support-guest.js",
     "support:setup": "node --env-file-if-exists=.env scripts/setup-support.js",
     "gripe:mac": "node --env-file-if-exists=.env.gripe-mac scripts/gripe-mac.js",
     "verify:gripe-mac": "node scripts/verify-gripe-mac.js",
@@ -137,7 +139,10 @@
     "myself": "node scripts/myself.js",
     "identity:protocol": "node scripts/migrate-protocol.js",
     "verify:protocol": "node --experimental-vm-modules scripts/verify-protocol-migration.js",
-    "verify:embedded-debug": "node scripts/verify-embedded-debug.js"
+    "verify:embedded-debug": "node scripts/verify-embedded-debug.js",
+    "gripe:release": "node --env-file-if-exists=.env.gripe-mac scripts/gripe-release.js",
+    "verify:feedback-updates": "node --experimental-vm-modules scripts/verify-feedback-updates.js",
+    "build:debug": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile debug --non-interactive"
   },
   "private": true,
   "type": "module",

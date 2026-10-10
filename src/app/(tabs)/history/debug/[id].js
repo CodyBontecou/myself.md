@@ -1,4 +1,5 @@
-import { errorJSON } from '../../../../../packages/support-chat/errors.js';
+import { ErrorToast } from '../../../../components/Toast.js';
+import { errorMessage } from '../../../../../packages/support-chat/errors.js';
 import { useCallback, useState } from 'react';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { usePhoneData } from '../../../../../client/DataPanel.js';
@@ -20,7 +21,7 @@ export default function AppLogDetail() {
         setEntry(log && 'entry' in log ? log.entry : null);
         setError('');
       } catch (failure) {
-        setError(errorJSON(failure));
+        setError(errorMessage(failure));
       }
     }, [session, id]),
   );
@@ -28,7 +29,7 @@ export default function AppLogDetail() {
     <Screen testID="app-log-detail">
       <Stack.Screen options={{ title: 'App event' }} />
       {error ? (
-        <Notice title="Log unavailable" body={errorJSON(error)} />
+        <ErrorToast error={error} />
       ) : entry ? (
         <>
           <Copy variant="heading">
@@ -48,7 +49,7 @@ export default function AppLogDetail() {
             />
           </Group>
           {entry.error !== undefined ? (
-            <Notice title="Raw error message" body={errorJSON(entry.error)} />
+            <Notice title="Raw error message" body={errorMessage(entry.error)} />
           ) : null}
           <Copy selectable variant="caption">
             {JSON.stringify(entry, null, 2)}

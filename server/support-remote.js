@@ -3,8 +3,14 @@ import { z } from 'zod';
 /** The host authenticates owners; the bridge credential never reaches the app.
  * @param {Record<string,string|undefined>} config
  * @param {(subject:string,agent:string)=>void} authorize
- * @param {typeof fetch} [transport] */
-export function createRemoteSupport(config, authorize, transport = fetch) {
+ * @param {typeof fetch} [transport]
+ * @param {(subject:string)=>Promise<'owner'|'lifetime'|'guest'>} [resolveRole] */
+export function createRemoteSupport(
+  config,
+  authorize,
+  transport = fetch,
+  resolveRole = async () => 'guest',
+) {
   const origin = config.SUPPORT_ISOBOT_ORIGIN;
   const token = config.SUPPORT_ISOBOT_TOKEN;
   if (origin) {
@@ -17,6 +23,7 @@ export function createRemoteSupport(config, authorize, transport = fetch) {
   async function supportV1Api(subject, method, query, body, agent = null) {
     if (!origin || !token) throw new PairingError(503, 'Isobot support is not configured yet.');
     if (!['GET', 'POST'].includes(method)) throw new PairingError(405, 'Use GET or POST.');
+    const role = subject.startsWith('support-guest:') ? 'guest' : await resolveRole(subject);
     const response = await transport(
       `${origin}/api/support/v1${method === 'GET' ? `?${query}` : ''}`,
       {
@@ -24,6 +31,7 @@ export function createRemoteSupport(config, authorize, transport = fetch) {
         headers: {
           Authorization: `Bearer ${token}`,
           'X-Support-Owner': subject,
+          'X-Support-Role': role,
           'Content-Type': 'application/json',
           ...(agent ? { 'X-Support-Agent': agent } : {}),
         },

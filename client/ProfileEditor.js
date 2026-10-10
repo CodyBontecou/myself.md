@@ -1,4 +1,4 @@
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { ErrorToast, showToast } from '../src/components/Toast.js';
 import { useEffect, useState } from 'react';
 import { useProfileEditor } from './ProfileEditorState.js';
 import { router, Stack, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -73,16 +73,7 @@ export default function ProfileEditor({ data = false }) {
         <Stack.Screen
           options={{ title, ...(section ? { headerRight: renderSaveProfileButton } : {}) }}
         />
-        {error ? (
-          <Copy
-            testID="profile-editor-error"
-            accessibilityRole="alert"
-            style={styles.error}
-            selectable
-          >
-            {errorJSON(error)}
-          </Copy>
-        ) : null}
+        <ErrorToast error={error} />
         <ProfileDataEditor
           {...(domain ? { domain } : {})}
           types={phone.types}
@@ -100,11 +91,7 @@ export default function ProfileEditor({ data = false }) {
       <Stack.Screen
         options={{ title, ...(section ? { headerRight: renderSaveProfileButton } : {}) }}
       />
-      {error ? (
-        <View testID="profile-editor-error" accessibilityRole="alert">
-          <Copy selectable>{errorJSON(error)}</Copy>
-        </View>
-      ) : null}
+      <ErrorToast error={error} />
       {!section && !session.id && !session.onSaved && (
         <>
           <SectionHeader compact title="Import profile" />
@@ -231,6 +218,7 @@ function useSaveProfile() {
     });
     session.onSaved?.();
     setSaved({ id, location });
+    showToast({ message: `${savedProfile.name} saved.`, kind: 'success' });
   }
   return save;
 }
@@ -264,7 +252,6 @@ const styles = StyleSheet.create({
   saveLabel: { fontWeight: '600' },
   disabled: { opacity: 0.45 },
   saveAction: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
-  error: { padding: 16 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,

@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { errorJSON, readJSONResponse } from '../packages/support-chat/errors.js';
+import { errorJSON, errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 
 const cause = Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' });
 const failure = Object.assign(new Error('Upload failed', { cause }), { status: 503 });
@@ -13,6 +13,20 @@ assert.equal(parsed.error.message, 'Upload failed');
 assert.equal(parsed.error.status, 503);
 assert.equal(parsed.error.cause.code, 'ECONNRESET');
 assert.equal(errorJSON(errorJSON(failure)), errorJSON(failure));
+assert.equal(errorMessage(failure), 'Upload failed');
+assert.equal(errorMessage(errorJSON(failure)), 'Upload failed');
+assert.equal(errorMessage('Validation failed'), 'Validation failed');
+assert.equal(errorMessage(''), '');
+assert.equal(errorMessage('{"error":"Server unavailable"}'), 'Server unavailable');
+assert.ok(!errorMessage(new Error('Bearer fixture-secret')).includes('fixture-secret'));
+assert.equal(
+  errorMessage({
+    get message() {
+      throw new Error('Broken getter');
+    },
+  }),
+  'Something went wrong. Please try again.',
+);
 const cyclic = new Error('Circular cause');
 Object.assign(cyclic, { cause: cyclic });
 assert.equal(JSON.parse(errorJSON(cyclic)).error.cause.truncated, true);

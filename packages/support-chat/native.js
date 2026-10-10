@@ -1,4 +1,4 @@
-import { errorJSON } from './errors.js';
+import { ErrorToast } from '../../src/components/Toast.js';
 import { useRef } from 'react';
 import { Switch, TextInput, View, StyleSheet } from 'react-native';
 import { useSupport } from './useSupport.js';
@@ -25,11 +25,7 @@ export function NativeChat({
     <Screen testID="support-screen">
       <Copy muted>{supportNotice}</Copy>
       {!chat.state && !chat.error && <Copy muted>Loading conversation…</Copy>}
-      {chat.error && (
-        <Copy accessibilityRole="alert" style={{ color: colors.danger }} selectable>
-          {errorJSON(chat.error)}
-        </Copy>
-      )}
+      <ErrorToast error={chat.error} />
       {chat.error && <Button secondary label="Retry" onPress={() => void chat.refresh()} />}
       {chat.state?.warning && (
         <Copy accessibilityRole="alert" muted>

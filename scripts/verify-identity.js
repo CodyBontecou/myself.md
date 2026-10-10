@@ -209,8 +209,8 @@ function post(path, body, sessionCookie = '', sourceIP = '') {
     body: new URLSearchParams(body),
   });
 }
-/** @param {string} path @param {string} sessionCookie @param {string} [body] @returns {Promise<{status:number|undefined,headers:import('node:http').IncomingHttpHeaders,text:string}>} */
-function browserRequest(path, sessionCookie, body) {
+/** @param {string} path @param {string} sessionCookie @param {string} [body] @param {string} [requestOrigin] @returns {Promise<{status:number|undefined,headers:import('node:http').IncomingHttpHeaders,text:string}>} */
+function browserRequest(path, sessionCookie, body, requestOrigin = origin) {
   return new Promise((resolveRequest, reject) => {
     const request = requestHTTP(
       issuer + path,
@@ -218,7 +218,7 @@ function browserRequest(path, sessionCookie, body) {
         method: body === undefined ? 'GET' : 'POST',
         headers: {
           Cookie: sessionCookie,
-          Origin: origin,
+          Origin: requestOrigin,
           Accept: 'text/html',
           'Sec-Fetch-Mode': 'navigate',
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -326,6 +326,13 @@ try {
   const confirmationCookie = (logoutPage.headers['set-cookie'] ?? [])
     .map((value) => value.split(';')[0])
     .join('; ');
+  const foreignLogout = await browserRequest(
+    '/oauth2/end-session/confirm',
+    `${logoutCookie}; ${confirmationCookie}`,
+    'action=confirm',
+    'https://other.example.test',
+  );
+  assert.equal(foreignLogout.status, 403, foreignLogout.text);
   const logoutResult = await browserRequest(
     '/oauth2/end-session/confirm',
     `${logoutCookie}; ${confirmationCookie}`,

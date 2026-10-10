@@ -9,9 +9,8 @@ enum CaptureFlow {
             return
         }
 
-        TriggerToast.show()
-
         let snapshot = renderSnapshot(of: window)
+        TriggerToast.show()
 
         var pendingSuccess: SuccessPayload?
         let observer = NotificationCenter.default.addObserver(
@@ -69,7 +68,7 @@ enum CaptureFlow {
     private static func renderSnapshot(of window: UIWindow) -> UIImage {
         let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
         return renderer.image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
     }
 

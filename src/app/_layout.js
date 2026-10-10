@@ -76,6 +76,7 @@ function RootStack() {
               <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
               <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
               <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
+              <Stack.Screen name="feedback" options={{ title: 'Bug report updates' }} />
               <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
             </Stack>
           </Provider>

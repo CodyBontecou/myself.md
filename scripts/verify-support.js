@@ -177,6 +177,11 @@ server.on(
       ...cloudService,
       ...dashboard,
       ...support,
+      supportV1Api: async (subject, _method, _query, input) => {
+        const body = /** @type {{action:string}} */ (input);
+        assert.ok(subject.startsWith('support-guest:'));
+        return { owner: subject, action: body.action };
+      },
       billing,
       cloud,
       history,
@@ -258,6 +263,28 @@ async function tool(name, args = {}) {
   };
 }
 try {
+  const guestToken = randomBytes(32).toString('hex');
+  const guestResponse = await fetch(`${origin}/api/support/guest`, {
+    method: 'POST',
+    headers: { Authorization: `Guest ${guestToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'list' }),
+  });
+  assert.equal(guestResponse.status, 200);
+  const guestState = z
+    .object({ owner: z.string(), action: z.string() })
+    .parse(await guestResponse.json());
+  assert.ok(guestState.owner.startsWith('support-guest:'));
+  assert.ok(!guestState.owner.includes(guestToken));
+  assert.equal(
+    (
+      await fetch(`${origin}/api/support/guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list' }),
+      })
+    ).status,
+    401,
+  );
   assert.equal((await request(null)).status, 401);
   assert.equal((await request(agent)).status, 403);
   assert.equal((await request(phone)).body.available, true);

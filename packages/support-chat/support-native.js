@@ -1,5 +1,5 @@
+import { ErrorToast } from '../../src/components/Toast.js';
 import { NativeMarkdown } from './markdown-native.js';
-import { errorJSON } from './errors.js';
 import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,11 +17,14 @@ import {
 } from 'react-native';
 import { useSupportInbox } from './support-client.js';
 import { useSupportData } from './support-data.js';
-/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,initialConversationId?:string,onEnableNotifications?:()=>void,data?:import('./support-client.js').SupportDataAdapter,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline'|'notifications-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
+/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,startInConversation?:boolean,allowAgentAccess?:boolean,supportOptions?:import('react').ReactNode,initialConversationId?:string,onEnableNotifications?:(()=>void)|undefined,data?:import('./support-client.js').SupportDataAdapter|undefined,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline'|'notifications-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
 export function NativeSupport({
   request,
   active = true,
   initialConversationId = '',
+  startInConversation = false,
+  allowAgentAccess = true,
+  supportOptions,
   onEnableNotifications,
   data,
   newId,
@@ -37,6 +40,7 @@ export function NativeSupport({
   const { Copy, Button, Row, Group } = components;
   const chat = useSupportInbox(request, active, initialConversationId),
     c = chat.conversation;
+  const [composing, setComposing] = useState(startInConversation);
   const [title, setTitle] = useState(''),
     [draft, setDraft] = useState(''),
     [detailsFor, setDetailsFor] = useState(/** @type {string|null} */ (null));
@@ -124,6 +128,7 @@ export function NativeSupport({
     logs.cancel();
     setDraft('');
     setDetailsFor(null);
+    setComposing(false);
     void chat.open('');
   };
   const visible = chat.conversations.filter((item) =>
@@ -207,6 +212,7 @@ export function NativeSupport({
               accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
               onPress={() => {
                 Keyboard.dismiss();
+                setComposing(false);
                 setSearching(!searching);
                 setQuery('');
               }}
@@ -259,19 +265,11 @@ export function NativeSupport({
           if (c && atBottom.current) scroll.current?.scrollToEnd({ animated: false });
         }}
       >
-        {chat.error && (
-          <Copy accessibilityRole="alert" selectable>
-            {errorJSON(chat.error)}
-          </Copy>
-        )}
-        {logs.error && (
-          <Copy accessibilityRole="alert" selectable>
-            {errorJSON(logs.error)}
-          </Copy>
-        )}
+        <ErrorToast error={chat.error} />
+        <ErrorToast error={logs.error} />
         {!c ? (
           <>
-            {!chat.loaded && !chat.error && (
+            {!composing && !chat.loaded && !chat.error && (
               <View accessibilityLabel="Loading conversations" style={styles.feed}>
                 {[0, 1, 2].map((key) => (
                   <View key={key} style={styles.skeletonRow}>
@@ -291,10 +289,11 @@ export function NativeSupport({
                 ))}
               </View>
             )}
-            {chat.loaded && !chat.conversations.length && (
+            {(composing || (chat.loaded && !chat.conversations.length)) && (
               <View style={styles.welcome}>
                 <Copy style={styles.heading}>How can we help?</Copy>
                 <Copy muted>Ask Isobot a question or report a problem.</Copy>
+                {supportOptions}
               </View>
             )}
             {query && (
@@ -302,50 +301,51 @@ export function NativeSupport({
             )}
             <View style={styles.feed}>
               {query && !visible.length && <Copy muted>No conversations found.</Copy>}
-              {visible.map((item, index) => (
-                <View key={item.id}>
-                  {!query &&
-                    (index === 0 ||
-                      section(item.updatedAt, today) !==
-                        section(visible[index - 1]?.updatedAt ?? '', today)) && (
-                      <Text style={[styles.feedHeading, { color: colors.text }]}>
-                        {section(item.updatedAt, today)}
-                      </Text>
-                    )}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.title}${item.unreadCount ? ', New message' : ''}`}
-                    disabled={disabled}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setDraft('');
-                      setDetailsFor(null);
-                      atBottom.current = true;
-                      setNearBottom(true);
-                      void chat.open(item.id);
-                    }}
-                    style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}
-                  >
-                    <View style={styles.feedTitle}>
-                      <Text numberOfLines={1} style={[styles.feedText, { color: colors.text }]}>
-                        {item.title}
-                      </Text>
-                      <View style={styles.feedMeta}>
-                        {renderIcon && renderIcon('folder-outline')}
-                        <Text style={[styles.feedSubtitle, { color: colors.secondary }]}>
-                          {projectLabel}
+              {!composing &&
+                visible.map((item, index) => (
+                  <View key={item.id}>
+                    {!query &&
+                      (index === 0 ||
+                        section(item.updatedAt, today) !==
+                          section(visible[index - 1]?.updatedAt ?? '', today)) && (
+                        <Text style={[styles.feedHeading, { color: colors.text }]}>
+                          {section(item.updatedAt, today)}
                         </Text>
+                      )}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.title}${item.unreadCount ? ', New message' : ''}`}
+                      disabled={disabled}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setDraft('');
+                        setDetailsFor(null);
+                        atBottom.current = true;
+                        setNearBottom(true);
+                        void chat.open(item.id);
+                      }}
+                      style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}
+                    >
+                      <View style={styles.feedTitle}>
+                        <Text numberOfLines={1} style={[styles.feedText, { color: colors.text }]}>
+                          {item.title}
+                        </Text>
+                        <View style={styles.feedMeta}>
+                          {renderIcon && renderIcon('folder-outline')}
+                          <Text style={[styles.feedSubtitle, { color: colors.secondary }]}>
+                            {projectLabel}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    {!!item.unreadCount && (
-                      <View
-                        accessibilityLabel="New message"
-                        style={[styles.dot, { backgroundColor: colors.text }]}
-                      />
-                    )}
-                  </Pressable>
-                </View>
-              ))}
+                      {!!item.unreadCount && (
+                        <View
+                          accessibilityLabel="New message"
+                          style={[styles.dot, { backgroundColor: colors.text }]}
+                        />
+                      )}
+                    </Pressable>
+                  </View>
+                ))}
             </View>
           </>
         ) : (
@@ -554,6 +554,7 @@ export function NativeSupport({
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.sheetContent}>
+              {supportOptions}
               {details && (
                 <Group compact>
                   <Row
@@ -603,20 +604,22 @@ export function NativeSupport({
                               }}
                             />
                           )}
-                          <Row
-                            compact
-                            title="Connected agent access"
-                            subtitle="Allow your connected agents to read and send messages here"
-                            trailing={
-                              <Switch
-                                value={c.agentAccess}
-                                disabled={disabled}
-                                onValueChange={(value) =>
-                                  void chat.mutate('update', { agentAccess: value })
-                                }
-                              />
-                            }
-                          />
+                          {allowAgentAccess && (
+                            <Row
+                              compact
+                              title="Connected agent access"
+                              subtitle="Allow your connected agents to read and send messages here"
+                              trailing={
+                                <Switch
+                                  value={c.agentAccess}
+                                  disabled={disabled}
+                                  onValueChange={(value) =>
+                                    void chat.mutate('update', { agentAccess: value })
+                                  }
+                                />
+                              }
+                            />
+                          )}
                           <Row
                             compact
                             title="Isobot replies"

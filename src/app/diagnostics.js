@@ -1,3 +1,4 @@
+import { ErrorToast } from '../components/Toast.js';
 import { errorJSON } from '../../packages/support-chat/errors.js';
 import { useCallback, useState } from 'react';
 import { Alert, Share } from 'react-native';
@@ -168,7 +169,7 @@ export default function DiagnosticsScreen() {
         <Row title="Platform" value={report.platform} />
         <Row title="Report updated" subtitle={new Date(report.generatedAt).toLocaleString()} />
       </Group>
-      {error ? <Notice title="Diagnostics sync" body={errorJSON(error)} /> : null}
+      <ErrorToast error={error} />
       <Button
         testID="diagnostics-share"
         label="Share debug report"

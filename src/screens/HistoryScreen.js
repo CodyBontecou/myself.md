@@ -1,4 +1,5 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
+import { ErrorToast, showToast } from '../components/Toast.js';
+import { errorMessage } from '../../packages/support-chat/errors.js';
 import { useMemo, useState } from 'react';
 import { Stack, router, useLocalSearchParams, usePathname } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -23,7 +24,6 @@ export default function HistoryScreen() {
   const [raw, setRaw] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(/** @type {string[]} */ ([]));
-  const [copyStatus, setCopyStatus] = useState('');
   const [copying, setCopying] = useState(false);
   const {
     events,
@@ -70,7 +70,6 @@ export default function HistoryScreen() {
   const selection = selectLogs(visibleLogs, selected);
   /** @param {string} id */
   function toggleSelected(id) {
-    setCopyStatus('');
     setSelected((previous) =>
       previous.includes(id)
         ? previous.filter((value) => value !== id)
@@ -85,11 +84,12 @@ export default function HistoryScreen() {
     try {
       const copied = await Clipboard.setStringAsync(logsJson(selection.logs));
       if (!copied) throw new Error('Clipboard unavailable');
-      setCopyStatus(
-        `Copied ${selection.logs.length} ${selection.logs.length === 1 ? 'log' : 'logs'} as JSON lines.`,
-      );
+      showToast({
+        message: `Copied ${selection.logs.length} ${selection.logs.length === 1 ? 'log' : 'logs'} as JSON lines.`,
+        kind: 'success',
+      });
     } catch (failure) {
-      setCopyStatus(errorJSON(failure));
+      showToast({ message: errorMessage(failure), kind: 'error' });
     } finally {
       setCopying(false);
     }
@@ -138,14 +138,8 @@ export default function HistoryScreen() {
                   'This profile'}
               </Copy>
             ) : null}
-            {diagnosticsError && !profileScoped ? (
-              <Copy accessibilityRole="alert">{diagnosticsError}</Copy>
-            ) : null}
-            {error ? (
-              <View testID="history-error" accessibilityRole="alert">
-                <Copy selectable>{errorJSON(error)}</Copy>
-              </View>
-            ) : null}
+            <ErrorToast error={!profileScoped ? diagnosticsError : null} />
+            <ErrorToast error={error} />
             <SegmentedControl
               testID="logs-format"
               accessibilityLabel="Log display"
@@ -166,7 +160,6 @@ export default function HistoryScreen() {
                 accessibilityState={{ selected: issues }}
                 onPress={() => {
                   setIssues(!issues);
-                  setCopyStatus('');
                 }}
                 style={[
                   styles.issueFilter,
@@ -197,7 +190,6 @@ export default function HistoryScreen() {
               selectedIndex={filter}
               onChange={(event) => {
                 setFilter(event.nativeEvent.selectedSegmentIndex);
-                setCopyStatus('');
               }}
               appearance={isDark ? 'dark' : 'light'}
               testID="history-filter"
@@ -210,7 +202,6 @@ export default function HistoryScreen() {
                 onPress={() => {
                   setSelecting(!selecting);
                   setSelected([]);
-                  setCopyStatus('');
                 }}
                 style={styles.toolbarAction}
               >
@@ -223,7 +214,6 @@ export default function HistoryScreen() {
                   accessibilityRole="button"
                   onPress={() => {
                     setSelected(visibleLogs.slice(0, 350).map((log) => log.id));
-                    setCopyStatus('');
                   }}
                   style={styles.toolbarAction}
                 >
@@ -349,11 +339,6 @@ export default function HistoryScreen() {
               ? ` · ${selection.unavailableIds.length} hidden or expired`
               : ''}
           </Copy>
-          {copyStatus ? (
-            <Copy testID="logs-copy-status" accessibilityRole="alert" variant="caption">
-              {copyStatus}
-            </Copy>
-          ) : null}
           <Button
             testID="logs-copy"
             label={
@@ -403,7 +388,7 @@ function EventRow({ item, profileScoped, selecting, selected, onSelect }) {
   const title = event ? historyTitle(event) : (entry?.operation ?? '');
   const message =
     entry?.error || event?.error
-      ? errorJSON(entry?.error ?? event?.error)
+      ? errorMessage(entry?.error ?? event?.error)
       : event
         ? historyRoute(event)
         : (entry?.url ?? 'Internal app event');

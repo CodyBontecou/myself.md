@@ -20,6 +20,7 @@ import { createPairingUrl, createPairingDeepLink } from '../core/index.js';
 import { pairingPage } from './pairing-page.js';
 import { proxyWorker } from './worker-proxy.js';
 import { PairingError } from './errors.js';
+import { createGuestSupport } from './support-guest.js';
 /** @param {import('node:http').ServerResponse} res @param {number} code @param {unknown} data */
 function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -109,6 +110,7 @@ export function createApplication(
     new URL(`${issuer}/protocol/openid-connect/certs`),
     options.jwksFetch ? { [customFetch]: options.jwksFetch } : {},
   );
+  const guestSupport = supportV1Api ? createGuestSupport(supportV1Api) : null;
   const limitPublicRead = createPublicReadLimiter();
   const limitAgentRest = createPublicReadLimiter();
   const metadata = {
@@ -400,6 +402,21 @@ export function createApplication(
         const ticket = await createMigrationClaim(verified);
         res.setHeader('Cache-Control', 'no-store');
         json(res, 200, { claimUrl: `${requestOrigin}/claim#${ticket}` });
+        return;
+      }
+      if (url.pathname === '/api/support/guest') {
+        if (req.method !== 'POST') throw new PairingError(405, 'Use POST.');
+        if (!guestSupport) throw new PairingError(503, 'Isobot support is not configured.');
+        const input = JSON.parse((await bodyBytes(req, 12000)).toString());
+        json(
+          res,
+          200,
+          await guestSupport(
+            req.headers.authorization,
+            input,
+            req.socket.remoteAddress ?? 'unknown',
+          ),
+        );
         return;
       }
       if (url.pathname === '/health') {

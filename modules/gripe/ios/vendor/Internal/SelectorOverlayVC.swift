@@ -1,7 +1,9 @@
 #if DEBUG && canImport(UIKit)
 import UIKit
 
-final class SelectorOverlayVC: UIViewController {
+final class SelectorOverlayVC: UIViewController, UIAdaptivePresentationControllerDelegate {
+    private let options = GripePreferences.values
+    private var autoStarted = false
     private let snapshot: UIImage
     private let onClose: () -> Void
 
@@ -83,6 +85,14 @@ final class SelectorOverlayVC: UIViewController {
         updateNextButtonVisibility()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !autoStarted && options["cropEnabled"] != true {
+            autoStarted = true
+            beginReport(image: snapshot)
+        }
+    }
+
     private func configureTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
         topBar.backgroundColor = .clear
@@ -128,8 +138,9 @@ final class SelectorOverlayVC: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(titleLabel)
 
-        infoButton.setImage(UIImage(systemName: "info.circle")?
+        infoButton.setImage(UIImage(systemName: "gearshape")?
             .withConfiguration(UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)), for: .normal)
+        infoButton.accessibilityLabel = "Gripe settings"
         infoButton.tintColor = GripeColor.textSecondary
         infoButton.addTarget(self, action: #selector(infoTapped), for: .touchUpInside)
         infoButton.translatesAutoresizingMaskIntoConstraints = false
@@ -240,26 +251,20 @@ final class SelectorOverlayVC: UIViewController {
     }
 
     @objc private func infoTapped() {
-        let docs = DocsSheetVC()
-        if #available(iOS 15.0, *) {
-            docs.modalPresentationStyle = .pageSheet
-            if let sheet = docs.sheetPresentationController {
-                if #available(iOS 16.0, *) {
-                    sheet.detents = [.medium(), .large()]
-                } else {
-                    sheet.detents = [.medium(), .large()]
-                }
-                sheet.prefersGrabberVisible = true
-            }
-        } else {
-            docs.modalPresentationStyle = .formSheet
-        }
-        present(docs, animated: true)
+        GripePreferences.present(from: self)
     }
 
     @objc private func nextTapped() {
         guard let rect = cropView.cropRectInView, rect.width > 4, rect.height > 4 else { return }
         let cropped = crop(image: snapshot, rectInView: rect) ?? snapshot
+        beginReport(image: cropped)
+    }
+
+    private func beginReport(image cropped: UIImage) {
+        if options["drawingEnabled"] != true {
+            presentComposer(baseImage: cropped, annotated: cropped, document: AnnotationDocument())
+            return
+        }
         let annotation = AnnotationVC(
             image: cropped,
             onCancel: {},
@@ -278,6 +283,7 @@ final class SelectorOverlayVC: UIViewController {
             baseImage: baseImage,
             annotatedImage: annotated,
             document: document,
+            options: options,
             onFinished: { [weak self] in
                 self?.finish(animated: false)
             }
@@ -289,7 +295,7 @@ final class SelectorOverlayVC: UIViewController {
         if #available(iOS 15.0, *) {
             composer.modalPresentationStyle = .pageSheet
             if let sheet = composer.sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
+                sheet.detents = [.large()]
                 sheet.prefersGrabberVisible = true
                 sheet.largestUndimmedDetentIdentifier = .medium
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = false
@@ -297,8 +303,11 @@ final class SelectorOverlayVC: UIViewController {
         } else {
             composer.modalPresentationStyle = .formSheet
         }
+        composer.presentationController?.delegate = self
         present(composer, animated: true)
     }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { finish(animated: false) }
 
     private func enterPreviewMode(annotated: UIImage) {
         imageView.image = annotated

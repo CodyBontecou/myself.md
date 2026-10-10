@@ -15,9 +15,18 @@ createServer(
   createApplication(process.env, {
     supportApi,
     registerSupportTools,
-    ...createRemoteSupport(process.env, (subject, agent) => {
-      cloud.observeAgent(subject, agent);
-    }),
+    ...createRemoteSupport(
+      process.env,
+      (subject, agent) => {
+        cloud.observeAgent(subject, agent);
+      },
+      fetch,
+      async (subject) => {
+        if (process.env.SUPPORT_OWNER_SUBJECT && subject === process.env.SUPPORT_OWNER_SUBJECT)
+          return 'owner';
+        return 'guest';
+      },
+    ),
     qrPng: (value, options) => QRCode.toBuffer(value, options),
     billing,
     billingApi,

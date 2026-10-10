@@ -124,6 +124,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
     setBusy(true);
     setError('');
     const version = epoch.current;
+    let completed = false;
     try {
       const next = await request(action, {
         ...(selected.current ? { conversationId: selected.current } : {}),
@@ -138,6 +139,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
         setConversation(null);
         retry.current = null;
       }
+      completed = true;
       return true;
     } catch (reason) {
       if (alive.current && version === epoch.current)
@@ -149,7 +151,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       working.current = false;
       if (alive.current) {
         setBusy(false);
-        void refresh();
+        if (completed) void refresh();
       }
     }
   }

@@ -1,5 +1,6 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
-import { Alert, Linking } from 'react-native';
+import { showToast } from './Toast.js';
+import { errorMessage } from '../../packages/support-chat/errors.js';
+import { Linking } from 'react-native';
 import { router } from 'expo-router';
 import { privacyPolicy } from '../../core/privacy.js';
 import { Row } from './ui';
@@ -10,7 +11,7 @@ export async function openPrivacyLink(url) {
   try {
     await Linking.openURL(url);
   } catch (error) {
-    Alert.alert('Unable to open link', errorJSON(error));
+    showToast({ message: errorMessage(error), kind: 'error' });
   }
 }
 

@@ -1,5 +1,5 @@
 import { useToast } from '../src/components/Toast.js';
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { errorMessage } from '../packages/support-chat/errors.js';
 import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
@@ -55,6 +55,10 @@ function ProfileExportControls({
       clearInterval(timer);
     };
   }, [session.deviceId, profile]);
+  useEffect(() => {
+    if (state.retryAt && state.message)
+      showToast({ message: errorMessage(state.message), kind: 'error' });
+  }, [state.retryAt, state.message, showToast]);
   /** @param {()=>Promise<void>} action @param {string} [failureToast] */
   async function run(action, failureToast) {
     if (running.current || disabled) return;
@@ -65,8 +69,11 @@ function ProfileExportControls({
       setState(scheduleState(session.deviceId, profile));
       setMessage('');
     } catch (e) {
-      setMessage(errorJSON(e));
-      if (failureToast) showToast({ message: failureToast, kind: 'error' });
+      setMessage('');
+      showToast({
+        message: errorMessage(e) || failureToast || 'Could not complete this request.',
+        kind: 'error',
+      });
     } finally {
       running.current = false;
       setBusy(false);
@@ -119,7 +126,7 @@ function ProfileExportControls({
           {agentAction}
           {trailingAction}
         </View>
-        {message || (state.message && state.message !== 'No exports yet.') ? (
+        {message || (!state.retryAt && state.message && state.message !== 'No exports yet.') ? (
           <Copy
             testID={`profile-export-status-${profile.id}`}
             accessibilityRole="alert"
@@ -235,7 +242,7 @@ function ProfileExportControls({
           />
         ))}
       </Group>
-      {message || state.message ? (
+      {message || (!state.retryAt && state.message) ? (
         <Copy testID="export-status" accessibilityRole="alert" variant="caption" selectable>
           {message || state.message}
         </Copy>

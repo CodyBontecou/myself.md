@@ -117,6 +117,25 @@ export function errorJSON(value) {
     2,
   );
 }
+/** Readable, credential-redacted feedback, including retained JSON error envelopes.
+ * @param {unknown} value @returns {string} */
+export function errorMessage(value) {
+  if (value === '') return '';
+  try {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed?.error !== undefined) value = parsed.error;
+      } catch {
+        /* Ordinary validation messages are already readable. */
+      }
+    }
+    return describe(value, new Set(), 0).message;
+  } catch {
+    return 'Something went wrong. Please try again.';
+  }
+}
+
 /** Preserve HTTP status and the actual error payload at the transport boundary.
  * @param {number} status @param {unknown} response */
 function responseError(status, response) {

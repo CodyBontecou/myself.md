@@ -10,7 +10,7 @@ const React = loadDependency('react');
 // Render the actual host route with different account and data partitions.
 // Native/OS boundaries are replaced; the route and transport adapter remain real.
 const output = await build({
-  entryPoints: ['src/app/support.js'],
+  entryPoints: ['src/screens/SupportScreen.js'],
   bundle: true,
   write: false,
   format: 'cjs',
@@ -28,10 +28,16 @@ const output = await build({
     },
   ],
 });
-/** @typedef {{owner:string,deviceId:string,server:string,accessToken:string,expires:number}} FixtureSession */
+/** @typedef {{owner:string,deviceId:string,server:string,accessToken:string,expires:number,requiresSignIn?:boolean}} FixtureSession */
 /** @type {FixtureSession|null} */
 let account = null;
-/** @type {{captured:{request:import('../packages/support-chat/support-client.js').SupportClient}|null,used:FixtureSession|null}} */
+/** @type {{chat?:string,conversationId?:string}} */
+let routeParams = {};
+/** @type {Map<string,()=>void>} */
+const actions = new Map();
+let openedLink = '';
+
+/** @type {{captured:{request:import('../packages/support-chat/support-client.js').SupportClient,allowAgentAccess:boolean,data?:unknown,onEnableNotifications?:unknown}|null,used:FixtureSession|null}} */
 const observed = { captured: null, used: null };
 const local = {
   owner: 'local-device',
@@ -53,18 +59,27 @@ const boundaries = {
   'expo-router': {
     Stack: { Screen: () => null },
     useIsFocused: () => true,
-    useLocalSearchParams: () => ({}),
-    router: { push() {}, back() {} },
+    useLocalSearchParams: () => routeParams,
+    router: {
+      push() {},
+      replace() {},
+      /** @param {{chat?:string,conversationId?:string}} params */
+      setParams(params) {
+        routeParams = params;
+      },
+    },
   },
   'expo-router/react-navigation': { useHeaderHeight: () => 0 },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0, top: 0 }) },
   'expo-crypto': { randomUUID: () => 'fixture' },
   '../../client/PhoneProvider.js': { usePhone: () => ({ session: account }) },
   '../../client/DataPanel.js': { usePhoneData: () => ({ session: local }) },
+  '../../client/support-guest.js': { guestSupportApi: async () => ({ conversations: [] }) },
   '../../client/session.js': {
     /** @param {FixtureSession} session */
     api: async (session) => {
       observed.used = session;
+      if (session.requiresSignIn) throw new Error('Sign in again to finish the myself.md upgrade.');
       if (!session?.accessToken) throw new Error('Please sign in again.');
       return { conversations: [] };
     },
@@ -74,10 +89,17 @@ const boundaries = {
   '../../packages/support-chat/errors.js': { errorJSON: () => '' },
   '../../packages/support-chat/index.js': { createSupportClient },
   '../../packages/support-chat/native.js': {
-    /** @param {{request:import('../packages/support-chat/support-client.js').SupportClient}} props */
+    /** @param {{request:import('../packages/support-chat/support-client.js').SupportClient,supportOptions:import('react').ReactNode,allowAgentAccess:boolean,data?:unknown,onEnableNotifications?:unknown}} props */
     NativeSupport: (props) => {
       observed.captured = props;
-      return React.createElement('div', null, 'Support inbox');
+      return React.createElement('div', null, 'Support inbox', props.supportOptions);
+    },
+  },
+  '../../core/privacy.js': { privacyPolicy: (await import('../core/privacy.js')).privacyPolicy },
+  '../components/PrivacyLinks.js': {
+    /** @param {string} url */
+    openPrivacyLink: async (url) => {
+      openedLink = url;
     },
   },
   '../lib/theme.js': { useTheme: () => ({ colors: {} }) },
@@ -86,11 +108,18 @@ const boundaries = {
     Copy: Primitive,
     /** @param {{label:string}} props */
     Button: ({ label }) => React.createElement('button', null, label),
-    Row: Primitive,
+    Group: Primitive,
+    Icon: () => null,
+    /** @param {{title:string,testID:string,onPress:()=>void}} props */
+    Row: ({ title, testID, onPress }) => {
+      actions.set(testID, onPress);
+      return React.createElement('button', null, title);
+    },
   },
 };
 const context = vm.createContext({
   module: { exports: {} },
+  process: { env: {} },
   /** @param {string} path */
   require: (path) => {
     assert.ok(path in boundaries, `Unexpected boundary: ${path}`);
@@ -101,8 +130,25 @@ assert.ok(output.outputFiles[0]);
 vm.runInContext(output.outputFiles[0].text, context);
 const SupportScreen = context.module.exports.default;
 const signedOut = renderToStaticMarkup(React.createElement(SupportScreen));
-assert.equal(observed.captured, null, 'Signed-out support must not mount the authenticated inbox');
-assert.match(signedOut, /Sign in/);
+assert.ok(observed.captured, 'Guest support must open immediately');
+assert.match(signedOut, /Support inbox/);
+await observed.captured.request('list');
+assert.equal(observed.used, null, 'Guest requests must not use account credentials');
+assert.match(signedOut, /Submit a GitHub issue/);
+assert.match(signedOut, /Join the Discord/);
+assert.match(signedOut, /Send an email/);
+/** @type {[string,string][]} */
+const channels = [
+  ['support-github', 'https://github.com/CodyBontecou/myself.md/issues/new/choose'],
+  ['support-discord', 'https://discord.gg/RaQYS4t6gn'],
+  ['support-email', 'mailto:cody@isolated.tech'],
+];
+for (const [id, url] of channels) {
+  const action = actions.get(id);
+  assert.ok(action);
+  action();
+  assert.equal(openedLink, url);
+}
 /** Read after React rendered the child. */
 function capturedInbox() {
   return observed.captured;
@@ -129,10 +175,32 @@ async function verifyAccount(deviceId) {
   );
 }
 await verifyAccount('');
+routeParams = { conversationId: 'fixture-conversation' };
 await verifyAccount('paired-phone');
+account = {
+  owner: 'alice',
+  deviceId: 'paired-phone',
+  server: 'https://fixture.test',
+  accessToken: '',
+  expires: 0,
+  requiresSignIn: true,
+};
+observed.used = null;
+renderToStaticMarkup(React.createElement(SupportScreen));
+const migrated = capturedInbox();
+assert.ok(migrated);
+await migrated.request('list');
+assert.equal(observed.used, null, 'Upgrade sessions must use guest support');
+assert.equal(migrated.allowAgentAccess, false);
+assert.equal(migrated.data, undefined, 'Guest support must not expose account diagnostics');
+assert.equal(migrated.onEnableNotifications, undefined);
+await verifyAccount('paired-phone');
+const restored = capturedInbox();
+assert.ok(restored);
+assert.equal(restored.allowAgentAccess, true, 'Signing in restores account support');
 
 console.log(
-  'PASS actual support route: signed-out handoff, account-only and paired authentication.',
+  'PASS actual support route: immediate guest chat, upgrade-session fallback, sign-in recovery, external channel targets, account-only and paired authentication.',
 );
 
 // Permission approval must register account-only phones, independently of agent pairing.
@@ -174,6 +242,11 @@ const pushBoundaries = {
   'expo-router': { router: {} },
   './PhoneProvider.js': { usePhone() {} },
   './qa-runtime.js': { qaEnabled: false },
+  './feedback-updates.js': {
+    getReportUpdate: async () => null,
+    refreshReportRegistration: async () => false,
+    refreshReportUpdates: async () => null,
+  },
   'expo-crypto': { randomUUID: () => 'fixture-notification-install' },
   'expo-secure-store': {
     /** @param {string} key */ getItemAsync: async (key) => savedPushIds.get(key) ?? null,

@@ -4,6 +4,7 @@ import UIKit
 final class CommentComposerVC: UIViewController {
     static let issueSubmittedNotification = Notification.Name("GripeIssueSubmitted")
 
+    private let options: [String: Bool]
     private let baseImage: UIImage
     private var croppedImage: UIImage
     private var annotationDocument: AnnotationDocument
@@ -14,6 +15,7 @@ final class CommentComposerVC: UIViewController {
     private let contentStack = UIStackView()
 
     private let titleLabel = UILabel()
+    private let screenshotPreview = UIImageView()
 
     private let commentArea = GripeTextArea(placeholder: "Describe what you're seeing\u{2026}", maxCount: 1000)
     private let titleField = GripeTextField(placeholder: "Short summary", maxCount: 100)
@@ -23,15 +25,17 @@ final class CommentComposerVC: UIViewController {
     private let ideaChip = GripeChip(title: "Idea", systemImage: "lightbulb")
     private let polishChip = GripeChip(title: "Polish", systemImage: "sparkles")
 
-    private let submitButton = GripePrimaryButton(title: "Send to GitHub", systemImage: "paperplane.fill")
+    private let submitButton = GripePrimaryButton(title: "Send report", systemImage: "paperplane.fill")
     private let activity = UIActivityIndicatorView(style: .medium)
 
     init(
         baseImage: UIImage,
         annotatedImage: UIImage,
         document: AnnotationDocument,
+        options: [String: Bool] = GripePreferences.values,
         onFinished: @escaping () -> Void
     ) {
+        self.options = options
         self.baseImage = baseImage
         self.croppedImage = annotatedImage
         self.annotationDocument = document
@@ -52,7 +56,8 @@ final class CommentComposerVC: UIViewController {
         setupActions()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.commentArea.textView.becomeFirstResponder()
+            if self?.options["descriptionEnabled"] == true { self?.commentArea.textView.becomeFirstResponder() }
+            else if self?.options["titleEnabled"] == true { self?.titleField.textField.becomeFirstResponder() }
         }
     }
 
@@ -83,17 +88,48 @@ final class CommentComposerVC: UIViewController {
     }
 
     private func setupHeader() {
-        titleLabel.text = "New GitHub Issue"
+        titleLabel.text = "New Gripe report"
         titleLabel.font = GripeFont.headline()
         titleLabel.textColor = GripeColor.textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.addArrangedSubview(titleLabel)
+        let actions = UIStackView()
+        actions.axis = .horizontal
+        actions.alignment = .center
+        actions.spacing = 8
+        actions.addArrangedSubview(titleLabel)
+        let settings = UIButton(type: .system)
+        settings.setImage(UIImage(systemName: "gearshape"), for: .normal)
+        settings.accessibilityLabel = "Gripe settings"
+        settings.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        actions.addArrangedSubview(settings)
+        let close = UIButton(type: .system)
+        close.setTitle("Close", for: .normal)
+        close.addTarget(self, action: #selector(closeReport), for: .touchUpInside)
+        actions.addArrangedSubview(close)
+        settings.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        settings.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        close.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        close.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        contentStack.addArrangedSubview(actions)
     }
 
+    @objc private func openSettings() { view.endEditing(true); GripePreferences.present(from: self) }
+    @objc private func closeReport() { dismiss(animated: true) { self.onFinished() } }
+
     private func setupContent() {
-        contentStack.addArrangedSubview(makeSection(label: "Title", control: titleField))
-        contentStack.addArrangedSubview(makeSection(label: "Description", control: commentArea))
-        contentStack.addArrangedSubview(makeSection(label: "Tags", control: makeTagsBlock()))
+        let preview = screenshotPreview
+        preview.image = croppedImage
+        preview.contentMode = .scaleAspectFit
+        preview.backgroundColor = .secondarySystemBackground
+        preview.layer.cornerRadius = 12
+        preview.clipsToBounds = true
+        preview.isAccessibilityElement = true
+        preview.accessibilityLabel = "Captured screenshot"
+        preview.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        contentStack.addArrangedSubview(preview)
+        if options["titleEnabled"] == true { contentStack.addArrangedSubview(makeSection(label: "Title", control: titleField)) }
+        if options["descriptionEnabled"] == true { contentStack.addArrangedSubview(makeSection(label: options["titleEnabled"] == true ? "Description" : "Prompt", control: commentArea)) }
+        if options["tagsEnabled"] == true { contentStack.addArrangedSubview(makeSection(label: "Tags", control: makeTagsBlock())) }
 
         commentArea.heightAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
 
@@ -170,6 +206,7 @@ final class CommentComposerVC: UIViewController {
     }
 
     func reopenAnnotation() {
+        guard options["drawingEnabled"] == true else { return }
         view.endEditing(true)
         let annotation = AnnotationVC(
             image: baseImage,
@@ -178,6 +215,7 @@ final class CommentComposerVC: UIViewController {
             onDone: { [weak self] annotated, document in
                 guard let self else { return }
                 self.croppedImage = annotated
+                self.screenshotPreview.image = annotated
                 self.annotationDocument = document
                 self.onAnnotationUpdated?(annotated)
             }
@@ -216,8 +254,8 @@ final class CommentComposerVC: UIViewController {
 
         let titleText = titleField.textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let commentBody = commentArea.textView.text ?? ""
-        let tags = selectedTags
-        let combinedComment = "\(titleText)\n\nTags: \(tags.joined(separator: ", "))\n\n\(commentBody)"
+        let tags = options["tagsEnabled"] == true ? selectedTags : []
+        let combinedComment = [titleText, tags.isEmpty ? "" : "Tags: \(tags.joined(separator: ", "))", commentBody].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let metadata = MetadataCollector.collect()
         let image = croppedImage
 

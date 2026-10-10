@@ -1,4 +1,4 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
+import { ErrorToast } from './Toast.js';
 import { Stack } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,14 +76,7 @@ export default function OnboardingFrame({ title, body, children, footer, testID 
       </ScrollView>
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.actions}>
-          {error ? (
-            <View testID="onboarding-error" accessibilityRole="alert" style={styles.error}>
-              <Copy style={styles.errorTitle}>Setup could not be saved</Copy>
-              <Copy muted style={styles.body} selectable>
-                {errorJSON(error)}
-              </Copy>
-            </View>
-          ) : null}
+          <ErrorToast error={error} />
           {footer}
         </View>
       </View>
@@ -116,6 +109,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonLabel: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
-  error: { gap: 4 },
-  errorTitle: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
 });

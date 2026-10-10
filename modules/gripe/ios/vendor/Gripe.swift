@@ -66,12 +66,14 @@ public final class Gripe {
         shared.installer.install { [weak shared = shared] in
             shared?.handleTrigger()
         }
+        GripeCompanion.shared.install()
         RetryQueue.shared.flushInBackground()
     }
 
     public static func stop() {
         shared.installer.uninstall()
         shared.configuration = nil
+        GripeCompanion.shared.refresh()
     }
 
     public static func trigger(operationId: String? = nil) {
@@ -81,9 +83,11 @@ public final class Gripe {
     private func handleTrigger(operationId: String? = nil) {
         guard !inFlight else { return }
         inFlight = true
+        GripeCompanion.shared.suspended = true
         NotificationCenter.default.post(name: Notification.Name("GripeCaptureStarted"), object: nil, userInfo: ["operationId": operationId ?? "gesture-\(UUID().uuidString)"])
         CaptureFlow.start { [weak self] in
             self?.inFlight = false
+            GripeCompanion.shared.suspended = false
             NotificationCenter.default.post(name: Notification.Name("GripeCaptureClosed"), object: nil)
         }
     }

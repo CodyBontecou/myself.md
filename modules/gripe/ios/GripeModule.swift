@@ -11,11 +11,19 @@ public final class GripeModule: Module {
 
     public func definition() -> ModuleDefinition {
         Name("MyselfGripe")
-        AsyncFunction("status") { () -> [String: String] in
+        AsyncFunction("setReporter") { (key: String) in
+            guard key.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
+                throw NSError(domain: "MyselfGripe", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid reporter key."])
+            }
+            #if DEBUG
+            GripeAPIClient.shared.reporterKey = key
+            #endif
+        }.runOnQueue(.main)
+        AsyncFunction("status") { () -> [String: Any] in
             self.initialize()
             return self.snapshot()
         }.runOnQueue(.main)
-        AsyncFunction("open") { (id: String) -> [String: String] in
+        AsyncFunction("open") { (id: String) -> [String: Any] in
             self.initialize()
             guard self.available() else { return self.snapshot() }
             guard UIApplication.shared.applicationState == .active else {
@@ -46,6 +54,27 @@ public final class GripeModule: Module {
             #endif
             return self.snapshot()
         }.runOnQueue(.main)
+        AsyncFunction("configure") { (changes: [String: Bool]) -> [String: Any] in
+            self.initialize()
+            guard self.available(), UIApplication.shared.applicationState == .active else {
+                throw NSError(domain: "MyselfGripe", code: 4, userInfo: [NSLocalizedDescriptionKey: "Open a configured Debug app first."])
+            }
+            #if DEBUG
+            try GripePreferences.update(changes)
+            #endif
+            return self.snapshot()
+        }.runOnQueue(.main)
+        AsyncFunction("settings") { () in
+            self.initialize()
+            guard self.available(), UIApplication.shared.applicationState == .active else { return }
+            #if DEBUG
+            guard !Gripe.shared.inFlight else { return }
+            let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+            var presenter = scene?.keyWindow?.rootViewController
+            while let next = presenter?.presentedViewController { presenter = next }
+            if let presenter { GripePreferences.present(from: presenter) }
+            #endif
+        }.runOnQueue(.main)
         OnDestroy {
             for observer in self.observers { NotificationCenter.default.removeObserver(observer) }
         }
@@ -59,13 +88,17 @@ public final class GripeModule: Module {
         #endif
     }
 
-    private func snapshot() -> [String: String] {
+    private func snapshot() -> [String: Any] {
         #if DEBUG
         let status = available() ? "ready" : "missing_key"
         #else
         let status = "release_disabled"
         #endif
-        return ["status": status, "operationId": operationId, "outcome": outcome, "issueUrl": issueURL]
+        var result: [String: Any] = ["status": status, "operationId": operationId, "outcome": outcome, "issueUrl": issueURL]
+        #if DEBUG
+        if available() { result["settings"] = GripePreferences.values }
+        #endif
+        return result
     }
 
     private func saveOutcome() {

@@ -4,6 +4,7 @@ import Foundation
 struct QueuedReport: Codable {
     let endpoint: URL
     let apiKey: String
+    let reporterKey: String?
     let repository: String?
     let metadataJSON: Data
     let comment: String
@@ -14,6 +15,7 @@ struct QueuedReport: Codable {
         endpoint: URL,
         apiKey: String,
         repository: String?,
+        reporterKey: String? = nil,
         metadataJSON: Data,
         comment: String,
         pngData: Data,
@@ -22,6 +24,7 @@ struct QueuedReport: Codable {
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.repository = repository
+        self.reporterKey = reporterKey
         self.metadataJSON = metadataJSON
         self.comment = comment
         self.pngData = pngData
@@ -55,7 +58,7 @@ final class RetryQueue {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(report)
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             evictIfNeededLocked()
         } catch {
             // Best-effort persistence; if we can't write, the report is simply lost.

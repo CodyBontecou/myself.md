@@ -1,3 +1,8 @@
+import {
+  getReportUpdate,
+  refreshReportRegistration,
+  refreshReportUpdates,
+} from './feedback-updates.js';
 import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
@@ -60,11 +65,22 @@ export async function registerSupportNotifications(session, ask = false) {
 export function SupportNotifications() {
   const { session } = usePhone();
   useEffect(() => {
-    if (!session?.server || qaEnabled) return undefined;
+    if (qaEnabled) return undefined;
     let cancelled = false;
     /** @param {Notifications.NotificationResponse} response */
     function open(response) {
-      if (cancelled || !session) return;
+      if (cancelled) return;
+      const reportId = response.notification.request.content.data?.gripeReportId;
+      if (typeof reportId === 'string') {
+        void getReportUpdate(reportId)
+          .then(() => {
+            if (!cancelled) router.push('/feedback');
+            return undefined;
+          })
+          .catch(() => {});
+        return;
+      }
+      if (!session?.server) return;
       const id = response.notification.request.content.data?.conversationId;
       if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return;
       // Verify current account ownership before navigating an old notification.
@@ -79,9 +95,17 @@ export function SupportNotifications() {
     const last = Notifications.getLastNotificationResponse();
     if (last) open(last);
     const foreground = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void registerSupportNotifications(session).catch(() => {});
+      if (state === 'active') refresh();
     });
-    void registerSupportNotifications(session).catch(() => {});
+    function refresh() {
+      if (session?.server) void registerSupportNotifications(session).catch(() => {});
+      if (Platform.OS === 'ios') {
+        void refreshReportRegistration()
+          .then((available) => (available ? refreshReportUpdates() : null))
+          .catch(() => {});
+      }
+    }
+    refresh();
     return () => {
       cancelled = true;
       subscription.remove();

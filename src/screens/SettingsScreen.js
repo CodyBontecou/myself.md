@@ -1,6 +1,6 @@
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { Platform } from 'react-native';
-import { openFeedback } from '../../client/gripe.js';
+import { openFeedback, openFeedbackSettings } from '../../client/gripe.js';
 import { useBilling } from '../../client/BillingPaywalls';
 import { router } from 'expo-router';
 import { Screen, Copy, Group, Row, Divider, SectionHeader } from '../components/ui';
@@ -72,11 +72,29 @@ export default function SettingsScreen() {
         myself.md · You choose which data your agents can access.
       </Copy>
       {!qaEnabled && __DEV__ && Platform.OS === 'ios' && (
+        <>
+          <Row
+            testID="settings-gripe-settings"
+            title="Gripe settings"
+            subtitle="Floating companion and quick capture preferences"
+            onPress={() => void openFeedbackSettings()}
+          />
+          <Group>
+            <Row
+              testID="settings-feedback"
+              title="Report a bug"
+              subtitle="Capture a screenshot and send a report"
+              onPress={() => void openFeedback()}
+            />
+          </Group>
+        </>
+      )}
+      {!qaEnabled && Platform.OS === 'ios' && (
         <Row
-          testID="settings-feedback"
-          title="Report a bug"
-          subtitle="Capture, annotate, and submit a GitHub ticket"
-          onPress={() => void openFeedback()}
+          testID="settings-feedback-updates"
+          title="Bug report updates"
+          subtitle="Follow fixes and manage notifications"
+          onPress={() => router.push('/feedback')}
         />
       )}
     </Screen>

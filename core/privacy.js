@@ -6,6 +6,7 @@ export const privacyPolicy = {
   supportUrl: 'https://myself.md/contact',
   supportEmail: 'cody@isolated.tech',
   issuesUrl: 'https://github.com/CodyBontecou/myself.md/issues',
+  discordUrl: 'https://discord.gg/RaQYS4t6gn',
   sections: [
     {
       title: 'What we collect and why',
@@ -41,7 +42,7 @@ export const privacyPolicy = {
     },
     {
       title: 'Support conversations',
-      body: 'Support chat in the app or dashboard stores messages with your account. Our bot sends them to a private Discord support channel, where designated staff can reply. Their text replies appear in your conversation.\n\nMessages are encrypted in myself.md storage and kept until account deletion. Discord holds a separate copy under its own terms and privacy policy. Support chat is not end-to-end encrypted.\n\nDeleting your account removes the app conversation and its Discord thread. We retry failed cleanup before marking deletion complete. Discord backups and copies staff made elsewhere may remain under their own retention rules.\n\nAgents can read and send support messages only after you enable support access. Blocking an agent or revoking that access stops future access. Keep health records, precise location, credentials and receipts out of support chat. You can also contact us by email or public GitHub issue.',
+      body: 'Support chat stores messages with your account when you are signed in. On the phone, you can also chat as a guest. A random support-only credential is saved securely on this phone; guest history is separate from your account and cannot be recovered without that credential. Signing in does not automatically transfer guest history. Delete guest conversations from their conversation options; deleting an account does not delete separate guest conversations. Our bot sends them to a private Discord support channel, where designated staff can reply. Their text replies appear in your conversation.\n\nMessages are encrypted in myself.md storage and kept until account deletion. Discord holds a separate copy under its own terms and privacy policy. Support chat is not end-to-end encrypted.\n\nDeleting your account removes the app conversation and its Discord thread. We retry failed cleanup before marking deletion complete. Discord backups and copies staff made elsewhere may remain under their own retention rules.\n\nAgents can read and send support messages only after you enable support access. Blocking an agent or revoking that access stops future access. Keep health records, precise location, credentials and receipts out of support chat. You can also contact us by email or public GitHub issue.',
     },
     {
       title: 'Support and policy changes',

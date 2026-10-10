@@ -1,5 +1,6 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
-import { Alert, StyleSheet, View } from 'react-native';
+import { showToast } from '../components/Toast.js';
+import { errorMessage } from '../../packages/support-chat/errors.js';
+import { StyleSheet, View } from 'react-native';
 import { Stack, router, useLocalSearchParams, usePathname } from 'expo-router';
 import { File } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -21,7 +22,7 @@ async function shareFile(artifact) {
       throw new Error('File sharing is unavailable on this phone.');
     await Sharing.shareAsync(file.uri);
   } catch (error) {
-    Alert.alert('File unavailable', errorJSON(error));
+    showToast({ message: errorMessage(error), kind: 'error' });
   }
 }
 export default function HistoryDetail() {
@@ -77,7 +78,7 @@ export default function HistoryDetail() {
       {event.error ? (
         <Notice
           title="This activity did not finish"
-          body={errorJSON(event.error)}
+          body={errorMessage(event.error)}
           icon="alert-circle-outline"
         />
       ) : null}

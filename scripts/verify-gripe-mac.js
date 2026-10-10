@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deliverReport, inboxClient } from './gripe-mac.js';
+import { deliverReport, inboxClient, recoverReportLinks } from './gripe-mac.js';
 
 const stateDir = await mkdtemp(join(tmpdir(), 'gripe-bridge-check-'));
 try {
@@ -81,6 +81,58 @@ console.log(JSON.stringify({type:'turn.completed'}));
   await assert.rejects(deliverReport(mismatch, 'c'.repeat(64)), /destination or payload mismatch/);
   assert.throws(() => inboxClient('https://example.com/path', 'secret'), /HTTPS origin/);
   assert.throws(() => inboxClient('http://example.com', 'secret'), /HTTPS origin/);
+  const published = 'd'.repeat(64);
+  let discoveries = 0;
+  let links = 0;
+  let publications = 0;
+  const publishing = {
+    ...config,
+    createPR: true,
+    findPR: async () => {
+      discoveries++;
+      return 7;
+    },
+    request: async (
+      /** @type {string} */ path,
+      /** @type {object|undefined} */ body = undefined,
+    ) => {
+      if (path.endsWith('/claim')) {
+        publications++;
+        return Response.json({
+          id: published,
+          repository,
+          claimedNow: true,
+          comment: 'Private layout report',
+          metadata: {},
+        });
+      }
+      if (path.endsWith('/pull-request')) {
+        links++;
+        assert.deepEqual(body, { runner: 'fixture-mac', number: 7 });
+        if (links === 1) throw new Error('Lost PR acknowledgment');
+        return Response.json({ status: 'linked' });
+      }
+      if (path.endsWith('/delivered')) return Response.json({ status: 'delivered' });
+      return request(path, body);
+    },
+  };
+  await assert.rejects(deliverReport(publishing, published), /Lost PR acknowledgment/);
+  const saved = JSON.parse(await readFile(join(stateDir, `${published}.json`), 'utf8'));
+  assert.equal(saved.pullRequest, 7);
+  await deliverReport(publishing, published);
+  assert.equal(publications, 1);
+  assert.equal(discoveries, 1);
+  assert.equal(links, 2);
+  await writeFile(join(stateDir, `${published}.json`), JSON.stringify(saved));
+  await recoverReportLinks(publishing);
+  assert.equal(publications, 1);
+  assert.equal(links, 3);
+  const publishedPrompt = JSON.parse(
+    await readFile(join(stateDir, 'invocation.json'), 'utf8'),
+  ).prompt;
+  assert.ok(publishedPrompt.includes(`<!-- gripe:${published} -->`));
+  assert.ok(publishedPrompt.includes('draft PR against main'));
+  assert.ok(publishedPrompt.includes('Never include the private screenshot'));
   console.log(
     'Gripe Mac checks passed: isolated session, image and prompt delivery, credential isolation, acknowledged retry and uncertain-dispatch recovery. No live Codex task started.',
   );

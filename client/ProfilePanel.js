@@ -1,7 +1,7 @@
 import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { parseExportSettings } from '../core/export-files.js';
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { errorMessage } from '../packages/support-chat/errors.js';
 import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -45,7 +45,7 @@ export default function ProfilePanel({
     /** @type {import('../core/profiles.js').ExportProfile|null} */ (null),
   );
   const profile = state.profiles.find((p) => p.id === profileId) ?? deletingProfile;
-  const [error, setError] = useState('');
+
   const [shareLink, setShareLink] = useState('');
   const [working, setWorking] = useState(false);
   const disabled = busy || working;
@@ -88,7 +88,6 @@ export default function ProfilePanel({
           disabled={disabled}
           onPress={() =>
             leaveForm(() => {
-              setError('');
               setEditing(open ? null : { key, original: profile, draft: profile });
             })
           }
@@ -140,11 +139,6 @@ export default function ProfilePanel({
                 disabled={disabled}
               />
             )}
-            {error ? (
-              <Copy testID="profile-inline-error" accessibilityRole="alert" selectable>
-                {errorJSON(error)}
-              </Copy>
-            ) : null}
             {dirty && (
               <View style={styles.formActions}>
                 <View style={styles.settingTitle}>
@@ -197,7 +191,6 @@ export default function ProfilePanel({
                     disabled={disabled}
                     onPress={() => {
                       setEditing(null);
-                      setError('');
                     }}
                   />
                 </View>
@@ -219,13 +212,11 @@ export default function ProfilePanel({
     if (actionRunning.current) return;
     actionRunning.current = true;
     try {
-      setError('');
       setWorking(true);
       await action();
       if (feedback) showToast({ message: feedback.success, kind: 'success' });
     } catch (e) {
-      setError(errorJSON(e));
-      if (feedback) showToast({ message: feedback.failure, kind: 'error' });
+      showToast({ message: errorMessage(e), kind: 'error' });
     } finally {
       actionRunning.current = false;
       setWorking(false);
@@ -535,11 +526,6 @@ export default function ProfilePanel({
       {shareLink ? (
         <Text selectable style={styles.detail}>
           {shareLink}
-        </Text>
-      ) : null}
-      {error && !editing ? (
-        <Text testID="profile-error" accessibilityRole="alert">
-          {errorJSON(error)}
         </Text>
       ) : null}
     </View>

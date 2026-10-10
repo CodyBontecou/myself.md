@@ -1,3 +1,4 @@
+import { ErrorToast } from '../components/Toast.js';
 import { errorJSON } from '../../packages/support-chat/errors.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { useEffect, useState } from 'react';
@@ -64,7 +65,7 @@ export default function UnlockScreen() {
         disabled={busy}
         onPress={() => router.push('/account')}
       />
-      {error ? <Notice title="Purchase unavailable" body={errorJSON(error)} /> : null}
+      <ErrorToast error={error} />
       <Button
         label={busy ? 'Please wait…' : `Unlock forever${price ? ` · ${price}` : ''}`}
         disabled={busy || !price}

@@ -70,6 +70,17 @@ export class Account extends DurableObject {
       (subject, agent) => {
         this.cloud.observeAgent(subject, agent);
       },
+      fetch,
+      async (subject) => {
+        const id = subject.slice(subject.indexOf('|') + 1);
+        const owner = await this.env.IDENTITY.prepare(
+          'SELECT id FROM "account" WHERE "userId"=? AND "providerId"=? AND "accountId"=?',
+        )
+          .bind(id, 'github', '20440899')
+          .first();
+        if (owner) return 'owner';
+        return 'guest';
+      },
     );
     this.history = new HistoryStore(this.db, this.cloud);
     // Native responses remain memory-only. Restarted requests release their allowance and report interruption.

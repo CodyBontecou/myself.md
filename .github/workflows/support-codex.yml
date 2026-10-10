@@ -1,0 +1,128 @@
+name: Support Codex implementation
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        required: true
+        type: string
+      account:
+        required: true
+        type: string
+      conversation_id:
+        required: true
+        type: string
+      generation:
+        required: true
+        type: string
+      instructions:
+        required: true
+        type: string
+      title:
+        required: true
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: support-${{ inputs.task_id }}
+  cancel-in-progress: false
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      ACCOUNT: ${{ inputs.account }}
+      CONVERSATION_ID: ${{ inputs.conversation_id }}
+      GENERATION: ${{ inputs.generation }}
+      INSTRUCTIONS: ${{ inputs.instructions }}
+      TITLE: ${{ inputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate task and report running
+        env:
+          SUPPORT_ORIGIN: ${{ secrets.SUPPORT_ISOBOT_ORIGIN }}
+          SUPPORT_TOKEN: ${{ secrets.SUPPORT_TASK_TOKEN }}
+        run: node scripts/support-task.js running
+      - name: Find an existing first pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        id: existing
+        run: |
+          existing=$(gh pr list --head "codex/support-$TASK_ID" --state all --json url --jq '.[0].url // empty')
+          printf 'url=%s\n' "$existing" >> "$GITHUB_OUTPUT"
+      - name: Install tooling
+        if: steps.existing.outputs.url == ''
+        run: |
+          npm ci
+          npm install --global @openai/codex
+      - name: Prepare implementation branch
+        if: steps.existing.outputs.url == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          if git ls-remote --exit-code --heads origin "codex/support-$TASK_ID" >/dev/null; then
+            git fetch origin "codex/support-$TASK_ID"
+            git checkout -B "codex/support-$TASK_ID" FETCH_HEAD
+          else
+            git checkout -b "codex/support-$TASK_ID"
+          fi
+      - name: Run Codex
+        if: steps.existing.outputs.url == ''
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          git show "$GITHUB_SHA:scripts/support-task.js" > "$RUNNER_TEMP/support-task.mjs"
+          node "$RUNNER_TEMP/support-task.mjs" prompt | codex exec --sandbox workspace-write --output-last-message /tmp/support-result.md -
+      - name: Format the first pass
+        if: steps.existing.outputs.url == ''
+        run: npm run format
+      - name: Check the first pass
+        if: steps.existing.outputs.url == ''
+        run: npm run check
+      - name: Verify the task is still active
+        if: steps.existing.outputs.url == ''
+        env:
+          SUPPORT_ORIGIN: ${{ secrets.SUPPORT_ISOBOT_ORIGIN }}
+          SUPPORT_TOKEN: ${{ secrets.SUPPORT_TASK_TOKEN }}
+        run: |
+          git show "$GITHUB_SHA:scripts/support-task.js" > "$RUNNER_TEMP/support-task.mjs"
+          node "$RUNNER_TEMP/support-task.mjs" running
+      - name: Publish draft first pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        if: steps.existing.outputs.url == ''
+        run: |
+          git config user.name 'isobot'
+          git config user.email 'isobot@users.noreply.github.com'
+          git add --all
+          git diff --cached --quiet && { echo 'Codex produced no changes'; exit 1; }
+          git commit -m "Fix support task $TASK_ID"
+          gh auth setup-git
+          git push --set-upstream origin "codex/support-$TASK_ID"
+          gh pr create --draft --title "$TITLE" --body-file /tmp/support-result.md > /tmp/support-pr.txt
+      - name: Report completion
+        if: success()
+        env:
+          SUPPORT_ORIGIN: ${{ secrets.SUPPORT_ISOBOT_ORIGIN }}
+          SUPPORT_TOKEN: ${{ secrets.SUPPORT_TASK_TOKEN }}
+          EXISTING_PR: ${{ steps.existing.outputs.url }}
+        run: |
+          git show "$GITHUB_SHA:scripts/support-task.js" > "$RUNNER_TEMP/support-task.mjs"
+          node "$RUNNER_TEMP/support-task.mjs" completed
+      - name: Report failure
+        if: failure()
+        env:
+          SUPPORT_ORIGIN: ${{ secrets.SUPPORT_ISOBOT_ORIGIN }}
+          SUPPORT_TOKEN: ${{ secrets.SUPPORT_TASK_TOKEN }}
+        run: |
+          git show "$GITHUB_SHA:scripts/support-task.js" > "$RUNNER_TEMP/support-task.mjs"
+          node "$RUNNER_TEMP/support-task.mjs" failed

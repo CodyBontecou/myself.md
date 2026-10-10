@@ -22,6 +22,18 @@
         "EXPO_PUBLIC_ACCOUNT_SERVER": "https://myself.md",
         "EXPO_PUBLIC_ALLOW_HTTP": "0"
       }
+    },
+    "debug": {
+      "extends": "preview",
+      "channel": "debug",
+      "env": {
+        "EXPO_EMBEDDED_DEBUG": "1",
+        "SKIP_BUNDLING_METRO_IP": "1",
+        "GRIPE_REPOSITORY": "CodyBontecou/myself.md"
+      },
+      "ios": {
+        "buildConfiguration": "Debug"
+      }
     }
   }
 }

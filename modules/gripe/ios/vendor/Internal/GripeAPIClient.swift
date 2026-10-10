@@ -139,6 +139,8 @@ final class GripeAPIClient {
     static let shared = GripeAPIClient()
     static let protocolVersion = "1"
 
+    var reporterKey: String?
+
     private init() {}
 
     func submit(image: UIImage, comment: String, metadata: GripeMetadata) async -> Result<URL, Error> {
@@ -169,6 +171,7 @@ final class GripeAPIClient {
             endpoint: config.endpoint,
             apiKey: config.apiKey,
             repository: config.repository,
+            reporterKey: reporterKey,
             metadataJSON: metadataJSON,
             comment: comment,
             pngData: pngData
@@ -195,6 +198,9 @@ final class GripeAPIClient {
         body.appendField(boundary: boundary, name: "metadata", value: String(data: payload.metadataJSON, encoding: .utf8) ?? "{}")
         if let repository = payload.repository, !repository.isEmpty {
             body.appendField(boundary: boundary, name: "repository", value: repository)
+        }
+        if let reporterKey = payload.reporterKey {
+            body.appendField(boundary: boundary, name: "reporterKey", value: reporterKey)
         }
         body.appendFile(boundary: boundary, name: "image", filename: "screenshot.png", contentType: "image/png", data: payload.pngData)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)

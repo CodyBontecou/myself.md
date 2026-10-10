@@ -1,5 +1,5 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Keyboard, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -58,6 +58,16 @@ export default function FloatingNavigation({ children }) {
   const [position, setPosition] = useState(savedPosition);
   const showToast = useToast();
   const pathname = usePathname();
+  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const hiddenForComposer = pathname.startsWith('/support') && keyboardVisible;
   const selectedIndex = pathname.startsWith('/settings')
     ? 3
     : pathname.startsWith('/support')
@@ -274,8 +284,10 @@ export default function FloatingNavigation({ children }) {
   }));
   return (
     <View
-      pointerEvents="box-none"
-      style={styles.overlay}
+      pointerEvents={hiddenForComposer ? 'none' : 'box-none'}
+      accessibilityElementsHidden={hiddenForComposer}
+      importantForAccessibility={hiddenForComposer ? 'no-hide-descendants' : 'auto'}
+      style={[styles.overlay, hiddenForComposer && styles.hidden]}
       onLayout={({ nativeEvent }) =>
         setSize({ width: nativeEvent.layout.width, height: nativeEvent.layout.height })
       }
@@ -313,6 +325,7 @@ export default function FloatingNavigation({ children }) {
   );
 }
 const styles = StyleSheet.create({
+  hidden: { opacity: 0 },
   selection: { position: 'absolute', left: 8, top: 8, width: 48, height: 48, borderRadius: 24 },
   overlay: { ...StyleSheet.absoluteFill, zIndex: 10 },
   dock: {

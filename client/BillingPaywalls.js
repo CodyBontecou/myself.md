@@ -1,5 +1,6 @@
+import { showToast } from '../src/components/Toast.js';
 import { useEffect, useState } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { router, useRootNavigationState, usePathname } from 'expo-router';
 import { useOnboarding } from './onboarding.js';
 import {
@@ -31,7 +32,7 @@ export default function BillingPaywalls() {
     if (Platform.OS === 'web') return undefined;
     let disposed = false;
     /** @type {(()=>void)|undefined} */ let close;
-    void connectStore((message) => Alert.alert('Purchase could not finish', message))
+    void connectStore((message) => showToast({ message, kind: 'error' }))
       .then((cleanup) => {
         if (disposed) {
           cleanup();

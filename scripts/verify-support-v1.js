@@ -9,6 +9,55 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createRemoteSupport } from '../server/support-remote.js';
 
+// The host supplies roles; prompt fields and guest credentials cannot elevate them.
+/** @type {'owner'|'lifetime'|'guest'} */
+let verifiedRole = 'guest';
+let roleResolutions = 0;
+/** @type {typeof fetch} */
+const roleTransport = async (_input, options) => {
+  const headers = new Headers(options?.headers);
+  return Response.json({ role: headers.get('X-Support-Role') });
+};
+const roleProxy = createRemoteSupport(
+  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
+  () => {},
+  roleTransport,
+  async () => {
+    roleResolutions++;
+    return verifiedRole;
+  },
+);
+for (const role of /** @type {const} */ (['guest', 'lifetime', 'owner', 'guest'])) {
+  verifiedRole = role;
+  // Each role change must settle before the next request verifies downgrade behavior.
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  const response = await roleProxy.supportV1Api('verified-account', 'POST', new URLSearchParams(), {
+    action: 'send',
+    role: 'owner',
+  });
+  assert.equal(response.role, role);
+}
+verifiedRole = 'owner';
+const beforeGuest = roleResolutions;
+assert.equal(
+  (
+    await roleProxy.supportV1Api('support-guest:fixture', 'POST', new URLSearchParams(), {
+      action: 'list',
+    })
+  ).role,
+  'guest',
+);
+assert.equal(roleResolutions, beforeGuest);
+const legacyProxy = createRemoteSupport(
+  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
+  () => {},
+  roleTransport,
+);
+assert.equal(
+  (await legacyProxy.supportV1Api('verified-account', 'GET', new URLSearchParams(), null)).role,
+  'guest',
+);
+
 let blocked = false;
 /** @type {{agent:string|null,body:unknown}[]} */
 const calls = [];

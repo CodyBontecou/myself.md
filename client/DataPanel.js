@@ -1,9 +1,10 @@
+import { showToast } from '../src/components/Toast.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
 import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Linking, StyleSheet, View } from 'react-native';
+import { AppState, Linking, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
 import { Button, Switch, Text } from './Terminal.js';
@@ -172,7 +173,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           } else setMessage('Choose Always in location settings, then start recording again.');
         }
       } catch (error) {
-        setLocationInfo(errorJSON(error));
+        showToast({ message: errorJSON(error), kind: 'error' });
       }
     };
     void refresh();
@@ -205,7 +206,8 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   }, [session, phoneCatalog]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void publish().catch((error) => setMessage(errorJSON(error)));
+      if (state === 'active')
+        void publish().catch((error) => showToast({ message: errorJSON(error), kind: 'error' }));
     });
     return () => subscription.remove();
   }, [publish]);
@@ -213,7 +215,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     if (!session.server) {
       void Promise.resolve()
         .then(publish)
-        .catch((e) => setMessage(errorJSON(e)));
+        .catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));
       return;
     }
     let active = true,
@@ -230,7 +232,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{feedback?:{id:string,expiresAt:number}|null,request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{feedback?:import('./gripe.js').FeedbackRequest|null,request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
@@ -300,7 +302,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         }
       } catch (error) {
         recordDebug(session, 'connection', 'failed', { error });
-        if (active) setMessage(errorJSON(error));
+        if (active) showToast({ message: errorJSON(error), kind: 'error' });
       } finally {
         running = false;
         if (active) timer = setTimeout(() => void poll(), 2000);
@@ -318,7 +320,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     try {
       await action();
     } catch (error) {
-      Alert.alert('Could not complete this request', errorJSON(error));
+      showToast({ message: errorJSON(error), kind: 'error' });
     } finally {
       setBusy(false);
     }
@@ -384,11 +386,11 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     recordDebug(session, 'profile', 'succeeded');
     profileState.current = next;
     setProfiles(next);
-    void reconcileExports().catch((e) => setMessage(errorJSON(e)));
+    void reconcileExports().catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));
     try {
       await publish();
     } catch (failure) {
-      setMessage(errorJSON(failure));
+      showToast({ message: errorJSON(failure), kind: 'error' });
     }
   }
   return {

@@ -1,4 +1,5 @@
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { showToast, ErrorToast } from '../src/components/Toast.js';
+import { errorMessage } from '../packages/support-chat/errors.js';
 import {
   deleteLocalAccount,
   queueAccountCleanup,
@@ -58,6 +59,7 @@ export default function PhoneProvider({ children }) {
   const dataSession = value.connected && value.session ? value.session : localSession;
   return (
     <PhoneContext.Provider value={value}>
+      <ErrorToast error={value.error} />
       <PhoneDataProvider
         key={`${dataSession.deviceId}:${value.accountRevision}`}
         session={dataSession}
@@ -102,12 +104,12 @@ function usePhoneState() {
           setError('');
         }
       } catch (e) {
-        setError(errorJSON(e));
+        setError(errorMessage(e));
       }
     };
     void Linking.getInitialURL()
       .then(receive)
-      .catch((e) => setError(errorJSON(e)));
+      .catch((e) => setError(errorMessage(e)));
     const listener = Linking.addEventListener('url', ({ url }) => receive(url));
     return () => listener.remove();
   }, []);
@@ -131,15 +133,15 @@ function usePhoneState() {
         }
         return undefined;
       })
-      .catch((e) => setError(errorJSON(e)))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setReady(true));
   }, []);
   useEffect(() => {
     if (!ready) return;
     saveExportContext(session?.deviceId ? session : localSession);
-    void reconcileExports().catch((e) => setError(errorJSON(e)));
+    void reconcileExports().catch((e) => setError(errorMessage(e)));
     const tick = () => {
-      void runScheduledExports().catch((e) => setError(errorJSON(e)));
+      void runScheduledExports().catch((e) => setError(errorMessage(e)));
     };
     tick();
     const timer = setInterval(tick, 30000);
@@ -156,12 +158,14 @@ function usePhoneState() {
             clearAccountAllowance();
             setSession(null);
             setError(
-              errorJSON('Your session expired after 30 days of inactivity. Please sign in again.'),
+              errorMessage(
+                'Your session expired after 30 days of inactivity. Please sign in again.',
+              ),
             );
           }
           return valid ? renewCloudAuthorizations(session) : undefined;
         })
-        .catch((e) => setError(errorJSON(e)));
+        .catch((e) => setError(errorMessage(e)));
     };
     active();
     const listener = AppState.addEventListener('change', active);
@@ -180,7 +184,7 @@ function usePhoneState() {
       locked.current = true;
       setError('');
     } catch (e) {
-      setError(errorJSON(e));
+      setError(errorMessage(e));
     }
   }
   /** @param {() => Promise<void>} action */
@@ -190,7 +194,7 @@ function usePhoneState() {
     try {
       await action();
     } catch (e) {
-      setError(errorJSON(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -240,10 +244,10 @@ function usePhoneState() {
       previous.deviceId ? revokeDevice(previous) : Promise.resolve(),
     ]).then(([tracking, remote]) => {
       const failures = [
-        tracking.status === 'rejected' ? errorJSON(tracking.reason) : '',
-        remote.status === 'rejected' ? errorJSON(remote.reason) : '',
+        tracking.status === 'rejected' ? errorMessage(tracking.reason) : '',
+        remote.status === 'rejected' ? errorMessage(remote.reason) : '',
       ].filter(Boolean);
-      if (failures.length) Alert.alert('Signed out on this phone', errorJSON(failures.join('\n')));
+      if (failures.length) showToast({ message: errorMessage(failures.join('\n')), kind: 'error' });
       return undefined;
     });
   }
@@ -293,7 +297,7 @@ function usePhoneState() {
         result.state === 'completed'
           ? 'Your account and cloud data were deleted.'
           : result.error
-            ? errorJSON(result.error)
+            ? errorMessage(result.error)
             : 'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.',
       );
     },

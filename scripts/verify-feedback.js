@@ -39,11 +39,11 @@ const catalog = {
     types: [],
     notes: [],
   })),
-  feedback: { availability: 'ready', operation: null },
+  feedback: { availability: 'ready', notificationsAvailable: true, operation: null },
 };
 /** @param {unknown} feedback */
 function heartbeat(feedback = catalog.feedback) {
-  return /** @type {{feedback:{id:string,expiresAt:number}|null}} */ (
+  return /** @type {{feedback:{id:string,expiresAt:number,notificationsEnabled?:boolean,settings?:object}|null}} */ (
     service.phoneApi(`/api/phones/${deviceId}/poll`, 'POST', 'owner', { ...catalog, feedback })
   );
 }
@@ -171,6 +171,118 @@ try {
       },
     }),
   );
+  const settings = {
+    companionEnabled: true,
+    cropEnabled: false,
+    drawingEnabled: false,
+    titleEnabled: false,
+    descriptionEnabled: true,
+    tagsEnabled: false,
+  };
+  heartbeat({ availability: 'ready', operation: null, settings });
+  assert.deepEqual(
+    (await call(owner, 'get_phone_feedback', { deviceId })).value?.settings,
+    settings,
+  );
+  const settingsId = randomUUID();
+  const change = { deviceId, operationId: settingsId, settings: { companionEnabled: false } };
+  assert.equal((await call(other, 'request_phone_feedback_settings', change)).error, true);
+  assert.equal(
+    (
+      await call(owner, 'request_phone_feedback_settings', {
+        ...change,
+        settings: { unknown: true },
+      })
+    ).error,
+    true,
+  );
+  assert.equal(
+    (await call(owner, 'request_phone_feedback_settings', change)).value?.status,
+    'accepted',
+  );
+  assert.equal(
+    (await call(owner, 'request_phone_feedback_settings', change)).value?.status,
+    'accepted',
+  );
+  assert.equal(
+    (
+      await call(owner, 'request_phone_feedback_settings', {
+        ...change,
+        settings: { companionEnabled: true },
+      })
+    ).error,
+    true,
+  );
+  assert.equal(
+    (await call(secondAgent, 'get_phone_feedback_operation', { operationId: settingsId })).error,
+    true,
+  );
+  assert.deepEqual(heartbeat().feedback?.settings, change.settings);
+  assert.deepEqual(
+    service.phoneApi(`/api/phones/${deviceId}/feedback`, 'POST', 'owner', { id: settingsId }),
+    { authorized: true },
+  );
+  heartbeat({
+    availability: 'ready',
+    settings: { ...settings, companionEnabled: false },
+    operation: { id: settingsId, expiresAt: Date.now() + 10000, status: 'completed' },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: settingsId })).value?.status,
+    'completed',
+  );
+  const mismatchId = randomUUID();
+  await call(owner, 'request_phone_feedback_settings', { ...change, operationId: mismatchId });
+  heartbeat({
+    availability: 'ready',
+    settings,
+    operation: { id: mismatchId, expiresAt: Date.now() + 10000, status: 'completed' },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: mismatchId })).value?.status,
+    'failed',
+  );
+  heartbeat();
+  const notifyId = randomUUID();
+  const notify = { deviceId, operationId: notifyId, enabled: true };
+  assert.equal((await call(other, 'request_phone_feedback_notifications', notify)).error, true);
+  assert.equal(
+    (await call(owner, 'request_phone_feedback_notifications', notify)).value?.status,
+    'accepted',
+  );
+  assert.equal(heartbeat().feedback?.notificationsEnabled, true);
+  assert.equal(
+    (await call(owner, 'request_phone_feedback_notifications', { ...notify, enabled: false }))
+      .error,
+    true,
+  );
+  heartbeat({
+    availability: 'ready',
+    operation: { id: notifyId, expiresAt: Date.now() + 10000, status: 'completed' },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: notifyId })).value?.status,
+    'failed',
+  );
+  heartbeat();
+  const savedNotify = randomUUID();
+  await call(owner, 'request_phone_feedback_notifications', {
+    ...notify,
+    operationId: savedNotify,
+  });
+  heartbeat({
+    availability: 'ready',
+    updates: { enabled: true, checkedAt: Date.now(), cursor: null, error: null, reports: [] },
+    operation: { id: savedNotify, expiresAt: Date.now() + 10000, status: 'completed' },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: savedNotify })).value?.status,
+    'completed',
+  );
+  assert.equal(
+    (await call(secondAgent, 'get_phone_feedback_operation', { operationId: savedNotify })).error,
+    true,
+  );
   const expiredId = randomUUID();
   await call(owner, 'request_phone_feedback', { deviceId, operationId: expiredId });
   const expired = operations.get(expiredId);
@@ -189,6 +301,34 @@ try {
   assert.equal(
     (await call(owner, 'request_phone_feedback', { deviceId, operationId: randomUUID() })).error,
     true,
+  );
+  heartbeat({ availability: 'release_disabled', notificationsAvailable: true, operation: null });
+  const releaseNotifications = randomUUID();
+  assert.equal(
+    (
+      await call(owner, 'request_phone_feedback_notifications', {
+        deviceId,
+        operationId: releaseNotifications,
+        enabled: false,
+      })
+    ).value?.status,
+    'accepted',
+  );
+  assert.equal(
+    heartbeat({ availability: 'release_disabled', notificationsAvailable: true, operation: null })
+      .feedback?.notificationsEnabled,
+    false,
+  );
+  heartbeat({
+    availability: 'release_disabled',
+    notificationsAvailable: true,
+    updates: { enabled: false, checkedAt: Date.now(), cursor: null, error: null, reports: [] },
+    operation: { id: releaseNotifications, expiresAt: Date.now() + 10000, status: 'completed' },
+  });
+  assert.equal(
+    (await call(owner, 'get_phone_feedback_operation', { operationId: releaseNotifications })).value
+      ?.status,
+    'completed',
   );
   assert.throws(
     () => service.phoneApi(`/api/phones/${deviceId}/poll`, 'POST', 'other', catalog),

@@ -1,4 +1,4 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
+import { ErrorToast } from '../components/Toast.js';
 import { Alert, Linking } from 'react-native';
 import { accountDeletionNotice } from '../../core/account-deletion.js';
 import { Stack } from 'expo-router';
@@ -126,7 +126,7 @@ export default function AccountScreen() {
           onPress={() => void Linking.openURL(deletionStatusUrl)}
         />
       )}
-      {error && <Notice title="Account needs attention" body={errorJSON(error)} />}
+      <ErrorToast error={error} />
     </Screen>
   );
 }
