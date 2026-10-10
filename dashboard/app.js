@@ -194,14 +194,13 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
-              onClick={() => navigate('exports')}
-            >
-              <span aria-hidden="true" className="font-mono text-lg font-semibold">
-                m.
-              </span>
-              <span className="text-base font-semibold">myself.md</span>
+            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
+              <a href="/">
+                <span aria-hidden="true" className="font-mono text-lg font-semibold">
+                  m.
+                </span>
+                <span className="text-base font-semibold">myself.md</span>
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -211,26 +210,31 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {views.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={view === item.id}
-                    aria-current={view === item.id ? 'page' : undefined}
-                    onClick={() => navigate(item.id)}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {views
+                .filter((item) => !isDemo || item.id !== 'support')
+                .map((item) => (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      isActive={view === item.id}
+                      aria-current={view === item.id ? 'page' : undefined}
+                      onClick={() => navigate(item.id)}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy and support">
+        <nav
+          className="flex gap-4 px-2 text-xs underline"
+          aria-label={isDemo ? 'Privacy' : 'Privacy and support'}
+        >
           <a href="/privacy">Privacy policy</a>
-          <a href="/support">Support</a>
+          {!isDemo && <a href="/support">Support</a>}
         </nav>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -995,91 +999,6 @@ function LoginCard({ ready }) {
     </div>
   );
 }
-/** @param {{onNavigate:(search:string)=>void}} props */
-function DemoIntroduction({ onNavigate }) {
-  const examples = [
-    {
-      label: 'Health',
-      detail: 'Datasets, controls & JSON formats',
-      href: '/datasets/health',
-    },
-    {
-      label: 'Screen time',
-      detail: 'App usage, controls & JSON formats',
-      href: '/datasets/screen-time',
-    },
-    {
-      label: 'Location',
-      detail: 'Recorded points, controls & JSON formats',
-      href: '/datasets/location',
-    },
-  ];
-  return (
-    <section
-      className="demo-introduction mx-4 overflow-hidden rounded-xl border lg:mx-6"
-      aria-labelledby="demo-title"
-    >
-      <div className="grid gap-8 p-6 md:p-8 xl:grid-cols-[1.3fr_1fr]">
-        <div className="space-y-5">
-          <Badge variant="outline">
-            <IconShieldCheck /> Files first. You’re in control.
-          </Badge>
-          <h2
-            id="demo-title"
-            className="max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl"
-          >
-            Your data belongs in files.
-            <br />
-            <span className="text-muted-foreground">You decide who reads them.</span>
-          </h2>
-          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Export your health, screen time, and location data into portable files. Keep them on
-            your phone or store them in the cloud. Choose which profiles AI agents can read, and
-            revoke access whenever you want.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild>
-              <a href="/login">
-                Join myself.md <IconChevronRight />
-              </a>
-            </Button>
-            <Button variant="outline" onClick={() => onNavigate('?explore=1')}>
-              Explore sample files <IconChartBar />
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            No account needed to explore. All data below is fictional.
-          </p>
-        </div>
-        <div className="flex flex-col items-start justify-center gap-4">
-          {examples.map(({ label, detail, href }) => (
-            <a
-              key={label}
-              href={href}
-              className="group flex min-h-11 flex-col justify-center gap-1 rounded-sm py-1 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-            >
-              <span className="text-sm font-semibold underline decoration-muted-foreground/50 underline-offset-4 transition-colors group-hover:decoration-foreground">
-                {label}
-              </span>
-              <span className="text-xs text-muted-foreground">{detail}</span>
-            </a>
-          ))}
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-2 border-t bg-background px-6 py-3 text-xs text-muted-foreground md:px-8">
-        <span className="flex items-center gap-2">
-          <IconDatabase className="size-4" /> Portable data files
-        </span>
-        <span className="flex items-center gap-2">
-          <IconLock className="size-4" /> Local or encrypted cloud storage
-        </span>
-        <span className="flex items-center gap-2">
-          <IconRobot className="size-4" /> AI access you can revoke
-        </span>
-      </div>
-    </section>
-  );
-}
 function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
@@ -1190,9 +1109,6 @@ function App() {
                   <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
                 </div>
               )}
-              {isDemo && !exploring && view === 'exports' && (
-                <DemoIntroduction onNavigate={navigateRoute} />
-              )}
               {isDemo && currentView && currentView.id !== 'exports' && (
                 <header className="space-y-2 px-4 lg:px-6">
                   <h2 className="text-2xl font-semibold tracking-tight">{currentView.title}</h2>
@@ -1224,7 +1140,12 @@ function App() {
                         isDemo ? (
                           <p className="p-6">Sign in to contact support.</p>
                         ) : (
-                          <WebSupport request={supportRequest} data={supportData} Button={Button} />
+                          <WebSupport
+                            projectLabel="myself.md"
+                            request={supportRequest}
+                            data={supportData}
+                            Button={Button}
+                          />
                         )
                       ) : view === 'history' ? (
                         <HistoryView

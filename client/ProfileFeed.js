@@ -6,11 +6,38 @@ import { Copy, Icon } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import ProfileExports from './ProfileExports.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
+import Storage from 'expo-sqlite/kv-store';
+import { qaEnabled } from './qa-runtime.js';
+import { useToast } from '../src/components/Toast.js';
+
+const layoutKey = qaEnabled ? 'qa-profile-card-layout-v1' : 'profile-card-layout-v1';
+
+function savedLayout() {
+  try {
+    const value = Storage.getItemSync(layoutKey);
+    return value === '0' ? 0 : value === '2' ? 2 : 1;
+  } catch {
+    return 1;
+  }
+}
 
 /** @param {{profiles:import('../core/profiles.js').ExportProfile[],session:import('./session.js').Session,disabled:boolean,onAgentAccess:(profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>void}} props */
 export default function ProfileFeed({ profiles, session, disabled, onAgentAccess }) {
   const { colors } = useTheme();
-  const [layout, setLayout] = useState(1);
+  const [layout, setLayout] = useState(savedLayout);
+  const showToast = useToast();
+  /** @param {number} index */
+  function selectLayout(index) {
+    try {
+      Storage.setItemSync(layoutKey, String(index));
+      setLayout(index);
+    } catch {
+      showToast({
+        message: 'Could not save your profile layout. Please try again.',
+        kind: 'error',
+      });
+    }
+  }
   const compact = layout === 0;
   const large = layout === 2;
   return (
@@ -23,7 +50,7 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
             accessibilityRole="button"
             accessibilityLabel={`${option.label} profile layout`}
             accessibilityState={{ selected: layout === index }}
-            onPress={() => setLayout(index)}
+            onPress={() => selectLayout(index)}
             style={({ pressed }) => [
               styles.layoutButton,
               { backgroundColor: layout === index || pressed ? colors.subtle : colors.background },
@@ -50,14 +77,17 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
               : profile.export.destination === 'http'
                 ? 'HTTPS endpoint'
                 : 'Cloud';
+          const openProfile = () =>
+            router.push({ pathname: '/profiles/[id]', params: { id: profile.id } });
           const header = (
             <Pressable
               testID={`profile-row-${profile.id}`}
               accessibilityRole="button"
               accessibilityLabel={`${profile.name}, ${access}, open profile`}
-              onPress={() =>
-                router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
-              }
+              onPress={(event) => {
+                event.stopPropagation();
+                openProfile();
+              }}
               style={({ pressed }) => [
                 styles.header,
                 pressed && { backgroundColor: colors.subtle },
@@ -69,16 +99,21 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
             </Pressable>
           );
           return (
-            <View
+            <Pressable
               key={profile.id}
               testID={`profile-card-${profile.id}`}
-              style={[
+              accessible={false}
+              onPress={openProfile}
+              style={({ pressed }) => [
                 styles.card,
-                { backgroundColor: colors.surface, borderColor: colors.border },
+                {
+                  backgroundColor: pressed ? colors.subtle : colors.surface,
+                  borderColor: colors.border,
+                },
                 compact && [
                   styles.compactCard,
                   {
-                    backgroundColor: colors.background,
+                    backgroundColor: pressed ? colors.subtle : colors.background,
                     borderColor: 'transparent',
                     borderBottomColor: colors.border,
                   },
@@ -97,9 +132,10 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Open ${profile.name}`}
-                      onPress={() =>
-                        router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
-                      }
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        openProfile();
+                      }}
                       style={({ pressed }) => [styles.arrow, { opacity: pressed ? 0.5 : 1 }]}
                     >
                       <Icon name="chevron-forward" size={16} color={colors.secondary} />
@@ -169,7 +205,7 @@ export default function ProfileFeed({ profiles, session, disabled, onAgentAccess
                   )}
                 </View>
               )}
-            </View>
+            </Pressable>
           );
         })}
       </View>

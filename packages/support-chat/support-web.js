@@ -3,8 +3,14 @@ import { errorJSON } from './errors.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSupportInbox } from './support-client.js';
 import { useSupportData } from './support-data.js';
-/** @param {{Button?:import('react').ComponentType<import('react').ButtonHTMLAttributes<HTMLButtonElement> & {variant?:'outline'|'ghost'}>,request:import('./support-client.js').SupportClient,active?:boolean,data?:import('./support-client.js').SupportDataAdapter}} props */
-export function WebSupport({ request, active = true, data, Button = SupportButton }) {
+/** @param {{Button?:import('react').ComponentType<import('react').ButtonHTMLAttributes<HTMLButtonElement> & {variant?:'outline'|'ghost'}>,request:import('./support-client.js').SupportClient,active?:boolean,projectLabel?:string,data?:import('./support-client.js').SupportDataAdapter}} props */
+export function WebSupport({
+  request,
+  active = true,
+  projectLabel = 'Support',
+  data,
+  Button = SupportButton,
+}) {
   const chat = useSupportInbox(request, active);
   const titleId = useId(),
     messageId = useId(),
@@ -14,6 +20,7 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
   const c = chat.conversation;
   const logs = useSupportData(c, data, () => crypto.randomUUID(), chat.mutate);
   const disabled = chat.busy || logs.busy;
+  const canCompose = !c || c.status === 'open';
   const viewport = useRef(/** @type {HTMLDivElement|null} */ (null));
   const atBottom = useRef(true);
   const [nearBottom, setNearBottom] = useState(true);
@@ -46,9 +53,25 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
       className="mx-auto flex h-[calc(100dvh-7rem)] min-h-0 w-full max-w-3xl flex-col px-4 lg:px-6"
       aria-label="Support inbox"
     >
-      <header className="flex items-center justify-between border-b py-4">
-        <h2 className="text-sm font-medium">
-          Isobot <span className="ml-2 text-muted-foreground">Support</span>
+      <header className="flex h-16 shrink-0 items-center justify-between gap-3">
+        {c && (
+          <Button
+            variant="ghost"
+            type="button"
+            aria-label="Back to conversations"
+            disabled={disabled}
+            onClick={() => {
+              logs.cancel();
+              setDraft('');
+              void chat.open('');
+            }}
+            className="h-11 w-11 rounded-full border p-0"
+          >
+            ‹
+          </Button>
+        )}
+        <h2 className="min-w-0 flex-1 truncate text-center text-lg font-semibold">
+          {c ? c.title : 'Isobot'}
         </h2>
         <Button
           variant="ghost"
@@ -81,19 +104,28 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
         )}
         {!c ? (
           <>
-            <div className="space-y-2 py-2">
-              <h3 className="text-xl font-semibold tracking-tight">How can we help?</h3>
-              <p className="text-sm text-muted-foreground">
-                Ask Isobot a question or report a problem. Staff can join the conversation.
+            {!chat.loaded && !chat.error && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Loading conversations…
               </p>
-            </div>
+            )}
+            {chat.loaded && !chat.conversations.length && (
+              <div className="space-y-2 py-2">
+                <h3 className="text-xl font-semibold tracking-tight">How can we help?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Ask Isobot a question or report a problem. Staff can join the conversation.
+                </p>
+              </div>
+            )}
+            {!!chat.conversations.length && <h3 className="text-sm font-semibold">Recent</h3>}
             {chat.conversations.map((item) => (
               <Button
                 variant="ghost"
                 key={item.id}
+                aria-label={`${item.title}${item.unreadCount ? ', New message' : ''}`}
                 disabled={disabled}
                 type="button"
-                className="h-auto min-h-14 w-full justify-between whitespace-normal rounded-xl border-0 bg-transparent px-2 py-3 text-left shadow-none"
+                className="h-auto min-h-16 w-full justify-between rounded-xl border-0 bg-transparent px-0 py-3 text-left font-normal shadow-none"
                 onClick={() => {
                   setDraft('');
                   atBottom.current = true;
@@ -101,7 +133,10 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
                   void chat.open(item.id);
                 }}
               >
-                <span>{item.title}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-base">{item.title}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{projectLabel}</span>
+                </span>
                 {!!item.unreadCount && (
                   <span
                     aria-label="New message"
@@ -113,20 +148,6 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
           </>
         ) : (
           <>
-            <Button
-              className="self-start px-0"
-              variant="ghost"
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                logs.cancel();
-                setDraft('');
-                void chat.open('');
-              }}
-            >
-              Back to conversations
-            </Button>
-            <h3 className="text-lg font-medium">{c.title}</h3>
             {c.hasMore && (
               <Button
                 variant="ghost"
@@ -330,61 +351,61 @@ export function WebSupport({ request, active = true, data, Button = SupportButto
           </>
         )}
       </div>
-      {(!c || c.status === 'open') && (
-        <form
-          className="mb-4 flex shrink-0 items-end gap-2 rounded-3xl border bg-background p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const value = (c ? draft : title).trim();
-            if (disabled || !value) return;
-            const pending = c
-              ? chat.send(value, crypto.randomUUID())
-              : chat.create(crypto.randomUUID(), value);
-            void pending.then((saved) => {
-              if (saved) {
-                setDraft('');
-                setTitle('');
-              }
-              return saved;
-            });
-          }}
-        >
-          {c && data && (
-            <Button
-              variant="ghost"
-              type="button"
-              aria-label="Attach recent logs"
-              disabled={disabled}
-              onClick={() => void logs.prepare(null)}
-              className="h-11 w-11 shrink-0 rounded-full"
-            >
-              +
-            </Button>
-          )}
-          <label className="sr-only" htmlFor={c ? messageId : titleId}>
-            {c ? 'Your message' : 'Conversation title'}
-          </label>
-          <textarea
-            id={c ? messageId : titleId}
-            value={c ? draft : title}
-            rows={1}
-            maxLength={c ? 1800 : 120}
-            required
-            disabled={disabled}
-            placeholder={c ? 'Message Isobot…' : 'Ask Isobot…'}
-            onChange={(event) => (c ? setDraft(event.target.value) : setTitle(event.target.value))}
-            className="max-h-36 min-h-11 w-full resize-none border-0 bg-transparent px-3 py-3 text-base outline-none"
-          />
+      <form
+        className="mx-4 mb-4 flex shrink-0 items-end gap-1 rounded-3xl border bg-background p-1 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const value = (c ? draft : title).trim();
+          if (disabled || !canCompose || !value) return;
+          const pending = c
+            ? chat.send(value, crypto.randomUUID())
+            : chat.create(crypto.randomUUID(), value);
+          void pending.then((saved) => {
+            if (saved) {
+              setDraft('');
+              setTitle('');
+            }
+            return saved;
+          });
+        }}
+      >
+        {c && data && (
           <Button
-            type="submit"
-            aria-label={c ? 'Send' : 'New conversation'}
-            disabled={disabled || !(c ? draft : title).trim()}
+            variant="ghost"
+            type="button"
+            aria-label="Attach recent logs"
+            disabled={disabled || !canCompose}
+            onClick={() => void logs.prepare(null)}
             className="h-11 w-11 shrink-0 rounded-full"
           >
-            ↑
+            +
           </Button>
-        </form>
-      )}
+        )}
+        <label className="sr-only" htmlFor={c ? messageId : titleId}>
+          {c ? 'Your message' : 'Conversation title'}
+        </label>
+        <textarea
+          id={c ? messageId : titleId}
+          value={c ? draft : title}
+          rows={1}
+          maxLength={c ? 1800 : 120}
+          required
+          disabled={disabled || !canCompose}
+          placeholder={
+            !canCompose ? 'Conversation archived' : c ? 'Message Isobot…' : 'Ask Isobot…'
+          }
+          onChange={(event) => (c ? setDraft(event.target.value) : setTitle(event.target.value))}
+          className="max-h-36 min-h-11 w-full resize-none border-0 bg-transparent px-2 py-2.5 text-base outline-none"
+        />
+        <Button
+          type="submit"
+          aria-label={c ? 'Send' : 'New conversation'}
+          disabled={disabled || !canCompose || !(c ? draft : title).trim()}
+          className="h-11 w-11 shrink-0 rounded-full"
+        >
+          ↑
+        </Button>
+      </form>
     </section>
   );
 }

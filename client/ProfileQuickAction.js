@@ -2,11 +2,12 @@ import { Pressable, StyleSheet } from 'react-native';
 import { Copy, Icon } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 
-/** @param {{label:string,icon:import('../src/components/ui.js').IconName,onPress:()=>void,disabled:boolean,busy?:boolean,roomy?:boolean,iconOnly?:boolean,testID:string}} props */
+/** @param {{label:string,icon:import('../src/components/ui.js').IconName,onPress:()=>void,onDisabledPress?:()=>void,disabled:boolean,busy?:boolean,roomy?:boolean,iconOnly?:boolean,testID:string}} props */
 export default function ProfileQuickAction({
   label,
   icon,
   onPress,
+  onDisabledPress,
   disabled,
   busy = false,
   roomy = false,
@@ -19,9 +20,16 @@ export default function ProfileQuickAction({
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled, busy }}
-      disabled={disabled}
-      onPress={onPress}
+      accessibilityState={{ disabled: disabled && !onDisabledPress, busy }}
+      accessibilityHint={
+        disabled && onDisabledPress ? 'Explains why this action is unavailable' : undefined
+      }
+      disabled={disabled && !onDisabledPress}
+      onPress={(event) => {
+        event.stopPropagation();
+        if (disabled) onDisabledPress?.();
+        else onPress();
+      }}
       style={({ pressed }) => [
         iconOnly ? styles.iconOnly : styles.action,
         roomy && styles.roomy,

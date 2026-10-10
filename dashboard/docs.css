@@ -79,6 +79,7 @@
   width: 40px;
   height: 40px;
 }
+.docs-header nav a:hover,
 .docs-header a[aria-current='page'],
 .docs-sidebar a[aria-current='page'] {
   text-decoration: underline;

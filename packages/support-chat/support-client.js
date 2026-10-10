@@ -1,4 +1,3 @@
-import { errorJSON } from './errors.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sorted } from './collections.js';
 /** @typedef {{id:string,title:string,status:string,unreadCount:number,updatedAt:string}} SupportSummary */
@@ -22,6 +21,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
   const [conversations, setConversations] = useState(/** @type {SupportSummary[]} */ ([]));
   const [conversation, setConversation] = useState(/** @type {SupportConversation|null} */ (null));
   const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const createRetry = useRef(/** @type {{id:string,title:string}|null} */ (null));
   const selected = useRef('');
@@ -50,7 +50,10 @@ export function useSupportInbox(request, active = true, initialConversationId = 
     const version = epoch.current;
     try {
       const inbox = /** @type {{conversations:SupportSummary[]}} */ (await request('list'));
-      if (alive.current && version === epoch.current) setConversations(inbox.conversations);
+      if (alive.current && version === epoch.current) {
+        setConversations(inbox.conversations);
+        setLoaded(true);
+      }
       if (selected.current) {
         const next = /** @type {SupportConversation} */ (
           await request('read', { conversationId: selected.current })
@@ -59,7 +62,8 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       }
       if (alive.current && version === epoch.current) setError('');
     } catch (reason) {
-      if (alive.current && version === epoch.current) setError(errorJSON(reason));
+      if (alive.current && version === epoch.current)
+        setError(reason instanceof Error ? reason.message : 'Support could not refresh.');
     } finally {
       working.current = false;
     }
@@ -80,6 +84,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       if (cancelled || !scope.request) return;
       setConversation(null);
       setConversations([]);
+      setLoaded(false);
       setError('');
       return undefined;
     });
@@ -108,7 +113,8 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       );
       if (alive.current && version === epoch.current) merge(next);
     } catch (reason) {
-      if (alive.current && version === epoch.current) setError(errorJSON(reason));
+      if (alive.current && version === epoch.current)
+        setError(reason instanceof Error ? reason.message : 'Conversation unavailable.');
     }
   }
   /** @param {string} action @param {Record<string,unknown>} [input] */
@@ -134,7 +140,10 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       }
       return true;
     } catch (reason) {
-      if (alive.current && version === epoch.current) setError(errorJSON(reason));
+      if (alive.current && version === epoch.current)
+        setError(
+          reason instanceof Error ? reason.message : 'Support could not complete this action.',
+        );
       return false;
     } finally {
       working.current = false;
@@ -165,6 +174,7 @@ export function useSupportInbox(request, active = true, initialConversationId = 
   }
   return {
     conversations,
+    loaded,
     conversation,
     error,
     busy,

@@ -5,6 +5,7 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 import { useSupportInbox } from './support-client.js';
 import { useSupportData } from './support-data.js';
-/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,initialConversationId?:string,onEnableNotifications?:()=>void,data?:import('./support-client.js').SupportDataAdapter,newId:()=>string,bottomInset?:number,topInset?:number,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
+/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,initialConversationId?:string,onEnableNotifications?:()=>void,data?:import('./support-client.js').SupportDataAdapter,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
 export function NativeSupport({
   request,
   active = true,
@@ -27,6 +28,7 @@ export function NativeSupport({
   colors,
   bottomInset = 0,
   topInset = 0,
+  projectLabel = 'Support',
   onExit,
   keyboardOffset = 0,
   renderIcon,
@@ -54,6 +56,7 @@ export function NativeSupport({
   const details = detailsFor === (c?.id ?? '');
   const logs = useSupportData(c, data, newId, chat.mutate),
     disabled = chat.busy || logs.busy;
+  const canCompose = !c || c.status === 'open';
   const scroll = useRef(/** @type {ScrollView|null} */ (null));
   const atBottom = useRef(true);
   const [nearBottom, setNearBottom] = useState(true);
@@ -98,7 +101,7 @@ export function NativeSupport({
     borderRadius: 16,
   };
   const submit = () => {
-    if (disabled) return;
+    if (disabled || !canCompose) return;
     if (c) {
       const value = draft.trim();
       if (value)
@@ -137,7 +140,14 @@ export function NativeSupport({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={c ? 'Back to conversations' : 'Support options'}
-          onPress={c ? backToFeed : () => setDetailsFor(details ? null : '')}
+          onPress={
+            c
+              ? backToFeed
+              : () => {
+                  Keyboard.dismiss();
+                  setDetailsFor(details ? null : '');
+                }
+          }
           style={[styles.toolbarButton, styles.circle, { borderColor: colors.border }]}
         >
           {renderIcon ? renderIcon(c ? 'chevron-back' : 'menu') : <Copy>{c ? '‹' : 'Menu'}</Copy>}
@@ -151,7 +161,7 @@ export function NativeSupport({
           </Text>
           {c && (
             <Text numberOfLines={1} style={[styles.headerSubtitle, { color: colors.secondary }]}>
-              myself.md · Isobot
+              {projectLabel} · Isobot
             </Text>
           )}
         </View>
@@ -168,7 +178,10 @@ export function NativeSupport({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Conversation details"
-              onPress={() => setDetailsFor(details ? null : c.id)}
+              onPress={() => {
+                Keyboard.dismiss();
+                setDetailsFor(details ? null : c.id);
+              }}
               style={styles.toolbarButton}
             >
               {renderIcon ? renderIcon('ellipsis-horizontal') : <Copy>More</Copy>}
@@ -179,6 +192,7 @@ export function NativeSupport({
             accessibilityRole="button"
             accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
             onPress={() => {
+              Keyboard.dismiss();
               setSearching(!searching);
               setQuery('');
             }}
@@ -238,7 +252,27 @@ export function NativeSupport({
         )}
         {!c ? (
           <>
-            {!chat.conversations.length && (
+            {!chat.loaded && !chat.error && (
+              <View accessibilityLabel="Loading conversations" style={styles.feed}>
+                {[0, 1, 2].map((key) => (
+                  <View key={key} style={styles.skeletonRow}>
+                    <View
+                      style={[
+                        styles.skeletonTitle,
+                        { backgroundColor: colors.subtle ?? colors.border },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.skeletonSubtitle,
+                        { backgroundColor: colors.subtle ?? colors.border },
+                      ]}
+                    />
+                  </View>
+                ))}
+              </View>
+            )}
+            {chat.loaded && !chat.conversations.length && (
               <View style={styles.welcome}>
                 <Copy style={styles.heading}>How can we help?</Copy>
                 <Copy muted>Ask Isobot a question or report a problem.</Copy>
@@ -248,6 +282,7 @@ export function NativeSupport({
               <Text style={[styles.feedHeading, { color: colors.text }]}>Search results</Text>
             )}
             <View style={styles.feed}>
+              {query && !visible.length && <Copy muted>No conversations found.</Copy>}
               {visible.map((item, index) => (
                 <View key={item.id}>
                   {!query &&
@@ -263,13 +298,14 @@ export function NativeSupport({
                     accessibilityLabel={`${item.title}${item.unreadCount ? ', New message' : ''}`}
                     disabled={disabled}
                     onPress={() => {
+                      Keyboard.dismiss();
                       setDraft('');
                       setDetailsFor(null);
                       atBottom.current = true;
                       setNearBottom(true);
                       void chat.open(item.id);
                     }}
-                    style={styles.feedRow}
+                    style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}
                   >
                     <View style={styles.feedTitle}>
                       <Text numberOfLines={1} style={[styles.feedText, { color: colors.text }]}>
@@ -278,7 +314,7 @@ export function NativeSupport({
                       <View style={styles.feedMeta}>
                         {renderIcon && renderIcon('folder-outline')}
                         <Text style={[styles.feedSubtitle, { color: colors.secondary }]}>
-                          myself.md
+                          {projectLabel}
                         </Text>
                       </View>
                     </View>
@@ -373,7 +409,7 @@ export function NativeSupport({
                   accessibilityLabel="Data snapshot preview"
                   multiline
                   value={logs.preview.content}
-                  editable={!disabled}
+                  editable={!disabled && canCompose}
                   onChangeText={logs.edit}
                   maxLength={128000}
                   style={previewStyle}
@@ -401,219 +437,258 @@ export function NativeSupport({
             ))}
           </>
         )}
-        {details && !c && onExit && (
-          <Button
-            secondary
-            label="Back to myself.md"
-            onPress={() => {
-              Keyboard.dismiss();
-              onExit();
-            }}
+      </ScrollView>
+      <View
+        style={[
+          styles.composerArea,
+          {
+            paddingBottom: Math.max(keyboardOpen ? 0 : bottomInset, 10),
+            backgroundColor: colors.surface,
+          },
+        ]}
+      >
+        <View
+          style={[styles.composer, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          {(!c || data) && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={c ? 'Attach recent logs' : 'Start a conversation'}
+              disabled={disabled || !canCompose}
+              onPress={() => (c ? void logs.prepare(null) : input.current?.focus())}
+              style={styles.composerButton}
+            >
+              {renderIcon ? renderIcon('add') : <Copy style={styles.plus}>+</Copy>}
+            </Pressable>
+          )}
+          <TextInput
+            ref={input}
+            testID="support-composer"
+            accessibilityLabel={c ? 'Your support message' : 'Conversation title'}
+            multiline
+            value={c ? draft : title}
+            onChangeText={c ? setDraft : setTitle}
+            maxLength={c ? 1800 : 120}
+            editable={!disabled && canCompose}
+            placeholder={
+              !canCompose ? 'Conversation archived' : c ? 'Message Isobot…' : 'Ask Isobot…'
+            }
+            placeholderTextColor={colors.secondary}
+            style={inputStyle}
           />
-        )}
-        {details && (
-          <Group compact>
-            <Row
-              compact
-              title="Refresh"
-              subtitle=""
-              trailing={null}
-              disabled={disabled}
-              onPress={() => void chat.refresh()}
-            />
-            {onEnableNotifications && (
-              <Row
-                compact
-                subtitle=""
-                trailing={null}
-                title="Enable reply notifications"
-                disabled={disabled}
-                onPress={onEnableNotifications}
-              />
+          <Pressable
+            hitSlop={4}
+            testID="support-send"
+            accessibilityRole="button"
+            accessibilityLabel={c ? 'Send message' : 'New conversation'}
+            accessibilityState={{
+              disabled: disabled || !canCompose || !(c ? draft : title).trim(),
+            }}
+            disabled={disabled || !canCompose || !(c ? draft : title).trim()}
+            onPress={submit}
+            style={[
+              styles.send,
+              (disabled || !canCompose || !(c ? draft : title).trim()) && styles.sendDisabled,
+              {
+                backgroundColor: colors.text,
+              },
+            ]}
+          >
+            {renderIcon ? (
+              renderIcon('arrow-up')
+            ) : (
+              <Copy style={[styles.sendIcon, { color: colors.surface }]}>↑</Copy>
             )}
-            {c && (
-              <>
-                <Row
-                  compact
-                  subtitle=""
-                  trailing={null}
-                  title="Mark as read"
-                  disabled={disabled}
-                  onPress={() =>
-                    void chat.mutate('readCursor', {
-                      readThrough: c.messages.at(-1)?.sequence ?? 0,
-                    })
-                  }
+          </Pressable>
+        </View>
+      </View>
+      <Modal
+        visible={details}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailsFor(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss support options"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setDetailsFor(null)}
+          />
+          <View
+            style={[
+              styles.optionsSheet,
+              { backgroundColor: colors.surface, paddingBottom: Math.max(bottomInset, 16) },
+            ]}
+          >
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.headerText, { color: colors.text }]}>
+                {c ? 'Conversation details' : 'Support options'}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close support options"
+                onPress={() => setDetailsFor(null)}
+                style={styles.toolbarButton}
+              >
+                {renderIcon ? renderIcon('close-outline') : <Copy>Close</Copy>}
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.sheetContent}>
+              {details && !c && onExit && (
+                <Button
+                  secondary
+                  label={`Back to ${projectLabel}`}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    onExit();
+                  }}
                 />
-                {c.status === 'open' ? (
-                  <>
-                    {data && (
-                      <Row
-                        compact
-                        subtitle=""
-                        trailing={null}
-                        title="Attach recent logs"
-                        disabled={disabled}
-                        onPress={() => void logs.prepare(null)}
-                      />
-                    )}
-                    <Row
-                      compact
-                      title="Connected agent access"
-                      subtitle="Allow your connected agents to read and send messages here"
-                      trailing={
-                        <Switch
-                          value={c.agentAccess}
-                          disabled={disabled}
-                          onValueChange={(value) =>
-                            void chat.mutate('update', { agentAccess: value })
-                          }
-                        />
-                      }
-                    />
-                    <Row
-                      compact
-                      title="Isobot replies"
-                      subtitle="Pause automatic replies when working with staff"
-                      trailing={
-                        <Switch
-                          value={c.autoReply}
-                          disabled={disabled}
-                          onValueChange={(value) =>
-                            void chat.mutate('update', { autoReply: value })
-                          }
-                        />
-                      }
-                    />
+              )}
+              {details && (
+                <Group compact>
+                  <Row
+                    compact
+                    title="Refresh"
+                    subtitle=""
+                    trailing={null}
+                    disabled={disabled}
+                    onPress={() => void chat.refresh()}
+                  />
+                  {onEnableNotifications && (
                     <Row
                       compact
                       subtitle=""
                       trailing={null}
-                      title="Resolve conversation"
+                      title="Enable reply notifications"
                       disabled={disabled}
-                      onPress={() => void chat.mutate('update', { status: 'resolved' })}
+                      onPress={onEnableNotifications}
                     />
-                  </>
-                ) : (
-                  <Row
-                    compact
-                    subtitle=""
-                    trailing={null}
-                    title="Reopen conversation"
-                    disabled={disabled}
-                    onPress={() => void chat.mutate('update', { status: 'open' })}
-                  />
-                )}
-                {c.status !== 'archived' && (
-                  <Row
-                    compact
-                    subtitle=""
-                    trailing={null}
-                    title="Archive conversation"
-                    disabled={disabled}
-                    onPress={() =>
-                      Alert.alert(
-                        'Archive conversation?',
-                        'Text stays; shared attachments are deleted.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Archive', onPress: () => void chat.mutate('archive') },
-                        ],
-                      )
-                    }
-                  />
-                )}
-                <Row
-                  compact
-                  subtitle=""
-                  trailing={null}
-                  title="Delete conversation"
-                  disabled={disabled}
-                  onPress={() =>
-                    Alert.alert(
-                      'Delete conversation?',
-                      'This permanently removes its text and attachments.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () => void chat.mutate('delete'),
-                        },
-                      ],
-                    )
-                  }
-                />
-              </>
-            )}
-          </Group>
-        )}
-      </ScrollView>
-      {(!c || c.status === 'open') && (
-        <View
-          style={[
-            styles.composerArea,
-            {
-              paddingBottom: Math.max(keyboardOpen ? 0 : bottomInset, 10),
-              backgroundColor: colors.surface,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.composer,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            {(!c || data) && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={c ? 'Attach recent logs' : 'Start a conversation'}
-                disabled={disabled}
-                onPress={() => (c ? void logs.prepare(null) : input.current?.focus())}
-                style={styles.composerButton}
-              >
-                {renderIcon ? renderIcon('add') : <Copy style={styles.plus}>+</Copy>}
-              </Pressable>
-            )}
-            <TextInput
-              ref={input}
-              testID="support-composer"
-              accessibilityLabel={c ? 'Your support message' : 'Conversation title'}
-              multiline
-              value={c ? draft : title}
-              onChangeText={c ? setDraft : setTitle}
-              maxLength={c ? 1800 : 120}
-              editable={!disabled}
-              placeholder={c ? 'Message Isobot…' : 'Ask Isobot…'}
-              placeholderTextColor={colors.secondary}
-              style={inputStyle}
-            />
-            <Pressable
-              hitSlop={4}
-              testID="support-send"
-              accessibilityRole="button"
-              accessibilityLabel={c ? 'Send message' : 'New conversation'}
-              accessibilityState={{ disabled: disabled || !(c ? draft : title).trim() }}
-              disabled={disabled || !(c ? draft : title).trim()}
-              onPress={submit}
-              style={[
-                styles.send,
-                (disabled || !(c ? draft : title).trim()) && styles.sendDisabled,
-                {
-                  backgroundColor: colors.text,
-                },
-              ]}
-            >
-              {renderIcon ? (
-                renderIcon('arrow-up')
-              ) : (
-                <Copy style={[styles.sendIcon, { color: colors.surface }]}>↑</Copy>
+                  )}
+                  {c && (
+                    <>
+                      <Row
+                        compact
+                        subtitle=""
+                        trailing={null}
+                        title="Mark as read"
+                        disabled={disabled}
+                        onPress={() =>
+                          void chat.mutate('readCursor', {
+                            readThrough: c.messages.at(-1)?.sequence ?? 0,
+                          })
+                        }
+                      />
+                      {c.status === 'open' ? (
+                        <>
+                          {data && (
+                            <Row
+                              compact
+                              subtitle=""
+                              trailing={null}
+                              title="Attach recent logs"
+                              disabled={disabled}
+                              onPress={() => {
+                                setDetailsFor(null);
+                                void logs.prepare(null);
+                              }}
+                            />
+                          )}
+                          <Row
+                            compact
+                            title="Connected agent access"
+                            subtitle="Allow your connected agents to read and send messages here"
+                            trailing={
+                              <Switch
+                                value={c.agentAccess}
+                                disabled={disabled}
+                                onValueChange={(value) =>
+                                  void chat.mutate('update', { agentAccess: value })
+                                }
+                              />
+                            }
+                          />
+                          <Row
+                            compact
+                            title="Isobot replies"
+                            subtitle="Pause automatic replies when working with staff"
+                            trailing={
+                              <Switch
+                                value={c.autoReply}
+                                disabled={disabled}
+                                onValueChange={(value) =>
+                                  void chat.mutate('update', { autoReply: value })
+                                }
+                              />
+                            }
+                          />
+                          <Row
+                            compact
+                            subtitle=""
+                            trailing={null}
+                            title="Resolve conversation"
+                            disabled={disabled}
+                            onPress={() => void chat.mutate('update', { status: 'resolved' })}
+                          />
+                        </>
+                      ) : (
+                        <Row
+                          compact
+                          subtitle=""
+                          trailing={null}
+                          title="Reopen conversation"
+                          disabled={disabled}
+                          onPress={() => void chat.mutate('update', { status: 'open' })}
+                        />
+                      )}
+                      {c.status !== 'archived' && (
+                        <Row
+                          compact
+                          subtitle=""
+                          trailing={null}
+                          title="Archive conversation"
+                          disabled={disabled}
+                          onPress={() =>
+                            Alert.alert(
+                              'Archive conversation?',
+                              'Text stays; shared attachments are deleted.',
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { text: 'Archive', onPress: () => void chat.mutate('archive') },
+                              ],
+                            )
+                          }
+                        />
+                      )}
+                      <Row
+                        compact
+                        subtitle=""
+                        trailing={null}
+                        title="Delete conversation"
+                        disabled={disabled}
+                        onPress={() =>
+                          Alert.alert(
+                            'Delete conversation?',
+                            'This permanently removes its text and attachments.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Delete',
+                                style: 'destructive',
+                                onPress: () => void chat.mutate('delete'),
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    </>
+                  )}
+                </Group>
               )}
-            </Pressable>
+            </ScrollView>
           </View>
         </View>
-      )}
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -632,6 +707,22 @@ function section(date, now) {
 }
 
 const styles = StyleSheet.create({
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
+  optionsSheet: {
+    maxHeight: '80%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderCurve: 'continuous',
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 20,
+    paddingRight: 12,
+    paddingTop: 8,
+  },
+  sheetContent: { padding: 20, gap: 12 },
   sendDisabled: { opacity: 0.3 },
   sendIcon: { fontSize: 22 },
   fill: { flex: 1 },
@@ -668,6 +759,10 @@ const styles = StyleSheet.create({
   welcome: { gap: 8, paddingVertical: 24 },
   heading: { fontSize: 22, fontWeight: '600' },
   feed: { gap: 8 },
+  skeletonRow: { height: 68, gap: 8, justifyContent: 'center' },
+  skeletonTitle: { height: 16, width: '75%', borderRadius: 4 },
+  skeletonSubtitle: { height: 12, width: '25%', borderRadius: 4 },
+  pressed: { opacity: 0.6 },
   feedRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -681,7 +776,7 @@ const styles = StyleSheet.create({
   message: { paddingVertical: 12, gap: 8, alignSelf: 'stretch' },
   outgoing: {
     alignSelf: 'flex-end',
-    maxWidth: '86%',
+    maxWidth: '80%',
     borderRadius: 22,
     borderCurve: 'continuous',
     paddingHorizontal: 16,

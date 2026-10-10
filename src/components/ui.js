@@ -142,8 +142,9 @@ export function Divider() {
   const { colors } = useTheme();
   return <View style={[styles.divider, { backgroundColor: colors.border }]} />;
 }
-/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,selected?:boolean,compact?:boolean,value?:string,disabled?:boolean,destructive?:boolean,testID?:string}} props */
+/** @param {{title:string,subtitle?:string|undefined,icon?:import('react').ReactNode,trailing?:import('react').ReactNode,onPress?:(()=>void)|undefined,onDisabledPress?:()=>void,selected?:boolean,compact?:boolean,value?:string,disabled?:boolean,destructive?:boolean,testID?:string}} props */
 export function Row({
+  onDisabledPress,
   title,
   subtitle,
   icon,
@@ -191,10 +192,16 @@ export function Row({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      disabled={disabled}
-      accessibilityState={{ disabled, ...(selected === undefined ? {} : { selected }) }}
+      disabled={disabled && !onDisabledPress}
+      accessibilityState={{
+        disabled: disabled && !onDisabledPress,
+        ...(selected === undefined ? {} : { selected }),
+      }}
+      accessibilityHint={
+        disabled && onDisabledPress ? 'Explains why this action is unavailable' : undefined
+      }
       accessibilityLabel={[title, value, subtitle].filter(Boolean).join(', ')}
-      onPress={onPress}
+      onPress={disabled ? onDisabledPress : onPress}
       style={({ pressed }) => [
         styles.row,
         compact && [styles.compactRow, { borderBottomColor: colors.border }],

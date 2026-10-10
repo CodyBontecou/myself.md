@@ -73,6 +73,17 @@ function ProfileExportControls({
     }
   }
   function exportProfile() {
+    if (qaEnabled || disabled || running.current) {
+      showToast({
+        message: qaEnabled
+          ? 'Exports are disabled in this QA preview. Use the regular app to export.'
+          : running.current
+            ? 'An export is already in progress. Wait for it to finish.'
+            : 'Another profile action is in progress. Try again when it finishes.',
+        kind: 'warning',
+      });
+      return;
+    }
     void run(async () => {
       const result = await exportNow(session, profile, setMessage);
       showToast({
@@ -81,7 +92,7 @@ function ProfileExportControls({
           : `${profile.name} exported successfully.`,
         kind: result.failedSources ? 'warning' : 'success',
       });
-    }, `Could not export ${profile.name}. See the error below.`);
+    }, `Could not export ${profile.name}.`);
   }
   useEffect(() => {
     if (!quick && !qaEnabled && profile.export.destination === 'cloud')
@@ -103,6 +114,7 @@ function ProfileExportControls({
             roomy={roomy}
             iconOnly={iconOnly}
             onPress={exportProfile}
+            onDisabledPress={exportProfile}
           />
           {agentAction}
           {trailingAction}
@@ -164,6 +176,7 @@ function ProfileExportControls({
           title={busy ? 'Exporting…' : 'Export profile now'}
           disabled={disabled || busy}
           onPress={exportProfile}
+          onDisabledPress={exportProfile}
         />
         <Row
           compact

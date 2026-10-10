@@ -223,10 +223,6 @@ select:not([multiple]):not([size]) {
   }
 }
 
-.demo-introduction {
-  background: var(--card);
-}
-
 .dataset-search-reveal {
   opacity: 0;
   pointer-events: none;
@@ -357,5 +353,21 @@ summary.export-json-line:focus-visible {
     flex: 1;
     min-height: 0;
     height: auto;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dataset-option:hover {
+    background-color: color-mix(in oklch, var(--foreground) 3%, transparent);
+  }
+
+  .dataset-row:hover {
+    background-image: linear-gradient(
+      color-mix(in oklch, var(--muted-foreground) 50%, transparent),
+      color-mix(in oklch, var(--muted-foreground) 50%, transparent)
+    );
+    background-size: 100% 1px;
+    background-repeat: no-repeat;
+    background-position: left calc(50% + 0.75rem);
   }
 }

@@ -115,6 +115,7 @@ function SupportInbox({ session }) {
         colors={{ ...colors, subtle: isDark ? colors.subtle : '#EEF1FC' }}
         bottomInset={insets.bottom}
         topInset={insets.top}
+        projectLabel="myself.md"
         onExit={() => router.back()}
         renderIcon={(name) => (
           <Icon

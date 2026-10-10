@@ -25,7 +25,7 @@ export function SiteHeader() {
               key={label}
               href={href}
               aria-current={current === href ? 'page' : undefined}
-              className="underline-offset-4 aria-[current=page]:underline"
+              className="underline-offset-4 hover:underline aria-[current=page]:underline"
             >
               {label}
             </a>

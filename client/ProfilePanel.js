@@ -248,7 +248,7 @@ export default function ProfilePanel({
           }),
         {
           success: `${target.name} ${enabled ? 'unlocked for agents' : 'locked'}.`,
-          failure: `Could not ${enabled ? 'unlock' : 'lock'} ${target.name}. See the error below.`,
+          failure: `Could not ${enabled ? 'unlock' : 'lock'} ${target.name}.`,
         },
       );
     if (!enabled) return save();

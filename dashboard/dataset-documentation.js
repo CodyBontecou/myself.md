@@ -359,10 +359,8 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                       open={Boolean(search) || defaultOpen}
                       className="group"
                     >
-                      <summary className="group/row flex cursor-pointer list-none items-center gap-3 rounded-md bg-background py-4 pl-3 text-base font-medium group-open:sticky group-open:top-0 group-open:z-10 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                        <span className="decoration-muted-foreground/50 underline-offset-4 group-hover/row:underline">
-                          {title}
-                        </span>
+                      <summary className="dataset-row flex cursor-pointer list-none items-center gap-3 bg-background py-4 pl-3 text-base font-medium group-open:sticky group-open:top-0 group-open:z-10 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                        <span>{title}</span>
                         <span className="ml-auto px-1 text-xs font-medium tabular-nums text-muted-foreground">
                           {platformSections.reduce(
                             (count, group) =>
@@ -388,9 +386,12 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                             </h3>
                             <div className="grid gap-3 sm:grid-cols-2">
                               {group.keys.map((key) => (
-                                <label key={key} className="flex min-w-0 items-start gap-3 text-sm">
+                                <label
+                                  key={key}
+                                  className="dataset-option flex min-w-0 cursor-pointer items-start gap-3 rounded-sm text-sm"
+                                >
                                   <input
-                                    className="mt-1 accent-current"
+                                    className="mt-1 cursor-pointer accent-current"
                                     type="checkbox"
                                     checked={selected[group.domain].includes(key)}
                                     onChange={(event) => {

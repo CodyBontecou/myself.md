@@ -303,6 +303,12 @@ try {
   await page.getByRole('button', { name: 'Export issue', exact: true }).click();
   await page.getByText('logs attachment · Removed when archived', { exact: true }).waitFor();
   assert.equal(
+    await page.getByLabel('Your message', { exact: true }).isDisabled(),
+    true,
+    'Archived chats retain a disabled bottom composer',
+  );
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.equal(
     await page.getByRole('log').getByText('First support question', { exact: true }).count(),
     1,
   );
