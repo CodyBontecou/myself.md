@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 const version = '26.8.0';
 const directory = resolve('.local/keycloak');
-if (!existsSync('.local/realm/qr-connect.json')) throw new Error('Run npm run auth:setup first.');
+if (!existsSync('.local/realm/myselfmd.json')) throw new Error('Run npm run auth:setup first.');
 if (!existsSync(`${directory}/bin/kc.sh`)) {
   mkdirSync(directory, { recursive: true });
   console.log(`Downloading official Keycloak ${version} (Java 21+ required)…`);
@@ -21,7 +21,7 @@ if (!existsSync(`${directory}/bin/kc.sh`)) {
   if (extraction.status !== 0) throw new Error('Keycloak extraction failed.');
 }
 mkdirSync(`${directory}/data/import`, { recursive: true });
-copyFileSync('.local/realm/qr-connect.json', `${directory}/data/import/qr-connect.json`);
+copyFileSync('.local/realm/myselfmd.json', `${directory}/data/import/myselfmd.json`);
 const child = spawn(
   `${directory}/bin/kc.sh`,
   [

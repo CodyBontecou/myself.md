@@ -44,7 +44,7 @@ const querySchema = z
     { message: 'Use a positive range of at most 31 days; paginate longer exports.' },
   );
 const profileSchema = z.object({
-  schema: z.enum(['myself.md.profile.v1', 'qr-connect.profile.v1']),
+  schema: z.literal('myself.md.profile.v1'),
   name: z.string().min(1).max(80),
   export: z
     .object({
@@ -106,7 +106,7 @@ const catalogSchema = z.object({
         permission: z.string().max(100).optional(),
         permissionHandoff: z
           .string()
-          .regex(/^qrconnect:\/\/data\/(health|time|location)$/)
+          .regex(/^myselfmd:\/\/data\/(health|time|location)$/)
           .optional(),
         availableTypes: z.array(z.string().max(160)).max(300),
         types: z.array(z.string().max(160)).max(300),
@@ -324,7 +324,7 @@ export function createDataService({
       'create_phone_export_profile',
       {
         description:
-          'Generate an explicit per-type export profile and a qrconnect deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
+          'Generate an explicit per-type export profile and a myselfmd deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
         inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
       },
       async ({ profile, deviceId }) => {
@@ -416,7 +416,7 @@ export function createDataService({
             profile.agentAccess === enabled
               ? null
               : {
-                  deepLink: `qrconnect://profiles/${encodeURIComponent(profileId)}`,
+                  deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}`,
                   instruction: `On the phone, ${enabled ? 'enable' : 'disable'} Allow agent access for ${profile.name}${enabled ? ' and confirm Allow' : ''}.`,
                 },
         });

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createPrivateKey } from 'node:crypto';
 const cloud = process.argv.includes('--cloud');
 const issuer = cloud
-  ? process.env.SERVICE_DOMAIN && `https://${process.env.SERVICE_DOMAIN}/auth/realms/qr-connect`
+  ? process.env.SERVICE_DOMAIN && `https://${process.env.SERVICE_DOMAIN}/auth/realms/myselfmd`
   : process.env.OAUTH_ISSUER;
 if (!issuer?.startsWith('https://'))
   throw new Error('Social login requires a public HTTPS issuer.');
@@ -20,8 +20,8 @@ const proxyHeaders = {
   'X-Forwarded-Host': origin.host,
   'X-Forwarded-Port': origin.port || '443',
 };
-const realmPath = cloud ? '.local/cloud-realm/qr-connect.json' : '.local/realm/qr-connect.json';
-const realm = 'qr-connect';
+const realmPath = cloud ? '.local/cloud-realm/myselfmd.json' : '.local/realm/myselfmd.json';
+const realm = 'myselfmd';
 const response = await fetch(`${local}/realms/master/protocol/openid-connect/token`, {
   method: 'POST',
   headers: { ...proxyHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },

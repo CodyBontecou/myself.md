@@ -31,7 +31,7 @@ export async function catalog(_owner, grants, profile) {
             : location.granted
               ? 'authorized'
               : 'required',
-      permissionHandoff: `qrconnect://data/${domain}`,
+      permissionHandoff: `myselfmd://data/${domain}`,
       enabled: grants[domain] && (!profile || profile.selection[domain].length > 0),
       types: (domain === 'health'
         ? health

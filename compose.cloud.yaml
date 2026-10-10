@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     environment:
       PUBLIC_URL: https://${SERVICE_DOMAIN:?Set SERVICE_DOMAIN}
-      OAUTH_ISSUER: https://${SERVICE_DOMAIN}/auth/realms/qr-connect
-      ACCOUNT_NAMESPACE: ${ACCOUNT_NAMESPACE:-https://${SERVICE_DOMAIN}/auth/realms/qr-connect}
+      OAUTH_ISSUER: https://${SERVICE_DOMAIN}/auth/realms/myselfmd
+      ACCOUNT_NAMESPACE: ${ACCOUNT_NAMESPACE:-https://${SERVICE_DOMAIN}/auth/realms/myselfmd}
       CLOUD_ENCRYPTION_KEY: ${CLOUD_ENCRYPTION_KEY:?Set a persistent 64-character hex key}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_BUCKET: ${R2_BUCKET:-}

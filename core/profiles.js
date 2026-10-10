@@ -52,14 +52,14 @@ export function parseProfile(value, legacySnapshot = false) {
 }
 /** @param {ProfileDraft} profile */
 export function profileLink(profile) {
-  const link = `qrconnect://profile?payload=${encodeURIComponent(JSON.stringify(parseProfile(profile)))}`;
+  const link = `myselfmd://profile?payload=${encodeURIComponent(JSON.stringify(parseProfile(profile)))}`;
   if (link.length > 64000) throw new Error('Profile is too large for a deep link.');
   return link;
 }
 /** @param {string} link */
 export function profileFromLink(link) {
   if (link.length > 64000) throw new Error('Profile link is too large.');
-  const match = /^qrconnect:\/\/profile\?payload=([^&#]+)$/.exec(link);
+  const match = /^myselfmd:\/\/profile\?payload=([^&#]+)$/.exec(link);
   if (!match?.[1]) throw new Error('Invalid profile link.');
   return parseProfile(JSON.parse(decodeURIComponent(match[1])));
 }

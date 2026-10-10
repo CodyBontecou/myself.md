@@ -2,9 +2,9 @@ plugins {
   id 'com.android.library'
   id 'expo-module-gradle-plugin'
 }
-group = 'com.qrconnect.usage'
+group = 'com.myselfmd.usage'
 version = '1.0.0'
 android {
-  namespace 'com.qrconnect.usage'
+  namespace 'com.myselfmd.usage'
   defaultConfig { versionCode 1; versionName '1.0.0' }
 }

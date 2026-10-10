@@ -4,6 +4,6 @@
     "modules": ["PhoneUsageModule"]
   },
   "android": {
-    "modules": ["com.qrconnect.usage.PhoneUsageModule"]
+    "modules": ["com.myselfmd.usage.PhoneUsageModule"]
   }
 }

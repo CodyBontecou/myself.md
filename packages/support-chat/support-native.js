@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSupportInbox } from './support-client.js';
 import { useSupportData } from './support-data.js';
-/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,initialConversationId?:string,onEnableNotifications?:()=>void,data?:import('./support-client.js').SupportDataAdapter,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
+/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,initialConversationId?:string,onEnableNotifications?:()=>void,data?:import('./support-client.js').SupportDataAdapter,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline'|'notifications-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
 export function NativeSupport({
   request,
   active = true,
@@ -139,18 +139,18 @@ export function NativeSupport({
       <View style={styles.toolbar}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={c ? 'Back to conversations' : 'Support options'}
+          accessibilityLabel={c ? 'Back to conversations' : `Back to ${projectLabel}`}
           onPress={
             c
               ? backToFeed
               : () => {
                   Keyboard.dismiss();
-                  setDetailsFor(details ? null : '');
+                  onExit?.();
                 }
           }
           style={[styles.toolbarButton, styles.circle, { borderColor: colors.border }]}
         >
-          {renderIcon ? renderIcon(c ? 'chevron-back' : 'menu') : <Copy>{c ? '‹' : 'Menu'}</Copy>}
+          {renderIcon ? renderIcon('chevron-back') : <Copy>‹</Copy>}
         </Pressable>
         <View style={styles.headerTitle}>
           <Text
@@ -188,18 +188,37 @@ export function NativeSupport({
             </Pressable>
           </View>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
-            onPress={() => {
-              Keyboard.dismiss();
-              setSearching(!searching);
-              setQuery('');
-            }}
-            style={[styles.toolbarButton, styles.circle, { borderColor: colors.border }]}
-          >
-            {renderIcon ? renderIcon(searching ? 'close-outline' : 'search') : <Copy>Search</Copy>}
-          </Pressable>
+          <View style={styles.feedActions}>
+            {onEnableNotifications && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Enable reply notifications"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onEnableNotifications();
+                }}
+                style={styles.toolbarButton}
+              >
+                {renderIcon ? renderIcon('notifications-outline') : <Copy>Notifications</Copy>}
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
+              onPress={() => {
+                Keyboard.dismiss();
+                setSearching(!searching);
+                setQuery('');
+              }}
+              style={[styles.toolbarButton, styles.circle, { borderColor: colors.border }]}
+            >
+              {renderIcon ? (
+                renderIcon(searching ? 'close-outline' : 'search')
+              ) : (
+                <Copy>Search</Copy>
+              )}
+            </Pressable>
+          </View>
         )}
       </View>
       {!c && searching && (
@@ -535,16 +554,6 @@ export function NativeSupport({
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.sheetContent}>
-              {details && !c && onExit && (
-                <Button
-                  secondary
-                  label={`Back to ${projectLabel}`}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    onExit();
-                  }}
-                />
-              )}
               {details && (
                 <Group compact>
                   <Row
@@ -730,6 +739,7 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, paddingHorizontal: 12 },
   headerText: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
   headerSubtitle: { fontSize: 12, lineHeight: 16 },
+  feedActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerActions: {
     flexDirection: 'row',
     borderWidth: StyleSheet.hairlineWidth,

@@ -51,7 +51,7 @@ Run against the live persistent billing database, on the service host or inside 
 
 ```sh
 DATA_DIR=/data npm run billing:grant -- \
-  --subject 'https://myself.md/auth/realms/qr-connect|KEYCLOAK_USER_ID' \
+  --subject 'https://myself.md/auth/realms/myselfmd|KEYCLOAK_USER_ID' \
   --stripe-payment 'pi_VERIFIED_PAYMENT_ID'
 ```
 

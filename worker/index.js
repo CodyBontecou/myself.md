@@ -118,7 +118,7 @@ export default {
       }
       if (url.pathname.startsWith('/auth/')) {
         if (
-          (!url.pathname.startsWith('/auth/realms/qr-connect/') &&
+          (!url.pathname.startsWith('/auth/realms/myselfmd/') &&
             !url.pathname.startsWith('/auth/resources/')) ||
           /[%\\;]/.test(url.pathname)
         )
@@ -151,16 +151,16 @@ export default {
       if (url.pathname === '/config')
         return json({
           issuer: env.OAUTH_ISSUER,
-          clientId: 'qr-phone',
+          clientId: 'myselfmd-phone',
           resource: `${publicOrigin(request, env)}/mcp`,
         });
       if (url.pathname === '/dashboard/config')
-        return json({ issuer: env.OAUTH_ISSUER, clientId: 'qr-dashboard' });
+        return json({ issuer: env.OAUTH_ISSUER, clientId: 'myselfmd-dashboard' });
       if (url.pathname.startsWith('/.well-known/oauth-protected-resource'))
         return json({
           resource: `${publicOrigin(request, env)}/mcp`,
           authorization_servers: [env.OAUTH_ISSUER],
-          scopes_supported: ['qr-connect'],
+          scopes_supported: ['myselfmd'],
           bearer_methods_supported: ['header'],
         });
       if (url.pathname === '/.well-known/apple-app-site-association')
@@ -241,9 +241,9 @@ export default {
       if (
         !payload.sub ||
         typeof payload.scope !== 'string' ||
-        !payload.scope.split(' ').includes('qr-connect')
+        !payload.scope.split(' ').includes('myselfmd')
       )
-        return json({ error: 'qr-connect scope required.' }, 403);
+        return json({ error: 'myselfmd scope required.' }, 403);
       const subject = `${env.ACCOUNT_NAMESPACE}|${payload.sub}`;
       if (url.pathname === '/api/claim' && request.method === 'POST') {
         const input = z

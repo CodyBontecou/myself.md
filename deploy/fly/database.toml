@@ -1,4 +1,4 @@
-app = "qr-connect-cloud-cody-db"
+app = "myselfmd-cloud-cody-db"
 primary_region = "cdg"
 [build]
   image = "postgres:17-bookworm"

@@ -6,7 +6,6 @@ import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRef, useState } from 'react';
 import {
   Copy,
@@ -15,7 +14,6 @@ import {
   Row,
   SectionHeader,
   Button as BridgeButton,
-  Screen,
 } from '../src/components/ui';
 import { Alert, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
 import { Button, Switch, Text } from './Terminal.js';
@@ -40,7 +38,6 @@ export default function ProfilePanel({
   profileId,
 }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const showToast = useToast();
   const { start } = useProfileEditor();
   const actionRunning = useRef(false);
@@ -511,14 +508,6 @@ export default function ProfilePanel({
           />
         </View>
       ) : null}
-      {!profileId && (
-        <ProfileFeed
-          profiles={state.profiles}
-          session={session}
-          disabled={disabled}
-          onAgentAccess={changeAgentAccess}
-        />
-      )}
     </View>
   );
   return (
@@ -526,18 +515,12 @@ export default function ProfilePanel({
       {profileId ? (
         content
       ) : (
-        <Screen>
-          <View style={styles.feedContent}>{content}</View>
-        </Screen>
-      )}
-      {!profileId && (
-        <Pressable
-          testID="profile-new-profile"
-          accessibilityRole="button"
-          accessibilityLabel="New profile"
-          accessibilityState={{ disabled }}
+        <ProfileFeed
+          profiles={state.profiles}
+          session={session}
           disabled={disabled}
-          onPress={() =>
+          onAgentAccess={changeAgentAccess}
+          onNewProfile={() =>
             edit({
               schema: 'myself.md.profile.v1',
               name: 'Profile',
@@ -545,18 +528,9 @@ export default function ProfilePanel({
               selection: { health: [], time: [], location: [] },
             })
           }
-          style={({ pressed }) => [
-            styles.newProfile,
-            {
-              right: insets.right + 16,
-              bottom: insets.bottom + 16,
-              backgroundColor: colors.accent,
-              opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
-            },
-          ]}
         >
-          <Icon name="add" size={28} color={colors.onAccent} />
-        </Pressable>
+          {draft ? content : null}
+        </ProfileFeed>
       )}
       {shareLink ? (
         <Text selectable style={styles.detail}>
@@ -601,17 +575,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   container: { gap: 16 },
-  feedContent: { paddingBottom: 80 },
-  newProfile: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderCurve: 'continuous',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.16)',
-  },
   feed: { flex: 1 },
   card: {
     gap: 8,

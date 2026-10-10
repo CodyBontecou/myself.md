@@ -3,7 +3,8 @@ import * as Location from 'expo-location';
 import { phoneDatabase } from './phone-database.js';
 import { record } from '../core/data.js';
 import { saveRecord } from './library.js';
-const locationTask = 'qr-connect-location';
+const locationTask = 'myselfmd-location';
+const legacyLocationTask = 'qr-connect-location';
 const db = phoneDatabase();
 db.execSync('CREATE TABLE IF NOT EXISTS tracking (id INTEGER PRIMARY KEY, owner TEXT)');
 /** @param {string|null} owner */
@@ -20,8 +21,12 @@ TaskManager.defineTask(locationTask, async ({ data, error }) => {
 });
 export async function stopTracking() {
   setTrackingOwner(null);
-  if (await Location.hasStartedLocationUpdatesAsync(locationTask))
-    await Location.stopLocationUpdatesAsync(locationTask);
+  await Promise.all(
+    [locationTask, legacyLocationTask].map(async (task) => {
+      if (await Location.hasStartedLocationUpdatesAsync(task))
+        await Location.stopLocationUpdatesAsync(task);
+    }),
+  );
 }
 /** @param {string} owner @returns {Promise<boolean>} */
 export async function startTracking(owner) {
@@ -33,17 +38,7 @@ export async function startTracking(owner) {
   if (!background.granted) return false;
   setTrackingOwner(owner);
   try {
-    await Location.startLocationUpdatesAsync(locationTask, {
-      accuracy: Location.Accuracy.Highest,
-      distanceInterval: 5,
-      timeInterval: 10000,
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: true,
-      foregroundService: {
-        notificationTitle: 'myself.md is recording location',
-        notificationBody: 'Stop recording in myself.md.',
-      },
-    });
+    await startUpdates();
     return true;
   } catch (error) {
     setTrackingOwner(null);
@@ -87,4 +82,28 @@ export async function locationStatus(owner) {
     count: summary.count,
     last: summary.last,
   };
+}
+
+async function startUpdates() {
+  await Location.startLocationUpdatesAsync(locationTask, {
+    accuracy: Location.Accuracy.Highest,
+    distanceInterval: 5,
+    timeInterval: 10000,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: true,
+    foregroundService: {
+      notificationTitle: 'myself.md is recording location',
+      notificationBody: 'Stop recording in myself.md.',
+    },
+  });
+}
+/** Move an already-authorized recording to the renamed native task on foreground upgrade. */
+export async function migrateLocationTask() {
+  if (!(await Location.hasStartedLocationUpdatesAsync(legacyLocationTask))) return;
+  const row = /** @type {{owner:string|null}|null} */ (
+    db.getFirstSync('SELECT owner FROM tracking WHERE id=1')
+  );
+  await Location.stopLocationUpdatesAsync(legacyLocationTask);
+  if (!row?.owner) return;
+  if (!(await Location.hasStartedLocationUpdatesAsync(locationTask))) await startUpdates();
 }

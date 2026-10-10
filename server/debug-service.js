@@ -174,7 +174,7 @@ export function phoneDebugState(deviceId, phone, filter = 'all') {
           }
         : null,
     handoff: {
-      deepLink: 'qrconnect://diagnostics',
+      deepLink: 'myselfmd://diagnostics',
       requiresUser: !allowed,
       instructions:
         'Open myself.md → Logs → Share & agent access. Enable Share logs with agents, or review and share the report using the system share sheet.',

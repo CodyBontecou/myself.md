@@ -12,14 +12,14 @@ const origin = `http://${ip}:3000`;
 const adminPassword = randomBytes(18).toString('base64url');
 mkdirSync('.local/realm', { recursive: true });
 const realm = {
-  realm: 'qr-connect',
+  realm: 'myselfmd',
   displayName: 'myself.md',
   enabled: true,
   sslRequired: 'none',
   offlineSessionIdleTimeout: 30 * 86400,
   offlineSessionMaxLifespanEnabled: false,
   ...socialAuth,
-  defaultDefaultClientScopes: ['profile', 'qr-connect'],
+  defaultDefaultClientScopes: ['profile', 'myselfmd'],
   clientProfiles: {
     profiles: [
       {
@@ -62,7 +62,7 @@ const realm = {
       ],
     },
     {
-      name: 'qr-connect',
+      name: 'myselfmd',
       protocol: 'openid-connect',
       attributes: { 'include.in.token.scope': 'true' },
       protocolMappers: [
@@ -83,24 +83,24 @@ const realm = {
   ],
   clients: [
     {
-      clientId: 'qr-phone',
+      clientId: 'myselfmd-phone',
       publicClient: true,
       standardFlowEnabled: true,
       directAccessGrantsEnabled: false,
-      redirectUris: ['qrconnect://oauth'],
-      defaultClientScopes: ['profile', 'qr-connect'],
+      redirectUris: ['myselfmd://oauth'],
+      defaultClientScopes: ['profile', 'myselfmd'],
       optionalClientScopes: ['offline_access'],
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
     {
-      clientId: 'qr-dashboard',
+      clientId: 'myselfmd-dashboard',
       name: 'myself.md Dashboard',
       publicClient: true,
       standardFlowEnabled: true,
       directAccessGrantsEnabled: false,
       redirectUris: [`${origin}/dashboard/callback`],
       webOrigins: [origin],
-      defaultClientScopes: ['profile', 'qr-connect'],
+      defaultClientScopes: ['profile', 'myselfmd'],
       optionalClientScopes: ['offline_access'],
       attributes: {
         'pkce.code.challenge.method': 'S256',
@@ -108,12 +108,12 @@ const realm = {
       },
     },
     {
-      clientId: 'qr-mcp',
+      clientId: 'myselfmd-mcp',
       publicClient: true,
       standardFlowEnabled: true,
       directAccessGrantsEnabled: false,
       redirectUris: ['http://localhost:8765/callback'],
-      defaultClientScopes: ['profile', 'qr-connect'],
+      defaultClientScopes: ['profile', 'myselfmd'],
       optionalClientScopes: ['offline_access'],
       attributes: { 'pkce.code.challenge.method': 'S256' },
     },
@@ -146,10 +146,10 @@ const realm = {
     ],
   },
 };
-writeFileSync('.local/realm/qr-connect.json', JSON.stringify(realm, null, 2));
+writeFileSync('.local/realm/myselfmd.json', JSON.stringify(realm, null, 2));
 writeFileSync(
   '.env',
-  `PUBLIC_URL=${origin}\nOAUTH_ISSUER=http://${ip}:8080/realms/qr-connect\nALLOW_HTTP_DEV=1\nDEV_HOST=${ip}\nKEYCLOAK_URL=http://${ip}:8080\nEXPO_PUBLIC_ALLOW_HTTP=1\nKC_BOOTSTRAP_ADMIN_USERNAME=admin\nKC_BOOTSTRAP_ADMIN_PASSWORD=${adminPassword}\n`,
+  `PUBLIC_URL=${origin}\nOAUTH_ISSUER=http://${ip}:8080/realms/myselfmd\nALLOW_HTTP_DEV=1\nDEV_HOST=${ip}\nKEYCLOAK_URL=http://${ip}:8080\nEXPO_PUBLIC_ALLOW_HTTP=1\nKC_BOOTSTRAP_ADMIN_USERNAME=admin\nKC_BOOTSTRAP_ADMIN_PASSWORD=${adminPassword}\n`,
   { mode: 0o600 },
 );
 console.log(

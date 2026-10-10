@@ -56,7 +56,10 @@ const context = {
   Event,
   fetch: async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
     if (url === '/dashboard/config')
-      return Response.json({ issuer: 'https://identity.example/realm', clientId: 'qr-dashboard' });
+      return Response.json({
+        issuer: 'https://identity.example/realm',
+        clientId: 'myselfmd-dashboard',
+      });
     if (url === 'https://identity.example/realm/sign-in/social') {
       const body = JSON.parse(String(options.body));
       assert.equal(body.oauth_query, pendingOAuth);
@@ -134,7 +137,7 @@ await session.signIn('github');
 assert.equal(destination.hostname, 'github.com');
 await session.signIn('google');
 assert.equal(destination.hostname, 'accounts.google.com');
-assert.equal(storage.has('qr-dashboard-login'), false);
+assert.equal(storage.has('myselfmd-dashboard-login'), false);
 assert.equal(exchangeCount, 6);
 location.pathname = '/claim';
 location.search = '';

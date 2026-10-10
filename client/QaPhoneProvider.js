@@ -6,7 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogBox, Platform } from 'react-native';
 import { PhoneStateProvider } from './PhoneProvider.js';
 import { PhoneDataStateProvider } from './DataPanel.js';
-import { qaEnabled, qaSession, qaSnapshot, subscribeQa, updateQa } from './qa-runtime.js';
+import {
+  qaEnabled,
+  qaBannerEnabled,
+  qaSession,
+  qaSnapshot,
+  subscribeQa,
+  updateQa,
+} from './qa-runtime.js';
 import { saveProfiles } from './profiles.js';
 import { Button, Copy } from '../src/components/ui.js';
 
@@ -144,17 +151,19 @@ export default function QaPhoneProvider({ children }) {
           refreshLocation,
         }}
       >
-        <SafeAreaView edges={['top']}>
-          <Button
-            testID="qa-open"
-            label="QA fixtures"
-            secondary
-            onPress={() => router.push('/qa')}
-          />
-          <Copy testID="qa-active" accessibilityRole="alert" variant="caption">
-            QA fixtures · {fixture.scenario}
-          </Copy>
-        </SafeAreaView>
+        {qaBannerEnabled && (
+          <SafeAreaView edges={['top']}>
+            <Button
+              testID="qa-open"
+              label="QA fixtures"
+              secondary
+              onPress={() => router.push('/qa')}
+            />
+            <Copy testID="qa-active" accessibilityRole="alert" variant="caption">
+              QA fixtures · {fixture.scenario}
+            </Copy>
+          </SafeAreaView>
+        )}
         {children}
       </PhoneDataStateProvider>
     </PhoneStateProvider>

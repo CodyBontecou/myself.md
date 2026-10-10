@@ -7,8 +7,9 @@ import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
-/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string,lastActiveAt?:number}} Session */
-const key = 'qr-connect-session';
+/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string,lastActiveAt?:number,requiresSignIn?:boolean}} Session */
+const key = 'myselfmd-session';
+const legacyKey = 'qr-connect-session';
 const inactiveSessions = new WeakSet();
 const idleTimeout = 30 * 86400000;
 /** @type {Session|null} */
@@ -17,15 +18,26 @@ let currentSession = null;
 const refreshes = new Map();
 /** @returns {Promise<Session|null>} */
 export async function loadSession() {
-  const value = currentSession ? null : await SecureStore.getItemAsync(key);
+  let value = currentSession ? null : await SecureStore.getItemAsync(key);
+  const legacy = !currentSession && !value ? await SecureStore.getItemAsync(legacyKey) : null;
+  value ??= legacy;
   if (!currentSession && !value) return null;
   // Billing and foreground callers share mutations to rotating tokens and activity.
   const session = currentSession ?? /** @type {Session} */ (JSON.parse(value ?? 'null'));
   currentSession = session;
+  if (legacy || session.issuer.endsWith('/realms/qr-connect')) {
+    session.requiresSignIn = true;
+    session.accessToken = '';
+    session.refreshToken = '';
+    session.expires = 0;
+    session.issuer = session.issuer.replace(/\/realms\/qr-connect$/, '/realms/myselfmd');
+    await saveSession(session);
+    await SecureStore.deleteItemAsync(legacyKey);
+  }
   const server = canonicalServiceOrigin(session.server);
   if (server !== session.server) {
     session.server = server;
-    session.issuer = `${server}/auth/realms/qr-connect`;
+    session.issuer = `${server}/auth/realms/myselfmd`;
     session.resource = `${server}/mcp`;
     await saveSession(session);
   }
@@ -74,6 +86,7 @@ export async function clearSession(session) {
   currentSession = null;
   saveExportContext(null);
   await SecureStore.deleteItemAsync(key);
+  await SecureStore.deleteItemAsync(legacyKey);
 }
 /** @param {Session} session */
 export async function saveSession(session) {
@@ -174,17 +187,17 @@ export async function signIn(server, provider) {
   const config = await request(/** @type {string} */ (`${server}/config`));
   const checked = /** @type {{issuer:string,clientId:string,resource:string}} */ (config);
   trustedUrl(checked.issuer);
-  if (checked.clientId !== 'qr-phone' || checked.resource !== `${server}/mcp`)
+  if (checked.clientId !== 'myselfmd-phone' || checked.resource !== `${server}/mcp`)
     throw new Error('Invalid pairing server configuration.');
   const discovery = await AuthSession.fetchDiscoveryAsync(checked.issuer);
-  const redirectUri = 'qrconnect://oauth';
+  const redirectUri = 'myselfmd://oauth';
   const auth = new AuthSession.AuthRequest({
     clientId: checked.clientId,
     redirectUri,
     responseType: AuthSession.ResponseType.Code,
     usePKCE: true,
     codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
-    scopes: ['openid', 'profile', 'qr-connect', 'offline_access'],
+    scopes: ['openid', 'profile', 'myselfmd', 'offline_access'],
     extraParams: {
       resource: checked.resource,
       prompt: 'select_account',
@@ -203,6 +216,7 @@ export async function signIn(server, provider) {
     },
     discovery,
   );
+  const previous = currentSession;
   const session = {
     server,
     issuer: checked.issuer,
@@ -219,11 +233,17 @@ export async function signIn(server, provider) {
   const identity = /** @type {{account:string,subject:string}} */ (info);
   session.account = identity.account;
   session.owner = identity.subject;
+  if (previous?.owner === session.owner && previous.server === server && previous.deviceId) {
+    const devices = /** @type {{devices:{id:string}[]}} */ (info).devices;
+    if (devices.some((device) => device.id === previous.deviceId))
+      session.deviceId = previous.deviceId;
+  }
   return session;
 }
 /** @template T @param {Session} session @param {string} path @param {RequestInit} [options] @returns {Promise<T>} */
 export async function api(session, path, options) {
   if (inactiveSessions.has(session)) throw new Error('This session has been signed out.');
+  if (session.requiresSignIn) throw new Error('Sign in again to finish the myself.md upgrade.');
   if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout)
     throw new Error('Your session expired after 30 days of inactivity. Please sign in again.');
   if (session.expires < Date.now() + 30000) await refreshSession(session);
@@ -273,7 +293,7 @@ async function refreshSession(session, rejectedToken) {
       const discovery = await AuthSession.fetchDiscoveryAsync(session.issuer);
       return AuthSession.refreshAsync(
         {
-          clientId: 'qr-phone',
+          clientId: 'myselfmd-phone',
           refreshToken: session.refreshToken,
           extraParams: { resource: session.resource },
         },

@@ -116,7 +116,7 @@ export function createRemoteSupport(config, authorize, transport = fetch) {
           const data = {
             status: 'awaiting_user',
             action: input.ownerAction ?? 'agentAccess',
-            url: `qrconnect://support${input.conversationId ? `?conversationId=${encodeURIComponent(input.conversationId)}` : ''}`,
+            url: `myselfmd://support${input.conversationId ? `?conversationId=${encodeURIComponent(input.conversationId)}` : ''}`,
             verificationTool: 'support_conversations',
             conversationId: input.conversationId ?? null,
             requiresUser: true,

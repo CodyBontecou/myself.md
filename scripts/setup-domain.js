@@ -18,8 +18,8 @@ for (const origin of origins) {
     throw new Error('Set exact HTTPS service origins.');
 }
 const issuer = process.env.OAUTH_ISSUER;
-if (!issuer?.startsWith('https://') || new URL(issuer).pathname !== '/auth/realms/qr-connect')
-  throw new Error('Set OAUTH_ISSUER to the existing qr-connect issuer.');
+if (!issuer?.startsWith('https://') || new URL(issuer).pathname !== '/auth/realms/myselfmd')
+  throw new Error('Set OAUTH_ISSUER to the existing myselfmd issuer.');
 const local = process.env.KEYCLOAK_ADMIN_URL ?? '';
 const admin = new URL(local);
 if (admin.hostname !== '127.0.0.1' || admin.protocol !== 'http:')
@@ -48,7 +48,7 @@ const headers = {
 };
 /** @param {string} path @param {string} [method] @param {unknown} [body] */
 async function request(path, method = 'GET', body) {
-  const response = await fetch(`${local}/admin/realms/qr-connect${path}`, {
+  const response = await fetch(`${local}/admin/realms/myselfmd${path}`, {
     method,
     headers,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -58,14 +58,14 @@ async function request(path, method = 'GET', body) {
 }
 const realm = /** @type {Record<string, unknown>} */ (await (await request('')).json());
 const scopes = /** @type {Scope[]} */ (await (await request('/client-scopes')).json());
-const scope = scopes.find((item) => item.name === 'qr-connect');
-if (!scope) throw new Error('Existing qr-connect scope required.');
+const scope = scopes.find((item) => item.name === 'myselfmd');
+if (!scope) throw new Error('Existing myselfmd scope required.');
 const mapperPath = `/client-scopes/${scope.id}/protocol-mappers/models`;
 const mappers = /** @type {Mapper[]} */ (await (await request(mapperPath)).json());
 const clients = /** @type {Client[]} */ (
-  await (await request('/clients?clientId=qr-dashboard')).json()
+  await (await request('/clients?clientId=myselfmd-dashboard')).json()
 );
-const existing = clients.find((client) => client.clientId === 'qr-dashboard');
+const existing = clients.find((client) => client.clientId === 'myselfmd-dashboard');
 if (!existing) throw new Error('Provision the existing dashboard client first.');
 const client = {
   ...existing,
@@ -135,11 +135,11 @@ if (!process.argv.includes('--dry-run')) {
   }
   await request(`/clients/${existing.id}`, 'PUT', client);
   await request('', 'PUT', { ...realm, displayName: 'myself.md' });
-  const seedPath = '.local/cloud-realm/qr-connect.json';
+  const seedPath = '.local/cloud-realm/myselfmd.json';
   const seed = JSON.parse(readFileSync(seedPath, 'utf8'));
   seed.displayName = 'myself.md';
   const seedClient = seed.clients.find(
-    (/** @type {{clientId:string}} */ item) => item.clientId === 'qr-dashboard',
+    (/** @type {{clientId:string}} */ item) => item.clientId === 'myselfmd-dashboard',
   );
   if (seedClient)
     Object.assign(seedClient, {
@@ -148,9 +148,7 @@ if (!process.argv.includes('--dry-run')) {
       webOrigins: client.webOrigins,
       attributes: client.attributes,
     });
-  const seedScope = seed.clientScopes.find(
-    (/** @type {Scope} */ item) => item.name === 'qr-connect',
-  );
+  const seedScope = seed.clientScopes.find((/** @type {Scope} */ item) => item.name === 'myselfmd');
   if (seedScope) seedScope.protocolMappers = [...(seedScope.protocolMappers ?? []), ...additions];
   writeFileSync(seedPath, JSON.stringify(seed, null, 2), { mode: 0o600 });
   console.log('Updated domain audiences and dashboard callbacks; retained issuer and users.');

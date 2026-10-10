@@ -5,7 +5,7 @@ import { request } from 'node:http';
  * @param {URL} url @param {string} publicUrl */
 export function proxyAuth(req, res, url, publicUrl) {
   if (
-    (!url.pathname.startsWith('/auth/realms/qr-connect/') &&
+    (!url.pathname.startsWith('/auth/realms/myselfmd/') &&
       !url.pathname.startsWith('/auth/resources/')) ||
     /[%\\;]/.test(url.pathname)
   ) {

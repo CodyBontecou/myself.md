@@ -211,16 +211,16 @@ server.on(
 );
 /** @param {string} subject @param {string} azp */
 const token = (subject, azp) =>
-  new SignJWT({ scope: 'qr-connect', azp })
+  new SignJWT({ scope: 'myselfmd', azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'support-fixture' })
     .setIssuer(issuer)
     .setAudience(`${origin}/mcp`)
     .setSubject(subject)
     .setExpirationTime('5m')
     .sign(privateKey);
-const phone = await token('alice', 'qr-phone'),
-  web = await token('alice', 'qr-dashboard'),
-  other = await token('bob', 'qr-phone'),
+const phone = await token('alice', 'myselfmd-phone'),
+  web = await token('alice', 'myselfmd-dashboard'),
+  other = await token('bob', 'myselfmd-phone'),
   agent = await token('alice', 'support-agent');
 /** @param {string|null} bearer @param {string} [method] @param {unknown} [body] @param {string} [query] */
 async function request(bearer, method = 'GET', body, query = '') {

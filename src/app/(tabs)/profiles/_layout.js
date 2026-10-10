@@ -6,10 +6,10 @@ export default function ProfilesLayout() {
   return (
     <ProfileEditorProvider>
       <AppStack>
-        <Stack.Screen name="index" options={{ title: 'Profiles' }} />
+        <Stack.Screen name="index" options={{ title: 'Profiles', headerShown: false }} />
         <Stack.Screen
           name="editor/index"
-          options={{ title: 'Profile settings', animation: 'slide_from_right' }}
+          options={{ title: 'New profile', animation: 'slide_from_right' }}
         />
         <Stack.Screen name="editor/data" options={{ title: 'Data selection' }} />
         <Stack.Screen name="[id]" options={{ title: 'Profile' }} />

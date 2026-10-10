@@ -23,7 +23,7 @@ export function existingCustomerGuide() {
       'Eligible paid health.md downloads and lifetime purchases in health.md or iso.me qualify. Individual and Family purchasers can claim for one account; family-shared recipients do not qualify.',
     timeOffer:
       'Bought time.md? Contact the developer with your Stripe purchase receipt to request your offer. After it is activated, sign in here with the account that received access.',
-    accountLink: 'qrconnect://account',
+    accountLink: 'myselfmd://account',
     requiresUser: true,
   };
 }

@@ -59,10 +59,10 @@
   ],
   "vars": {
     "PUBLIC_URL": "https://myself.md",
-    "PUBLIC_URL_ALIASES": "https://qr-connect-cloud-cody.fly.dev",
-    "OAUTH_ISSUER": "https://myself.md/auth/realms/qr-connect",
+    "PUBLIC_URL_ALIASES": "",
+    "OAUTH_ISSUER": "https://myself.md/auth/realms/myselfmd",
     "ACCOUNT_NAMESPACE": "https://qr-connect-cloud-cody.fly.dev/auth/realms/qr-connect",
-    "AUTH_ORIGIN": "https://qr-connect-cloud-cody.fly.dev",
+    "AUTH_ORIGIN": "https://myself.md",
     "IOS_APP_ID": "67KC823C9A.com.myself.md",
     "ALLOW_HTTP_DEV": "0",
     "MIGRATION_ENABLED": "0",

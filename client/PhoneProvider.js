@@ -17,7 +17,7 @@ import {
   stopAccountExports,
   runScheduledExports,
 } from './export-task.js';
-import { stopTracking } from './location-task.js';
+import { stopTracking, migrateLocationTask } from './location-task.js';
 import { saveExportContext } from './export-context.js';
 import { renewCloudAuthorizations } from './destinations.js';
 import { profileFromLink } from '../core/profiles.js';
@@ -90,12 +90,12 @@ function usePhoneState() {
     const receive = (url) => {
       if (!url) return;
       try {
-        if (url === 'qrconnect://account' || url.startsWith('qrconnect://account?')) {
+        if (url === 'myselfmd://account' || url.startsWith('myselfmd://account?')) {
           router.navigate('/account');
-        } else if (url.startsWith('qrconnect://profile')) {
+        } else if (url.startsWith('myselfmd://profile')) {
           setIncoming(profileFromLink(url));
           router.navigate('/profiles');
-        } else if (url.startsWith('qrconnect://pair?') || /^https?:\/\/[^/]+\/pair#/.test(url)) {
+        } else if (url.startsWith('myselfmd://pair?') || /^https?:\/\/[^/]+\/pair#/.test(url)) {
           setPairing(parsePairingQr(url));
           router.push('/pair');
           locked.current = true;
@@ -125,7 +125,10 @@ function usePhoneState() {
           completeAccountCleanup();
           setSession(null);
           setAccountRevision((value) => value + 1);
-        } else setSession(loaded);
+        } else {
+          setSession(loaded);
+          await migrateLocationTask();
+        }
         return undefined;
       })
       .catch((e) => setError(errorJSON(e)))
@@ -244,7 +247,7 @@ function usePhoneState() {
       return undefined;
     });
   }
-  const connected = Boolean(session?.deviceId);
+  const connected = Boolean(session?.deviceId && !session.requiresSignIn);
   return {
     accountRevision,
     deletionStatusUrl,

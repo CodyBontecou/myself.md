@@ -19,7 +19,7 @@ const r2Secrets = r2Keys
   .join('');
 if (r2Secrets) writeFileSync('.local/fly-r2.secrets', r2Secrets, { mode: 0o600 });
 mkdirSync('.local/fly-identity', { recursive: true });
-copyFileSync('.local/cloud-realm/qr-connect.json', '.local/fly-identity/qr-connect.json');
+copyFileSync('.local/cloud-realm/myselfmd.json', '.local/fly-identity/myselfmd.json');
 for (const [name, value] of Object.entries({
   service: `CLOUD_ENCRYPTION_KEY=${values.CLOUD_ENCRYPTION_KEY}\n${r2Secrets}`,
   identity: `KC_DB_PASSWORD=${values.IDENTITY_DB_PASSWORD}\nKC_BOOTSTRAP_ADMIN_PASSWORD=${values.IDENTITY_ADMIN_PASSWORD}\n`,

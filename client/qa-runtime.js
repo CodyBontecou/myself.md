@@ -4,6 +4,7 @@ import { qaFixture, qaScenarios } from './qa-fixtures.js';
 
 // Both conditions are required. A release bundle cannot activate fixtures via an app link.
 export const qaEnabled = __DEV__ && process.env.EXPO_PUBLIC_QA === '1';
+export const qaBannerEnabled = qaEnabled && process.env.EXPO_PUBLIC_QA_BANNER === '1';
 const key = 'argent-qa-state-v1';
 const listeners = new Set(/** @type {(()=>void)[]} */ ([]));
 /** @type {import('./qa-fixtures.js').QaState} */

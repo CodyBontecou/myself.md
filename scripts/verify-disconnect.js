@@ -6,13 +6,15 @@ import { createPairingUrl, createPairingDeepLink, parsePairingQr } from '../core
 // Exercise the actual UI handler with native/network boundaries replaced.
 const app = readFileSync('client/PhoneProvider.js', 'utf8');
 const ticket = 'a'.repeat(43);
-const server = 'https://qr-connect-cloud-cody.fly.dev';
+const server = 'https://myself.md';
 const links = [createPairingUrl(server, ticket), createPairingDeepLink(server, ticket)];
-for (const link of links) assert.deepEqual(parsePairingQr(link), { server, ticket });
-assert.throws(() => parsePairingQr('qrconnect://pair?url=%ZZ'));
+assert.ok(createPairingDeepLink(server, ticket).startsWith('myselfmd://'));
 assert.throws(() =>
-  parsePairingQr('qrconnect://pair?url=https%3A%2F%2Fexample.com%2Fpair%23short'),
+  parsePairingQr(createPairingDeepLink(server, ticket).replace('myselfmd://', 'qrconnect://')),
 );
+for (const link of links) assert.deepEqual(parsePairingQr(link), { server, ticket });
+assert.throws(() => parsePairingQr('myselfmd://pair?url=%ZZ'));
+assert.throws(() => parsePairingQr('myselfmd://pair?url=https%3A%2F%2Fexample.com%2Fpair%23short'));
 const receive = app.match(/    const receive = \(url\) => \{[\s\S]*?\n    \};/)?.[0];
 assert.ok(receive);
 let incomingPairing;
@@ -40,7 +42,7 @@ for (const link of links) {
   assert.deepEqual(incomingPairing, { server, ticket });
   assert.equal(linkContext.locked.current, true);
 }
-linkContext.receive('qrconnect://oauth?code=fixture');
+linkContext.receive('myselfmd://oauth?code=fixture');
 assert.equal(linkError, '');
 const disconnect = app.match(/  async function disconnect\(\) \{[\s\S]*?\n  \}/)?.[0];
 assert.ok(disconnect, 'Disconnect handler must be available to the regression harness.');

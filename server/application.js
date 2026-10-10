@@ -114,7 +114,7 @@ export function createApplication(
   const metadata = {
     resource,
     authorization_servers: [issuer],
-    scopes_supported: ['qr-connect'],
+    scopes_supported: ['myselfmd'],
     bearer_methods_supported: ['header'],
   };
   /** @param {string} subject @returns {Promise<import('../core/account-deletion.js').DeletionStatus>} */
@@ -421,11 +421,11 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/dashboard/config') {
-        json(res, 200, { issuer, clientId: 'qr-dashboard' });
+        json(res, 200, { issuer, clientId: 'myselfmd-dashboard' });
         return;
       }
       if (url.pathname === '/config') {
-        json(res, 200, { issuer, clientId: 'qr-phone', resource: requestResource });
+        json(res, 200, { issuer, clientId: 'myselfmd-phone', resource: requestResource });
         return;
       }
       if (url.pathname === '/.well-known/apple-app-site-association') {
@@ -549,9 +549,9 @@ export function createApplication(
       if (
         !payload.sub ||
         typeof payload.scope !== 'string' ||
-        !payload.scope.split(' ').includes('qr-connect')
+        !payload.scope.split(' ').includes('myselfmd')
       ) {
-        json(res, 403, { error: 'qr-connect scope required.' });
+        json(res, 403, { error: 'myselfmd scope required.' });
         return;
       }
       const subject = `${accountNamespace}|${payload.sub}`;
@@ -560,7 +560,7 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/account' && req.method === 'DELETE') {
-        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+        if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
           throw new PairingError(403, 'Account owner confirmation required.');
         const input = z
           .object({ confirmation: z.literal('DELETE'), subject: z.literal(subject) })
@@ -578,7 +578,10 @@ export function createApplication(
         throw new PairingError(410, 'This account is being deleted or has been deleted.');
 
       if (url.pathname === '/api/v1/queries' || url.pathname.startsWith('/api/v1/queries/')) {
-        if (typeof payload.azp !== 'string' || ['qr-phone', 'qr-dashboard'].includes(payload.azp))
+        if (
+          typeof payload.azp !== 'string' ||
+          ['myselfmd-phone', 'myselfmd-dashboard'].includes(payload.azp)
+        )
           throw new PairingError(403, 'Agent OAuth client required.');
         cloud.observeAgent(subject, payload.azp);
         const quota = limitAgentRest(JSON.stringify([subject, payload.azp]));
@@ -642,7 +645,7 @@ export function createApplication(
       }
 
       if (url.pathname === '/api/migration/claim' && req.method === 'POST') {
-        if (payload.azp !== 'qr-dashboard' && payload.azp !== 'qr-phone')
+        if (payload.azp !== 'myselfmd-dashboard' && payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'First-party sign-in required.');
         const input = z
           .object({ ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
@@ -651,7 +654,8 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/billing' && req.method === 'POST') {
-        if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Phone OAuth client required.');
         json(
           res,
           200,
@@ -660,7 +664,7 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/support/v1') {
-        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+        if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
           throw new PairingError(403, 'Use the support MCP tools with an agent client.');
         if (!supportV1Api) throw new PairingError(503, 'Isobot support is not configured.');
         const input =
@@ -669,7 +673,7 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/support') {
-        if (!['qr-phone', 'qr-dashboard'].includes(String(payload.azp)))
+        if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
           throw new PairingError(403, 'Use the support MCP tools with an agent client.');
         if (!supportApi) throw new PairingError(503, 'Support chat is not configured yet.');
         const body =
@@ -680,7 +684,7 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {
-        if (payload.azp !== 'qr-dashboard')
+        if (payload.azp !== 'myselfmd-dashboard')
           throw new PairingError(403, 'Dashboard OAuth client required.');
         const body =
           req.method === 'PUT' || req.method === 'POST'
@@ -701,7 +705,8 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/history' && req.method === 'POST') {
-        if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Phone OAuth client required.');
         const input = z
           .object({ deviceId: z.string().uuid(), events: z.array(z.unknown()).max(50) })
           .parse(JSON.parse((await bodyBytes(req, 1024 * 1024)).toString()));
@@ -728,7 +733,8 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/api/history' && req.method === 'GET') {
-        if (payload.azp !== 'qr-phone') throw new PairingError(403, 'Phone OAuth client required.');
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Phone OAuth client required.');
         const deviceId = z.string().uuid().parse(url.searchParams.get('deviceId'));
         ownCloudDevice(subject, deviceId);
         json(
@@ -739,7 +745,7 @@ export function createApplication(
         return;
       }
       if (url.pathname.startsWith('/api/cloud/')) {
-        if (payload.azp !== 'qr-phone')
+        if (payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'Cloud management requires the phone OAuth client.');
         if (url.pathname === '/api/cloud/credential/renew' && req.method === 'POST') {
           const input = z
@@ -796,7 +802,10 @@ export function createApplication(
         return;
       }
       if (url.pathname === '/mcp') {
-        if (typeof payload.azp !== 'string' || ['qr-phone', 'qr-dashboard'].includes(payload.azp))
+        if (
+          typeof payload.azp !== 'string' ||
+          ['myselfmd-phone', 'myselfmd-dashboard'].includes(payload.azp)
+        )
           throw new PairingError(403, 'Agent OAuth client required.');
         if (['active', 'unavailable'].includes((await deletionStatus(subject)).state))
           cloud.observeAgent(subject, payload.azp);
@@ -831,7 +840,7 @@ export function createApplication(
       }
       if (
         (url.pathname.startsWith('/api/phones/') || url.pathname === '/api/claim') &&
-        payload.azp !== 'qr-phone'
+        payload.azp !== 'myselfmd-phone'
       ) {
         json(res, 403, {
           error: 'Phone OAuth client required. Chat clients cannot grant phone access.',

@@ -43,7 +43,7 @@ export default function AccountScreen() {
           <Notice title="Purchased time.md?" body={guide.timeOffer} />
         </>
       )}
-      {session?.owner ? (
+      {session?.owner && !session.requiresSignIn ? (
         <>
           <Group>
             <Row testID="account-account" title="Account" subtitle={session.account} />
@@ -90,6 +90,12 @@ export default function AccountScreen() {
         </>
       ) : (
         <>
+          {session?.requiresSignIn && (
+            <Notice
+              title="Sign in again"
+              body="Finish the myself.md upgrade using the same account to keep your connected phone and data."
+            />
+          )}
           <Button
             testID="account-sign-in-with-apple"
             label="Sign in with Apple"

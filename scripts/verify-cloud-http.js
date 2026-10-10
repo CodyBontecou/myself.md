@@ -75,7 +75,7 @@ const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
 const accessClient = new Client({ name: 'synthetic-access-test', version: '1' });
 /** @param {string} subject @param {string} azp @param {string} [audience] */
 async function token(subject, azp, audience = `${origin}/mcp`) {
-  return new SignJWT({ scope: 'qr-connect', azp })
+  return new SignJWT({ scope: 'myselfmd', azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(issuer)
     .setAudience(audience)
@@ -83,12 +83,12 @@ async function token(subject, azp, audience = `${origin}/mcp`) {
     .setExpirationTime('5m')
     .sign(privateKey);
 }
-const phoneToken = await token('alice', 'qr-phone'),
+const phoneToken = await token('alice', 'myselfmd-phone'),
   chatToken = await token('alice', 'fixture-chat'),
-  bobToken = await token('bob', 'qr-phone'),
+  bobToken = await token('bob', 'myselfmd-phone'),
   bobAgentToken = await token('bob', 'fixture-bob-agent'),
-  dashboardToken = await token('alice', 'qr-dashboard'),
-  bobDashboardToken = await token('bob', 'qr-dashboard');
+  dashboardToken = await token('alice', 'myselfmd-dashboard'),
+  bobDashboardToken = await token('bob', 'myselfmd-dashboard');
 /** @param {string} path @param {string|null} bearer @param {string} [method] @param {unknown} [body] */
 async function request(path, bearer, method = 'GET', body) {
   const response = await fetch(origin + path, {
@@ -175,7 +175,7 @@ try {
   assert.equal(
     z.object({ clientId: z.string() }).parse((await request('/dashboard/config', null)).value)
       .clientId,
-    'qr-dashboard',
+    'myselfmd-dashboard',
   );
   assert.equal((await request('/api/dashboard', null)).status, 401);
   assert.equal((await request('/api/dashboard', phoneToken)).status, 403);
@@ -273,7 +273,7 @@ try {
       const config = await fetchHost('/config', host);
       assert.deepEqual(await config.json(), {
         issuer,
-        clientId: 'qr-phone',
+        clientId: 'myselfmd-phone',
         resource: `${expected}/mcp`,
       });
       const metadata = await fetchHost('/.well-known/oauth-protected-resource/mcp', host);
@@ -283,14 +283,14 @@ try {
       );
     }),
   );
-  const legacyToken = await token('alice', 'qr-phone', 'https://legacy.example/mcp');
+  const legacyToken = await token('alice', 'myselfmd-phone', 'https://legacy.example/mcp');
   const legacyIdentity = await request('/api/devices', legacyToken);
   assert.equal(legacyIdentity.status, 200);
   assert.equal(
     z.object({ subject: z.string() }).parse(legacyIdentity.value).subject,
     `${accountNamespace}|alice`,
   );
-  const previousIssuerToken = await new SignJWT({ scope: 'qr-connect', azp: 'qr-phone' })
+  const previousIssuerToken = await new SignJWT({ scope: 'myselfmd', azp: 'myselfmd-phone' })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(accountNamespace)
     .setAudience(`${origin}/mcp`)
@@ -298,7 +298,7 @@ try {
     .setExpirationTime('5m')
     .sign(privateKey);
   assert.equal((await request('/api/devices', previousIssuerToken)).status, 401);
-  const unrelatedToken = await token('alice', 'qr-phone', 'https://untrusted.example/mcp');
+  const unrelatedToken = await token('alice', 'myselfmd-phone', 'https://untrusted.example/mcp');
   assert.equal((await request('/api/devices', unrelatedToken)).status, 401);
   const favicon = await fetch(`${origin}/dashboard/favicon.svg`);
   assert.equal(favicon.status, 200);
@@ -429,7 +429,7 @@ try {
   assert.equal(pendingAccess.allowance.used, 0);
   assert.equal(pendingAccess.handoff.status, 'awaiting_user');
   assert.equal(pendingAccess.handoff.requiresUser, true);
-  assert.equal(pendingAccess.handoff.accountLink, 'qrconnect://account');
+  assert.equal(pendingAccess.handoff.accountLink, 'myselfmd://account');
   assert.equal(pendingAccess.handoff.steps.length, 3);
   assert.ok(
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: { subject: 'alice' } }))
@@ -445,7 +445,7 @@ try {
     (await request('/api/migration/claim', newBuyerToken, 'POST', { ticket: accessTicket })).status,
     403,
   );
-  const newBuyerDashboardToken = await token('new-buyer', 'qr-dashboard');
+  const newBuyerDashboardToken = await token('new-buyer', 'myselfmd-dashboard');
   assert.equal(
     (
       await request('/api/migration/claim', newBuyerDashboardToken, 'POST', {
@@ -742,7 +742,7 @@ try {
             ? ['native:applications', 'native:websites']
             : ['native:points'],
       permission: domain === 'health' ? 'system-managed' : 'required',
-      permissionHandoff: `qrconnect://data/${domain}`,
+      permissionHandoff: `myselfmd://data/${domain}`,
       availableTypes: domain === 'health' ? ['native:sleep'] : [],
       types: domain === 'health' ? ['native:sleep'] : [],
       notes: [],
@@ -857,7 +857,7 @@ try {
   );
   assert.equal(
     discovered.catalog.domains.find((domain) => domain.domain === 'location')?.permissionHandoff,
-    'qrconnect://data/location',
+    'myselfmd://data/location',
   );
   assert.deepEqual(
     discovered.catalog.domains.find((domain) => domain.domain === 'time')?.types,
@@ -924,7 +924,7 @@ try {
     .parse(handoff.structuredContent);
   assert.equal(approval.status, 'awaiting_user');
   assert.equal(approval.agentAccess, false);
-  assert.equal(approval.handoff.deepLink, 'qrconnect://profiles/private');
+  assert.equal(approval.handoff.deepLink, 'myselfmd://profiles/private');
   assert.equal(
     (await queryProfile('private')).isError,
     true,
@@ -1313,7 +1313,7 @@ try {
   assert.equal(report.diagnostics.outcome, 'partial');
   assert.ok(
     report.diagnostics.actions.some(
-      (action) => action.deepLink === 'qrconnect://profiles/synthetic',
+      (action) => action.deepLink === 'myselfmd://profiles/synthetic',
     ),
   );
   assert.ok(

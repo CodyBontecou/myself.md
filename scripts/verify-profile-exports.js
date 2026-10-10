@@ -148,7 +148,11 @@ const pinned = parseProfile({
   selection: { health: [], time: [], location: [] },
 });
 assert.equal(pinned.export.schema, 'myself.md.export.v1');
-assert.equal(profileFromLink(profileLink(pinned)).export.schema, pinned.export.schema);
+const canonicalLink = profileLink(pinned);
+assert.ok(canonicalLink.startsWith('myselfmd://profile?'));
+assert.deepEqual(profileFromLink(canonicalLink), pinned);
+assert.throws(() => profileFromLink(canonicalLink.replace('myselfmd://', 'qrconnect://')));
+assert.equal(parseProfile({ ...pinned, schema: 'qr-connect.profile.v1' }).schema, pinned.schema);
 for (const schema of ['myself.md.export.v2', 'latest', null, 'v1']) {
   assert.throws(() => parseExportSchema(schema), /Unsupported export schema/);
   assert.throws(() => parseExportSettings({ schema }), /Unsupported export schema/);

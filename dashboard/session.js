@@ -80,7 +80,7 @@ async function authorizationUrl() {
     .replaceAll('/', '_')
     .replaceAll('=', '');
   sessionStorage.setItem(
-    'qr-dashboard-login',
+    'myselfmd-dashboard-login',
     JSON.stringify({
       verifier,
       state,
@@ -92,7 +92,7 @@ async function authorizationUrl() {
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
-    scope: 'openid profile qr-connect',
+    scope: 'openid profile myselfmd',
     redirect_uri: `${location.origin}/dashboard/callback`,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -130,8 +130,8 @@ export async function initializeSession() {
   config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
   if (location.pathname !== '/dashboard/callback') return false;
   const query = new URLSearchParams(location.search),
-    stored = sessionStorage.getItem('qr-dashboard-login');
-  sessionStorage.removeItem('qr-dashboard-login');
+    stored = sessionStorage.getItem('myselfmd-dashboard-login');
+  sessionStorage.removeItem('myselfmd-dashboard-login');
   history.replaceState(null, '', '/dashboard');
   if (query.has('error'))
     throw Object.assign(
@@ -170,7 +170,7 @@ export function signOut() {
   if (!config) return;
   const hint = tokens?.id_token;
   reset();
-  sessionStorage.removeItem('qr-dashboard-login');
+  sessionStorage.removeItem('myselfmd-dashboard-login');
   const logout = new URL(`${config.issuer}/protocol/openid-connect/logout`);
   logout.search = new URLSearchParams({
     client_id: config.clientId,

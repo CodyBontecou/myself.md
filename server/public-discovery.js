@@ -96,7 +96,7 @@ const openapi = {
         scheme: 'bearer',
         bearerFormat: 'OAuth 2.0 access token',
         description:
-          'Agent OAuth client, qr-connect scope and owner-approved phone data grants required. Discover the issuer at /.well-known/oauth-protected-resource/mcp.',
+          'Agent OAuth client, myselfmd scope and owner-approved phone data grants required. Discover the issuer at /.well-known/oauth-protected-resource/mcp.',
       },
     },
     schemas: {

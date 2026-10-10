@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myself.md",
-      "associatedDomains": ["applinks:myself.md", "applinks:qr-connect-cloud-cody.fly.dev"],
+      "associatedDomains": ["applinks:myself.md"],
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -118,7 +118,7 @@
       "expo-iap",
       "expo-notifications"
     ],
-    "scheme": ["qrconnect", "agentbridge"],
+    "scheme": "myselfmd",
     "updates": {
       "enabled": true,
       "url": "https://u.expo.dev/17768428-9e08-4033-9e72-2f630bbaa9aa"

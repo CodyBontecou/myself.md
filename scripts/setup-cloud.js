@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 const domain = process.argv[2];
 if (!domain || !/^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain))
   throw new Error('Usage: npm run cloud:setup -- exports.example.com');
-if (existsSync('.env.cloud') || existsSync('.local/cloud-realm/qr-connect.json'))
+if (existsSync('.env.cloud') || existsSync('.local/cloud-realm/myselfmd.json'))
   throw new Error('Cloud configuration exists; preserve its encryption key and edit it in place.');
 const temporary = mkdtempSync(join(tmpdir(), 'cloud-realm-'));
 try {
@@ -16,7 +16,7 @@ try {
     { cwd: temporary, stdio: 'pipe' },
   );
   if (child.status !== 0) throw new Error('Failed to generate OAuth realm.');
-  const realm = JSON.parse(readFileSync(join(temporary, '.local/realm/qr-connect.json'), 'utf8'));
+  const realm = JSON.parse(readFileSync(join(temporary, '.local/realm/myselfmd.json'), 'utf8'));
   realm.users = [];
   realm.sslRequired = 'all';
   realm.registrationAllowed = false;
@@ -25,13 +25,13 @@ try {
     for (const mapper of scope.protocolMappers ?? [])
       if (mapper.name === 'mcp-audience') mapper.config['included.custom.audience'] = resource;
   const dashboard = realm.clients.find(
-    (/** @type {{clientId:string}} */ client) => client.clientId === 'qr-dashboard',
+    (/** @type {{clientId:string}} */ client) => client.clientId === 'myselfmd-dashboard',
   );
   dashboard.redirectUris = [`https://${domain}/dashboard/callback`];
   dashboard.webOrigins = [`https://${domain}`];
   dashboard.attributes['post.logout.redirect.uris'] = `https://${domain}/dashboard`;
   mkdirSync('.local/cloud-realm', { recursive: true });
-  writeFileSync('.local/cloud-realm/qr-connect.json', JSON.stringify(realm, null, 2), {
+  writeFileSync('.local/cloud-realm/myselfmd.json', JSON.stringify(realm, null, 2), {
     mode: 0o644,
   });
   writeFileSync(

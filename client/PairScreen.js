@@ -1,7 +1,7 @@
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView } from 'expo-camera';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { Screen, Copy, Group, Row, Button, Icon, Notice } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { usePhone } from './PhoneProvider';
@@ -30,7 +30,19 @@ export default function PairScreen() {
   return (
     <Screen testID="pair-screen">
       <Stack.Screen options={{ title: connected ? 'Your agent' : 'Connect agent' }} />
-      {connected ? (
+      {session?.requiresSignIn ? (
+        <>
+          <Notice
+            title="Sign in again"
+            body="Finish the myself.md upgrade using the same account. Your saved profiles and data remain on this phone."
+          />
+          <Button
+            testID="pair-upgrade-sign-in"
+            label="Sign in again"
+            onPress={() => router.push('/account')}
+          />
+        </>
+      ) : connected ? (
         <>
           <Copy variant="heading">Your phone is connected</Copy>
           <Group>

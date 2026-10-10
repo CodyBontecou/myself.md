@@ -24,7 +24,7 @@ identity.listen(0, '127.0.0.1');
 await once(identity, 'listening');
 const address = identity.address();
 assert.ok(address && typeof address !== 'string');
-const issuer = `http://127.0.0.1:${address.port}/auth/realms/qr-connect`;
+const issuer = `http://127.0.0.1:${address.port}/auth/realms/myselfmd`;
 const origin = 'http://127.0.0.1:8798';
 const namespace = 'https://previous.example/auth/realms/test';
 const secret = randomBytes(32).toString('hex');
@@ -96,7 +96,7 @@ async function stop() {
 async function token(subject, clientId) {
   return (
     'Bearer ' +
-    (await new SignJWT({ scope: 'qr-connect', azp: clientId })
+    (await new SignJWT({ scope: 'myselfmd', azp: clientId })
       .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
       .setIssuer(issuer)
       .setAudience(`${origin}/mcp`)
@@ -178,11 +178,11 @@ try {
   await stop();
   config.vars.MIGRATION_ENABLED = '0';
   await start();
-  const alice = await token('alice', 'qr-phone'),
-    bob = await token('bob', 'qr-phone'),
-    bobDashboard = await token('bob', 'qr-dashboard');
+  const alice = await token('alice', 'myselfmd-phone'),
+    bob = await token('bob', 'myselfmd-phone'),
+    bobDashboard = await token('bob', 'myselfmd-dashboard');
   const agent = await token('alice', 'fixture-agent');
-  const timeBuyer = await token('time-buyer', 'qr-phone');
+  const timeBuyer = await token('time-buyer', 'myselfmd-phone');
   assert.equal(
     z
       .object({ unlocked: z.boolean() })

@@ -72,14 +72,14 @@ export function publicResponse(
     path === '/health'
       ? { ok: true }
       : path === '/config'
-        ? { issuer, clientId: 'qr-phone', resource }
+        ? { issuer, clientId: 'myselfmd-phone', resource }
         : path === '/dashboard/config'
-          ? { issuer, clientId: 'qr-dashboard' }
+          ? { issuer, clientId: 'myselfmd-dashboard' }
           : path === '/.well-known/oauth-protected-resource/mcp'
             ? {
                 resource,
                 authorization_servers: [issuer],
-                scopes_supported: ['qr-connect'],
+                scopes_supported: ['myselfmd'],
                 bearer_methods_supported: ['header'],
               }
             : publicDiscovery(path);

@@ -1,0 +1,18 @@
+diff --git a/node_modules/expo/src/async-require/messageSocket.native.ts b/node_modules/expo/src/async-require/messageSocket.native.ts
+--- a/node_modules/expo/src/async-require/messageSocket.native.ts
++++ b/node_modules/expo/src/async-require/messageSocket.native.ts
+@@ -5,13 +5,9 @@
+   const __EXPO_RSC_RELOAD_LISTENERS__: (() => unknown)[] | undefined;
+ }
+ 
+-if (__DEV__) {
++if (__DEV__ && getDevServer().bundleLoadedFromServer) {
+   const socket: WebSocket = (() => {
+     const devServer = getDevServer();
+-    if (!devServer.bundleLoadedFromServer) {
+-      throw new Error('Cannot create devtools websocket connections in embedded environments.');
+-    }
+-
+     const devServerUrl = new URL(devServer.url);
+     const serverScheme = devServerUrl.protocol === 'https:' ? 'wss' : 'ws';
+     return new WebSocket(`${serverScheme}://${devServerUrl.host}/message`);

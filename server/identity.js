@@ -60,7 +60,7 @@ export function identityOptions(database, config) {
               page: `${new URL(config.issuer).origin}/login`,
               shouldRedirect: () => false,
             },
-            scopes: ['openid', 'profile', 'email', 'offline_access', 'qr-connect'],
+            scopes: ['openid', 'profile', 'email', 'offline_access', 'myselfmd'],
             resources: [config.resource],
             clientRegistrationDefaultResources: [config.resource],
             grantTypes: ['authorization_code', 'refresh_token'],
@@ -70,7 +70,7 @@ export function identityOptions(database, config) {
             codeExpiresIn: 300,
             allowDynamicClientRegistration: true,
             allowUnauthenticatedClientRegistration: true,
-            cachedTrustedClients: new Set(['qr-phone', 'qr-dashboard']),
+            cachedTrustedClients: new Set(['myselfmd-phone', 'myselfmd-dashboard']),
             clientPrivileges: () => false,
             resourcePrivileges: () => false,
           })

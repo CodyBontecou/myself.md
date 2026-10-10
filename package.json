@@ -27,6 +27,7 @@
     "expo-crypto": "~57.0.3",
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
+    "expo-glass-effect": "~57.0.4",
     "expo-iap": "^5.8.3",
     "expo-linking": "~57.0.12",
     "expo-location": "~57.0.20",
@@ -133,7 +134,10 @@
     "build:ios:debug": "xcodebuild -workspace ios/myselfmd.xcworkspace -scheme myselfmd -configuration Debug -destination \"generic/platform=iOS Simulator\" CODE_SIGNING_ALLOWED=NO -derivedDataPath .local/xcode/ios-simulator-debug",
     "build:ios:device-debug": "xcodebuild -workspace ios/myselfmd.xcworkspace -scheme myselfmd -configuration Debug -destination generic/platform=iOS -allowProvisioningUpdates -derivedDataPath .local/xcode/ios-device-debug",
     "verify:error-json": "node scripts/verify-error-json.js",
-    "myself": "node scripts/myself.js"
+    "myself": "node scripts/myself.js",
+    "identity:protocol": "node scripts/migrate-protocol.js",
+    "verify:protocol": "node --experimental-vm-modules scripts/verify-protocol-migration.js",
+    "verify:embedded-debug": "node scripts/verify-embedded-debug.js"
   },
   "private": true,
   "type": "module",

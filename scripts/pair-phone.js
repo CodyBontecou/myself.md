@@ -13,10 +13,10 @@ const verifier = randomBytes(32).toString('base64url');
 const state = randomBytes(16).toString('hex');
 const redirectUri = 'http://localhost:8765/callback';
 const params = new URLSearchParams({
-  client_id: 'qr-mcp',
+  client_id: 'myselfmd-mcp',
   redirect_uri: redirectUri,
   response_type: 'code',
-  scope: 'openid profile qr-connect',
+  scope: 'openid profile myselfmd',
   state,
   code_challenge: createHash('sha256').update(verifier).digest('base64url'),
   code_challenge_method: 'S256',
@@ -69,7 +69,7 @@ try {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
-      client_id: 'qr-mcp',
+      client_id: 'myselfmd-mcp',
       redirect_uri: redirectUri,
       code: String(code),
       code_verifier: verifier,
@@ -77,7 +77,7 @@ try {
   });
   const token = z.object({ access_token: z.string() }).parse(await response.json());
   if (!response.ok || !token.access_token) throw new Error('OAuth token exchange failed.');
-  const client = new Client({ name: 'qr-connect-local', version: '1.0.0' });
+  const client = new Client({ name: 'myselfmd-local', version: '1.0.0' });
   try {
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`${serverUrl}/mcp`), {

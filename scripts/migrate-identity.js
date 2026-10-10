@@ -74,7 +74,7 @@ if (!keys.ok) throw new Error('Cannot back up existing public verification keys.
 secrets.LEGACY_IDENTITY_JWKS = JSON.stringify(await keys.json());
 writeFileSync(`${directory}/worker-secrets.json`, JSON.stringify(secrets), { mode: 0o600 });
 const config = {
-  issuer,
+  issuer: issuer.replace('/realms/qr-connect', '/realms/myselfmd'),
   secret: secrets.IDENTITY_SECRET,
   resource: 'https://myself.md/mcp',
   googleId: secrets.GOOGLE_AUTH_CLIENT_ID,
@@ -126,26 +126,31 @@ await Promise.all(
     );
   }),
 );
-const clients = snapshot.clients.filter((client) => client.clientId.startsWith('qr-'));
+const clients = snapshot.clients.filter((client) =>
+  ['qr-phone', 'qr-dashboard', 'qr-mcp'].includes(client.clientId),
+);
 await Promise.all(
   clients.map(async (client) => {
+    const clientId = client.clientId.replace(/^qr-/, 'myselfmd-');
     if (!client.publicClient)
       throw new Error('Confidential OAuth clients need explicit secret migration.');
     await adapter.create({
       model: 'oauthClient',
       data: {
-        clientId: client.clientId,
+        clientId,
         name: client.name ?? client.clientId,
         disabled: false,
-        skipConsent: ['qr-phone', 'qr-dashboard'].includes(client.clientId),
+        skipConsent: ['myselfmd-phone', 'myselfmd-dashboard'].includes(clientId),
         enableEndSession: true,
         subjectType: 'public',
-        scopes: ['openid', 'profile', 'email', 'qr-connect', 'offline_access'],
-        redirectUris: (client.redirectUris ?? []).filter((uri) => !uri.includes('.fly.dev')),
+        scopes: ['openid', 'profile', 'email', 'myselfmd', 'offline_access'],
+        redirectUris: (client.redirectUris ?? [])
+          .filter((uri) => !uri.includes('.fly.dev'))
+          .map((uri) => uri.replace('qrconnect://', 'myselfmd://')),
         postLogoutRedirectUris:
-          client.clientId === 'qr-dashboard' ? ['https://myself.md/dashboard'] : [],
+          clientId === 'myselfmd-dashboard' ? ['https://myself.md/dashboard'] : [],
         tokenEndpointAuthMethod: 'none',
-        applicationType: client.clientId === 'qr-dashboard' ? 'web' : 'native',
+        applicationType: clientId === 'myselfmd-dashboard' ? 'web' : 'native',
         grantTypes: ['authorization_code', 'refresh_token'],
         responseTypes: ['code'],
         requirePKCE: true,
@@ -155,7 +160,7 @@ await Promise.all(
     });
     await adapter.create({
       model: 'oauthClientResource',
-      data: { clientId: client.clientId, resourceId: config.resource, createdAt: new Date() },
+      data: { clientId, resourceId: config.resource, createdAt: new Date() },
     });
   }),
 );

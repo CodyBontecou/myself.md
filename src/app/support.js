@@ -1,4 +1,3 @@
-import { errorJSON } from '../../packages/support-chat/errors.js';
 import { registerSupportNotifications } from '../../client/support-notifications.js';
 import { Alert, AppState } from 'react-native';
 import { useEffect, useState, useMemo } from 'react';
@@ -108,7 +107,12 @@ function SupportInbox({ session }) {
               );
               return undefined;
             })
-            .catch((error) => Alert.alert('Notifications unavailable', errorJSON(error)));
+            .catch(() =>
+              Alert.alert(
+                'Notifications unavailable',
+                'Could not register this phone for support replies. Please try again.',
+              ),
+            );
         }}
         data={data}
         newId={Crypto.randomUUID}

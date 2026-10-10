@@ -41,7 +41,7 @@ npm run cloud:setup -- exports.example.com
 Run commands from this checkout throughout the guide. Setup generates:
 
 - `.env.cloud`, containing your hostname, a random encryption key, and identity database/admin passwords.
-- `.local/cloud-realm/qr-connect.json`, containing the initial production OAuth realm and phone, dashboard, and MCP clients.
+- `.local/cloud-realm/myselfmd.json`, containing the initial production OAuth realm and phone, dashboard, and MCP clients.
 
 The realm has no initial users. Password sign-in, local registration, and password reset are disabled. First-time social sign-in creates an account.
 
@@ -65,10 +65,10 @@ Realm import only initializes a realm that does not already exist. Editing the s
 
 [Register a GitHub OAuth app](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app) under your own account or organization. Set:
 
-| Field                      | Value                                                                       |
-| -------------------------- | --------------------------------------------------------------------------- |
-| Homepage URL               | `https://exports.example.com/pair`                                          |
-| Authorization callback URL | `https://exports.example.com/auth/realms/qr-connect/broker/github/endpoint` |
+| Field                      | Value                                                                     |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Homepage URL               | `https://exports.example.com/pair`                                        |
+| Authorization callback URL | `https://exports.example.com/auth/realms/myselfmd/broker/github/endpoint` |
 
 Leave device flow disabled. Add its credentials to your ignored `.env.cloud`:
 
@@ -122,7 +122,7 @@ Replace the hostname in these checks:
 curl --fail https://exports.example.com/health
 curl --fail https://exports.example.com/config
 curl --fail https://exports.example.com/.well-known/oauth-protected-resource
-curl --fail https://exports.example.com/auth/realms/qr-connect/.well-known/openid-configuration
+curl --fail https://exports.example.com/auth/realms/myselfmd/.well-known/openid-configuration
 curl -i https://exports.example.com/mcp
 ```
 
@@ -141,7 +141,7 @@ Complete a GitHub browser sign-in and confirm the dashboard opens. Your empty ex
 
 Pairing and uploading do not grant an agent access to your data. Phone data permissions, profile selection, and stored-cloud sharing remain explicit user choices. Review grants on the phone and in the dashboard.
 
-The seed realm permits dynamic OAuth registration for callback hosts `chatgpt.com`, `claude.ai`, `grok.com`, and localhost. For a different client, add its exact callback host through private Keycloak administration or register a client with its exact callback URL. Preserve PKCE S256 and the `qr-connect` scope and MCP audience; avoid wildcard redirects.
+The seed realm permits dynamic OAuth registration for callback hosts `chatgpt.com`, `claude.ai`, `grok.com`, and localhost. For a different client, add its exact callback host through private Keycloak administration or register a client with its exact callback URL. Preserve PKCE S256 and the `myselfmd` scope and MCP audience; avoid wildcard redirects.
 
 ## Billing and mobile builds
 
@@ -151,7 +151,7 @@ Native purchase verification requires credentials authorized for the app whose r
 
 The mobile app can pair with a custom server without a native rebuild. Its separate account sign-in flow defaults to `https://myself.md`; a build fully configured for your instance must set `EXPO_PUBLIC_ACCOUNT_SERVER=https://exports.example.com` at build time. Your own iOS Universal Links also require your domain in Expo configuration, a matching `IOS_APP_ID` on the server, and a signed native rebuild. The scanner, paste-link, and custom-scheme fallback work without adding your domain to Universal Links.
 
-Use the repository's [native build commands](../README.md#run-locally) for a custom build. Expo Go cannot provide all of the app's native integrations. Keep compatibility protocols such as `qrconnect://`, the `qr-connect` realm/scope, and profile schemas consistent between clients and server.
+Use the repository's [native build commands](../README.md#run-locally) for a custom build. Expo Go cannot provide all of the app's native integrations. App links use `myselfmd://`. Keep the registered `myselfmd://oauth` callback, the `myselfmd` realm/scope, and profile schemas consistent between clients and server.
 
 ## Backups and recovery
 
@@ -202,7 +202,7 @@ Static-only hosting or an ephemeral function filesystem cannot run this stack un
 | `/health` works but OAuth fails            | Inspect `identity` and `database` logs; verify the issuer, `/auth` path, and private proxy connection.                                  |
 | GitHub sign-in fails                       | Verify the exact broker callback, credentials, and successful `cloud:auth:social` provisioning.                                         |
 | Admin provisioning cannot connect          | Wait for Keycloak readiness and check the temporary loopback port or private tunnel. Public `/auth/admin` is intentionally unavailable. |
-| MCP registration or token validation fails | Verify exact callback hosts/URLs, HTTPS issuer, `qr-connect` scope, and the audience ending in `/mcp`.                                  |
+| MCP registration or token validation fails | Verify exact callback hosts/URLs, HTTPS issuer, `myselfmd` scope, and the audience ending in `/mcp`.                                    |
 | Phone pairing is rejected                  | Generate a fresh QR and sign in with the same account on phone and MCP client. Tickets expire after five minutes and can be used once.  |
 | Uploads work but MCP sees no exports       | Enable stored-cloud sharing for that profile and check its selected data types and account.                                             |
 | An export or read hits a paywall           | Review the usage allowance and entitlement requirements above; self-hosting does not disable them.                                      |

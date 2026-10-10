@@ -44,13 +44,13 @@ const headers = {
   Authorization: `Bearer ${token.access_token}`,
   'Content-Type': 'application/json',
 };
-const endpoint = `${local}/admin/realms/qr-connect/clients`;
-const clients = await fetch(`${endpoint}?clientId=qr-dashboard`, { headers });
+const endpoint = `${local}/admin/realms/myselfmd/clients`;
+const clients = await fetch(`${endpoint}?clientId=myselfmd-dashboard`, { headers });
 if (!clients.ok) throw new Error(`Cannot inspect dashboard client: ${clients.status}`);
 const existing = /** @type {{id:string,clientId:string}[]} */ (await clients.json());
-const id = existing.find((c) => c.clientId === 'qr-dashboard')?.id;
+const id = existing.find((c) => c.clientId === 'myselfmd-dashboard')?.id;
 const client = {
-  clientId: 'qr-dashboard',
+  clientId: 'myselfmd-dashboard',
   name: 'myself.md Dashboard',
   protocol: 'openid-connect',
   enabled: true,
@@ -61,7 +61,7 @@ const client = {
   serviceAccountsEnabled: false,
   redirectUris: origins.map((value) => `${value}/dashboard/callback`),
   webOrigins: origins,
-  defaultClientScopes: ['profile', 'qr-connect'],
+  defaultClientScopes: ['profile', 'myselfmd'],
   attributes: {
     'pkce.code.challenge.method': 'S256',
     'post.logout.redirect.uris': origins.map((value) => `${value}/dashboard`).join('##'),
@@ -73,11 +73,11 @@ const saved = await fetch(id ? `${endpoint}/${id}` : endpoint, {
   body: JSON.stringify(client),
 });
 if (!saved.ok) throw new Error(`Dashboard client configuration failed: ${saved.status}`);
-const path = cloud ? '.local/cloud-realm/qr-connect.json' : '.local/realm/qr-connect.json';
+const path = cloud ? '.local/cloud-realm/myselfmd.json' : '.local/realm/myselfmd.json';
 const realm = JSON.parse(readFileSync(path, 'utf8'));
 realm.clients = realm.clients.filter(
-  (/** @type {{clientId:string}} */ c) => c.clientId !== 'qr-dashboard',
+  (/** @type {{clientId:string}} */ c) => c.clientId !== 'myselfmd-dashboard',
 );
 realm.clients.push(client);
 writeFileSync(path, JSON.stringify(realm, null, 2), { mode: 0o600 });
-console.log(`Dashboard client ready: ${origin}/dashboard (same qr-connect realm).`);
+console.log(`Dashboard client ready: ${origin}/dashboard (same myselfmd realm).`);

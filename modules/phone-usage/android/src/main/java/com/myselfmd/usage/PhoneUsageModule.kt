@@ -1,4 +1,4 @@
-package com.qrconnect.usage
+package com.myselfmd.usage
 
 import android.Manifest
 import android.app.AppOpsManager

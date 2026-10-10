@@ -71,7 +71,7 @@ export function MigrationClaim() {
           )}
           {claimed ? (
             <>
-              <a className="block text-center underline" href="qrconnect://account">
+              <a className="block text-center underline" href="myselfmd://account">
                 Open myself.md
               </a>
               <a className="block text-center underline" href="/">

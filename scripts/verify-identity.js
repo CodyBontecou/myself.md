@@ -10,7 +10,7 @@ import { generateKeyPair, exportPKCS8, createRemoteJWKSet, jwtVerify } from 'jos
 import { createIdentity } from '../server/identity.js';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { z } from 'zod';
-import { createServer } from 'node:http';
+import { createServer, request as requestHTTP } from 'node:http';
 
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
@@ -31,7 +31,7 @@ await once(callbackServer, 'listening');
 const callbackAddress = callbackServer.address();
 assert.ok(callbackAddress && typeof callbackAddress !== 'string');
 const callbackURL = `http://127.0.0.1:${callbackAddress.port}/callback`;
-const issuer = `${origin}/auth/realms/qr-connect`;
+const issuer = `${origin}/auth/realms/myselfmd`;
 const secret = randomBytes(32).toString('hex');
 const directory = mkdtempSync(resolve('.local/identity-test-'));
 const log = join(directory, 'runtime.log');
@@ -74,26 +74,26 @@ await context.adapter.create({
   },
 });
 await Promise.all(
-  ['qr-phone', 'qr-dashboard', 'qr-mcp'].map(async (clientId) => {
+  ['myselfmd-phone', 'myselfmd-dashboard', 'myselfmd-mcp'].map(async (clientId) => {
     await context.adapter.create({
       model: 'oauthClient',
       data: {
         clientId,
         name: 'Fixture client',
         redirectUris: [
-          clientId === 'qr-phone'
-            ? 'qrconnect://oauth'
-            : clientId === 'qr-mcp'
+          clientId === 'myselfmd-phone'
+            ? 'myselfmd://oauth'
+            : clientId === 'myselfmd-mcp'
               ? callbackURL
               : `${origin}/dashboard/callback`,
         ],
         postLogoutRedirectUris: [`${origin}/dashboard`],
         tokenEndpointAuthMethod: 'none',
-        applicationType: clientId === 'qr-dashboard' ? 'web' : 'native',
-        scopes: ['openid', 'profile', 'qr-connect', 'offline_access'],
+        applicationType: clientId === 'myselfmd-dashboard' ? 'web' : 'native',
+        scopes: ['openid', 'profile', 'myselfmd', 'offline_access'],
         grantTypes: ['authorization_code', 'refresh_token'],
         responseTypes: ['code'],
-        skipConsent: clientId !== 'qr-mcp',
+        skipConsent: clientId !== 'myselfmd-mcp',
         enableEndSession: true,
         subjectType: 'public',
         requirePKCE: true,
@@ -108,6 +108,9 @@ await Promise.all(
 const session = await context.internalAdapter.createSession('original-user-id');
 assert.ok(session);
 const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(session.token + '.' + createHmac('sha256', secret).update(session.token).digest('base64'))}`;
+const logoutSession = await context.internalAdapter.createSession('original-user-id');
+assert.ok(logoutSession);
+const logoutCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(logoutSession.token + '.' + createHmac('sha256', secret).update(logoutSession.token).digest('base64'))}`;
 const seed = [
   'user',
   'account',
@@ -210,20 +213,51 @@ function post(path, body, sessionCookie = '', sourceIP = '') {
     body: new URLSearchParams(body),
   });
 }
+/** @param {string} path @param {string} sessionCookie @param {string} [body] @returns {Promise<{status:number|undefined,headers:import('node:http').IncomingHttpHeaders,text:string}>} */
+function browserRequest(path, sessionCookie, body) {
+  return new Promise((resolveRequest, reject) => {
+    const request = requestHTTP(
+      issuer + path,
+      {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          Cookie: sessionCookie,
+          Origin: origin,
+          Accept: 'text/html',
+          'Sec-Fetch-Mode': 'navigate',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+      (response) => {
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          text += chunk;
+        });
+        response.on('end', () =>
+          resolveRequest({ status: response.statusCode, headers: response.headers, text }),
+        );
+        response.on('error', reject);
+      },
+    );
+    request.on('error', reject);
+    request.end(body);
+  });
+}
 /** @param {string} clientId @param {boolean} loggedIn */
 async function authorize(clientId, loggedIn) {
   const verifier = randomBytes(32).toString('base64url');
   const redirect =
-    clientId === 'qr-phone'
-      ? 'qrconnect://oauth'
-      : clientId === 'qr-mcp'
+    clientId === 'myselfmd-phone'
+      ? 'myselfmd://oauth'
+      : clientId === 'myselfmd-mcp'
         ? callbackURL
         : `${origin}/dashboard/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirect,
-    scope: 'openid profile qr-connect offline_access',
+    scope: 'openid profile myselfmd offline_access',
     resource: `${origin}/mcp`,
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
@@ -290,7 +324,24 @@ try {
     );
   assert.equal(discovery.issuer, issuer);
   assert.ok(discovery.grant_types_supported.includes('refresh_token'));
-  const login = await authorize('qr-phone', false);
+  const logoutPage = await browserRequest('/protocol/openid-connect/logout', logoutCookie);
+  assert.equal(logoutPage.status, 200, logoutPage.text);
+  assert.match(logoutPage.text, /oauth2\/end-session\/confirm/);
+  const confirmationCookie = (logoutPage.headers['set-cookie'] ?? [])
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  const logoutResult = await browserRequest(
+    '/oauth2/end-session/confirm',
+    `${logoutCookie}; ${confirmationCookie}`,
+    'action=confirm',
+  );
+  assert.equal(logoutResult.status, 200, logoutResult.text);
+  assert.match(logoutResult.text, /Logged out/);
+  const loggedOutSession = await fetch(`${issuer}/get-session`, {
+    headers: { Cookie: logoutCookie },
+  });
+  assert.equal(await loggedOutSession.json(), null);
+  const login = await authorize('myselfmd-phone', false);
   const loginURL = new URL(login.response.headers.get('location') ?? '');
   assert.equal(loginURL.pathname, '/login');
   const loginPage = await fetch(loginURL);
@@ -360,12 +411,12 @@ try {
   );
   assert.notEqual(googleCallback.status, 404);
   assert.equal((await auth.$context).options.account?.accountLinking?.enabled, false);
-  const phone = await authorize('qr-phone', true);
+  const phone = await authorize('myselfmd-phone', true);
   const code = new URL(phone.response.headers.get('location') ?? '').searchParams.get('code');
   assert.ok(code);
   const exchange = {
     grant_type: 'authorization_code',
-    client_id: 'qr-phone',
+    client_id: 'myselfmd-phone',
     code,
     redirect_uri: phone.redirect,
     code_verifier: phone.verifier,
@@ -382,7 +433,7 @@ try {
   const claims = (await jwtVerify(tokens.access_token, jwks, { issuer, audience: `${origin}/mcp` }))
     .payload;
   assert.equal(claims.sub, 'original-user-id');
-  assert.equal(claims.client_id, 'qr-phone');
+  assert.equal(claims.client_id, 'myselfmd-phone');
   const devices = await fetch(`${origin}/api/devices`, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
@@ -393,29 +444,29 @@ try {
   );
   const wrongRefresh = await post('/protocol/openid-connect/token', {
     grant_type: 'refresh_token',
-    client_id: 'qr-dashboard',
+    client_id: 'myselfmd-dashboard',
     refresh_token: tokens.refresh_token,
     resource: `${origin}/mcp`,
   });
   assert.equal(wrongRefresh.status, 400);
   const refresh = await post('/protocol/openid-connect/token', {
     grant_type: 'refresh_token',
-    client_id: 'qr-phone',
+    client_id: 'myselfmd-phone',
     refresh_token: tokens.refresh_token,
     resource: `${origin}/mcp`,
   });
   assert.equal(refresh.status, 200, await refresh.clone().text());
   const retryRefresh = await post('/protocol/openid-connect/token', {
     grant_type: 'refresh_token',
-    client_id: 'qr-phone',
+    client_id: 'myselfmd-phone',
     refresh_token: tokens.refresh_token,
     resource: `${origin}/mcp`,
   });
   assert.equal(retryRefresh.status, 200, await retryRefresh.clone().text());
   assert.deepEqual(await retryRefresh.json(), await refresh.clone().json());
-  let mcp = await authorize('qr-mcp', true);
+  let mcp = await authorize('myselfmd-mcp', true);
   const consentURL = new URL(mcp.response.headers.get('location') ?? '');
-  assert.equal(consentURL.pathname, '/auth/realms/qr-connect/consent');
+  assert.equal(consentURL.pathname, '/auth/realms/myselfmd/consent');
   const consentPage = await fetch(consentURL);
   assert.equal(consentPage.headers.get('referrer-policy'), 'same-origin');
   assert.ok(
@@ -456,7 +507,7 @@ try {
       await tab.waitForURL((url) => url.origin === callbackOrigin && url.searchParams.has('error'));
       assert.equal(new URL(tab.url()).searchParams.get('error'), 'access_denied');
       assert.equal(new URL(tab.url()).searchParams.get('code'), null);
-      mcp = await authorize('qr-mcp', true);
+      mcp = await authorize('myselfmd-mcp', true);
       await tab.goto(mcp.response.headers.get('location') ?? '');
       await tab.getByRole('button', { name: 'Allow access', exact: true }).click();
       await tab.waitForURL((url) => url.origin === callbackOrigin && url.searchParams.has('code'));
@@ -468,7 +519,7 @@ try {
         (url) => url.hostname === 'github.com',
         (route) => route.fulfill({ contentType: 'text/html', body: 'Social provider received' }),
       );
-      const browserLogin = await authorize('qr-phone', false);
+      const browserLogin = await authorize('myselfmd-phone', false);
       const browserLoginURL = new URL(browserLogin.response.headers.get('location') ?? '');
       await browserContext.clearCookies();
       // Isolate this fixture from the earlier social API rate-limit bucket in local workerd.
@@ -492,7 +543,7 @@ try {
   assert.ok(mcpCode);
   const mcpTokensResponse = await post('/protocol/openid-connect/token', {
     grant_type: 'authorization_code',
-    client_id: 'qr-mcp',
+    client_id: 'myselfmd-mcp',
     code: mcpCode,
     redirect_uri: mcp.redirect,
     code_verifier: mcp.verifier,
@@ -521,7 +572,7 @@ try {
     403,
   );
   const revoke = await post('/oauth2/revoke', {
-    client_id: 'qr-phone',
+    client_id: 'myselfmd-phone',
     token: tokenSchema.parse(await refresh.json()).refresh_token,
   });
   assert.equal(revoke.status, 200);
@@ -530,7 +581,7 @@ try {
     (
       await post('/oauth2/token', {
         grant_type: 'refresh_token',
-        client_id: 'qr-phone',
+        client_id: 'myselfmd-phone',
         refresh_token: tokens.refresh_token,
       })
     ).status,
@@ -547,10 +598,10 @@ try {
       client_name: 'Fixture agent',
       redirect_uris: ['https://chatgpt.com/connector_platform/oauth_redirect'],
       token_endpoint_auth_method: 'none',
-      scope: 'qr-connect',
+      scope: 'myselfmd',
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      client_id: 'qr-phone',
+      client_id: 'myselfmd-phone',
       skip_consent: true,
     }),
   });
@@ -562,7 +613,7 @@ try {
       client_name: 'Fixture agent',
       redirect_uris: ['https://chatgpt.com/connector_platform/oauth_redirect'],
       token_endpoint_auth_method: 'none',
-      scope: 'qr-connect',
+      scope: 'myselfmd',
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
     }),
@@ -571,7 +622,7 @@ try {
   const registration = z
     .object({ client_id: z.string(), skip_consent: z.boolean().optional() })
     .parse(await safeRegistration.json());
-  assert.notEqual(registration.client_id, 'qr-phone');
+  assert.notEqual(registration.client_id, 'myselfmd-phone');
   assert.notEqual(registration.skip_consent, true);
   const unsupported = await fetch(`${issuer}/oauth2/register`, {
     method: 'POST',
@@ -744,14 +795,14 @@ try {
     (
       await post('/oauth2/token', {
         grant_type: 'refresh_token',
-        client_id: 'qr-mcp',
+        client_id: 'myselfmd-mcp',
         refresh_token: mcpTokens.refresh_token,
       })
     ).status,
     400,
   );
   assert.equal(
-    (await authorize('qr-phone', true)).response.headers
+    (await authorize('myselfmd-phone', true)).response.headers
       .get('location')
       ?.startsWith(origin + '/login'),
     true,

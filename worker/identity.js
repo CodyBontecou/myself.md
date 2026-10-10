@@ -158,6 +158,7 @@ export async function identityRequest(request, env) {
       '/oauth2/userinfo',
       '/oauth2/revoke',
       '/oauth2/end-session',
+      '/oauth2/end-session/confirm',
     ].includes(targetPath)
   )
     return Response.json({ error: 'Not found.' }, { status: 404 });
@@ -192,7 +193,7 @@ export async function identityRequest(request, env) {
   }
   if (targetPath === '/oauth2/authorize') {
     const client = url.searchParams.get('client_id');
-    if (client === 'qr-phone' || client === 'qr-dashboard') {
+    if (client === 'myselfmd-phone' || client === 'myselfmd-dashboard') {
       if (!url.searchParams.has('resource'))
         url.searchParams.set('resource', `${env.PUBLIC_URL}/mcp`);
       const scopes = new Set((url.searchParams.get('scope') ?? '').split(' ').filter(Boolean));

@@ -147,7 +147,7 @@ https://myself.md/mcp
 
 Use [protected-resource metadata](/.well-known/oauth-protected-resource/mcp) and [authorization-server metadata](/.well-known/oauth-authorization-server) to find the issuer and registration, authorization and token endpoints.
 
-Sign in with the authorization-code flow and PKCE. Request the \`qr-connect\` scope for the MCP resource. The owner completes sign-in and consent, pairs a phone, and approves the profiles and data types the agent can read. An agent cannot grant itself access, and a shared API key cannot replace consent.
+Sign in with the authorization-code flow and PKCE. Request the \`myselfmd\` scope for the MCP resource. The owner completes sign-in and consent, pairs a phone, and approves the profiles and data types the agent can read. An agent cannot grant itself access, and a shared API key cannot replace consent.
 
 Private requests need an agent OAuth bearer token. Missing or expired tokens return HTTP \`401\` with a \`WWW-Authenticate\` discovery header. Keep tokens out of URLs and public source code.
 

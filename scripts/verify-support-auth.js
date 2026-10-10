@@ -134,3 +134,93 @@ await verifyAccount('paired-phone');
 console.log(
   'PASS actual support route: signed-out handoff, account-only and paired authentication.',
 );
+
+// Permission approval must register account-only phones, independently of agent pairing.
+const pushBundle = await build({
+  entryPoints: ['client/support-notifications.js'],
+  bundle: true,
+  write: false,
+  format: 'cjs',
+  platform: 'node',
+  plugins: [
+    {
+      name: 'push-boundaries',
+      setup(builder) {
+        builder.onResolve({ filter: /.*/ }, ({ path, kind }) =>
+          kind === 'entry-point' ? undefined : { path, external: true },
+        );
+      },
+    },
+  ],
+});
+const savedPushIds = new Map();
+/** @type {{id:string,token:string}[]} */
+const pushRegistrations = [];
+let pushPermission = false;
+/** @type {Record<string,unknown>} */
+const pushBoundaries = {
+  react: { useEffect() {} },
+  'react-native': { AppState: {}, Platform: { OS: 'ios' } },
+  'expo-constants': { expoConfig: { extra: { eas: { projectId: 'fixture' } } } },
+  'expo-notifications': {
+    setNotificationHandler() {},
+    getPermissionsAsync: async () => ({ granted: pushPermission }),
+    requestPermissionsAsync: async () => {
+      pushPermission = true;
+      return { granted: true };
+    },
+    getExpoPushTokenAsync: async () => ({ data: 'ExpoPushToken[fixture]' }),
+  },
+  'expo-router': { router: {} },
+  './PhoneProvider.js': { usePhone() {} },
+  './qa-runtime.js': { qaEnabled: false },
+  'expo-crypto': { randomUUID: () => 'fixture-notification-install' },
+  'expo-secure-store': {
+    /** @param {string} key */ getItemAsync: async (key) => savedPushIds.get(key) ?? null,
+    /** @param {string} key @param {string} value */ setItemAsync: async (key, value) => {
+      savedPushIds.set(key, value);
+    },
+  },
+  './session.js': {
+    /** @param {unknown} _session @param {string} path @param {{body:string}} options */
+    api: async (_session, path, options) => {
+      assert.equal(path, '/api/support/v1');
+      const body = JSON.parse(options.body);
+      assert.match(body.id, /^[A-Za-z0-9_-]{1,100}$/, 'Invalid identifier');
+      pushRegistrations.push(body);
+    },
+  },
+};
+const pushContext = vm.createContext({
+  module: { exports: {} },
+  /** @param {string} path */ require: (path) => {
+    assert.ok(path in pushBoundaries, path);
+    return pushBoundaries[path];
+  },
+});
+assert.ok(pushBundle.outputFiles[0]);
+vm.runInContext(pushBundle.outputFiles[0].text, pushContext);
+const registerPush = pushContext.module.exports.registerSupportNotifications;
+const unpairedPushAccount = { server: 'https://fixture.test', deviceId: '' };
+assert.equal(await registerPush(unpairedPushAccount), false);
+assert.equal(pushRegistrations.length, 0, 'Denied permission must not register a token');
+await registerPush(unpairedPushAccount, true);
+await Promise.all([
+  registerPush(unpairedPushAccount),
+  registerPush({ ...unpairedPushAccount, deviceId: 'paired-device' }),
+]);
+assert.equal(pushRegistrations.length, 3);
+assert.equal(
+  new Set(pushRegistrations.map((row) => row.id)).size,
+  1,
+  'Notification ID survives pairing changes and concurrent registration',
+);
+assert.equal(
+  unpairedPushAccount.deviceId,
+  '',
+  'Notification registration does not create an agent pairing',
+);
+assert.equal(pushRegistrations[0]?.token, 'ExpoPushToken[fixture]');
+console.log(
+  'PASS permission approval -> account-only push registration, concurrent retry and pairing independence.',
+);

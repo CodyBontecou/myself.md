@@ -36,8 +36,8 @@ export function exportFailureMessage(error) {
  */
 export function exportDiagnostics(event, profile, sources) {
   const profileLink = profile
-    ? `qrconnect://profiles/${encodeURIComponent(profile.id)}`
-    : 'qrconnect://profiles';
+    ? `myselfmd://profiles/${encodeURIComponent(profile.id)}`
+    : 'myselfmd://profiles';
   return {
     outcome: event.status,
     error: event.error,
@@ -55,7 +55,7 @@ export function exportDiagnostics(event, profile, sources) {
     actions: [
       {
         label: 'Review export details',
-        deepLink: `qrconnect://history/${encodeURIComponent(event.id)}`,
+        deepLink: `myselfmd://history/${encodeURIComponent(event.id)}`,
       },
       { label: 'Review profile destination, output and schedule', deepLink: profileLink },
       ...domains
@@ -64,7 +64,7 @@ export function exportDiagnostics(event, profile, sources) {
           const source = sources.find((item) => item.domain === domain);
           return {
             label: `Review ${domain} permissions`,
-            deepLink: `qrconnect://data/${domain}`,
+            deepLink: `myselfmd://data/${domain}`,
             notes: source?.notes ?? [],
             unavailableTypes: source
               ? event.profile.selection[domain].filter(

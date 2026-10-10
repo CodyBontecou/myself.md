@@ -48,7 +48,7 @@ try {
     { domain: 'health', availableTypes: [], notes: ['Health access is limited.'] },
   ]);
   assert.equal(diagnosis.selectionChanged, false);
-  assert.ok(diagnosis.actions.some((action) => action.deepLink === 'qrconnect://profiles/profile'));
+  assert.ok(diagnosis.actions.some((action) => action.deepLink === 'myselfmd://profiles/profile'));
   const sourceAction = diagnosis.actions.find((action) => 'unavailableTypes' in action);
   assert.ok(sourceAction && 'unavailableTypes' in sourceAction);
   assert.deepEqual(sourceAction.unavailableTypes, ['native:sleep']);

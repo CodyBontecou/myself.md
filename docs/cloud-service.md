@@ -1,5 +1,7 @@
 # Cloud service
 
+Protocol naming migration was applied to production on 10 October 2026. The new issuer, scope, callback and client IDs, provider prerequisites, and verification steps are in [protocol migration](protocol-migration.md). The deployment history below records the original identifiers; its old URLs and client names are historical. Updated native binaries still require distribution.
+
 Profiles choose one destination: local JSON/JSONL files, an HTTPS POST endpoint, or the paired cloud service. Manual and scheduled exports use the same daily writer. Local files remain in Documents; remote files stage in cache and are removed after successful delivery. Editing an existing cloud profile revokes its stored-data MCP grant before accepting the edit and therefore requires a reachable server. Stored files remain until deletion or retention expiry. Re-enable cloud MCP access after reviewing the revised selection.
 
 ## Cloud upload and access

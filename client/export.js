@@ -15,7 +15,7 @@ export async function shareDomain(context, grants, domain, profile, days, progre
     throw new Error('There is no readable data source yet. Enable source permissions.');
   const file = new File(
     Paths.cache,
-    `qr-connect-${domain}-${Date.now()}.${profile.export.schema.split('.').at(-1)}.json`,
+    `myselfmd-${domain}-${Date.now()}.${profile.export.schema.split('.').at(-1)}.json`,
   );
   file.create();
   file.write(fileHeader('json', profile.export.schema));

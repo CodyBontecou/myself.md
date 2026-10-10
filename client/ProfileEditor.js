@@ -19,6 +19,7 @@ export default function ProfileEditor({ data = false }) {
   const section = typeof params.section === 'string' ? params.section : '';
   const field = typeof params.field === 'string' ? params.field : '';
   const domain = domains.find((value) => value === params.domain);
+  const { session, draft, setDraft, start, working, error, run, dirty, saved } = useProfileEditor();
   const title =
     domain === 'health'
       ? 'Health'
@@ -37,10 +38,10 @@ export default function ProfileEditor({ data = false }) {
               cadence: 'Cadence',
               time: 'Preferred time',
               refresh: 'Today Refresh',
-            }[field || section] ?? (data ? 'Data selection' : 'Profile settings'));
+            }[field || section] ??
+            (data ? 'Data selection' : session?.id ? 'Profile settings' : 'New profile'));
   const selectionScreen = data || section === 'data';
   const phone = usePhoneData();
-  const { session, draft, setDraft, start, working, error, run, dirty, saved } = useProfileEditor();
   const navigation = useNavigation();
   const [importText, setImportText] = useState('');
   const disabled = phone.busy || working;
@@ -110,7 +111,7 @@ export default function ProfileEditor({ data = false }) {
           <TextInput
             testID="profile-import-input"
             accessibilityLabel="Profile JSON or deep link"
-            placeholder="Paste profile JSON or qrconnect link"
+            placeholder="Paste profile JSON or myselfmd link"
             editable={!disabled}
             value={importText}
             onChangeText={setImportText}
@@ -126,7 +127,7 @@ export default function ProfileEditor({ data = false }) {
             onPress={() =>
               void run(async () => {
                 start(
-                  importText.trim().startsWith('qrconnect:')
+                  importText.trim().startsWith('myselfmd:')
                     ? profileFromLink(importText.trim())
                     : parseProfile(JSON.parse(importText)),
                 );
