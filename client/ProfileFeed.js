@@ -165,6 +165,7 @@ export default function ProfileFeed({
                     disabled={disabled}
                     quick
                     iconOnly
+                    showStatus={!compact}
                     leadingAction={header}
                     trailingAction={
                       <Pressable
