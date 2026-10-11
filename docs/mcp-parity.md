@@ -466,7 +466,7 @@ The floating mobile dock uses one grey selection circle that moves between route
 
 Mobile profile creation, including the plus action and unsaved imported/duplicated profiles, displays New profile as the editor title. Editing an existing profile retains Profile settings; field/data subviews retain their specific titles. Creation/review/save operations, existing MCP coverage and dashboard capabilities are unchanged.
 
-Mobile profile export, agent-access and disclosure icons are centered in equal 44-point controls, giving equal spacing across all card layouts. Actions, accessible targets, existing MCP coverage and dashboard behavior are unchanged.
+Mobile profile export, agent-access and disclosure icons are centered in equal 44-point controls, giving equal spacing across all card layouts. Compact rows omit the export status line, including the exported-days summary; export feedback remains in toasts and profile details. Actions, accessible targets, existing MCP coverage and dashboard behavior are unchanged.
 
 The embedded iOS Debug snapshot retains the existing feedback platform handoff and `get_phone_feedback` / `request_phone_feedback` / `get_phone_feedback_operation` contract. Packaging and the Expo embedded-development guard change startup only; ownership, grants, approval and receipt-confirmed completion are unchanged. Physical-iPhone Argent verification reached Settings capture, the native crop and cancellation after a normal restart; no live submission or paired-phone MCP dispatch was exercised. Release feedback restrictions remain.
 
