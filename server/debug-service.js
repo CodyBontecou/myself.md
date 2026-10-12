@@ -7,7 +7,7 @@ import {
   parseDebugReport,
   parseDebugContent,
 } from '../core/debug-log.js';
-import { agentProfileAllows, parseProfile } from '../core/profiles.js';
+import { agentProfileAllows, parseProfile, agentLogsAllowed } from '../core/profiles.js';
 import { PairingError } from './errors.js';
 const contentSchema = z
   .object({ records: z.boolean(), credentials: z.boolean(), urls: z.boolean() })
@@ -108,16 +108,20 @@ export function registerDebugTools(mcp, subject, own, phones) {
       {
         description:
           name === 'get_phone_debug_logs'
-            ? 'Read or export the phone’s safe debug report: event times, operations, outcomes, request duration and HTTP status. Requires user-enabled Share logs with agents on the owned phone and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Includes raw error messages. Records, request credentials and URLs are included only when the phone owner enables those fields; records also require current domain/type grants and an approved profile. Errors themselves may contain sensitive information. Does not consume export allowance. Save the structured result as JSON to share with support; copies cannot be recalled.'
+            ? 'Read or export the phone’s safe debug report: event times, operations, outcomes, request duration and HTTP status. Requires an enabled profile with App logs permission (profileId selects one; otherwise any approved profile) and user-enabled Share logs with agents on the owned phone and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Includes raw error messages. Records, request credentials and URLs are included only when the phone owner enables those fields; records also require current domain/type grants and an approved profile. Errors themselves may contain sensitive information. Does not consume export allowance. Save the structured result as JSON to share with support; copies cannot be recalled.'
             : 'Ask the user to open Logs → Share & agent access on the paired phone and enable Share logs with agents. Cannot enable consent remotely. Inspect get_phone_debug_logs after phone approval to verify access. Native sharing is a user-completed system share sheet; this tool does not send a report.',
         inputSchema: z
-          .object({ deviceId: z.string().uuid(), filter: z.enum(['all', 'issues']).default('all') })
+          .object({
+            deviceId: z.string().uuid(),
+            filter: z.enum(['all', 'issues']).default('all'),
+            profileId: z.string().min(1).max(100).optional(),
+          })
           .strict(),
         annotations: { readOnlyHint: true },
       },
-      async ({ deviceId, filter }) => {
+      async ({ deviceId, filter, profileId }) => {
         own(deviceId, subject);
-        const result = phoneDebugState(deviceId, phones.get(deviceId), filter);
+        const result = phoneDebugState(deviceId, phones.get(deviceId), filter, profileId);
         return {
           content: [{ type: 'text', text: JSON.stringify(result) }],
           structuredContent: result,
@@ -129,17 +133,22 @@ export function registerDebugTools(mcp, subject, own, phones) {
 /** Shared authorization/freshness projection for diagnostics and the unified log query.
  * @param {string} deviceId
  * @param {import('./data-service.js').Phone|undefined} phone
- * @param {'all'|'issues'} [filter] */
-export function phoneDebugState(deviceId, phone, filter = 'all') {
+ * @param {'all'|'issues'} [filter]
+ * @param {string} [profileId] */
+export function phoneDebugState(deviceId, phone, filter = 'all', profileId) {
   const online = Boolean(phone && phone.seen > Date.now() - 15000);
   const report = phone?.catalog.diagnostics;
-  const allowed = online && report?.shared === true;
+  const profiles = phone?.catalog.profiles.filter((p) => !profileId || p.id === profileId) ?? [];
+  const profileAllowed = profiles.some(agentLogsAllowed);
+  const allowed = online && report?.shared === true && profileAllowed;
   return {
     deviceId,
     online,
     lastSeen: phone?.seen ?? null,
     status: allowed ? 'available' : online ? 'awaiting_user' : 'offline',
     shared: report?.shared === true,
+    profileAllowed,
+    profileId: profileId ?? null,
     content: parseDebugContent(report?.content),
     report:
       allowed && report
@@ -154,13 +163,15 @@ export function phoneDebugState(deviceId, phone, filter = 'all') {
               const profile = phone?.catalog.profiles.find(
                 (value) => value.id === records.profileId,
               );
-              return domain?.enabled &&
+              return (!profileId || records.profileId === profileId) &&
+                domain?.enabled &&
                 domain.types.includes(`native:${records.type}`) &&
                 agentProfileAllows(
                   profile && {
                     ...parseProfile(profile),
                     id: profile.id,
                     agentAccess: profile.agentAccess,
+                    agentPermissions: profile.agentPermissions,
                   },
                   {
                     domain: records.domain,
@@ -177,7 +188,7 @@ export function phoneDebugState(deviceId, phone, filter = 'all') {
       deepLink: 'myselfmd://diagnostics',
       requiresUser: !allowed,
       instructions:
-        'Open myself.md → Logs → Share & agent access. Enable Share logs with agents, or review and share the report using the system share sheet.',
+        'Enable App logs and Allow agent access in the requested profile’s Agent permissions section, and enable phone-wide Log sharing consent. Re-read get_phone_debug_logs to verify.',
       verificationTool: 'get_phone_debug_logs',
     },
   };

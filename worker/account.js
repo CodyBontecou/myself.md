@@ -50,6 +50,7 @@ export class Account extends DurableObject {
       this.db,
       Buffer.from(this.env.CLOUD_ENCRYPTION_KEY, 'hex'),
       objectStorage(this.env.EXPORTS),
+      (subject) => this.billing.snapshot(subject).unlocked,
     );
     this.support = new SupportStore(this.db, this.cloud);
     this.supportDiscord = new SupportDiscord({
@@ -147,6 +148,7 @@ export class Account extends DurableObject {
       history: this.history,
       devices: this.pairing.devices.bind(this.pairing),
       cancelAgent: this.data.cancelAgent,
+      refreshEntitlement: billingService.refreshEntitlement,
     });
     this.listener = createApplication(
       {

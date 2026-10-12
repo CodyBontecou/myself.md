@@ -72,6 +72,16 @@ const boundaries = {
   'expo-router/react-navigation': { useHeaderHeight: () => 0 },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0, top: 0 }) },
   'expo-crypto': { randomUUID: () => 'fixture' },
+  'expo-application': { nativeApplicationVersion: '1.2.3', nativeBuildVersion: '42' },
+  'expo-device': {
+    modelName: 'iPhone 17 Pro',
+    modelId: 'iPhone18,1',
+    osName: 'iOS',
+    osVersion: '26.5',
+    osBuildId: '23F42',
+  },
+  'expo-updates': { runtimeVersion: 'runtime-fixture', updateId: 'update-fixture' },
+  'expo-constants': { expoConfig: { version: '1.0.0' } },
   '../../client/PhoneProvider.js': { usePhone: () => ({ session: account }) },
   '../../client/DataPanel.js': { usePhoneData: () => ({ session: local }) },
   '../../client/support-guest.js': { guestSupportApi: async () => ({ conversations: [] }) },
@@ -141,13 +151,48 @@ assert.match(signedOut, /Send an email/);
 const channels = [
   ['support-github', 'https://github.com/CodyBontecou/myself.md/issues/new/choose'],
   ['support-discord', 'https://discord.gg/RaQYS4t6gn'],
-  ['support-email', 'mailto:cody@isolated.tech'],
 ];
 for (const [id, url] of channels) {
   const action = actions.get(id);
   assert.ok(action);
   action();
   assert.equal(openedLink, url);
+}
+const emailAction = actions.get('support-email');
+assert.ok(emailAction);
+emailAction();
+const email = new URL(openedLink);
+assert.equal(email.protocol, 'mailto:');
+assert.equal(email.pathname, 'cody@isolated.tech');
+assert.equal(
+  email.searchParams.get('body'),
+  '\n\n--\nmyself.md support details\nApp version: 1.2.3\nApp build: 42\nPhone model: iPhone 17 Pro (iPhone18,1)\nOperating system: iOS 26.5 (build 23F42)\nApp runtime: runtime-fixture\nApp update: update-fixture',
+);
+// Exercise Android and absent metadata through the actual email action.
+for (const [device, application, expected] of [
+  [
+    { modelName: 'Pixel 10 & Pro', osName: 'Android', osVersion: '17', osBuildId: 'BP42' },
+    { nativeApplicationVersion: '2.0.0', nativeBuildVersion: '77' },
+    'App version: 2.0.0\nApp build: 77\nPhone model: Pixel 10 & Pro\nOperating system: Android 17 (build BP42)',
+  ],
+  [
+    {},
+    {},
+    'App version: 1.0.0\nApp build: Unavailable\nPhone model: Unavailable\nOperating system: Unavailable Unavailable',
+  ],
+]) {
+  boundaries['expo-device'] = device;
+  boundaries['expo-application'] = application;
+  boundaries['expo-updates'] = {};
+  vm.runInContext(output.outputFiles[0].text, context);
+  renderToStaticMarkup(React.createElement(context.module.exports.default));
+  const action = actions.get('support-email');
+  assert.ok(action);
+  action();
+  assert.equal(
+    new URL(openedLink).searchParams.get('body'),
+    `\n\n--\nmyself.md support details\n${expected}`,
+  );
 }
 /** Read after React rendered the child. */
 function capturedInbox() {

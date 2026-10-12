@@ -6,7 +6,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Copy, Group, Icon, Row } from '../src/components/ui';
-import { Switch } from './Terminal.js';
+import { Checkbox } from './Terminal.js';
 import { useTheme } from '../src/lib/theme';
 import { domains } from '../core/data.js';
 import { categories } from './health-types.js';
@@ -186,7 +186,7 @@ export default function ProfileDataEditor({
                     }}
                   />
                 )}
-                {item.domain !== 'health' && (
+                {(item.domain !== 'health' || Platform.OS === 'android') && (
                   <Pressable
                     accessibilityRole="button"
                     testID={`selection-permissions-${item.domain}`}
@@ -366,10 +366,10 @@ export default function ProfileDataEditor({
               </View>
             </Pressable>
           ) : (
-            <Switch
+            <Checkbox
               testID={`selection-group-toggle-${item.key}`}
               accessibilityLabel={`Include ${item.key}`}
-              style={styles.sectionSwitch}
+              style={styles.sectionCheckbox}
               accessibilityValue={{ text: `${item.selected} of ${item.total} selected` }}
               disabled={
                 locked ||
@@ -456,7 +456,7 @@ export default function ProfileDataEditor({
               : `${domain === 'time' ? 'Screen time' : domain === 'health' ? 'Health' : 'Location'} · Native${!types[domain].includes(key) ? ' · unavailable on this phone' : ''}`
           }
           trailing={
-            <Switch
+            <Checkbox
               disabled={locked}
               testID={`selection-type-${domain}-${key}`}
               accessibilityLabel={`Include ${domain} ${key}`}
@@ -737,7 +737,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   groupText: { flex: 1 },
-  sectionSwitch: { alignSelf: 'center' },
+  sectionCheckbox: { alignSelf: 'center' },
   groupTitle: { fontWeight: '600' },
   content: { padding: 16 },
   header: { gap: 8, marginBottom: 8 },

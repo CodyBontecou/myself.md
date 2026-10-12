@@ -1,10 +1,10 @@
 import { ErrorToast } from './Toast.js';
 import { Stack } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOnboarding } from '../../client/onboarding';
 import { useTheme } from '../lib/theme';
-import { Copy } from './ui';
+import { Copy, Button } from './ui';
 
 function SkipButton() {
   const { finish } = useOnboarding();
@@ -24,24 +24,8 @@ function renderSkipButton() {
 
 /** @param {{label:string,onPress:()=>void,secondary?:boolean,testID?:string}} props */
 export function OnboardingButton({ label, onPress, secondary = false, testID }) {
-  const { colors } = useTheme();
   return (
-    <Pressable
-      testID={testID}
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: secondary ? 'transparent' : colors.text, opacity: pressed ? 0.6 : 1 },
-      ]}
-    >
-      <Copy
-        style={[styles.buttonLabel, { color: secondary ? colors.secondary : colors.background }]}
-      >
-        {label}
-      </Copy>
-    </Pressable>
+    <Button label={label} onPress={onPress} secondary={secondary} {...(testID ? { testID } : {})} />
   );
 }
 
@@ -99,14 +83,4 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, lineHeight: 21 },
   footer: { paddingHorizontal: 16, paddingTop: 12, alignItems: 'center' },
   actions: { width: '100%', maxWidth: 560, gap: 12 },
-  button: {
-    minHeight: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonLabel: { fontSize: 14, lineHeight: 20, fontWeight: '500' },
 });

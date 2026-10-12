@@ -99,7 +99,7 @@ export function Button({
   icon,
 }) {
   const { colors } = useTheme();
-  const color = plain ? colors.accent : secondary ? colors.text : colors.onAccent;
+  const color = plain ? colors.accent : secondary ? colors.secondary : colors.text;
   return (
     <Pressable
       testID={testID}
@@ -111,15 +111,57 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: plain ? 'transparent' : secondary ? colors.surface : colors.accent,
-          borderColor: secondary ? colors.border : colors.accent,
-          ...(plain && { borderWidth: 0 }),
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
       ]}
     >
       {icon && <Icon name={icon} size={20} color={color} />}
       <Copy style={[styles.buttonLabel, { color }]}>{label}</Copy>
+    </Pressable>
+  );
+}
+/** @param {{value?:boolean,onValueChange?:(value:boolean)=>void,disabled?:boolean,testID?:string|undefined,accessibilityLabel?:string,accessibilityValue?:import('react-native').AccessibilityValue,style?:import('react-native').StyleProp<import('react-native').ViewStyle>}} props */
+export function Checkbox({
+  value = false,
+  onValueChange,
+  disabled = false,
+  testID,
+  accessibilityLabel,
+  accessibilityValue,
+  style,
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="checkbox"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityValue={accessibilityValue}
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={(event) => {
+        event.stopPropagation();
+        onValueChange?.(!value);
+      }}
+      style={({ pressed }) => [styles.checkboxAction, style, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <View
+        style={[
+          styles.checkbox,
+          {
+            borderColor: colors.secondary,
+            backgroundColor: value
+              ? disabled
+                ? colors.secondary
+                : colors.accent
+              : disabled
+                ? colors.subtle
+                : colors.surface,
+          },
+        ]}
+      >
+        {value && <Icon name="checkmark" size={14} color={colors.onAccent} />}
+      </View>
     </Pressable>
   );
 }
@@ -339,16 +381,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  button: {
+  checkboxAction: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  checkbox: {
+    width: 20,
+    height: 20,
     borderWidth: 1,
-    minHeight: 48,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 5,
     borderCurve: 'continuous',
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  button: {
+    minHeight: 44,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: 8,
   },
   group: {

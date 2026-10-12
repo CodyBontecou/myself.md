@@ -31,7 +31,7 @@
         "foregroundImage": "./assets/myself-foreground.png",
         "monochromeImage": "./assets/myself-monochrome.png"
       },
-      "package": "com.codybontecou.sharedjsapp",
+      "package": "com.myself.md",
       "permissions": [
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
         "android.permission.health.READ_BASAL_BODY_TEMPERATURE",

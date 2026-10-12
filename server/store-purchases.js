@@ -62,10 +62,13 @@ export async function verifyStorePurchase(purchase) {
     ...(credentials ? { credentials } : {}),
   });
   const client = await auth.getClient();
-  const app = encodeURIComponent(process.env.GOOGLE_PLAY_PACKAGE ?? 'com.codybontecou.sharedjsapp');
+  const app = encodeURIComponent(process.env.GOOGLE_PLAY_PACKAGE ?? 'com.myself.md');
   const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${app}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchase.proof)}`;
   const { data } = await client.request({ url });
-  const result = /** @type {{purchaseState?:number,consumptionState?:number}} */ (data);
+  const result =
+    /** @type {{purchaseState?:number,consumptionState?:number,purchaseType?:number}} */ (data);
+  if ((result.purchaseType === 0) !== (process.env.IAP_SANDBOX === '1'))
+    throw new PairingError(403, 'Purchase environment does not match this server.');
   if (result.purchaseState !== 0 || result.consumptionState !== 0)
     throw new PairingError(403, 'A completed, non-consumable lifetime purchase is required.');
   return { store: purchase.store, id: purchase.proof, proof: purchase.proof };

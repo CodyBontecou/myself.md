@@ -101,16 +101,14 @@ steps:
   - await:
       visible:
         text: Saved
-  - when:
-      platform: ios
-    steps:
-      - tap:
-          id: chevron.backward
-  - when:
-      platform: android
-    steps:
-      - tap:
-          text: Navigate up
+  - await:
+      visible:
+        identifier: logs-close-history:qa-export
+  - tap:
+      id: history-event-qa-export
+  - await:
+      hidden:
+        identifier: logs-close-history:qa-export
   - await:
       visible:
         identifier: history-event-qa-failed-export
@@ -132,16 +130,14 @@ steps:
   - await:
       visible:
         text: Synthetic export failure. No data was sent.
-  - when:
-      platform: ios
-    steps:
-      - tap:
-          id: chevron.backward
-  - when:
-      platform: android
-    steps:
-      - tap:
-          text: Navigate up
+  - await:
+      visible:
+        identifier: logs-close-history:qa-failed-export
+  - tap:
+      id: logs-close-history:qa-failed-export
+  - await:
+      hidden:
+        identifier: logs-close-history:qa-failed-export
   - await:
       visible:
         identifier: history-event-qa-export

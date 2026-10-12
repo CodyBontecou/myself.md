@@ -9,6 +9,7 @@ import { useTheme } from '../src/lib/theme';
 import { useRef, useState } from 'react';
 import {
   Copy,
+  Checkbox,
   Icon,
   Group,
   Row,
@@ -16,20 +17,26 @@ import {
   Button as BridgeButton,
 } from '../src/components/ui';
 import { Alert, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Switch, Text } from './Terminal.js';
+import { Button, Text } from './Terminal.js';
 import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ProfileExports from './ProfileExports.js';
 import ProfileFeed from './ProfileFeed.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
 import { domains } from '../core/data.js';
-import { parseProfile, profileLink, uniqueProfileName } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+import {
+  parseProfile,
+  profileLink,
+  uniqueProfileName,
+  parseAgentPermissions,
+} from '../core/profiles.js';
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
   types,
   permissions,
+  grants,
   onAuthorize,
   busy,
   onChange,
@@ -174,6 +181,7 @@ export default function ProfilePanel({
                                   ...updated,
                                   id: profile.id,
                                   agentAccess: profile.agentAccess === true,
+                                  agentPermissions: profile.agentPermissions,
                                 }
                               : p,
                           ),
@@ -242,7 +250,7 @@ export default function ProfilePanel({
     if (!enabled) return save();
     Alert.alert(
       'Allow agent access?',
-      `Paired agents can read the selected data in ${target.name}, subject to domain grants and source permissions.`,
+      `Paired agents can use the enabled permissions in ${target.name} to read selected data and shared phone-wide app logs. Phone-wide grants, log-sharing consent and source permissions still apply.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Allow', onPress: save },
@@ -264,9 +272,10 @@ export default function ProfilePanel({
               value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${profile.export.formats.join(' + ').toUpperCase()}`}
             />
           </Group>
+          <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
+          <SectionHeader compact title="Agent permissions" />
           <Copy variant="caption" muted>
-            Agents can choose any approved profile. Source permissions and domain grants still
-            apply.
+            Choose what agents can read through this profile. Export selections stay unchanged.
           </Copy>
           <Group compact>
             <Row
@@ -274,7 +283,7 @@ export default function ProfilePanel({
               testID="profile-allow-agent-access"
               title="Allow agent access"
               trailing={
-                <Switch
+                <Checkbox
                   testID="profile-agent-access"
                   accessibilityLabel={`Allow agent access for ${profile.name}`}
                   value={profile.agentAccess === true}
@@ -283,8 +292,86 @@ export default function ProfilePanel({
                 />
               }
             />
+            {
+              /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
+                'health',
+                'time',
+                'location',
+                'logs',
+              ]).map((key) => {
+                const label =
+                  key === 'health'
+                    ? 'Health'
+                    : key === 'time'
+                      ? 'Screen time'
+                      : key === 'location'
+                        ? 'Location'
+                        : 'App logs';
+                return (
+                  <Row
+                    compact
+                    key={key}
+                    title={label}
+                    subtitle={
+                      key === 'logs'
+                        ? 'Phone-wide app diagnostics; requires Log sharing consent.'
+                        : `${profile.selection[key].length} selected · ${grants[key] ? 'system: ' + (permissions[key] ?? 'checking') : 'phone access off'}`
+                    }
+                    trailing={
+                      <Checkbox
+                        testID={`profile-agent-permission-${key}`}
+                        accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
+                        value={parseAgentPermissions(profile.agentPermissions)[key]}
+                        disabled={disabled}
+                        onValueChange={(enabled) => {
+                          const save = () =>
+                            void run(() =>
+                              onChange({
+                                ...state,
+                                profiles: state.profiles.map((p) =>
+                                  p.id === profile.id
+                                    ? {
+                                        ...p,
+                                        agentPermissions: {
+                                          ...parseAgentPermissions(p.agentPermissions),
+                                          [key]: enabled,
+                                        },
+                                      }
+                                    : p,
+                                ),
+                              }),
+                            );
+                          if (!enabled) return save();
+                          Alert.alert(
+                            `Allow ${label} access?`,
+                            `Agents using ${profile.name} can read ${key === 'logs' ? 'shared phone-wide app logs' : 'selected ' + label + ' data'} when this profile is enabled and phone-wide access is allowed.`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Allow', onPress: save },
+                            ],
+                          );
+                        }}
+                      />
+                    }
+                  />
+                );
+              })
+            }
+            <Row
+              compact
+              testID="profile-agent-phone-permissions"
+              title="Phone-wide permissions"
+              subtitle="Review source grants and system access"
+              onPress={() => router.push('/settings/connections')}
+            />
+            <Row
+              compact
+              testID="profile-agent-log-settings"
+              title="Log sharing settings"
+              subtitle="Review app log consent and included content"
+              onPress={() => router.push('/diagnostics')}
+            />
           </Group>
-          <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
           <SectionHeader compact title="Data selection" />
           <Group compact>
             <ProfileDataEditor
@@ -306,7 +393,12 @@ export default function ProfilePanel({
                     ...state,
                     profiles: state.profiles.map((p) =>
                       p.id === profile.id
-                        ? { ...updated, id: profile.id, agentAccess: profile.agentAccess === true }
+                        ? {
+                            ...updated,
+                            id: profile.id,
+                            agentAccess: profile.agentAccess === true,
+                            agentPermissions: profile.agentPermissions,
+                          }
                         : p,
                     ),
                   });

@@ -1,3 +1,4 @@
+import { Checkbox } from '../../src/components/ui.js';
 import { ErrorToast } from '../../src/components/Toast.js';
 import { NativeMarkdown } from './markdown-native.js';
 import { useEffect, useRef, useState } from 'react';
@@ -9,7 +10,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   TextInput,
   View,
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSupportInbox } from './support-client.js';
 import { useSupportData } from './support-data.js';
-/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,startInConversation?:boolean,allowAgentAccess?:boolean,supportOptions?:import('react').ReactNode,initialConversationId?:string,onEnableNotifications?:(()=>void)|undefined,data?:import('./support-client.js').SupportDataAdapter|undefined,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,onExit?:()=>void,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'chevron-back'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline'|'notifications-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
+/** @param {{request:import('./support-client.js').SupportClient,active?:boolean,startInConversation?:boolean,allowAgentAccess?:boolean,supportOptions?:import('react').ReactNode,initialConversationId?:string,onEnableNotifications?:(()=>void)|undefined,data?:import('./support-client.js').SupportDataAdapter|undefined,newId:()=>string,bottomInset?:number,topInset?:number,projectLabel?:string,keyboardOffset?:number,renderIcon?:(name:'add'|'arrow-up'|'ellipsis-horizontal'|'create-outline'|'search'|'menu'|'close-outline'|'folder-outline'|'notifications-outline')=>import('react').ReactNode,colors:{text:string,surface:string,border:string,secondary:string,background?:string,subtle?:string},components:{Group:import('react').ComponentType<{children:import('react').ReactNode,compact?:boolean}>,Screen:import('./native.js').ScreenComponent,Copy:import('./native.js').CopyComponent,Button:import('./native.js').ButtonComponent,Row:import('./native.js').RowComponent}}} props */
 export function NativeSupport({
   request,
   active = true,
@@ -32,7 +32,6 @@ export function NativeSupport({
   bottomInset = 0,
   topInset = 0,
   projectLabel = 'Support',
-  onExit,
   keyboardOffset = 0,
   renderIcon,
   components,
@@ -46,8 +45,77 @@ export function NativeSupport({
     [detailsFor, setDetailsFor] = useState(/** @type {string|null} */ (null));
   const [today] = useState(() => Date.now());
   const [searching, setSearching] = useState(false);
+  const [feedActionsWidth, setFeedActionsWidth] = useState(92);
   const [query, setQuery] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationItems, setNotificationItems] = useState(
+    /** @type {(import('./support-client.js').SupportSummary & {read?:boolean})[]} */ ([]),
+  );
+  const [notificationsBusy, setNotificationsBusy] = useState(false);
+  const [clearedNotifications, setClearedNotifications] = useState(/** @type {string[]} */ ([]));
+  const [notificationError, setNotificationError] = useState('');
+  const notifications = new Map(notificationItems.map((item) => [item.id, item]));
+  for (const item of chat.conversations) {
+    const previous = notifications.get(item.id);
+    if (
+      item.unreadCount > 0 &&
+      !clearedNotifications.includes(`${item.id}:${item.updatedAt}`) &&
+      (!previous || previous.updatedAt !== item.updatedAt)
+    )
+      notifications.set(item.id, item);
+  }
+  const notificationRows = [...notifications.values()];
+  const hasUnreadNotifications = notificationRows.some((item) => !item.read);
+  const openNotifications = () => {
+    Keyboard.dismiss();
+    setNotificationItems(
+      chat.conversations.filter(
+        (item) =>
+          item.unreadCount > 0 && !clearedNotifications.includes(`${item.id}:${item.updatedAt}`),
+      ),
+    );
+    setNotificationError('');
+    setNotificationsOpen(true);
+    void chat.refresh();
+  };
+  /** @param {'markAllRead'|'clearNotifications'} action */
+  const manageNotifications = async (action) => {
+    if (notificationsBusy || chat.busy) return;
+    setNotificationsBusy(true);
+    setNotificationError('');
+    try {
+      const result =
+        /** @type {Awaited<ReturnType<typeof import('./notifications.js').acknowledgeSupportNotifications>>} */ (
+          await request(action)
+        );
+      const completed = new Map(
+        result.outcomes
+          .filter((item) => item.status === 'completed')
+          .map((item) => [item.conversationId, item.updatedAt]),
+      );
+      const updated = notificationRows.map((item) =>
+        completed.get(item.id) === item.updatedAt ? { ...item, read: true } : item,
+      );
+      await chat.refresh();
+      if (action === 'clearNotifications')
+        setClearedNotifications((previous) => [
+          ...previous,
+          ...updated.filter((item) => item.read).map((item) => `${item.id}:${item.updatedAt}`),
+        ]);
+      setNotificationItems(
+        action === 'clearNotifications' ? updated.filter((item) => !item.read) : updated,
+      );
+      if (result.status === 'failed')
+        setNotificationError('Some notifications could not be marked as read. Please try again.');
+    } catch (error) {
+      setNotificationError(
+        error instanceof Error ? error.message : 'Notifications could not update.',
+      );
+    } finally {
+      setNotificationsBusy(false);
+    }
+  };
   const input = useRef(/** @type {TextInput|null} */ (null));
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
@@ -73,6 +141,7 @@ export function NativeSupport({
     const cursor = `${c?.id}:${latest}`;
     if (
       active &&
+      !notificationsOpen &&
       c &&
       latest > c.readThrough &&
       nearBottom &&
@@ -85,7 +154,7 @@ export function NativeSupport({
         return saved;
       });
     }
-  }, [active, c, latest, chat, nearBottom]);
+  }, [active, c, latest, chat, nearBottom, notificationsOpen]);
   const inputStyle = {
     color: colors.text,
     fontSize: 17,
@@ -109,12 +178,15 @@ export function NativeSupport({
     if (c) {
       const value = draft.trim();
       if (value)
-        void chat.send(value, newId()).then((saved) => {
-          if (saved) setDraft('');
+        void chat.send(value, newId(), logs.initialSnapshot).then((saved) => {
+          if (saved) {
+            setDraft('');
+            logs.cancel();
+          }
           return saved;
         });
     } else if (title.trim()) {
-      void chat.create(newId(), title.trim()).then((saved) => {
+      void chat.create(newId(), title.trim(), logs.initialSnapshot).then((saved) => {
         if (saved) {
           setTitle('');
           setDraft('');
@@ -142,21 +214,7 @@ export function NativeSupport({
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.toolbar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={c ? 'Back to conversations' : `Back to ${projectLabel}`}
-          onPress={
-            c
-              ? backToFeed
-              : () => {
-                  Keyboard.dismiss();
-                  onExit?.();
-                }
-          }
-          style={[styles.toolbarButton, styles.circle, { borderColor: colors.border }]}
-        >
-          {renderIcon ? renderIcon('chevron-back') : <Copy>‹</Copy>}
-        </Pressable>
+        {!c && <View style={{ width: feedActionsWidth }} />}
         <View style={styles.headerTitle}>
           <Text
             numberOfLines={1}
@@ -193,20 +251,19 @@ export function NativeSupport({
             </Pressable>
           </View>
         ) : (
-          <View style={styles.feedActions}>
-            {onEnableNotifications && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Enable reply notifications"
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onEnableNotifications();
-                }}
-                style={styles.toolbarButton}
-              >
-                {renderIcon ? renderIcon('notifications-outline') : <Copy>Notifications</Copy>}
-              </Pressable>
-            )}
+          <View
+            style={styles.feedActions}
+            onLayout={({ nativeEvent }) => setFeedActionsWidth(nativeEvent.layout.width)}
+          >
+            <Pressable
+              testID="support-notifications"
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+              onPress={openNotifications}
+              style={styles.toolbarButton}
+            >
+              {renderIcon ? renderIcon('notifications-outline') : <Copy>Notifications</Copy>}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
@@ -318,6 +375,7 @@ export function NativeSupport({
                       disabled={disabled}
                       onPress={() => {
                         Keyboard.dismiss();
+                        logs.cancel();
                         setDraft('');
                         setDetailsFor(null);
                         atBottom.current = true;
@@ -418,42 +476,44 @@ export function NativeSupport({
                 {a.category} attachment · {a.removed ? 'Removed when archived' : 'Shared'}
               </Copy>
             ))}
-            {logs.preview && (
-              <>
-                <Copy>
-                  Review this snapshot. You can remove entries before sharing. Accepted data will be
-                  processed by Isobot and its model provider.
-                </Copy>
-                <TextInput
-                  accessibilityLabel="Data snapshot preview"
-                  multiline
-                  value={logs.preview.content}
-                  editable={!disabled && canCompose}
-                  onChangeText={logs.edit}
-                  maxLength={128000}
-                  style={previewStyle}
-                />
-                <Button
-                  label="Accept and share this snapshot"
-                  disabled={disabled}
-                  onPress={() => void logs.share()}
-                />
-                <Row
-                  compact
-                  subtitle=""
-                  trailing={null}
-                  title="Cancel"
-                  disabled={disabled}
-                  onPress={logs.cancel}
-                />
-              </>
-            )}
             {c.jobs?.map((job) => (
               <Copy key={job.id} muted>
                 Implementation task · {job.status}
                 {job.result ? ` · ${job.result}` : ''}
               </Copy>
             ))}
+          </>
+        )}
+        {logs.preview && (
+          <>
+            <Copy>
+              Review this snapshot. You can remove entries before sharing. Accepted data will be
+              processed by Isobot and its model provider.
+            </Copy>
+            <TextInput
+              accessibilityLabel="Data snapshot preview"
+              multiline
+              value={logs.preview.content}
+              editable={!disabled && canCompose}
+              onChangeText={logs.edit}
+              maxLength={128000}
+              style={previewStyle}
+            />
+            <Button
+              label={
+                c ? 'Accept and share this snapshot' : 'Include this snapshot with my first message'
+              }
+              disabled={disabled}
+              onPress={() => void logs.share()}
+            />
+            <Row
+              compact
+              subtitle=""
+              trailing={null}
+              title="Cancel"
+              disabled={disabled}
+              onPress={logs.cancel}
+            />
           </>
         )}
       </ScrollView>
@@ -469,17 +529,6 @@ export function NativeSupport({
         <View
           style={[styles.composer, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
-          {(!c || data) && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={c ? 'Attach recent logs' : 'Start a conversation'}
-              disabled={disabled || !canCompose}
-              onPress={() => (c ? void logs.prepare(null) : input.current?.focus())}
-              style={styles.composerButton}
-            >
-              {renderIcon ? renderIcon('add') : <Copy style={styles.plus}>+</Copy>}
-            </Pressable>
-          )}
           <TextInput
             ref={input}
             testID="support-composer"
@@ -520,7 +569,159 @@ export function NativeSupport({
             )}
           </Pressable>
         </View>
+        {data && data.automaticLogs !== false && (
+          <Pressable
+            testID="support-include-logs"
+            accessibilityRole="checkbox"
+            accessibilityLabel="Include logs?"
+            accessibilityHint="Include recent logs when you send your message."
+            accessibilityState={{
+              checked: logs.recentLogsSelected,
+              disabled: chat.busy || !canCompose,
+            }}
+            disabled={chat.busy || !canCompose}
+            onPress={() => void logs.toggleRecentLogs()}
+            style={styles.includeLogs}
+          >
+            <View style={[styles.includeLogsContent, { backgroundColor: colors.surface }]}>
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: colors.secondary,
+                    backgroundColor: logs.recentLogsSelected ? colors.text : colors.surface,
+                  },
+                ]}
+              >
+                {logs.recentLogsSelected && (
+                  <Text style={[styles.checkmark, { color: colors.surface }]}>✓</Text>
+                )}
+              </View>
+              <Text style={[styles.includeLogsLabel, { color: colors.secondary }]}>
+                Include logs?
+              </Text>
+            </View>
+          </Pressable>
+        )}
       </View>
+      <Modal
+        visible={notificationsOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNotificationsOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss notifications"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setNotificationsOpen(false)}
+          />
+          <View
+            testID="support-notifications-panel"
+            accessibilityViewIsModal
+            style={[
+              styles.optionsSheet,
+              { backgroundColor: colors.surface, paddingBottom: Math.max(bottomInset, 16) },
+            ]}
+          >
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.headerText, { color: colors.text }]}>Notifications</Text>
+              <Pressable
+                testID="support-notifications-close"
+                accessibilityRole="button"
+                accessibilityLabel="Close notifications"
+                onPress={() => setNotificationsOpen(false)}
+                style={styles.toolbarButton}
+              >
+                {renderIcon ? renderIcon('close-outline') : <Copy>Close</Copy>}
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.sheetContent}>
+              {(notificationError || chat.error) && (
+                <Copy accessibilityRole="alert">{notificationError || chat.error}</Copy>
+              )}
+              {notificationsBusy && <Copy>Updating notifications…</Copy>}
+              {!chat.loaded ? (
+                <Copy>
+                  {chat.error ? 'Could not load notifications' : 'Loading notifications…'}
+                </Copy>
+              ) : notificationRows.length === 0 ? (
+                <Copy testID="support-notifications-empty">No notifications</Copy>
+              ) : (
+                <Group compact>
+                  {notificationRows.map((item) => (
+                    <Row
+                      compact
+                      key={item.id}
+                      testID={`support-notification-${item.id}`}
+                      trailing={null}
+                      title={item.title}
+                      subtitle={
+                        item.read
+                          ? 'Read'
+                          : `${item.unreadCount} unread ${item.unreadCount === 1 ? 'reply' : 'replies'}`
+                      }
+                      disabled={notificationsBusy || chat.busy}
+                      onPress={() => {
+                        setNotificationsOpen(false);
+                        setComposing(false);
+                        setDetailsFor(null);
+                        logs.cancel();
+                        setDraft('');
+                        void chat.open(item.id);
+                      }}
+                    />
+                  ))}
+                </Group>
+              )}
+              <Group compact>
+                <Row
+                  compact
+                  testID="support-notifications-refresh"
+                  title="Refresh notifications"
+                  subtitle=""
+                  trailing={null}
+                  disabled={notificationsBusy || chat.busy}
+                  onPress={() => void chat.refresh()}
+                />
+                <Row
+                  compact
+                  testID="support-notifications-read-all"
+                  title="Mark all as read"
+                  subtitle=""
+                  trailing={null}
+                  disabled={
+                    !chat.loaded || !hasUnreadNotifications || notificationsBusy || chat.busy
+                  }
+                  onPress={() => void manageNotifications('markAllRead')}
+                />
+                <Row
+                  compact
+                  testID="support-notifications-clear-all"
+                  title="Clear all notifications"
+                  subtitle=""
+                  trailing={null}
+                  disabled={
+                    !chat.loaded || notificationRows.length === 0 || notificationsBusy || chat.busy
+                  }
+                  onPress={() => void manageNotifications('clearNotifications')}
+                />
+                {onEnableNotifications && (
+                  <Row
+                    compact
+                    title="Enable reply notifications"
+                    trailing={null}
+                    subtitle="Receive support replies on this device"
+                    disabled={notificationsBusy || chat.busy}
+                    onPress={onEnableNotifications}
+                  />
+                )}
+              </Group>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={details}
         transparent
@@ -591,7 +792,7 @@ export function NativeSupport({
                       />
                       {c.status === 'open' ? (
                         <>
-                          {data && (
+                          {data && data.automaticLogs !== false && (
                             <Row
                               compact
                               subtitle=""
@@ -610,7 +811,9 @@ export function NativeSupport({
                               title="Connected agent access"
                               subtitle="Allow your connected agents to read and send messages here"
                               trailing={
-                                <Switch
+                                <Checkbox
+                                  testID="support-conversation-agent-access"
+                                  accessibilityLabel="Connected agent access"
                                   value={c.agentAccess}
                                   disabled={disabled}
                                   onValueChange={(value) =>
@@ -625,7 +828,9 @@ export function NativeSupport({
                             title="Isobot replies"
                             subtitle="Pause automatic replies when working with staff"
                             trailing={
-                              <Switch
+                              <Checkbox
+                                testID="support-conversation-auto-reply"
+                                accessibilityLabel="Isobot replies"
                                 value={c.autoReply}
                                 disabled={disabled}
                                 onValueChange={(value) =>
@@ -795,7 +1000,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   messageText: { fontSize: 17, lineHeight: 26 },
-  composerArea: { paddingHorizontal: 36, paddingTop: 10 },
+  composerArea: { paddingHorizontal: 36, paddingTop: 22 },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -803,11 +1008,28 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderCurve: 'continuous',
     padding: 2,
+    paddingLeft: 12,
     minHeight: 50,
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
   },
-  composerButton: { width: 40, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  plus: { fontSize: 28 },
+  includeLogs: {
+    position: 'absolute',
+    top: 0,
+    left: 56,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  includeLogsContent: { paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checkbox: {
+    width: 14,
+    height: 14,
+    borderWidth: 1,
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkmark: { fontSize: 11, lineHeight: 13 },
+  includeLogsLabel: { fontSize: 12 },
   send: {
     width: 36,
     height: 36,

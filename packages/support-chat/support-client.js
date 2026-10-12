@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sorted } from './collections.js';
+import { acknowledgeSupportNotifications } from './notifications.js';
 /** @typedef {{id:string,title:string,status:string,unreadCount:number,updatedAt:string}} SupportSummary */
 /** @typedef {{id:string,reason:string,selector:{category:string,from:number,to:number,operations:string[],issuesOnly:boolean},status:string,expiresAt:number}} SupportDataRequest */
 /** @typedef {{id:string,title:string,status:string,generation:number,agentAccess:boolean,autoReply:boolean,readThrough:number,messages:{id:string,sequence:number,author:'user'|'pi'|'staff',text:string,createdAt:string}[],requests:SupportDataRequest[],attachments:{id:string,category:string,removed:boolean}[],hasMore:boolean,before:number|null,jobs?:{id:string,status:string,result:string|null}[]}} SupportConversation */
 /** @typedef {(action:string,input?:Record<string,unknown>)=>Promise<unknown>} SupportClient */
 /** @typedef {{category:string,content:string,capturedAt:number}} DataPreview */
-/** @typedef {{collect:(request:SupportDataRequest|null)=>Promise<DataPreview>,digest:(content:string)=>Promise<string>}} SupportDataAdapter */
+/** @typedef {{automaticLogs?:boolean,collect:(request:SupportDataRequest|null)=>Promise<DataPreview>,digest:(content:string)=>Promise<string>}} SupportDataAdapter */
 
 /** Adapt the host's owner-authenticated transport to the versioned isobot service.
  * @param {(path:string,options:{method:string,body?:string})=>Promise<unknown>} transport
  * @param {string} [endpoint] @returns {SupportClient} */
 export function createSupportClient(transport, endpoint = '/api/support/v1') {
+  const request = (
+    /** @type {string} */ action,
+    /** @type {Record<string,unknown>} */ input = {},
+  ) => transport(endpoint, { method: 'POST', body: JSON.stringify({ ...input, action }) });
   return (action, input = {}) =>
-    transport(endpoint, { method: 'POST', body: JSON.stringify({ ...input, action }) });
+    action === 'markAllRead' || action === 'clearNotifications'
+      ? acknowledgeSupportNotifications(request, action)
+      : request(action, input);
 }
 
 /** Inbox and conversation state share one owner-scoped transport. Remount on account changes.
@@ -23,12 +30,20 @@ export function useSupportInbox(request, active = true, initialConversationId = 
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const createRetry = useRef(/** @type {{id:string,title:string}|null} */ (null));
+  const createRetry = useRef(
+    /** @type {{id:string,title:string,initialSnapshot?:(DataPreview & {id:string,digest:string,accepted:true,generation?:number})}|null} */ (
+      null
+    ),
+  );
   const selected = useRef('');
   const epoch = useRef(0);
   const working = useRef(false);
   const alive = useRef(true);
-  const retry = useRef(/** @type {{id:string,text:string,conversationId:string}|null} */ (null));
+  const retry = useRef(
+    /** @type {{id:string,text:string,conversationId:string,snapshot?:(DataPreview & {id:string,digest:string,accepted:true,generation?:number})}|null} */ (
+      null
+    ),
+  );
   /** @param {SupportConversation} next @param {boolean} [older] */
   const merge = useCallback((/** @type {SupportConversation} */ next, older = false) => {
     setConversation((previous) => {
@@ -126,6 +141,18 @@ export function useSupportInbox(request, active = true, initialConversationId = 
     const version = epoch.current;
     let completed = false;
     try {
+      if ((action === 'create' && input.initialSnapshot) || (action === 'send' && input.snapshot)) {
+        const capability = /** @type {{initialSnapshots?:boolean,messageSnapshots?:boolean}} */ (
+          await request('list')
+        );
+        if (!alive.current || version !== epoch.current) return false;
+        if (
+          (action === 'create' ? capability.initialSnapshots : capability.messageSnapshots) !== true
+        )
+          throw new Error(
+            'Support needs a server update before logs can be included with your message. Your message and logs have not been sent.',
+          );
+      }
       const next = await request(action, {
         ...(selected.current ? { conversationId: selected.current } : {}),
         ...input,
@@ -155,17 +182,31 @@ export function useSupportInbox(request, active = true, initialConversationId = 
       }
     }
   }
-  /** @param {string} value @param {string} id */
-  async function send(value, id) {
-    if (retry.current?.text !== value || retry.current.conversationId !== selected.current)
-      retry.current = { id, text: value, conversationId: selected.current };
+  /** @param {string} value @param {string} id @param {(DataPreview & {id:string,digest:string,accepted:true,generation?:number})|null} [snapshot] */
+  async function send(value, id, snapshot = null) {
+    if (
+      retry.current?.text !== value ||
+      retry.current.conversationId !== selected.current ||
+      JSON.stringify(retry.current?.snapshot ?? null) !== JSON.stringify(snapshot)
+    )
+      retry.current = {
+        id,
+        text: value,
+        conversationId: selected.current,
+        ...(snapshot ? { snapshot } : {}),
+      };
     const saved = await mutate('send', retry.current);
     if (saved) retry.current = null;
     return saved;
   }
-  /** @param {string} id @param {string} title */
-  async function create(id, title) {
-    if (createRetry.current?.title !== title) createRetry.current = { id, title };
+  /** @param {string} id @param {string} title @param {(DataPreview & {id:string,digest:string,accepted:true,generation?:number})|null} [initialSnapshot] */
+  async function create(id, title, initialSnapshot = null) {
+    if (
+      createRetry.current?.title !== title ||
+      JSON.stringify(createRetry.current?.initialSnapshot ?? null) !==
+        JSON.stringify(initialSnapshot)
+    )
+      createRetry.current = { id, title, ...(initialSnapshot ? { initialSnapshot } : {}) };
     const pending = createRetry.current;
     const saved = await mutate('create', pending);
     if (saved) {

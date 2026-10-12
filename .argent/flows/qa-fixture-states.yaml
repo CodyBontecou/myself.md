@@ -96,6 +96,9 @@ steps:
         identifier: profile-setting-name
   - await:
       idle: true
+  - scroll-to:
+      target:
+        id: selection-domain-time
   - tap:
       id: selection-domain-time
   - await:

@@ -3,7 +3,8 @@ import { parseExportSettings } from './export-files.js';
 import { domains } from './data.js';
 /** @typedef {{schema:'myself.md.profile.v1'|'qr-connect.profile.v1',name:string,selection:Record<import('./data.js').Domain,string[]>,export?:import('./export-files.js').ExportSettings,schedule?:import('./schedules.js').ScheduleConfig}} ProfileDraft */
 /** @typedef {ProfileDraft & {export:import('./export-files.js').ExportSettings,schedule:import('./schedules.js').ScheduleConfig}} ResolvedDraft */
-/** @typedef {ResolvedDraft & {id:string,agentAccess?:boolean}} ExportProfile */
+/** @typedef {Record<import('./data.js').Domain|'logs',boolean>} AgentPermissions */
+/** @typedef {ResolvedDraft & {id:string,agentAccess?:boolean,agentPermissions?:AgentPermissions|undefined}} ExportProfile */
 /** @typedef {{profiles:ExportProfile[]}} ProfileState */
 /** Validate the same portable, explicit allowlist on the phone and MCP boundary.
  * Unknown types can be retained for another platform, but never imply authorization.
@@ -73,7 +74,32 @@ export function profileAllows(profile, query) {
 /** Live access requires phone approval in addition to the profile selection.
  * @param {ExportProfile|undefined} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
 export function agentProfileAllows(profile, query) {
-  return profile?.agentAccess === true && profileAllows(profile, query);
+  return (
+    profile?.agentAccess === true &&
+    parseAgentPermissions(profile.agentPermissions)[query.domain] &&
+    profileAllows(profile, query)
+  );
+}
+/** Legacy profiles retain their existing source eligibility; portable profiles never carry consent.
+ * @param {unknown} value @returns {AgentPermissions} */
+export function parseAgentPermissions(value) {
+  if (value === undefined) return { health: true, time: true, location: true, logs: true };
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Invalid agent permissions.');
+  const raw = /** @type {Record<string,unknown>} */ (value);
+  const keys = [...domains, 'logs'];
+  if (Object.keys(raw).length !== keys.length || keys.some((key) => typeof raw[key] !== 'boolean'))
+    throw new Error('Set Health, Screen time, Location and Logs permissions explicitly.');
+  return {
+    health: raw.health === true,
+    time: raw.time === true,
+    location: raw.location === true,
+    logs: raw.logs === true,
+  };
+}
+/** @param {{agentAccess?:boolean,agentPermissions?:AgentPermissions|undefined}|undefined} profile */
+export function agentLogsAllowed(profile) {
+  return profile?.agentAccess === true && parseAgentPermissions(profile.agentPermissions).logs;
 }
 /** @param {string} name @param {ExportProfile[]} profiles */
 export function uniqueProfileName(name, profiles) {
@@ -102,6 +128,7 @@ export function parseProfileState(state) {
         ...parseProfile(profile),
         id: profile.id,
         agentAccess: profile.agentAccess === true,
+        agentPermissions: parseAgentPermissions(profile.agentPermissions),
       };
     }),
   };

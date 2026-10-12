@@ -1,14 +1,22 @@
 import { z } from 'zod';
 import { PairingError } from './errors.js';
 import { createExplorer } from './explorer-service.js';
-/** @param {{cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,cancelAgent:(subject:string,client:string)=>void}} dependencies */
-export function createDashboardService({ cloud, history, devices, cancelAgent }) {
+/** @param {{cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,cancelAgent:(subject:string,client:string)=>void,refreshEntitlement?:(subject:string)=>Promise<void>}} dependencies */
+export function createDashboardService({
+  cloud,
+  history,
+  devices,
+  cancelAgent,
+  refreshEntitlement = async () => {},
+}) {
   const { explore, recordDetail } = createExplorer(cloud);
   /** @param {string} subject @param {string} account @param {string} path @param {string} method @param {URLSearchParams} query @param {unknown} body */
   async function dashboardApi(subject, account, path, method, query, body) {
     if (path === '/api/dashboard' && method === 'GET') {
+      await refreshEntitlement(subject);
       return {
         account,
+        cloudStorage: cloud.storageStatus(subject),
         exports: cloud.list(subject),
         profiles: cloud.profiles(subject),
         agents: cloud.agents(subject),

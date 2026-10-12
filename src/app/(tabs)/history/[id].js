@@ -1,1 +1,15 @@
-export { default } from '../../../screens/HistoryDetail';
+import { Redirect, useLocalSearchParams } from 'expo-router';
+export default function LegacyLogLink() {
+  const { id, profileId } = useLocalSearchParams();
+  return (
+    <Redirect
+      href={{
+        pathname: '/history',
+        params: {
+          logId: typeof id === 'string' ? `history:${id}` : '',
+          ...(typeof profileId === 'string' ? { profileId } : {}),
+        },
+      }}
+    />
+  );
+}

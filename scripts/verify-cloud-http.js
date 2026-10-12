@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
 import { exportSchemas } from '../core/export-schemas.js';
@@ -120,6 +121,12 @@ function fetchHost(path, host) {
   });
 }
 const dashboardSchema = z.object({
+  cloudStorage: z.object({
+    eligible: z.boolean(),
+    limitBytes: z.number(),
+    usedBytes: z.number(),
+    availableBytes: z.number(),
+  }),
   exports: z.array(z.object({ id: z.string() })),
   profiles: z.array(z.object({ shared: z.boolean() })),
   agents: z.array(z.object({ client: z.string(), blocked: z.boolean() })),
@@ -137,6 +144,13 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.equal((await fetch(`${origin}/claim`)).status, 200);
+  assert.equal((await request('/api/cloud/status', null)).status, 401);
+  assert.equal((await request('/api/cloud/status', chatToken)).status, 403);
+  assert.equal(
+    z.object({ limitBytes: z.number() }).parse((await request('/api/cloud/status', bobToken)).value)
+      .limitBytes,
+    0,
+  );
   assert.equal(
     (await request('/api/migration/claim', null, 'POST', { ticket: migrationTicket })).status,
     401,
@@ -607,6 +621,49 @@ try {
   }
   const dashboard = dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value);
   assert.equal(dashboard.exports.length, 1);
+  const phoneStorage = (await request('/api/cloud/status', phoneToken)).value;
+  assert.deepEqual(
+    z
+      .object({
+        eligible: z.boolean(),
+        limitBytes: z.number(),
+        usedBytes: z.number(),
+        availableBytes: z.number(),
+      })
+      .parse(phoneStorage),
+    dashboard.cloudStorage,
+  );
+  assert.equal(dashboard.cloudStorage.limitBytes, 100_000_000);
+  const usageBrowser = await chromium.launch({ headless: true });
+  try {
+    const usagePage = await usageBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+    await usagePage.addInitScript(() =>
+      sessionStorage.setItem(
+        'myselfmd-dashboard-login',
+        JSON.stringify({
+          verifier: 'fixture',
+          state: 'usage-fixture',
+          created: Date.now(),
+          returnTo: '/dashboard?view=exports',
+        }),
+      ),
+    );
+    await usagePage.route(`${issuer}/protocol/openid-connect/token`, (route) =>
+      route.fulfill({ json: { access_token: dashboardToken, expires_in: 300 } }),
+    );
+    await usagePage.goto(`${origin}/dashboard/callback?code=fixture&state=usage-fixture`);
+    await usagePage.getByText('0.0 MB of 100 MB used', { exact: true }).first().waitFor();
+    await usagePage.screenshot({ path: '/tmp/myself-cloud-dashboard.png' });
+  } finally {
+    await usageBrowser.close();
+  }
+  assert.equal(dashboard.cloudStorage.usedBytes, Buffer.byteLength(JSON.stringify(record) + '\n'));
+  const agentStorage = await client.callTool({ name: 'get_cloud_storage', arguments: {} });
+  assert.deepEqual(agentStorage.structuredContent, phoneStorage);
+  assert.equal(
+    (await client.callTool({ name: 'get_cloud_storage', arguments: { subject: 'bob' } })).isError,
+    true,
+  );
   assert.equal(dashboard.profiles.length, 1);
   assert.equal(dashboard.profiles[0]?.shared, false);
   assert.equal(dashboard.agents[0]?.client, 'fixture-chat');

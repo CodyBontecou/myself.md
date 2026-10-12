@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import * as updates from '../client/log-updates.js';
+import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { logJson, logsJson, selectLogs, logs as unifiedLogs } from '../core/logs.js';
 import { exportEvent } from '../core/history.js';
 import * as core from '../core/debug-log.js';
@@ -83,6 +84,7 @@ const catalog = {
       }),
       id: 'private',
       agentAccess: false,
+      agentPermissions: { health: true, time: true, location: true, logs: true },
     },
   ],
   domains: ['health', 'time', 'location'].map((domain) => ({
@@ -160,6 +162,7 @@ try {
   stopThrowing();
   db.exec('DELETE FROM debug_log');
   const transport = createContext({
+    readJSONResponse,
     recordDebug: logs.recordDebug,
     debugOperation: core.debugOperation,
     Date,
@@ -168,7 +171,7 @@ try {
     fetch: async () => ({
       status: 503,
       ok: false,
-      json: async () => ({ error: 'private-token private-payload' }),
+      text: async () => JSON.stringify({ error: 'private-token private-payload' }),
     }),
   });
   runInContext(
@@ -308,6 +311,11 @@ try {
   );
   assert.equal((await listLogs(owner, { category: 'app' })).value?.logs.length, 0);
   assert.equal(
+    (await listLogs(owner, { category: 'app', query: 'query', format: 'jsonl' })).value?.jsonl,
+    '',
+    'Search cannot expose diagnostics before owner consent',
+  );
+  assert.equal(
     (await listLogs(owner, { category: 'agents' })).value?.logs[0]?.id,
     'history:log-agent',
   );
@@ -335,11 +343,64 @@ try {
   );
   logs.setDebugSharing(context, true);
   const enabled = logs.debugReport(context, true);
+  assert.ok(catalog.profiles[0]);
+  catalog.profiles[0].agentAccess = true;
   heartbeat(enabled);
   assert.deepEqual(
     (await read(owner)).structuredContent?.report,
     enabled,
     'Same local report reaches real MCP',
+  );
+  const logProfile = catalog.profiles[0];
+  assert.ok(logProfile);
+  logProfile.agentPermissions.logs = false;
+  heartbeat(enabled);
+  assert.equal(
+    (await read(owner, { deviceId, profileId: logProfile.id })).structuredContent?.report,
+    null,
+    'Per-profile log revocation blocks diagnostics',
+  );
+  assert.equal(
+    (await read(owner)).structuredContent?.report,
+    null,
+    'Unscoped diagnostics cannot bypass revoked profiles',
+  );
+  assert.equal(
+    (await listLogs(owner)).value?.logs.filter((entry) => entry.category === 'app').length,
+    0,
+  );
+  const requestedPermissions = { ...logProfile.agentPermissions, logs: true };
+  const permissionsHandoff = await owner.callTool({
+    name: 'request_phone_profile_permissions',
+    arguments: { deviceId, profileId: logProfile.id, permissions: requestedPermissions },
+  });
+  assert.equal(
+    /** @type {Record<string,unknown>} */ (permissionsHandoff.structuredContent).status,
+    'awaiting_user',
+  );
+  assert.equal(logProfile.agentPermissions.logs, false, 'MCP cannot grant itself access');
+  assert.equal(
+    (
+      await other.callTool({
+        name: 'request_phone_profile_permissions',
+        arguments: { deviceId, profileId: logProfile.id, permissions: requestedPermissions },
+      })
+    ).isError,
+    true,
+  );
+  logProfile.agentPermissions.logs = true;
+  heartbeat(enabled);
+  assert.equal(
+    (await read(owner, { deviceId, profileId: 'missing' })).structuredContent?.report,
+    null,
+  );
+  const completedPermissions = await owner.callTool({
+    name: 'request_phone_profile_permissions',
+    arguments: { deviceId, profileId: logProfile.id, permissions: requestedPermissions },
+  });
+  assert.equal(
+    /** @type {Record<string,unknown>} */ (completedPermissions.structuredContent).status,
+    'completed',
   );
   const expected = unifiedLogs(history.list('owner', deviceId).events, enabled.entries, Date.now());
   assert.deepEqual(
@@ -353,6 +414,21 @@ try {
     expected.map((log) => logJson(log)).join('\n'),
     'MCP raw JSON matches the UI projection',
   );
+  assert.deepEqual(
+    (await listLogs(owner, { query: '  LOG-EXPORT  ', format: 'jsonl' })).value?.logs,
+    expected.filter((log) => log.id === 'history:log-export'),
+    'Search trims and ignores case, through the same authorized metadata selector',
+  );
+  assert.equal(
+    (await listLogs(owner, { query: 'log-export', category: 'agents' })).value?.logs.length,
+    0,
+    'Search composes with source filters',
+  );
+  assert.equal((await listLogs(owner, { query: 'no-such-log', format: 'jsonl' })).value?.jsonl, '');
+  assert.equal((await listLogs(owner, { query: 'x'.repeat(201) })).isError, true);
+  assert.equal((await listLogs(other, { query: 'log-export' })).isError, true);
+  const searched = (await listLogs(owner, { query: 'log-export', format: 'jsonl' })).value;
+  assert.equal(searched?.jsonl, logsJson(searched?.logs ?? []));
   const chosenIds = expected.slice(0, 2).map((entry) => entry.id);
   const chosen = (await listLogs(owner, { format: 'jsonl', selectedIds: chosenIds })).value;
   assert.equal(chosen?.jsonl, logsJson(selectLogs(expected, chosenIds).logs));
@@ -428,15 +504,60 @@ try {
     richReport,
     'Current domain/type and profile approval authorize attached records',
   );
-  profileForGrant.agentAccess = false;
+  profileForGrant.agentPermissions.health = false;
   heartbeat(richReport);
   assert.equal(
     /** @type {import('../core/debug-log.js').DebugReport} */ (
       (await read(owner)).structuredContent?.report
     )?.entries[0]?.records,
     undefined,
-    'Profile revocation removes record attachments',
+    'Per-profile source revocation removes record attachments',
   );
+  const queryArguments = {
+    deviceId,
+    profileId: profileForGrant.id,
+    domain: 'health',
+    source: 'native',
+    type: 'sleep',
+    start: '2026-10-10T00:00:00Z',
+    end: '2026-10-11T00:00:00Z',
+    cursor: '',
+    limit: 1,
+    format: 'json',
+  };
+  assert.equal(
+    (await owner.callTool({ name: 'query_phone_data', arguments: queryArguments })).isError,
+    true,
+    'Server rejects a source disabled for this profile',
+  );
+  const independentProfile = {
+    ...profileForGrant,
+    id: 'independent',
+    agentPermissions: { ...profileForGrant.agentPermissions, health: true, logs: false },
+  };
+  catalog.profiles.push(independentProfile);
+  heartbeat(richReport);
+  assert.equal(
+    (
+      await owner.callTool({
+        name: 'query_phone_data',
+        arguments: { ...queryArguments, profileId: independentProfile.id },
+      })
+    ).isError,
+    undefined,
+    'Another profile retains its independent source grant',
+  );
+  assert.equal(
+    (await read(owner, { deviceId, profileId: independentProfile.id })).structuredContent?.report,
+    null,
+    'An enabled source never implies App logs permission',
+  );
+  assert.equal(
+    (await read(owner, { deviceId, profileId: profileForGrant.id })).structuredContent?.status,
+    'available',
+  );
+  catalog.profiles.pop();
+  heartbeat(richReport);
   logs.setDebugContent(context, core.parseDebugContent(undefined));
   heartbeat(richReport);
   service.phoneApi(
@@ -477,7 +598,7 @@ try {
   assert.equal(firstPage?.nextHistoryOffset, 50, 'History cursor advances before filtering');
   const lastPage = (await listLogs(owner, { historyOffset: 50 })).value;
   assert.equal(lastPage?.nextHistoryOffset, null);
-  assert.equal(lastPage?.logs.filter((log) => log.category !== 'app').length, 3);
+  assert.equal(lastPage?.logs.filter((log) => log.category !== 'app').length, 5);
   assert.equal(
     (await read(owner, { deviceId, filter: 'issues' })).structuredContent?.status,
     'available',

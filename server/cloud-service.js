@@ -8,6 +8,20 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerCloudTools(mcp, subject, client = null) {
     mcp.registerTool(
+      'get_cloud_storage',
+      {
+        description:
+          'Read your verified cloud storage eligibility, used and available bytes, capacity and file retention. Does not enable uploads or sharing.',
+        inputSchema: z.object({}).strict(),
+        annotations: { readOnlyHint: true },
+      },
+      async () => {
+        await refreshEntitlement(subject);
+        const status = cloud.storageStatus(subject);
+        return { ...content(status), structuredContent: status };
+      },
+    );
+    mcp.registerTool(
       'list_cloud_exports',
       {
         description:

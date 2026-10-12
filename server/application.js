@@ -475,6 +475,7 @@ export function createApplication(
       if (uploadToken && url.pathname.startsWith('/api/cloud/uploads')) {
         const credential = cloud.credential(uploadToken);
         ownCloudDevice(credential.subject, credential.device);
+        await refreshEntitlement(credential.subject);
         const bytes = await bodyBytes(
           req,
           url.pathname === '/api/cloud/uploads' ? 1024 * 1024 : 16 * 1024 * 1024,
@@ -764,6 +765,11 @@ export function createApplication(
       if (url.pathname.startsWith('/api/cloud/')) {
         if (payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'Cloud management requires the phone OAuth client.');
+        if (url.pathname === '/api/cloud/status' && req.method === 'GET') {
+          await refreshEntitlement(subject);
+          json(res, 200, cloud.storageStatus(subject));
+          return;
+        }
         if (url.pathname === '/api/cloud/credential/renew' && req.method === 'POST') {
           const input = z
             .object({

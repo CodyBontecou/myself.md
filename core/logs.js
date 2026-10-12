@@ -6,9 +6,10 @@ import { debugEntries } from './debug-log.js';
  * @param {import('./history.js').HistoryEvent[]} history
  * @param {import('./debug-log.js').DebugEntry[]} diagnostics
  * @param {number} now
- * @param {{category?:LogCategory,issues?:boolean,profileId?:string|undefined}} [options]
+ * @param {{category?:LogCategory,issues?:boolean,profileId?:string|undefined,query?:string|undefined}} [options]
  * @returns {Log[]} */
 export function logs(history, diagnostics, now, options = {}) {
+  const query = options.query?.trim().toLowerCase() ?? '';
   const occurrences = new Map();
   /** @type {Log[]} */
   const result = history.map((event) => ({
@@ -33,6 +34,7 @@ export function logs(history, diagnostics, now, options = {}) {
         return false;
       if (options.profileId && (!('event' in log) || log.event.profile.id !== options.profileId))
         return false;
+      if (query && !logJson(log).toLowerCase().includes(query)) return false;
       const outcome = 'entry' in log ? log.entry.outcome : log.event.status;
       return (
         !options.issues ||

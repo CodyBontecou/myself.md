@@ -4,8 +4,16 @@ import { usePhoneData } from '../../client/DataPanel';
 import ProfilePanel from '../../client/ProfilePanel';
 export default function ProfileScreen() {
   const { id } = useLocalSearchParams();
-  const { session, profiles, types, sourcePermissions, reviewSourceAccess, busy, changeProfiles } =
-    usePhoneData();
+  const {
+    session,
+    profiles,
+    types,
+    sourcePermissions,
+    grants,
+    reviewSourceAccess,
+    busy,
+    changeProfiles,
+  } = usePhoneData();
   const profileId = typeof id === 'string' ? id : '';
   const profile = profiles?.profiles.find((p) => p.id === profileId);
   return (
@@ -19,6 +27,7 @@ export default function ProfileScreen() {
           state={profiles}
           types={types}
           permissions={sourcePermissions}
+          grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
           onChange={changeProfiles}

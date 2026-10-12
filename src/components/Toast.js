@@ -45,7 +45,7 @@ export function ToastProvider({ children }) {
     <View style={styles.root}>
       {children}
       {toast && (
-        <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 152 }]}>
+        <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 64 }]}>
           <Pressable
             testID="action-toast"
             accessibilityRole="button"

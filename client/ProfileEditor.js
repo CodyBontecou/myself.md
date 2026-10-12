@@ -204,6 +204,9 @@ function useSaveProfile() {
     if (others.length >= 50) throw new Error('Keep at most 50 profiles.');
     const savedProfile = {
       ...parsed,
+      agentPermissions: session.id
+        ? state.profiles.find((p) => p.id === id)?.agentPermissions
+        : undefined,
       id,
       name: uniqueProfileName(parsed.name, others),
       agentAccess: session.id

@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
 import * as profiles from '../core/profiles.js';
 import * as data from '../core/data.js';
+import * as healthTypeCatalog from '../client/health-types.js';
 import * as exportFiles from '../core/export-files.js';
 import * as timeSeries from '../core/time-series.js';
 import * as errors from '../packages/support-chat/errors.js';
@@ -61,6 +62,34 @@ const storedProfiles =
       },
     })
   );
+let healthConnectAvailable = true;
+/** @type {{accessType:string,recordType:string}[]} */
+let healthPermissions = [];
+let healthReads = 0;
+const androidHealth =
+  /** @type {{healthTypes:(selectable?:boolean)=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
+    await load('../client/health.js', {
+      'react-native': { Platform: { OS: 'android' } },
+      '@kingstinct/react-native-healthkit': {},
+      'react-native-health-connect': {
+        initialize: async () => healthConnectAvailable,
+        getGrantedPermissions: async () => healthPermissions,
+        readRecords: async () => {
+          healthReads++;
+          return { records: [], pageToken: null };
+        },
+      },
+      './health-types.js': healthTypeCatalog,
+      '../core/data.js': data,
+      './health-series.js': {
+        captureHealthSamples: async () => [],
+        readHealthCharacteristic: async () => ({}),
+      },
+      './workout-series.js': { captureWorkout: async () => ({}) },
+    })
+  );
+let androidCatalog = false;
+const catalogPlatform = { OS: 'ios' };
 let foregroundGranted = true;
 let usageAuthorization = 'authorized';
 const phone =
@@ -69,12 +98,15 @@ const phone =
       'expo-location': {
         getForegroundPermissionsAsync: async () => ({ granted: foregroundGranted }),
       },
-      'react-native': { Platform: { OS: 'ios' } },
+      'react-native': { Platform: catalogPlatform },
       '../core/profiles.js': profiles,
       '../core/data.js': data,
       './library.js': library,
       './health.js': {
-        healthTypes: async () => ['HKQuantityTypeIdentifierStepCount'],
+        healthTypes: async (/** @type {boolean} */ selectable) =>
+          androidCatalog
+            ? androidHealth.healthTypes(selectable)
+            : ['HKQuantityTypeIdentifierStepCount'],
         healthPage: async () => {
           throw new Error('Unexpected health read');
         },
@@ -87,6 +119,45 @@ const phone =
       },
     })
   );
+androidCatalog = true;
+catalogPlatform.OS = 'android';
+const noHealthAccess = await phone.catalog('phone', {
+  health: false,
+  time: false,
+  location: false,
+});
+assert.equal(
+  noHealthAccess.domains[0]?.selectableTypes.length,
+  healthTypeCatalog.androidTypes.length,
+  'Android must offer Health types before permission; the profile picker must not show 0/0',
+);
+assert.deepEqual(noHealthAccess.domains[0]?.types, [], 'Selectable types do not grant read access');
+const androidQuery = {
+  domain: /** @type {const} */ ('health'),
+  type: 'Steps',
+  source: /** @type {const} */ ('native'),
+  start: '2026-10-10T00:00:00.000Z',
+  end: '2026-10-11T00:00:00.000Z',
+  cursor: '',
+  limit: 1,
+  format: /** @type {const} */ ('json'),
+};
+await assert.rejects(androidHealth.healthPage(androidQuery, ''), /not permitted/);
+assert.equal(healthReads, 0);
+healthPermissions = [{ accessType: 'read', recordType: 'Steps' }];
+assert.deepEqual(
+  (await phone.catalog('phone', { health: false, time: false, location: false })).domains[0]?.types,
+  ['native:Steps'],
+);
+await androidHealth.healthPage(androidQuery, '');
+assert.equal(healthReads, 1);
+healthPermissions = [];
+await assert.rejects(androidHealth.healthPage(androidQuery, ''), /not permitted/);
+assert.equal(healthReads, 1, 'Revoked permission must prevent native reads');
+healthConnectAvailable = false;
+assert.deepEqual(await androidHealth.healthTypes(true), []);
+androidCatalog = false;
+catalogPlatform.OS = 'ios';
 let usageRequests = 0;
 let cancelUsage = false;
 let locationRequests = 0;
@@ -226,6 +297,26 @@ assert.ok(profile);
 const page = await phone.readPage('alice', query, profile);
 assert.equal(page.records.length, 1);
 assert.equal(page.records[0]?.source, 'expo-location');
+const blocked = {
+  ...profile,
+  agentPermissions: { health: true, time: true, location: false, logs: false },
+};
+storedProfiles.saveProfiles('independent', { profiles: [blocked, { ...profile, id: 'other' }] });
+const independent = storedProfiles.loadProfiles('independent');
+assert.ok(independent);
+assert.equal(independent.profiles[0]?.agentPermissions?.location, false);
+assert.equal(independent.profiles[1]?.agentPermissions?.location, true);
+await assert.rejects(phone.readPage('alice', query, blocked), /approved/);
+assert.equal(
+  (await phone.readPage('alice', query, blocked, false)).records.length,
+  1,
+  'Agent permissions do not alter owner exports',
+);
+assert.ok(
+  !('agentPermissions' in profiles.parseProfile(blocked)),
+  'Portable profiles cannot carry permission grants',
+);
+assert.throws(() => profiles.parseAgentPermissions({ location: false }), /explicitly/);
 const privateProfile = migrated.profiles[1];
 assert.ok(privateProfile);
 await assert.rejects(phone.readPage('alice', query, privateProfile), /approved/);

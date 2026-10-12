@@ -52,6 +52,7 @@ import {
 import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
 import { AccountDeletion } from './account-deletion.js';
 import { MigrationClaim } from './migration-claim.js';
+import { cloudUsageLabel } from '../core/cloud-allowance.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
 import { Explorer } from './explorer.js';
@@ -112,6 +113,7 @@ const supportRequest = createSupportClient((path, options) =>
   api(path, options.method, options.body === undefined ? undefined : JSON.parse(options.body)),
 );
 const supportData = {
+  automaticLogs: false,
   /** @param {import('../packages/support-chat/support-client.js').SupportDataRequest|null} request */
   collect: async (request) => ({
     category: request?.selector.category ?? 'manual',
@@ -341,7 +343,7 @@ function SiteHeader({ title, busy, onRefresh, workspace, view }) {
 }
 /** @param {{workspace:Workspace,view:View,compact?:boolean}} props */
 function SummaryPills({ workspace, view, compact = false }) {
-  const total = workspace.exports.reduce((sum, item) => sum + item.bytes, 0);
+  const storage = workspace.cloudStorage;
   const shared = workspace.profiles.filter((profile) => profile.shared).length;
   const allowed = workspace.agents.filter((agent) => !agent.blocked).length;
   const pills =
@@ -378,8 +380,14 @@ function SummaryPills({ workspace, view, compact = false }) {
               icon: IconDatabase,
             },
             {
-              label: `${((total / 268435456) * 100).toFixed(1)}% used`,
-              detail: `${bytes(total)} of 256 MiB cloud storage · encrypted at rest · files retained for 30 days`,
+              label: storage
+                ? storage.eligible
+                  ? cloudUsageLabel(storage)
+                  : 'Lifetime access required'
+                : 'Cloud storage unavailable',
+              detail: storage?.eligible
+                ? `Included cloud storage · ${storage.overLimit ? 'Over allowance; delete files to resume uploads · ' : ''}encrypted at rest · files retained for 30 days`
+                : 'Sign in to the app and purchase or restore lifetime access for 100 MB of included cloud storage',
               icon: IconCloud,
             },
           ];

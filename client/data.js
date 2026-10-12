@@ -8,13 +8,14 @@ import { usageStatus, usagePage } from './usage.js';
 /** @param {string} _owner @param {import('./library.js').Grants} grants @param {import('../core/profiles.js').ExportProfile} [profile] */
 export async function catalog(_owner, grants, profile) {
   const health = await healthTypes();
+  const selectableHealth = Platform.OS === 'android' ? await healthTypes(true) : health;
   const usage = await usageStatus();
   const location = await Location.getForegroundPermissionsAsync();
   return {
     domains: domains.map((domain) => ({
       domain,
       selectableTypes: (domain === 'health'
-        ? health
+        ? selectableHealth
         : domain === 'time'
           ? Platform.OS === 'ios'
             ? ['applications', 'websites']

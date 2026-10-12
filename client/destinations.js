@@ -123,7 +123,9 @@ export async function deliverExport(context, profile, file, format, manifest, va
     });
     const response = await send(url.href, {
       method: 'POST',
-      body: file,
+      // Expo fetch replaces explicit Content-Type with File.type, which is null for JSONL.
+      // Raw bytes preserve the selected export format and the exact payload.
+      body: await file.arrayBuffer(),
       headers: {
         ...headers,
         ...(credential?.token ? { Authorization: `Bearer ${credential.token}` } : {}),
@@ -142,11 +144,25 @@ export async function deliverExport(context, profile, file, format, manifest, va
   if (!valid()) throw new Error('Export cancelled before upload.');
   if (file.size > 16 * 1024 * 1024)
     throw new Error('Cloud daily files are limited to 16 MiB. Reduce selected types.');
+  return uploadCloudFile(credential, profile, file, format, manifest, valid, context);
+}
+/** Shared native file transport for normal exports and isolated live cloud QA.
+ * @param {DestinationCredential} credential @param {import('../core/profiles.js').ExportProfile} profile
+ * @param {import('expo-file-system').File} file @param {import('../core/export-files.js').ExportFormat} format
+ * @param {Record<string,unknown>} manifest @param {()=>boolean} valid @param {import('./export-context.js').ExportContext} [context] */
+export async function uploadCloudFile(credential, profile, file, format, manifest, valid, context) {
+  if (!credential.server || !valid()) throw new Error('Cloud upload cancelled.');
+  const headers = {
+    'Content-Type': format === 'json' ? 'application/json' : 'application/x-ndjson',
+    'X-Export-Profile': profile.id,
+    'X-Export-Day': String(/** @type {{day:string}} */ (manifest.interval).day),
+  };
   const authorization = `Upload ${credential.token}`;
-  recordDebug(context, 'cloud', 'started', {
-    url: `${credential.server}/api/cloud/uploads`,
-    credentials: { Authorization: authorization },
-  });
+  if (context)
+    recordDebug(context, 'cloud', 'started', {
+      url: `${credential.server}/api/cloud/uploads`,
+      credentials: { Authorization: authorization },
+    });
   const begin = await send(`${credential.server}/api/cloud/uploads`, {
     method: 'POST',
     headers: { Authorization: authorization, 'Content-Type': 'application/json' },
@@ -156,13 +172,15 @@ export async function deliverExport(context, profile, file, format, manifest, va
   if (!begin.ok) throw await uploadFailure(begin, 'Cloud upload could not start');
   const { id } = /** @type {{id:string}} */ (await begin.json());
   if (!valid()) throw new Error('Export cancelled before upload.');
-  recordDebug(context, 'cloud', 'started', {
-    url: `${credential.server}/api/cloud/uploads/${id}`,
-    credentials: { Authorization: authorization },
-  });
+  if (context)
+    recordDebug(context, 'cloud', 'started', {
+      url: `${credential.server}/api/cloud/uploads/${id}`,
+      credentials: { Authorization: authorization },
+    });
+  // Raw bytes avoid Expo overriding Content-Type with a null MIME type for JSONL files.
   const result = await send(`${credential.server}/api/cloud/uploads/${id}`, {
     method: 'PUT',
-    body: file,
+    body: await file.arrayBuffer(),
     headers: { ...headers, Authorization: authorization },
     redirect: 'error',
   });
