@@ -198,6 +198,13 @@ export default {
         await registerTicket(env, ticket, null, purchase, Date.now() + 900000);
         return json({ claimUrl: `${env.PUBLIC_URL}/claim#${ticket}` });
       }
+      const watch = request.headers.get('authorization')?.match(/^Watch ([A-Za-z0-9_-]{43})$/)?.[1];
+      if (watch && url.pathname === '/api/watch/runtime' && request.method === 'POST') {
+        const route = await findTicket(env, watch);
+        if (typeof route?.subject !== 'string')
+          return json({ error: 'Watch session expired or revoked.' }, 401);
+        return await env.ACCOUNTS.getByName(digest(route.subject)).fetch(request);
+      }
       const upload = request.headers
         .get('authorization')
         ?.match(/^Upload ([A-Za-z0-9_-]{43})$/)?.[1];

@@ -1,3 +1,4 @@
+import { createWatchService } from '../server/watch-service.js';
 import { createRemoteSupport } from '../server/support-remote.js';
 import { SupportStore } from '../server/support-store.js';
 import { SupportDiscord } from '../server/support-discord.js';
@@ -150,6 +151,16 @@ export class Account extends DurableObject {
       cancelAgent: this.data.cancelAgent,
       refreshEntitlement: billingService.refreshEntitlement,
     });
+    const watchService = createWatchService({
+      source: this.db,
+      cloud: this.cloud,
+      billing: this.billing,
+      history: this.history,
+      devices: this.pairing.devices.bind(this.pairing),
+      refreshEntitlement: billingService.refreshEntitlement,
+      registerTicket: (token, subject, expires) =>
+        registerTicket(this.env, token, subject, null, expires),
+    });
     this.listener = createApplication(
       {
         PUBLIC_URL: this.env.PUBLIC_URL,
@@ -165,6 +176,7 @@ export class Account extends DurableObject {
             ? Promise.resolve(this.deletionStatus(subject))
             : this.deleteAccount(subject),
         qrPng,
+        ...watchService,
         ...billingService,
         ...this.data,
         ...cloudService,
@@ -272,6 +284,7 @@ export class Account extends DurableObject {
         this.data.cancelPhone(String(device.id), subject);
         this.pairing.disconnect(String(device.id), subject);
       }
+      this.db.prepare('DELETE FROM watches WHERE subject=?').run(subject);
       this.db.prepare('DELETE FROM upload_keys WHERE subject=?').run(subject);
       this.db.prepare('DELETE FROM pairings WHERE subject=?').run(subject);
       await this.env.DIRECTORY.prepare('DELETE FROM tickets WHERE subject=?').bind(subject).run();

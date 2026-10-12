@@ -60,6 +60,14 @@ export default function SettingsScreen() {
           onPress={() => router.push('/pair')}
         />
       </Group>
+      {Platform.OS === 'ios' && (
+        <Row
+          testID="settings-watch"
+          title="Apple Watch"
+          subtitle="Steps, widgets, and direct HTTPS exports"
+          onPress={() => router.push('/settings/watch')}
+        />
+      )}
       <SectionHeader title="Privacy & support" />
       <Group>
         <Row

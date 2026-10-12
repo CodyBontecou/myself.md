@@ -117,7 +117,8 @@
       "@react-native-vector-icons/ionicons",
       "expo-iap",
       "expo-notifications",
-      "./plugins/with-embedded-debug.cjs"
+      "./plugins/with-embedded-debug.cjs",
+      "./plugins/with-watch.cjs"
     ],
     "scheme": "myselfmd",
     "updates": {

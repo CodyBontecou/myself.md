@@ -94,6 +94,8 @@ function usePhoneState() {
       try {
         if (url === 'myselfmd://account' || url.startsWith('myselfmd://account?')) {
           router.navigate('/account');
+        } else if (url === 'myselfmd://watch') {
+          router.navigate('/settings/watch');
         } else if (url.startsWith('myselfmd://profile')) {
           setIncoming(profileFromLink(url));
           router.navigate('/profiles');

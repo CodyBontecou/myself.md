@@ -144,7 +144,10 @@
     "verify:embedded-debug": "node scripts/verify-embedded-debug.js",
     "gripe:release": "node --env-file-if-exists=.env.gripe-mac scripts/gripe-release.js",
     "verify:feedback-updates": "node --experimental-vm-modules scripts/verify-feedback-updates.js",
-    "build:debug": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile debug --non-interactive"
+    "build:debug": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile debug --non-interactive",
+    "verify:watch": "node scripts/verify-watch.js && node scripts/verify-watch-store.js && node scripts/verify-watch-targets.js",
+    "verify:watch:swift": "node scripts/verify-watch-swift.js",
+    "build:watch": "node scripts/build-watch.js"
   },
   "private": true,
   "type": "module",
