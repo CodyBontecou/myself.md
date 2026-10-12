@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { domains } from '../core/data.js';
-import { Copy, Icon, Screen } from '../src/components/ui.js';
+import { Copy, Icon, Checkbox, Screen } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import ProfileExports from './ProfileExports.js';
-import ProfileQuickAction from './ProfileQuickAction.js';
 import Storage from 'expo-sqlite/kv-store';
 import { qaEnabled } from './qa-runtime.js';
 import { useToast } from '../src/components/Toast.js';
@@ -183,13 +182,12 @@ export default function ProfileFeed({
                       </Pressable>
                     }
                     agentAction={
-                      <ProfileQuickAction
+                      <Checkbox
                         testID={`profile-agents-${profile.id}`}
-                        label={profile.agentAccess ? 'Disable agents' : 'Enable agents'}
-                        icon={profile.agentAccess ? 'lock-open-outline' : 'lock-closed-outline'}
+                        accessibilityLabel={`Allow agent access for ${profile.name}`}
+                        value={profile.agentAccess === true}
                         disabled={disabled}
-                        iconOnly
-                        onPress={() => onAgentAccess(profile, !profile.agentAccess)}
+                        onValueChange={(enabled) => onAgentAccess(profile, enabled)}
                       />
                     }
                   />

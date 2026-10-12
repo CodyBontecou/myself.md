@@ -6,8 +6,9 @@ import { record } from '../core/data.js';
 import { captureHealthSamples, readHealthCharacteristic } from './health-series.js';
 import { captureWorkout } from './workout-series.js';
 /** @typedef {import('@kingstinct/react-native-healthkit').ObjectTypeIdentifier} HKType */
-/** @returns {Promise<string[]>} */
-export async function healthTypes() {
+/** @param {boolean} [selectable] Include Android types awaiting system consent.
+ * @returns {Promise<string[]>} */
+export async function healthTypes(selectable = false) {
   if (Platform.OS === 'ios') {
     if (!HK.isHealthDataAvailable()) return [];
     return [...quantities, ...categories, ...special, ...characteristics].filter((type) => {
@@ -19,6 +20,7 @@ export async function healthTypes() {
     });
   }
   if (Platform.OS === 'android' && (await HC.initialize())) {
+    if (selectable) return [...androidTypes];
     const permissions = await HC.getGrantedPermissions();
     return androidTypes.filter((type) =>
       permissions.some((p) => p.accessType === 'read' && p.recordType === type),

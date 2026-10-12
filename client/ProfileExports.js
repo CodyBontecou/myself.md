@@ -4,7 +4,7 @@ import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
-import { Switch } from './Terminal.js';
+import { Checkbox } from './Terminal.js';
 import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
@@ -154,7 +154,7 @@ function ProfileExportControls({
           testID="export-automatic-exports"
           title="Automatic exports"
           trailing={
-            <Switch
+            <Checkbox
               testID="export-automatic"
               accessibilityLabel={`Automatic exports for ${profile.name}`}
               disabled={disabled || busy}
@@ -314,7 +314,7 @@ function ProfileExportControls({
             testID="export-allow-stored-data-in-connectors"
             title="Allow stored data in connectors"
             trailing={
-              <Switch
+              <Checkbox
                 testID="export-cloud-access"
                 accessibilityLabel={`Cloud MCP access for ${profile.name}`}
                 value={shared}

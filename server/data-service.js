@@ -2,7 +2,12 @@ import { exportSchemas, defaultExportSchema } from '../core/export-schemas.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
-import { parseProfile, profileLink, agentProfileAllows } from '../core/profiles.js';
+import {
+  parseProfile,
+  profileLink,
+  agentProfileAllows,
+  parseAgentPermissions,
+} from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
 import { createFeedbackService, feedbackSchema } from './feedback-service.js';
@@ -91,6 +96,15 @@ const catalogSchema = z.object({
       profileSchema.extend({
         id: z.string().min(1).max(100),
         agentAccess: z.boolean().default(false),
+        agentPermissions: z
+          .object({
+            health: z.boolean(),
+            time: z.boolean(),
+            location: z.boolean(),
+            logs: z.boolean(),
+          })
+          .strict()
+          .default({ health: true, time: true, location: true, logs: true }),
       }),
     )
     .min(1)
@@ -128,7 +142,12 @@ const content = (value) => ({
 function catalogAllows(catalog, query) {
   const profile = catalog?.profiles.find((p) => p.id === query.profileId);
   return agentProfileAllows(
-    profile && { ...parseProfile(profile), id: profile.id, agentAccess: profile.agentAccess },
+    profile && {
+      ...parseProfile(profile),
+      id: profile.id,
+      agentAccess: profile.agentAccess,
+      agentPermissions: profile.agentPermissions,
+    },
     query,
   );
 }
@@ -217,13 +236,14 @@ export function createDataService({
       'list_phone_logs',
       {
         description:
-          'Browse owned-phone logs using the same All/App/Exports/Agents categories as the mobile Logs tab. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require phone diagnostics consent and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use selectedIds to select up to 350 unique IDs from this page; unavailableIds reports missing or inaccessible entries without fetching beyond current grants. Use format=jsonl for copyable raw JSON lines equivalent to the phone’s Raw view. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Structured entries include details; no personal records or local artifact paths.',
+          'Browse owned-phone logs using the same All/App/Exports/Agents categories as the mobile Logs tab. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require phone diagnostics consent, an enabled profile with App logs permission, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of the authorized JSON metadata, matching mobile search; it applies to each loaded page after ownership and consent projection. Use selectedIds to select up to 350 unique IDs from this page; unavailableIds reports missing or inaccessible entries without fetching beyond current grants. Use format=jsonl for copyable raw JSON lines equivalent to the phone’s Raw view. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Structured entries include details; no personal records or local artifact paths.',
         inputSchema: z
           .object({
             deviceId: z.string().uuid(),
             historyOffset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
             category: z.enum(['all', 'app', 'exports', 'agents']).default('all'),
             issues: z.boolean().default(false),
+            query: z.string().max(200).optional(),
             format: z.enum(['structured', 'jsonl']).default('structured'),
             profileId: z.string().min(1).max(100).optional(),
             selectedIds: z
@@ -235,13 +255,23 @@ export function createDataService({
           .strict(),
         annotations: { readOnlyHint: true },
       },
-      async ({ deviceId, historyOffset, category, issues, profileId, format, selectedIds }) => {
+      async ({
+        deviceId,
+        historyOffset,
+        category,
+        issues,
+        query,
+        profileId,
+        format,
+        selectedIds,
+      }) => {
         own(deviceId, subject);
         const page = history.list(subject, deviceId, historyOffset);
-        const diagnostics = phoneDebugState(deviceId, phones.get(deviceId));
+        const diagnostics = phoneDebugState(deviceId, phones.get(deviceId), 'all', profileId);
         const entries = logs(page.events, diagnostics.report?.entries ?? [], Date.now(), {
           category,
           issues,
+          query,
           profileId,
         });
         const selection =
@@ -370,7 +400,7 @@ export function createDataService({
       'get_phone_data_catalog',
       {
         description:
-          'Discover phone data types, profiles with agentAccess approval, explicit domain grants and collection limits before querying. Select an approved profile and intersect its selections with domain types. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
+          'Discover phone data types, profiles with agentAccess approval and independent agentPermissions, explicit domain grants and collection limits before querying. Select an approved profile and intersect its selections with domain types. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
         inputSchema: z.object({ deviceId: z.string().uuid() }),
         annotations: { readOnlyHint: true },
       },
@@ -419,6 +449,57 @@ export function createDataService({
                   deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}`,
                   instruction: `On the phone, ${enabled ? 'enable' : 'disable'} Allow agent access for ${profile.name}${enabled ? ' and confirm Allow' : ''}.`,
                 },
+        });
+      },
+    );
+    mcp.registerTool(
+      'request_phone_profile_permissions',
+      {
+        description:
+          'Request owner review of independent Health, Screen time, Location and App logs permissions for an existing phone profile. Never changes consent. The owner uses Profile → Agent permissions; verify via a fresh get_phone_data_catalog. Export selections, phone-wide grants, OS access and diagnostics consent remain separate.',
+        inputSchema: z
+          .object({
+            deviceId: z.string().uuid(),
+            profileId: z.string().min(1).max(100),
+            permissions: z
+              .object({
+                health: z.boolean(),
+                time: z.boolean(),
+                location: z.boolean(),
+                logs: z.boolean(),
+              })
+              .strict(),
+          })
+          .strict(),
+      },
+      async ({ deviceId, profileId, permissions }) => {
+        own(deviceId, subject);
+        const phone = phones.get(deviceId);
+        if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
+          throw new PairingError(409, 'Phone is offline. Open myself.md first.');
+        const profile = phone.catalog.profiles.find((p) => p.id === profileId);
+        if (!profile) throw new PairingError(404, 'Phone profile not found.');
+        const current = parseAgentPermissions(profile.agentPermissions);
+        const completed = Object.keys(current).every(
+          (key) =>
+            current[/** @type {keyof typeof current} */ (key)] ===
+            permissions[/** @type {keyof typeof current} */ (key)],
+        );
+        return content({
+          deviceId,
+          profileId,
+          permissions: current,
+          requestedPermissions: permissions,
+          agentAccess: profile.agentAccess,
+          lastSeen: phone.seen,
+          status: completed ? 'completed' : 'awaiting_user',
+          handoff: completed
+            ? null
+            : {
+                deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}`,
+                instruction:
+                  'Review Agent permissions on this profile and confirm each new access. Re-read the catalog to verify the saved state.',
+              },
         });
       },
     );

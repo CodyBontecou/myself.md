@@ -1,3 +1,4 @@
+import { cloudAllowance, cloudUploadFits } from '../core/cloud-allowance.js';
 import { parseExportSchema } from '../core/export-schemas.js';
 import { Buffer } from 'node:buffer';
 import { database, transaction } from './database.js';
@@ -13,11 +14,12 @@ const metadataSchema = z.object({
 });
 /** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',schema:string,created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null}} Row */
 export class CloudStore {
-  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] */
-  constructor(path, key, objects = null) {
+  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] @param {((subject:string)=>boolean)|null} [lifetimeAccess] */
+  constructor(path, key, objects = null, lifetimeAccess = null) {
     if (key.length !== 32) throw new Error('Cloud encryption needs a 32-byte key.');
     this.key = key;
     this.objects = objects;
+    this.lifetimeAccess = lifetimeAccess;
     this.sweeping = false;
     this.db = database(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;
@@ -75,6 +77,36 @@ export class CloudStore {
       .run(Date.now() - 3600000);
     // Retain hashed approvals for authenticated renewal after inactivity.
     // Expired credentials still fail credential(); rotation removes the old approval.
+  }
+  /** Account capacity is read again at commit, after asynchronous object storage.
+   * @param {string} subject */
+  storageStatus(subject) {
+    this.cleanup();
+    const usedBytes = Number(
+      this.db
+        .prepare(
+          'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+        )
+        .get(subject)?.bytes ?? 0,
+    );
+    if (this.lifetimeAccess) return cloudAllowance(this.lifetimeAccess(subject), usedBytes);
+    const limitBytes = 256 * 1024 * 1024;
+    return {
+      ...cloudAllowance(true, usedBytes),
+      limitBytes,
+      availableBytes: Math.max(0, limitBytes - usedBytes),
+      overLimit: usedBytes > limitBytes,
+    };
+  }
+  /** @param {string} subject */
+  requireStorage(subject) {
+    const status = this.storageStatus(subject);
+    if (!status.eligible)
+      throw new PairingError(
+        402,
+        'Verified lifetime access is required for the included 100 MB cloud allowance. Sign in and purchase or restore lifetime access in the app.',
+      );
+    return status;
   }
   /** @param {string} subject @param {string} device @param {import('../core/profiles.js').ExportProfile} profile */
   authorize(subject, device, profile) {
@@ -238,7 +270,7 @@ export class CloudStore {
         .get(subject)
     );
     if (
-      usage.bytes - (previous?.size ?? 0) >= 256 * 1024 * 1024 ||
+      usage.bytes - (previous?.size ?? 0) >= this.requireStorage(subject).limitBytes ||
       usage.count - (previous ? 1 : 0) >= 128
     )
       throw new PairingError(413, 'Cloud quota reached. Delete older exports.');
@@ -380,6 +412,7 @@ export class CloudStore {
       authorize();
       return { id, recordCount: records.length };
     }
+    this.requireStorage(subject);
     const encrypted = this.seal(bytes, `${subject}|${id}`);
     const objectKey = this.objects ? await this.uploadObject(encrypted) : null;
     try {
@@ -410,8 +443,17 @@ export class CloudStore {
               )
               .get(subject, device, profile, row.day, row.format, row.schema)?.bytes ?? 0,
           );
-          if (usage - replaced + bytes.length > 256 * 1024 * 1024)
-            throw new PairingError(413, 'Cloud quota reached.');
+          if (
+            !cloudUploadFits(
+              { ...this.requireStorage(subject), usedBytes: usage },
+              bytes.length,
+              replaced,
+            )
+          )
+            throw new PairingError(
+              413,
+              'Cloud quota reached. Delete older exports before uploading more.',
+            );
           this.db
             .prepare(
               'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',

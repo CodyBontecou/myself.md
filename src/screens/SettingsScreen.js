@@ -1,9 +1,10 @@
+import CloudStorageUsage from '../../client/CloudStorageUsage.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { Platform } from 'react-native';
 import { openFeedback, openFeedbackSettings } from '../../client/gripe.js';
 import { useBilling } from '../../client/BillingPaywalls';
 import { router } from 'expo-router';
-import { Screen, Copy, Group, Row, Divider, SectionHeader } from '../components/ui';
+import { Screen, Group, Row, Divider, SectionHeader } from '../components/ui';
 import PrivacyLinks from '../components/PrivacyLinks';
 export default function SettingsScreen() {
   const billing = useBilling();
@@ -12,7 +13,6 @@ export default function SettingsScreen() {
       {qaEnabled && (
         <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
       )}
-      <Copy muted>Manage your account, data sources, and agent connections.</Copy>
       <SectionHeader title="Account & access" />
       <Group>
         <Row
@@ -34,6 +34,16 @@ export default function SettingsScreen() {
           onPress={() => router.push('/account')}
         />
       </Group>
+      <CloudStorageUsage />
+      {__DEV__ && (
+        <Row
+          testID="settings-cloud-debug"
+          title="Cloud allowance QA"
+          subtitle="Debug only · simulated accounts and files"
+          onPress={() => router.push('/debug-cloud')}
+        />
+      )}
+
       <SectionHeader title="Data & connections" />
       <Group>
         <Row
@@ -68,9 +78,6 @@ export default function SettingsScreen() {
         <Divider />
         <PrivacyLinks />
       </Group>
-      <Copy variant="caption" muted>
-        myself.md · You choose which data your agents can access.
-      </Copy>
       {!qaEnabled && __DEV__ && Platform.OS === 'ios' && (
         <>
           <Row

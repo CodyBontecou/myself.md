@@ -27,6 +27,7 @@
     "dashboard/style.css",
     "dashboard/docs.css",
     "worker/index.js",
+    "worker/cloud-qa.js",
     "fingerprint.config.cjs",
     "packages/support-chat/index.js",
     "packages/support-chat/native.js",

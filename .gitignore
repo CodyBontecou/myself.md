@@ -81,3 +81,6 @@ modules/*/android/build/
 
 # Local Gripe inbox credential and runner configuration
 .env.gripe-mac
+
+# Local Argent secret placeholders
+.argent/secrets.env

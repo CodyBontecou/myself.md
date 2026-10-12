@@ -21,7 +21,12 @@ if (!process.env.CLOUD_ENCRYPTION_KEY && !existsSync(path))
 const key = process.env.CLOUD_ENCRYPTION_KEY
   ? Buffer.from(process.env.CLOUD_ENCRYPTION_KEY, 'hex')
   : readFileSync(path);
-export const cloud = new CloudStore(join(directory, 'cloud.sqlite'), key, r2Store(process.env));
+export const cloud = new CloudStore(
+  join(directory, 'cloud.sqlite'),
+  key,
+  r2Store(process.env),
+  (subject) => billing.snapshot(subject).unlocked,
+);
 export const history = new HistoryStore(join(directory, 'history.sqlite'), cloud);
 /** @param {string} subject @param {string} id */
 export function ownCloudDevice(subject, id) {

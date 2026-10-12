@@ -24,7 +24,7 @@ services:
       APPLE_IAP_KEY_ID: ${APPLE_IAP_KEY_ID:-}
       APPLE_IAP_ISSUER_ID: ${APPLE_IAP_ISSUER_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
-      GOOGLE_PLAY_PACKAGE: ${GOOGLE_PLAY_PACKAGE:-com.codybontecou.sharedjsapp}
+      GOOGLE_PLAY_PACKAGE: ${GOOGLE_PLAY_PACKAGE:-com.myself.md}
       IAP_SANDBOX: ${IAP_SANDBOX:-0}
     volumes:
       - cloud-data:/data

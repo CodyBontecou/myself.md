@@ -150,7 +150,7 @@ Object.assign(config.vars, {
   ACCOUNT_NAMESPACE: 'https://old.example/realm',
   ALLOW_HTTP_DEV: '1',
   IDENTITY_ENABLED: '1',
-  MIGRATION_ENABLED: '0',
+  MIGRATION_ENABLED: '1',
 });
 writeFileSync(configPath, JSON.stringify(config));
 const appleKey = await exportPKCS8(
@@ -313,6 +313,39 @@ try {
     { stdio: ['ignore', output, output] },
   );
   await ready(200);
+  // Cloud deletion fixtures need the same verified lifetime entitlement as real uploads.
+  const fixtureSubject = 'https://old.example/realm|original-user-id';
+  const grant = await fetch(`${origin}/__migration`, {
+    method: 'POST',
+    headers: { Authorization: `Migration ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'account',
+      name: fixtureSubject,
+      batch: {
+        id: 'identity-lifetime-fixture',
+        subject: fixtureSubject,
+        tables: [
+          {
+            name: 'billing_grants',
+            columns: ['source', 'reference', 'subject', 'created'],
+            rows: [['fixture', 'identity-lifetime', fixtureSubject, Date.now()]],
+          },
+        ],
+      },
+    }),
+  });
+  assert.equal(grant.status, 200, await grant.clone().text());
+  child.kill('SIGTERM');
+  await once(child, 'exit');
+  config.vars.MIGRATION_ENABLED = '0';
+  writeFileSync(configPath, JSON.stringify(config));
+  child = spawn(
+    resolve('node_modules/.bin/wrangler'),
+    ['dev', '--config', configPath, '--port', port, '--persist-to', join(directory, 'state')],
+    { stdio: ['ignore', output, output] },
+  );
+  await ready(200);
+  assert.equal((await fetch(`${origin}/__migration`)).status, 404);
   const discovery = z
     .object({ issuer: z.string(), grant_types_supported: z.array(z.string()) })
     .parse(

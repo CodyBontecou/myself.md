@@ -1,5 +1,6 @@
 import { PairingError } from './errors.js';
 import { z } from 'zod';
+import { acknowledgeSupportNotifications } from '../packages/support-chat/notifications.js';
 /** The host authenticates owners; the bridge credential never reaches the app.
  * @param {Record<string,string|undefined>} config
  * @param {(subject:string,agent:string)=>void} authorize
@@ -76,7 +77,7 @@ export function createRemoteSupport(
       'support_conversations',
       {
         description:
-          'List owner-approved support conversations or read/send/request data in one conversation. Data requests await owner review in the app; agents cannot approve uploads or grant themselves access. Archive and deletion are owner actions.',
+          'List owner-approved support conversations or read/send/request data in one conversation. Data requests await owner review in the app; agents cannot approve uploads or grant themselves access. markAllRead and clearNotifications acknowledge observed unread replies without deleting conversations and return per-conversation outcomes. Archive and deletion are owner actions.',
         inputSchema: z
           .object({
             action: z.enum([
@@ -87,6 +88,8 @@ export function createRemoteSupport(
               'request',
               'decline',
               'readCursor',
+              'markAllRead',
+              'clearNotifications',
               'resolve',
               'reopen',
               'ownerHandoff',
@@ -134,7 +137,19 @@ export function createRemoteSupport(
             structuredContent: data,
           };
         }
-        const data = await supportV1Api(subject, 'POST', new URLSearchParams(), input, agent);
+        const data =
+          input.action === 'markAllRead' || input.action === 'clearNotifications'
+            ? await acknowledgeSupportNotifications((action, fields = {}) => {
+                authorize(subject, agent);
+                return supportV1Api(
+                  subject,
+                  'POST',
+                  new URLSearchParams(),
+                  { ...fields, action },
+                  agent,
+                );
+              }, input.action)
+            : await supportV1Api(subject, 'POST', new URLSearchParams(), input, agent);
         return {
           content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(data) }],
           structuredContent: data,

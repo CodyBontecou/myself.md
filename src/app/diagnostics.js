@@ -1,7 +1,7 @@
 import { ErrorToast } from '../components/Toast.js';
 import { errorJSON } from '../../packages/support-chat/errors.js';
 import { useCallback, useState } from 'react';
-import { Alert, Share } from 'react-native';
+import { Alert, Share, View } from 'react-native';
 import { Stack, useFocusEffect } from 'expo-router';
 import { usePhoneData } from '../../client/DataPanel.js';
 import {
@@ -13,8 +13,8 @@ import {
 } from '../../client/debug-log.js';
 import { api } from '../../client/session.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
-import { Switch } from '../../client/Terminal.js';
-import { Screen, Copy, Group, Row, Button, Notice } from '../components/ui.js';
+import { Checkbox } from '../../client/Terminal.js';
+import { Screen, Copy, Group, Row, Button } from '../components/ui.js';
 export default function DiagnosticsScreen() {
   const { session } = usePhoneData();
   const [report, setReport] = useState(() => debugReport(session));
@@ -118,10 +118,6 @@ export default function DiagnosticsScreen() {
       <Copy muted>
         Share internal app logs with support or your agent. Browse all activity in the Logs tab.
       </Copy>
-      <Notice
-        title="What logs contain"
-        body="Raw error messages are always included and may contain sensitive text. The switches below control structured records, credentials and URLs for future events; turning a switch off removes that field from retained logs. Up to 300 events are kept for seven days. Errors are limited to 16,000 characters, record attachments to 50 records / 8,000 characters, and URL/credential fields to 4,000 characters. Reports are size bounded. Native crashes are not captured."
-      />
       <Group>
         {
           /** @type {Array<keyof import('../../core/debug-log.js').DebugContent>} */ ([
@@ -140,7 +136,7 @@ export default function DiagnosticsScreen() {
               }
               subtitle="Off by default. Capture future events; disabling removes retained fields."
               trailing={
-                <Switch
+                <Checkbox
                   testID={`diagnostics-content-${field}`}
                   accessibilityLabel={field === 'urls' ? 'Include URLs' : `Include ${field}`}
                   value={content[field]}
@@ -157,7 +153,7 @@ export default function DiagnosticsScreen() {
           title="Share logs with agents"
           subtitle="Off by default. Requires a connected phone and an open app."
           trailing={
-            <Switch
+            <Checkbox
               testID="diagnostics-agent-sharing"
               accessibilityLabel="Share logs with agents"
               value={shared}
@@ -166,35 +162,32 @@ export default function DiagnosticsScreen() {
             />
           }
         />
-        <Row title="Platform" value={report.platform} />
         <Row title="Report updated" subtitle={new Date(report.generatedAt).toLocaleString()} />
       </Group>
       <ErrorToast error={error} />
-      <Button
-        testID="diagnostics-share"
-        label="Share debug report"
-        disabled={busy || qaEnabled}
-        busy={busy}
-        onPress={() => void shareReport()}
-      />
-      <Button
-        testID="diagnostics-json"
-        label={showJson ? 'Hide JSON report' : 'View JSON report'}
-        secondary
-        onPress={() => {
-          refresh();
-          setShowJson(!showJson);
-        }}
-      />
+      <View>
+        <Button
+          testID="diagnostics-share"
+          label="Share debug report"
+          disabled={busy || qaEnabled}
+          busy={busy}
+          onPress={() => void shareReport()}
+        />
+        <Button
+          testID="diagnostics-json"
+          label={showJson ? 'Hide JSON report' : 'View JSON report'}
+          secondary
+          onPress={() => {
+            refresh();
+            setShowJson(!showJson);
+          }}
+        />
+      </View>
       {showJson ? (
         <Copy testID="diagnostics-report" selectable variant="caption">
           {JSON.stringify(report, null, 2)}
         </Copy>
       ) : null}
-      <Copy muted variant="caption">
-        Sharing opens the system share sheet. Choose a recipient yourself and review the report
-        before sending. Turning agent access off does not recall copies already shared.
-      </Copy>
     </Screen>
   );
 }

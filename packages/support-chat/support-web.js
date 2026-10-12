@@ -127,6 +127,7 @@ export function WebSupport({
                 type="button"
                 className="h-auto min-h-16 w-full justify-between rounded-xl border-0 bg-transparent px-0 py-3 text-left font-normal shadow-none"
                 onClick={() => {
+                  logs.cancel();
                   setDraft('');
                   atBottom.current = true;
                   setNearBottom(true);
@@ -215,35 +216,6 @@ export function WebSupport({
                 {a.category} attachment · {a.removed ? 'Removed when archived' : 'Shared'}
               </p>
             ))}
-            {logs.preview && (
-              <div className="rounded-lg border p-4">
-                <p>
-                  Review this snapshot. Remove any entries you do not want to share. Accepted data
-                  will be processed by Isobot and its model provider.
-                </p>
-                <label htmlFor={previewId}>Data preview</label>
-                <textarea
-                  id={previewId}
-                  value={logs.preview.content}
-                  maxLength={128000}
-                  rows={12}
-                  disabled={disabled}
-                  onChange={(event) => logs.edit(event.target.value)}
-                  className="w-full rounded-lg border bg-background p-3 font-mono text-sm"
-                />
-                <Button
-                  variant="ghost"
-                  disabled={disabled}
-                  type="button"
-                  onClick={() => void logs.share()}
-                >
-                  Accept and share this snapshot
-                </Button>
-                <Button variant="ghost" disabled={disabled} type="button" onClick={logs.cancel}>
-                  Cancel
-                </Button>
-              </div>
-            )}
             <details className="border-t py-3 text-sm">
               <summary className="cursor-pointer font-medium">Conversation details</summary>
               <div className="mt-3 flex flex-col items-start gap-2">
@@ -261,7 +233,7 @@ export function WebSupport({
                 </Button>
                 {c.status === 'open' ? (
                   <>
-                    {data && (
+                    {data && data.automaticLogs !== false && (
                       <Button
                         variant="ghost"
                         type="button"
@@ -350,36 +322,66 @@ export function WebSupport({
             </details>
           </>
         )}
+        {logs.preview && (
+          <div className="rounded-lg border p-4">
+            <p>
+              Review this snapshot. Remove any entries you do not want to share. Accepted data will
+              be processed by Isobot and its model provider.
+            </p>
+            <label htmlFor={previewId}>Data preview</label>
+            <textarea
+              id={previewId}
+              value={logs.preview.content}
+              maxLength={128000}
+              rows={12}
+              disabled={disabled}
+              onChange={(event) => logs.edit(event.target.value)}
+              className="w-full rounded-lg border bg-background p-3 font-mono text-sm"
+            />
+            <Button
+              variant="ghost"
+              disabled={disabled}
+              type="button"
+              onClick={() => void logs.share()}
+            >
+              {c ? 'Accept and share this snapshot' : 'Include this snapshot with my first message'}
+            </Button>
+            <Button variant="ghost" disabled={disabled} type="button" onClick={logs.cancel}>
+              Cancel
+            </Button>
+          </div>
+        )}
       </div>
       <form
-        className="mx-4 mb-4 flex shrink-0 items-end gap-1 rounded-3xl border bg-background p-1 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
+        className="relative mx-4 mb-4 mt-5 flex shrink-0 items-end gap-1 rounded-3xl border bg-background p-1 shadow-sm focus-within:ring-2 focus-within:ring-ring/30"
         onSubmit={(event) => {
           event.preventDefault();
           const value = (c ? draft : title).trim();
           if (disabled || !canCompose || !value) return;
           const pending = c
-            ? chat.send(value, crypto.randomUUID())
-            : chat.create(crypto.randomUUID(), value);
+            ? chat.send(value, crypto.randomUUID(), logs.initialSnapshot)
+            : chat.create(crypto.randomUUID(), value, logs.initialSnapshot);
           void pending.then((saved) => {
             if (saved) {
               setDraft('');
               setTitle('');
+              logs.cancel();
             }
             return saved;
           });
         }}
       >
-        {c && data && (
-          <Button
-            variant="ghost"
-            type="button"
-            aria-label="Attach recent logs"
-            disabled={disabled || !canCompose}
-            onClick={() => void logs.prepare(null)}
-            className="h-11 w-11 shrink-0 rounded-full"
-          >
-            +
-          </Button>
+        {data && data.automaticLogs !== false && (
+          <label className="absolute -top-3 left-5 flex min-h-6 cursor-pointer items-center gap-1.5 bg-background px-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              aria-label="Include logs?"
+              checked={logs.recentLogsSelected}
+              disabled={chat.busy || !canCompose}
+              onChange={() => void logs.toggleRecentLogs()}
+            />
+            Include logs?
+          </label>
         )}
         <label className="sr-only" htmlFor={c ? messageId : titleId}>
           {c ? 'Your message' : 'Conversation title'}

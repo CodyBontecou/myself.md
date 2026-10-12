@@ -57,8 +57,8 @@ export function PricingSection() {
           </div>
           <p className="text-base leading-7 text-muted-foreground">
             Store your exports in the cloud and connect your agents through a hosted MCP server.
-            Lifetime users get a 30-day free trial with 50 MB of storage. Requires an account; paid
-            cloud storage is a separate subscription.
+            Lifetime users get 100 MB of included storage with no recurring charge. Requires an
+            account; larger cloud plans are separate subscriptions.
           </p>
         </div>
         <div className="divide-y divide-border border-y border-border">

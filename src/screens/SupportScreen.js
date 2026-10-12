@@ -1,8 +1,12 @@
 import { registerSupportNotifications } from '../../client/support-notifications.js';
-import { Alert, AppState } from 'react-native';
-import { useEffect, useState, useMemo } from 'react';
-import { Stack, router, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
+import * as Application from 'expo-application';
+import * as Device from 'expo-device';
+import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 import { NativeSupport } from '../../packages/support-chat/native.js';
 import { createSupportClient } from '../../packages/support-chat/index.js';
 import { usePhoneData } from '../../client/DataPanel.js';
@@ -26,6 +30,18 @@ export default function SupportScreen() {
   );
 }
 function SupportChannels() {
+  const emailBody = [
+    '',
+    '',
+    '--',
+    'myself.md support details',
+    `App version: ${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'Unavailable'}`,
+    `App build: ${Application.nativeBuildVersion ?? 'Unavailable'}`,
+    `Phone model: ${Device.modelName ?? 'Unavailable'}${Device.modelId ? ` (${Device.modelId})` : ''}`,
+    `Operating system: ${Device.osName ?? 'Unavailable'} ${Device.osVersion ?? 'Unavailable'}${Device.osBuildId ? ` (build ${Device.osBuildId})` : ''}`,
+    ...(Updates.runtimeVersion ? [`App runtime: ${Updates.runtimeVersion}`] : []),
+    ...(Updates.updateId ? [`App update: ${Updates.updateId}`] : []),
+  ].join('\n');
   return (
     <Group compact>
       <Row
@@ -50,7 +66,11 @@ function SupportChannels() {
         title="Send an email"
         subtitle={privacyPolicy.supportEmail}
         icon={<Icon name="mail-outline" />}
-        onPress={() => void openPrivacyLink(`mailto:${privacyPolicy.supportEmail}`)}
+        onPress={() =>
+          void openPrivacyLink(
+            `mailto:${privacyPolicy.supportEmail}?body=${encodeURIComponent(emailBody)}`,
+          )
+        }
       />
     </Group>
   );
@@ -62,6 +82,8 @@ function SupportInbox({ session }) {
     focused = useIsFocused();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
+  const container = useRef(/** @type {View|null} */ (null));
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) =>
@@ -115,7 +137,11 @@ function SupportInbox({ session }) {
     [logSession],
   );
   return (
-    <>
+    <View
+      ref={container}
+      style={styles.fill}
+      onLayout={() => container.current?.measureInWindow((_x, y) => setKeyboardOffset(y))}
+    >
       <NativeSupport
         key={session ? `${session.owner}:${session.deviceId}` : 'guest'}
         startInConversation
@@ -151,10 +177,10 @@ function SupportInbox({ session }) {
         {...(session ? { data } : {})}
         newId={Crypto.randomUUID}
         colors={{ ...colors, subtle: isDark ? colors.subtle : '#EEF1FC' }}
+        keyboardOffset={keyboardOffset}
         bottomInset={insets.bottom}
         topInset={insets.top}
         projectLabel="myself.md"
-        onExit={() => router.navigate('/profiles')}
         renderIcon={(name) => (
           <Icon
             name={name}
@@ -170,6 +196,8 @@ function SupportInbox({ session }) {
         )}
         components={{ Screen, Copy, Button, Row, Group }}
       />
-    </>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({ fill: { flex: 1 } });

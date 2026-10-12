@@ -2,6 +2,7 @@ import { publicHTML, publicPages } from '../core/public-site.js';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createDashboardService } from './dashboard-service.js';
+import { refreshEntitlement } from './billing.js';
 import { cloud, history } from './cloud.js';
 import { devices } from './store.js';
 import { cancelAgent } from './data.js';
@@ -35,4 +36,10 @@ export function dashboardAsset(path, res, issuer) {
   );
   return true;
 }
-export const { dashboardApi } = createDashboardService({ cloud, history, devices, cancelAgent });
+export const { dashboardApi } = createDashboardService({
+  cloud,
+  history,
+  devices,
+  cancelAgent,
+  refreshEntitlement,
+});

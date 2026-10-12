@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { exportSchemas } from '../core/export-schemas.js';
 import { useTheme } from '../src/lib/theme';
 import { StyleSheet, TextInput, View } from 'react-native';
-import { Switch } from './Terminal.js';
+import { Checkbox } from './Terminal.js';
 import { Group, Row, Icon, Copy, SectionHeader } from '../src/components/ui';
 /** @type {Record<string, string>} */
 /** @type {Record<string,string>} */
@@ -87,7 +87,7 @@ export default function ExportSettingsEditor({
         compact
         title={label}
         trailing={
-          <Switch
+          <Checkbox
             testID={fieldIds[label]}
             accessibilityLabel={label}
             disabled={disabled}

@@ -1,6 +1,6 @@
 import { phoneDatabase } from './phone-database.js';
 import { qaEnabled, qaSession, qaSnapshot, updateQa } from './qa-runtime.js';
-import { parseProfile, parseProfileState } from '../core/profiles.js';
+import { parseProfile, parseProfileState, parseAgentPermissions } from '../core/profiles.js';
 const db = phoneDatabase();
 db.execSync('CREATE TABLE IF NOT EXISTS export_profiles (owner TEXT PRIMARY KEY, value TEXT)');
 /** @param {string} owner @returns {import('../core/profiles.js').ProfileState|null} */
@@ -29,6 +29,7 @@ export function loadProfiles(owner) {
         }),
         {
           id: p.id,
+          agentPermissions: parseAgentPermissions(p.agentPermissions),
           agentAccess:
             p.agentAccess === undefined ? p.id === state.activeId : p.agentAccess === true,
         },

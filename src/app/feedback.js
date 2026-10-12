@@ -8,7 +8,7 @@ import {
   reportUpdatesSnapshot,
   setReportNotifications,
 } from '../../client/feedback-updates.js';
-import { Switch } from '../../client/Terminal.js';
+import { Checkbox } from '../../client/Terminal.js';
 import { Screen, Copy, Group, Row, Button } from '../components/ui.js';
 
 export default function FeedbackScreen() {
@@ -58,7 +58,7 @@ export default function FeedbackScreen() {
           title="Bug report notifications"
           subtitle="Pull request, merged fix, and App Store release"
           trailing={
-            <Switch
+            <Checkbox
               testID="feedback-notifications"
               accessibilityLabel="Bug report notifications"
               value={state.enabled}

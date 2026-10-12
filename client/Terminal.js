@@ -1,4 +1,4 @@
-import { Text as NativeText, Switch as NativeSwitch, StyleSheet } from 'react-native';
+import { Text as NativeText, StyleSheet } from 'react-native';
 import { Button as BridgeButton } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 /** @param {import('react-native').TextProps} props */
@@ -19,16 +19,6 @@ export function Button({ title, onPress, disabled = false, busy = false, testID 
     />
   );
 }
-/** @param {import('react-native').SwitchProps} props */
-export function Switch(props) {
-  const { colors } = useTheme();
-  return (
-    <NativeSwitch
-      {...props}
-      trackColor={{ false: colors.border, true: colors.accent }}
-      hitSlop={8}
-    />
-  );
-}
+export { Checkbox } from '../src/components/ui.js';
 
 const styles = StyleSheet.create({ text: { fontSize: 16, lineHeight: 23 } });

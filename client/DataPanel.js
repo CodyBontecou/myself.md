@@ -4,20 +4,21 @@ import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
 import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
-import { Button, Switch, Text } from './Terminal.js';
+import { Button, Checkbox, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
 import { loadGrants, saveGrants } from './library.js';
 import { requestSourceAccess } from './source-access.js';
-import { captureLocation, startTracking, stopTracking, locationStatus } from './location-task.js';
+import { startTracking, stopTracking, locationStatus } from './location-task.js';
 import { cloudAccess } from './destinations.js';
 import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
+import LocationSettings from './LocationSettings.js';
 import { loadProfiles, saveProfiles } from './profiles.js';
 import { parseProfile, parseProfileState, agentProfileAllows } from '../core/profiles.js';
 /** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
@@ -132,8 +133,12 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           enabled: allowed.current[d.domain],
           availableTypes: d.types,
           types: d.types.filter((key) =>
-            profileState.current?.profiles.some(
-              (p) => p.agentAccess === true && p.selection[d.domain].includes(key),
+            profileState.current?.profiles.some((p) =>
+              agentProfileAllows(p, {
+                domain: d.domain,
+                source: 'native',
+                type: key.replace(/^native:/, ''),
+              }),
             ),
           ),
         }),
@@ -423,6 +428,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
 /** @param {{domain?:import('../core/data.js').Domain, management?:boolean}} props */
 export default function DataPanel({ domain: selectedDomain = undefined, management = false }) {
   const { colors } = useTheme();
+  const data = usePhoneData();
   const {
     session,
     incoming,
@@ -434,20 +440,16 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     proposal,
     setProposal,
     grants,
-    isTracking,
-    locationInfo,
     notes,
     sourceNotes,
     reviewSourceAccess,
     message,
     run,
     changeGrant,
-    changeRecording,
     changeProfiles,
     setMessage,
-    publish,
-    refreshLocation,
-  } = usePhoneData();
+  } = data;
+  if (!management && selectedDomain === 'location') return <LocationSettings data={data} />;
   return (
     <View
       testID={management ? 'profiles-screen' : `source-${selectedDomain}-screen`}
@@ -460,6 +462,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           state={profiles}
           types={types}
           permissions={sourcePermissions}
+          grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
           draft={incoming ?? proposal?.profile ?? null}
@@ -488,21 +491,9 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           <Text style={styles.title}>
             {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'}
           </Text>
-          {domain === 'location' ? (
-            <View style={styles.row}>
-              <Text style={styles.description}>Background recording</Text>
-              <Switch
-                testID="source-location-recording"
-                accessibilityLabel="Record location in background"
-                value={isTracking}
-                disabled={busy}
-                onValueChange={(enabled) => void run(() => changeRecording(enabled))}
-              />
-            </View>
-          ) : null}
           <View style={styles.row}>
             <Text style={styles.description}>Agent access</Text>
-            <Switch
+            <Checkbox
               testID={`source-grant-${domain}`}
               accessibilityLabel={`Allow chat to read ${domain} data`}
               value={grants[domain]}
@@ -533,30 +524,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
             title="Choose data types"
             onPress={() => router.navigate('/profiles')}
           />
-          {domain === 'location' ? (
-            <>
-              <Text style={styles.description}>{locationInfo}</Text>
-              <Button
-                testID={`source-${domain}-location-permissions`}
-                title="Location permissions"
-                disabled={busy}
-                onPress={() => void run(() => Linking.openSettings())}
-              />
-              <Button
-                testID={`source-${domain}-location-capture`}
-                title="Save location point"
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    await captureLocation(session.owner);
-                    setMessage('Recorded one location point on this phone.');
-                    await publish();
-                    await refreshLocation();
-                  })
-                }
-              />
-            </>
-          ) : null}
           <Button
             testID={`source-${domain}-exports`}
             title="Export files"

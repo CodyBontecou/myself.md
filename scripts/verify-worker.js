@@ -153,7 +153,17 @@ try {
   await migrate({
     action: 'account',
     name: `${namespace}|alice`,
-    batch: { id: 'fixture-account', subject: `${namespace}|alice`, tables: [] },
+    batch: {
+      id: 'fixture-account',
+      subject: `${namespace}|alice`,
+      tables: [
+        {
+          name: 'billing_grants',
+          columns: ['source', 'reference', 'subject', 'created'],
+          rows: [['fixture', 'worker-lifetime', `${namespace}|alice`, Date.now()]],
+        },
+      ],
+    },
   });
   await migrate({
     action: 'grant_time',
@@ -294,6 +304,16 @@ try {
       .status,
     200,
   );
+  const status = await request('/api/cloud/status', alice);
+  assert.equal(
+    z.object({ limitBytes: z.number(), usedBytes: z.number() }).parse(status.value).limitBytes,
+    100_000_000,
+  );
+  assert.equal(z.object({ usedBytes: z.number() }).parse(status.value).usedBytes, bytes.length);
+  assert.deepEqual(
+    (await client.callTool({ name: 'get_cloud_storage', arguments: {} })).structuredContent,
+    status.value,
+  );
   const page = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
   assert.ok(!page.isError, JSON.stringify(page));
   const used = z
@@ -305,8 +325,8 @@ try {
       request('/api/billing', alice, 'POST', { action: 'reserve', id: 'concurrent-' + i }),
     ),
   );
-  assert.equal(reservations.filter((result) => result.status === 200).length, 3);
-  assert.equal(reservations.filter((result) => result.status === 402).length, 3);
+  assert.equal(reservations.filter((result) => result.status === 200).length, 6);
+  assert.equal(reservations.filter((result) => result.status === 402).length, 0);
   assert.equal((await request('/api/cloud/exports/' + id, bob, 'DELETE')).status, 404);
   await client.close();
   await stop();

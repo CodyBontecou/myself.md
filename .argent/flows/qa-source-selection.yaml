@@ -16,6 +16,9 @@ steps:
         identifier: profile-setting-name
   - await:
       idle: true
+  - scroll-to:
+      target:
+        id: selection-domain-time
   - await:
       text:
         in:
@@ -23,6 +26,9 @@ steps:
         equals: Screen time, 0 selected, 1 choice
   - tap:
       id: selection-domain-time
+  - scroll-to:
+      target:
+        id: profile-setting-destination
   - await:
       visible:
         identifier: selection-type-time-native:applications
@@ -35,6 +41,9 @@ steps:
         text: Synthetic permission allowed. Recording and agent grants are unchanged.
   - await:
       idle: true
+  - scroll-to:
+      target:
+        id: selection-domain-time
   - await:
       text:
         in:
@@ -53,12 +62,15 @@ steps:
   - await:
       text:
         in:
-          identifier: profile-row-qa-profile
-        contains: 1 data types
+          text: 1 data type · On this phone
+        equals: 1 data type · On this phone
   - await:
       idle: true
   - tap:
       id: profile-row-qa-profile
+  - scroll-to:
+      target:
+        id: selection-domain-time
   - await:
       text:
         in:
