@@ -696,6 +696,27 @@ try {
   });
   assert.equal(deviceResponse.status, 200, await deviceResponse.clone().text());
   const deviceId = z.object({ id: z.string() }).parse(await deviceResponse.json()).id;
+  const watchSetup = await ownerRequest('/api/watches', 'POST', {
+    action: 'configure',
+    deviceId: '00000000-0000-4000-8000-000000000011',
+    parentDeviceId: deviceId,
+    name: 'Deletion fixture watch',
+    endpoint: 'https://example.test/watch-export',
+    agentAccess: false,
+  });
+  assert.equal(watchSetup.status, 200);
+  const watchToken = z.object({ token: z.string() }).parse(await watchSetup.json()).token;
+  const watchPoll = await fetch(`${origin}/api/watch/runtime`, {
+    method: 'POST',
+    headers: { Authorization: `Watch ${watchToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'poll' }),
+  });
+  assert.equal(
+    watchPoll.status,
+    200,
+    'Cloudflare must route the scoped watch session to its owned account.',
+  );
+  assert.equal((await ownerRequest('/api/watches', 'POST', { action: 'list' })).status, 200);
   const profile = {
     ...parseProfile({
       schema: 'myself.md.profile.v1',
@@ -800,6 +821,17 @@ try {
     .object({ state: z.literal('completed'), statusUrl: z.string() })
     .parse(await removed.json());
   assert.equal((await ownerRequest('/api/devices')).status, 410);
+  assert.equal(
+    (
+      await fetch(`${origin}/api/watch/runtime`, {
+        method: 'POST',
+        headers: { Authorization: `Watch ${watchToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'poll' }),
+      })
+    ).status,
+    401,
+    'Account deletion must remove watch credential routing and authority.',
+  );
   assert.equal(
     (await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' })).status,
     200,

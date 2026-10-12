@@ -9,3 +9,6 @@ package-lock.json
 .local/
 
 dashboard/dist/
+
+watch/.build/
+watch/.swiftpm/
