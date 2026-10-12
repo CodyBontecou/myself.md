@@ -84,3 +84,7 @@ modules/*/android/build/
 
 # Local Argent secret placeholders
 .argent/secrets.env
+
+# Swift watch contract build artifacts
+/watch/.build/
+/watch/.swiftpm/

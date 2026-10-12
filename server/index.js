@@ -1,3 +1,5 @@
+import { createWatchService } from './watch-service.js';
+import { join } from 'node:path';
 import { createRemoteSupport } from './support-remote.js';
 import { supportApi, registerSupportTools } from './support.js';
 import { billing, billingApi, refreshEntitlement } from './billing.js';
@@ -27,6 +29,15 @@ createServer(
         return 'guest';
       },
     ),
+    ...createWatchService({
+      source: join(process.env.DATA_DIR ?? '.local', 'watch.sqlite'),
+      cloud,
+      billing,
+      history,
+      devices,
+      refreshEntitlement,
+      registerTicket: async () => {},
+    }),
     qrPng: (value, options) => QRCode.toBuffer(value, options),
     billing,
     billingApi,

@@ -1,0 +1,39 @@
+{
+  "schema": "myself.md.profile.v1",
+  "name": "Watch steps",
+  "selection": {
+    "health": ["native:HKQuantityTypeIdentifierStepCount"],
+    "time": [],
+    "location": []
+  },
+  "export": {
+    "schema": "myself.md.export.v1",
+    "destination": "http",
+    "httpUrl": "https://example.test/private/upload",
+    "formats": ["json"],
+    "lookbackDays": 1,
+    "folderName": "Exports",
+    "filenameTemplate": "{date}",
+    "includeToday": true,
+    "formatFolders": false
+  },
+  "schedule": {
+    "frequency": "daily",
+    "unit": "day",
+    "anchorDate": null,
+    "interval": 1,
+    "hour": 8,
+    "minute": 0,
+    "weekday": 1,
+    "todayRefresh": false,
+    "refreshHours": 3
+  },
+  "id": "watch-steps",
+  "agentAccess": false,
+  "agentPermissions": {
+    "health": false,
+    "time": false,
+    "location": false,
+    "logs": false
+  }
+}

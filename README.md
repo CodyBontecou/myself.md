@@ -294,7 +294,7 @@ The public YouTube iframe has a narrow `react/iframe-missing-sandbox` exception 
 
 Type checking uses `allowJs`, `checkJs`, strict null/implicit-any checks, unused locals/parameters, explicit return checks, unchecked-index checks, and exact optional properties. Application source stays JavaScript. JSDoc describes exported function boundaries. JSON from the network remains a runtime trust boundary: a type annotation cannot validate a remote response.
 
-Prettier and ESLint cache unchanged files. The type checkers cache their graphs under `node_modules/.cache/`. These are local optimizations; a fresh CI run checks everything. Generated native projects, dependency code, and bundles are excluded. Prettier skips generated assets and the npm lockfile. Knip ignores the globally installed `fly` deployment CLI binary. Its dependency exception is: `@types/punycode` supplies the transitive declaration imported by `@types/node`, which Knip does not count as direct application usage.
+Prettier and ESLint cache unchanged files. The type checkers cache their graphs under `node_modules/.cache/`. These are local optimizations; a fresh CI run checks everything. Generated native projects, dependency code, and bundles are excluded. Prettier skips generated assets and the npm lockfile. Knip ignores the globally installed `fly` deployment CLI binary. The Swift verification runner invokes the separately installed Xcode/Swift toolchain; Knip excludes only `swift` from npm binary ownership checks. Its dependency exception is: `@types/punycode` supplies the transitive declaration imported by `@types/node`, which Knip does not count as direct application usage.
 
 The VS Code settings enable formatting on save and use the project's TypeScript checker. Recommended extensions expose Oxlint, Prettier, and the remaining ESLint diagnostics. GitHub Actions runs `npm ci` and `npm run check` on pushes and pull requests. Hosted deployment uses `npm run worker:deploy`; the retained Fly files are recovery templates. `AGENTS.md` tells agents to use this gate and reserve runtime checks for behavior outside its coverage.
 
@@ -323,6 +323,12 @@ Enable **Automatic exports** separately on each saved profile. Cadences use devi
 Expo BackgroundTask uses one coalesced, best-effort OS worker; minimum wake interval is 15 minutes, and foreground catch-up also checks every 30 seconds. iOS force quit stops background wakes until reopening. No exact-time delivery is promised. Files stay local; the worker does not upload them or change chat permissions. A non-secret SQLite export context identifies the current local data partition; background work does not read OAuth tokens from the locked Keychain. OS data protection may still defer native health reads or file access until unlock. Re-pairing starts with scheduling off; disconnect leaves saved files in Documents and prevents further runs without a current session. See [source research](docs/profile-export-port.md) for source behavior and scope differences.
 
 Run `npm run verify:exports` for calendar, opt-in, DST and JSON/JSONL business rules. After `npm run prebuild`, `npm run build:android` compiles without installing (`ANDROID_HOME` must point to the SDK); `npm run build:ios -- DEVELOPMENT_TEAM=<team>` compiles a signed generic iOS Release app.
+
+## Apple Watch
+
+A native watchOS 11+ companion now has a Steps preset, a Smart Stack widget/complications and direct HTTPS JSON export. Set it up from Settings → Apple Watch while both apps are open. Subsequent exports run on the watch with the phone app closed. Keep the watch app active until delivery; interrupted files remain queued for reopening. Watch source availability is narrower than phone history. Watch agent access is a separate explicit opt-in and private step values stay local.
+
+See [Apple Watch implementation and device validation](docs/watch-app.md) for the protocol, native targets, build commands and remaining verification. `npm run verify:watch` covers HTTP/MCP authorization and target generation. `npm run verify:watch:swift` needs Swift; `npm run build:watch` needs Xcode on macOS. This Linux workspace cannot establish native compilation or physical-watch delivery.
 
 ## Hosted cloud exports
 

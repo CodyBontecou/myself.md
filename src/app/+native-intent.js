@@ -3,6 +3,7 @@
 export function redirectSystemPath({ path }) {
   try {
     const url = new URL(path, 'myselfmd://app');
+    if (url.protocol === 'myselfmd:' && url.hostname === 'watch') return '/settings/watch';
     if (
       url.protocol === 'myselfmd:' &&
       ((url.hostname === 'oauth' && (url.pathname === '' || url.pathname === '/')) ||
