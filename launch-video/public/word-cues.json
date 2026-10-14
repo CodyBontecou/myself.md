@@ -1,0 +1,330 @@
+{
+  "method": "Whisper base.en constrained-transcript DTW",
+  "audio": "narration.wav",
+  "audioSha256": "0be55e4ec13be35ccce82891337516e1d3abb33d003a0bfebc341123d7349b52",
+  "segments": [
+    {
+      "start": 0.08,
+      "end": 1.2673469387755103,
+      "text": "Your data. Your agent.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Your",
+          "start": 0.08,
+          "end": 0.34
+        },
+        {
+          "text": "data.",
+          "start": 0.34,
+          "end": 0.7799999999999999
+        },
+        {
+          "text": "Your",
+          "start": 0.7799999999999999,
+          "end": 1.06
+        },
+        {
+          "text": "agent.",
+          "start": 1.06,
+          "end": 1.2673469387755103
+        }
+      ]
+    },
+    {
+      "start": 1.7,
+      "end": 2.4168480725623582,
+      "text": "Make it yours!",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Make",
+          "start": 1.7,
+          "end": 1.92
+        },
+        {
+          "text": "it",
+          "start": 1.92,
+          "end": 2.12
+        },
+        {
+          "text": "yours!",
+          "start": 2.12,
+          "end": 2.4168480725623582
+        }
+      ]
+    },
+    {
+      "start": 3.25,
+      "end": 3.914920634920635,
+      "text": "Pick your steps.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Pick",
+          "start": 3.25,
+          "end": 3.45
+        },
+        {
+          "text": "your",
+          "start": 3.45,
+          "end": 3.69
+        },
+        {
+          "text": "steps.",
+          "start": 3.69,
+          "end": 3.914920634920635
+        }
+      ]
+    },
+    {
+      "start": 5.4,
+      "end": 6.174172335600907,
+      "text": "Add your app time.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Add",
+          "start": 5.4,
+          "end": 5.6000000000000005
+        },
+        {
+          "text": "your",
+          "start": 5.6000000000000005,
+          "end": 5.74
+        },
+        {
+          "text": "app",
+          "start": 5.74,
+          "end": 6.08
+        },
+        {
+          "text": "time.",
+          "start": 6.08,
+          "end": 6.174172335600907
+        }
+      ]
+    },
+    {
+      "start": 7.15,
+      "end": 9.028662131519274,
+      "text": "Choose your files. Save your profile!",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Choose",
+          "start": 7.15,
+          "end": 7.390000000000001
+        },
+        {
+          "text": "your",
+          "start": 7.390000000000001,
+          "end": 7.65
+        },
+        {
+          "text": "files.",
+          "start": 7.65,
+          "end": 8.31
+        },
+        {
+          "text": "Save",
+          "start": 8.31,
+          "end": 8.43
+        },
+        {
+          "text": "your",
+          "start": 8.43,
+          "end": 8.75
+        },
+        {
+          "text": "profile!",
+          "start": 8.75,
+          "end": 9.028662131519274
+        }
+      ]
+    },
+    {
+      "start": 10.18,
+      "end": 11.394829931972788,
+      "text": "Give your agent the green light.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Give",
+          "start": 10.18,
+          "end": 10.32
+        },
+        {
+          "text": "your",
+          "start": 10.32,
+          "end": 10.6
+        },
+        {
+          "text": "agent",
+          "start": 10.6,
+          "end": 10.78
+        },
+        {
+          "text": "the",
+          "start": 10.78,
+          "end": 10.959999999999999
+        },
+        {
+          "text": "green",
+          "start": 10.959999999999999,
+          "end": 11.26
+        },
+        {
+          "text": "light.",
+          "start": 11.26,
+          "end": 11.394829931972788
+        }
+      ]
+    },
+    {
+      "start": 13.65,
+      "end": 15.070385487528345,
+      "text": "We're connected! Ask away.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "We're",
+          "start": 13.65,
+          "end": 13.97
+        },
+        {
+          "text": "connected!",
+          "start": 13.97,
+          "end": 14.67
+        },
+        {
+          "text": "Ask",
+          "start": 14.67,
+          "end": 14.870000000000001
+        },
+        {
+          "text": "away.",
+          "start": 14.870000000000001,
+          "end": 15.070385487528345
+        }
+      ]
+    },
+    {
+      "start": 18.25,
+      "end": 18.62124716553288,
+      "text": "Wow!",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Wow!",
+          "start": 18.25,
+          "end": 18.62124716553288
+        }
+      ]
+    },
+    {
+      "start": 18.95,
+      "end": 21.43312925170068,
+      "text": "Sixty-four thousand, nine hundred eighty steps!",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Sixty-four",
+          "start": 18.95,
+          "end": 19.75
+        },
+        {
+          "text": "thousand,",
+          "start": 19.75,
+          "end": 20.49
+        },
+        {
+          "text": "nine",
+          "start": 20.49,
+          "end": 20.75
+        },
+        {
+          "text": "hundred",
+          "start": 20.75,
+          "end": 20.91
+        },
+        {
+          "text": "eighty",
+          "start": 20.91,
+          "end": 21.21
+        },
+        {
+          "text": "steps!",
+          "start": 21.21,
+          "end": 21.43312925170068
+        }
+      ]
+    },
+    {
+      "start": 21.9,
+      "end": 23.803514739229026,
+      "text": "Five hours, fifty-two minutes in apps.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Five",
+          "start": 21.9,
+          "end": 22.36
+        },
+        {
+          "text": "hours,",
+          "start": 22.36,
+          "end": 22.88
+        },
+        {
+          "text": "fifty-two",
+          "start": 22.88,
+          "end": 23.32
+        },
+        {
+          "text": "minutes",
+          "start": 23.32,
+          "end": 23.459999999999997
+        },
+        {
+          "text": "in",
+          "start": 23.459999999999997,
+          "end": 23.66
+        },
+        {
+          "text": "apps.",
+          "start": 23.66,
+          "end": 23.803514739229026
+        }
+      ]
+    },
+    {
+      "start": 24.25,
+      "end": 25.35124716553288,
+      "text": "Myself dot M D.",
+      "speed": 1,
+      "words": [
+        {
+          "text": "Myself",
+          "start": 24.25,
+          "end": 24.77
+        },
+        {
+          "text": "dot",
+          "start": 24.77,
+          "end": 25.01
+        },
+        {
+          "text": "M",
+          "start": 25.01,
+          "end": 25.15
+        },
+        {
+          "text": "D.",
+          "start": 25.15,
+          "end": 25.35124716553288
+        }
+      ]
+    }
+  ]
+}

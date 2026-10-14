@@ -5,7 +5,7 @@ import { createSupportService } from '../server/support-service.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { accountDeletionNotice } from '../core/account-deletion.js';
-import { deleteIdentity, identityRequest } from './identity.js';
+import { deleteIdentity, identityRequest, identityLogins } from './identity.js';
 import { DurableObject } from 'cloudflare:workers';
 import { handleAsNodeRequest } from 'cloudflare:node';
 import { createServer } from 'node:http';
@@ -153,6 +153,7 @@ export class Account extends DurableObject {
     this.listener = createApplication(
       {
         PUBLIC_URL: this.env.PUBLIC_URL,
+        REVIEWER_LOGIN_ENABLED: this.env.REVIEWER_LOGIN_ENABLED,
         PUBLIC_URL_ALIASES: this.env.PUBLIC_URL_ALIASES,
         OAUTH_ISSUER: this.env.OAUTH_ISSUER,
         ACCOUNT_NAMESPACE: this.env.ACCOUNT_NAMESPACE,
@@ -164,6 +165,7 @@ export class Account extends DurableObject {
           action === 'status'
             ? Promise.resolve(this.deletionStatus(subject))
             : this.deleteAccount(subject),
+        accountLoginsApi: (subject) => identityLogins(this.env, subject),
         qrPng,
         ...billingService,
         ...this.data,

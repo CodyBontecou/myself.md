@@ -24,13 +24,15 @@ import ProfileExports from './ProfileExports.js';
 import ProfileFeed from './ProfileFeed.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
 import { domains } from '../core/data.js';
+import { compatibleProfile } from '../core/profile-compatibility.js';
+import ProfileImportReview from './ProfileImportReview.js';
 import {
   parseProfile,
-  profileLink,
+  profileShareLink,
   uniqueProfileName,
   parseAgentPermissions,
 } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking?:boolean,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
@@ -39,6 +41,8 @@ export default function ProfilePanel({
   grants,
   onAuthorize,
   busy,
+  isTracking = false,
+  exportFirst = false,
   onChange,
   draft,
   onDismiss,
@@ -56,6 +60,8 @@ export default function ProfilePanel({
   const [shareLink, setShareLink] = useState('');
   const [working, setWorking] = useState(false);
   const disabled = busy || working;
+  const catalogReady = domains.every((domain) => domain in permissions);
+  const importReview = draft && catalogReady ? compatibleProfile(draft, types) : undefined;
   const navigation = useNavigation();
   const [editing, setEditing] = useState(
     /** @type {{key:string,original:import('../core/profiles.js').ResolvedDraft,draft:import('../core/profiles.js').ResolvedDraft}|null} */ (
@@ -212,7 +218,9 @@ export default function ProfilePanel({
   /** @param {import('../core/profiles.js').ProfileDraft} p @param {string} [id] */
   function edit(p, id = '', section = '', field = '', domain = '') {
     if (disabled) return;
-    start(p, id, p === draft ? onDismiss : undefined);
+    if (p === draft && !catalogReady) return;
+    const review = p === draft ? compatibleProfile(p, types) : undefined;
+    start(review?.profile ?? p, id, p === draft ? onDismiss : undefined, review);
     router.push({ pathname: '/profiles/editor', params: { section, field, domain } });
   }
   /** @param {()=>Promise<void>|void} action @param {{success:string,failure:string}} [feedback] */
@@ -272,6 +280,14 @@ export default function ProfilePanel({
               value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${profile.export.formats.join(' + ').toUpperCase()}`}
             />
           </Group>
+          {exportFirst && (
+            <ProfileExports
+              key={profile.id}
+              session={session}
+              profile={profile}
+              disabled={disabled}
+            />
+          )}
           <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
           <SectionHeader compact title="Agent permissions" />
           <Copy variant="caption" muted>
@@ -487,12 +503,14 @@ export default function ProfilePanel({
               'refresh',
             )}
           </Group>
-          <ProfileExports
-            key={profile.id}
-            session={session}
-            profile={profile}
-            disabled={disabled}
-          />
+          {!exportFirst && (
+            <ProfileExports
+              key={profile.id}
+              session={session}
+              profile={profile}
+              disabled={disabled}
+            />
+          )}
           <Group compact>
             <Row
               compact
@@ -531,7 +549,7 @@ export default function ProfilePanel({
               disabled={disabled || qaEnabled}
               onPress={() =>
                 void run(async () => {
-                  const link = profileLink(profile);
+                  const link = profileShareLink(profile);
                   setShareLink(link);
                   await Share.share({ message: link, title: profile.name });
                 })
@@ -572,14 +590,18 @@ export default function ProfilePanel({
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
           <Text>Generated profile: {draft.name}</Text>
+          {importReview && <ProfileImportReview review={importReview} />}
+          {!catalogReady && <Copy>Checking available data on this phone…</Copy>}
           <Text>
-            {domains.map((d) => `${d}: ${draft.selection[d].length}`).join(' / ')} selected types.
-            Review before saving; access stays unchanged.
+            {domains
+              .map((d) => `${d}: ${importReview?.profile.selection[d].length ?? 0}`)
+              .join(' / ')}{' '}
+            selected types. Review before saving; access stays unchanged.
           </Text>
           <Button
             testID="profile-review-generated-profile"
             title="Review generated profile"
-            disabled={disabled}
+            disabled={disabled || !catalogReady}
             onPress={() => {
               edit(draft);
             }}
@@ -602,7 +624,7 @@ export default function ProfilePanel({
           profiles={state.profiles}
           session={session}
           disabled={disabled}
-          onAgentAccess={changeAgentAccess}
+          isTracking={isTracking}
           onNewProfile={() =>
             edit({
               schema: 'myself.md.profile.v1',

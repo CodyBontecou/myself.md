@@ -76,47 +76,130 @@ export function createRemoteSupport(
     mcp.registerTool(
       'support_conversations',
       {
+        title: 'Manage support conversations',
+        annotations: {
+          title: 'Manage support conversations',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
         description:
-          'List owner-approved support conversations or read/send/request data in one conversation. Data requests await owner review in the app; agents cannot approve uploads or grant themselves access. markAllRead and clearNotifications acknowledge observed unread replies without deleting conversations and return per-conversation outcomes. Archive and deletion are owner actions.',
+          'Manage owner-approved support conversations through the first-party myself.md support API. Creates conversations, sends messages, requests or declines owner-reviewed data, updates read cursors and resolution state, or returns list/read snapshots and owner handoffs. This action tool can change data or trigger support delivery and processing; it is not an automatic read-only tool. Data requests await owner review; agents cannot approve uploads or grant themselves access. markAllRead and clearNotifications acknowledge observed unread replies without deleting conversations and return per-conversation outcomes. Archive and deletion remain owner actions.',
         inputSchema: z
           .object({
-            action: z.enum([
-              'list',
-              'create',
-              'read',
-              'send',
-              'request',
-              'decline',
-              'readCursor',
-              'markAllRead',
-              'clearNotifications',
-              'resolve',
-              'reopen',
-              'ownerHandoff',
-            ]),
+            action: z
+              .enum([
+                'list',
+                'create',
+                'read',
+                'send',
+                'request',
+                'decline',
+                'readCursor',
+                'markAllRead',
+                'clearNotifications',
+                'resolve',
+                'reopen',
+                'ownerHandoff',
+              ])
+              .describe(
+                'Support operation to perform. Read/list operations return snapshots; sending, requests, acknowledgements and resolution changes have side effects. Owner-only actions require ownerHandoff.',
+              ),
             conversationId: z
               .string()
               .regex(/^[A-Za-z0-9_-]{1,100}$/)
-              .optional(),
-            title: z.string().max(120).optional(),
+              .optional()
+              .describe(
+                'Conversation ID returned by list or create, belonging to the signed-in account. Required for conversation-specific operations.',
+              ),
+            title: z
+              .string()
+              .max(120)
+              .optional()
+              .describe(
+                'Optional conversation title when creating a support conversation, up to 120 characters.',
+              ),
             ownerAction: z
               .enum(['archive', 'delete', 'agentAccess', 'autoReply', 'share', 'notifications'])
-              .optional(),
-            id: z.string().optional(),
-            text: z.string().max(1800).optional(),
-            reason: z.string().max(1000).optional(),
+              .optional()
+              .describe(
+                'Owner-only action to open on the phone when action is ownerHandoff. Agents cannot perform this action themselves.',
+              ),
+            id: z
+              .string()
+              .optional()
+              .describe(
+                'Caller-generated unique message ID retained across retries of the same message; use a new ID for a different message.',
+              ),
+            text: z
+              .string()
+              .max(1800)
+              .optional()
+              .describe(
+                'Support message text explicitly requested by the user. Do not include secrets or unapproved personal records.',
+              ),
+            reason: z
+              .string()
+              .max(1000)
+              .optional()
+              .describe(
+                'Explanation for an owner-reviewed data request or decline, up to 1000 characters.',
+              ),
             selector: z
               .object({
-                category: z.string(),
-                from: z.number().int(),
-                to: z.number().int(),
-                operations: z.array(z.string()).optional(),
-                issuesOnly: z.boolean().optional(),
+                category: z
+                  .string()
+                  .describe(
+                    'Data category for the owner-reviewed support selection; use a category reported by support discovery.',
+                  ),
+                from: z
+                  .number()
+                  .int()
+                  .describe(
+                    'Beginning of the proposed support data range as a Unix timestamp in milliseconds.',
+                  ),
+                to: z
+                  .number()
+                  .int()
+                  .describe(
+                    'End of the proposed support data range as a Unix timestamp in milliseconds.',
+                  ),
+                operations: z
+                  .array(z.string())
+                  .optional()
+                  .describe(
+                    'Optional operation names restricting the proposed support data selection.',
+                  ),
+                issuesOnly: z
+                  .boolean()
+                  .optional()
+                  .describe('If true, restrict the proposed support data selection to issues.'),
               })
-              .optional(),
-            requestId: z.string().optional(),
-            readThrough: z.number().int().optional(),
-            before: z.number().int().optional(),
+              .optional()
+              .describe(
+                'Metadata identifying the proposed support data range. This requests owner review and does not upload or approve data.',
+              ),
+            requestId: z
+              .string()
+              .optional()
+              .describe(
+                'Existing request ID returned by the corresponding initiating operation; do not create a new ID when polling or retrying it.',
+              ),
+            readThrough: z
+              .number()
+              .int()
+              .optional()
+              .describe(
+                'Sequence of the latest observed support message to acknowledge as read. Do not acknowledge messages that have not been inspected.',
+              ),
+            before: z
+              .number()
+              .int()
+              .optional()
+              .describe(
+                'Pagination sequence returned by the previous support response. Omit for the newest page; pass the returned before value for older messages.',
+              ),
           })
           .strict(),
       },

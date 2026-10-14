@@ -1,10 +1,10 @@
 # Complimentary access for existing customers
 
-Existing health.md and iso.me purchasers can claim a permanent, account-based myself.md lifetime grant. New customers continue to use the native $19.99 lifetime purchase. Grants bypass the five-use allowance for every export/query path and do not expire with native receipt verification caches.
+Existing health.md, iso.me, and paid time.md purchasers can claim a permanent, account-based myself.md lifetime grant. New customers continue to use the native $19.99 lifetime purchase. Grants bypass the five-use allowance for every export/query path and do not expire with native receipt verification caches.
 
 ## Customer journey
 
-Start from myself.md’s onboarding **Claim existing-customer access** option or the same button on its paywall. The account screen explains the steps below and the manual time.md offer. These entry points do not purchase anything or claim access without verification.
+Start from myself.md’s onboarding **Claim existing-customer access** option or the same button on its paywall. The account screen explains the steps below and the time.md activation-key verification flow. These entry points do not purchase anything or claim access without verification.
 
 1. In health.md (iPhone, iPad, or Google Play Android) or iso.me (iOS), open Settings → **Claim myself.md access**.
 2. Read the disclosure and choose **Verify purchase and continue**. Only purchase evidence is sent to myself.md; no health, location, or export data is uploaded.
@@ -43,19 +43,19 @@ Deploy the backend and dashboard before shipping the legacy-app claim buttons. K
 
 Before release, test actual sandbox StoreKit proofs for each base/family product and Health.md's paid-download path; Google Play purchased, pending, and refunded proofs; cancel/sign-in/retry; expiry; an already-claimed purchase; and access on a second myself.md device. Local tests validate policy and account isolation but cannot replace live store verification.
 
-## time.md manual grants
+## time.md paid-license claims
 
-Verify the buyer's successful, unrefunded Stripe payment first. Ask them to sign into myself.md and identify their account in your Keycloak admin console. Use the canonical `ACCOUNT_NAMESPACE|<Keycloak user ID>` subject; an email address alone is not an account ID.
+In time.md for macOS, open Settings → License & Trial → **Claim myself.md access**, or visit [the claim page](https://timemd.app/myself-claim.html) from the website footer or purchase-success page. Enter the activation key from your purchase email and choose **Verify purchase and continue**. The browser then opens the existing myself.md OAuth sign-in and explicit account confirmation described above. The phone's existing-purchases screen also links to this page.
 
-Run against the live persistent billing database, on the service host or inside the service container:
+`POST https://timemd.app/api/myself-claim` accepts `{ "activation_key": "TMD-…" }`, forwards the credential to myself.md's existing `/api/migration/proof` endpoint as `{ app: "time.md", store: "stripe", kind: "license", proof }`, and returns `{ status: "awaiting_user", claimUrl }`. It does not grant access. myself.md calls the fixed HTTPS `https://timemd.app/api/myself-proof` endpoint server-to-server; client-supplied payment IDs, email addresses, verification URLs and eligibility assertions are never trusted.
 
-```sh
-DATA_DIR=/data npm run billing:grant -- \
-  --subject 'https://myself.md/auth/realms/myselfmd|KEYCLOAK_USER_ID' \
-  --stripe-payment 'pi_VERIFIED_PAYMENT_ID'
-```
+The time.md verifier checks the activation-key hash against an active D1 license, retrieves that license's Checkout Session and current PaymentIntent through its existing Stripe secret, and requires a completed live-mode time.md desktop-license payment with a positive amount, captured successful charge, no refund (including partial refunds) and no dispute. It rechecks license revocation after Stripe I/O. Trials, free promotional licenses, sandbox payments, revoked licenses and unavailable verification do not issue a ticket. Verification does not activate a device, create a new license, send an email or upload screen-time data.
 
-Use the same payment ID for retries; it cannot unlock a second account. This is an operator command with database access, not a public grant endpoint. Tell the customer to sign in or tap **Check lifetime access** in myself.md. No Stripe connection or customer messaging is performed automatically.
+The verified payment intent is the canonical `time.md:stripe|pi_…` ownership reference, shared with prior operator grants. The existing ticket expiry, account confirmation, one-account rule and same-account retry behavior apply. As with the other complimentary migrations, the redeemed grant is permanent; later source-payment refunds do not automatically revoke it.
+
+Deploy time.md's verification endpoint before deploying the myself.md verifier; then publish the time.md claim page and updated Mac app. time.md uses its existing `DB` binding and `STRIPE_SECRET_KEY`; no new OAuth provider, secret or database migration is needed. The website and API were deployed on 12 October 2026; native Settings links still require updated app distribution. Production payment verification still needs a consenting real purchaser's activation key; fixtures cannot establish production eligibility.
+
+The operator grant command remains available as a fallback after independently verifying payment. Use the same canonical payment intent ID and account subject, never an email address. See [Cloudflare migration](cloudflare-migration.md) for hosted operator grants.
 
 ## Validation
 
@@ -68,3 +68,13 @@ Agents can use `get_lifetime_access` to inspect their authenticated account’s 
 The onboarding/account guide was exercised in an iOS release simulator in light and dark appearance at large text size, including button and edge-swipe returns to the preserved onboarding step. The paywall claim entry and modal dismissal were checked with the store product unavailable. Android and web bundles pass; Android device navigation and actual store proof verification remain release checks. The HTTP/MCP suite verifies strict inputs, account isolation, no export charge for access reads, rejected agent redemption, and entitlement observation after a user-authorized browser claim.
 
 For the hosted Cloudflare deployment, add `--worker https://myself-md.costream.workers.dev` to `npm run billing:grant`. Put the private operator `IMPORT_SECRET` in ignored `.dev.vars`, temporarily enable migration mode, run the grant after verifying the payment, then disable migration mode. This updates global purchase ownership and the account object; writing Fly’s old billing database does not grant hosted access. See [Cloudflare migration](cloudflare-migration.md).
+
+## Production claim deployment — 12 October 2026
+
+The time.md Pages release and myself.md Worker/dashboard release publish the paid-license verification and existing OAuth claim handoff. The myself.md release was built from commit `8483cab65805cd78cefc44df3283865cb2349e3f` with only the claim implementation, guide, dashboard copy and regression coverage overlaid. The baseline dashboard SHA-256 matched production before the change; unrelated local changes were excluded.
+
+Live smoke checks cover both sites, OAuth discovery, unauthenticated account/claim rejection, disabled migration access and exact deployed asset hashes. A nonexistent activation key must return HTTP 403 through all three hops (`time.md /api/myself-proof`, `myself.md /api/migration/proof`, and `time.md /api/myself-claim`) without issuing a ticket or granting access.
+
+The initial production smoke check exposed Cloudflare's rejection of fetch `redirect: error`. Both verification calls now use `redirect: manual` and reject non-success responses, so redirects are never followed. Regression tests include an upstream HTTP 302 denial. Temporary transport diagnostics were removed. Successful verification of a real customer's Stripe payment and authenticated redemption remain untested; native binaries were not published as part of this web/API rollout.
+
+Final releases: time.md Pages `fa2c3de3` and myself.md Worker `6f3977ad-0c08-4985-8348-7c366607eeb4`. All final production smoke checks passed, including HTTP 403 across the complete verification chain. The private release manifest and asset hashes are retained under `.local/time-md-claim-release/`.

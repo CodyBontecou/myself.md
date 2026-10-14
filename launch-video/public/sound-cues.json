@@ -1,0 +1,285 @@
+{
+  "fps": 30,
+  "connectionFrame": 403,
+  "resultFrame": 540,
+  "peakDb": -3.4402228879623715,
+  "rmsDb": -18.450882166684853,
+  "cues": [
+    {
+      "frame": 16,
+      "kind": "pop",
+      "gain": 0.17,
+      "pan": -0.35
+    },
+    {
+      "frame": 38,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 83,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 203,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 293,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 368,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 716,
+      "kind": "whoosh",
+      "gain": 0.16,
+      "pan": 0
+    },
+    {
+      "frame": 53,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 62,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 98,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 107,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 218,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 227,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 257,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 266,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 281,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 290,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 308,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": 0.35
+    },
+    {
+      "frame": 317,
+      "kind": "pop",
+      "gain": 0.085,
+      "pan": -0.35
+    },
+    {
+      "frame": 91,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 125,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 140,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 162,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 180,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 198,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 243,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 247,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 270,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 306,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 333,
+      "kind": "tap",
+      "gain": 0.11,
+      "pan": 0.35
+    },
+    {
+      "frame": 403,
+      "kind": "connect",
+      "gain": 0.32,
+      "pan": 0
+    },
+    {
+      "frame": 420,
+      "kind": "pop",
+      "gain": 0.12,
+      "pan": -0.3
+    },
+    {
+      "frame": 457,
+      "kind": "pop",
+      "gain": 0.09,
+      "pan": -0.25
+    },
+    {
+      "frame": 482,
+      "kind": "tick",
+      "gain": 0.085,
+      "pan": -0.15
+    },
+    {
+      "frame": 504,
+      "kind": "tick",
+      "gain": 0.085,
+      "pan": 0.15
+    },
+    {
+      "frame": 530,
+      "kind": "rise",
+      "gain": 0.13,
+      "pan": 0
+    },
+    {
+      "frame": 540,
+      "kind": "result",
+      "gain": 0.38,
+      "pan": 0
+    },
+    {
+      "frame": 563,
+      "kind": "tick",
+      "gain": 0.035,
+      "pan": -0.5
+    },
+    {
+      "frame": 566,
+      "kind": "tick",
+      "gain": 0.03900000000000001,
+      "pan": -0.35714285714285715
+    },
+    {
+      "frame": 569,
+      "kind": "tick",
+      "gain": 0.043000000000000003,
+      "pan": -0.2142857142857143
+    },
+    {
+      "frame": 572,
+      "kind": "tick",
+      "gain": 0.047,
+      "pan": -0.07142857142857145
+    },
+    {
+      "frame": 575,
+      "kind": "tick",
+      "gain": 0.051000000000000004,
+      "pan": 0.0714285714285714
+    },
+    {
+      "frame": 578,
+      "kind": "tick",
+      "gain": 0.05500000000000001,
+      "pan": 0.2142857142857143
+    },
+    {
+      "frame": 581,
+      "kind": "tick",
+      "gain": 0.059000000000000004,
+      "pan": 0.3571428571428571
+    },
+    {
+      "frame": 734,
+      "kind": "pop",
+      "gain": 0.14,
+      "pan": 0
+    },
+    {
+      "frame": 748,
+      "kind": "pop",
+      "gain": 0.14,
+      "pan": 0
+    }
+  ]
+}

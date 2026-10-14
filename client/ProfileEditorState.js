@@ -3,7 +3,7 @@ import { errorJSON } from '../packages/support-chat/errors.js';
 import { createContext, useContext, useRef, useState } from 'react';
 import { parseProfile } from '../core/profiles.js';
 
-/** @typedef {{profile:import('../core/profiles.js').ProfileDraft,id:string,onSaved:(()=>void)|undefined}} EditSession */
+/** @typedef {{profile:import('../core/profiles.js').ProfileDraft,id:string,onSaved:(()=>void)|undefined,compatibility:import('../core/profile-compatibility.js').ProfileCompatibility|undefined}} EditSession */
 const EditorContext = createContext(/** @type {ReturnType<typeof useEditorState>|null} */ (null));
 function useEditorState() {
   const [session, setSession] = useState(/** @type {EditSession|null} */ (null));
@@ -20,12 +20,12 @@ function useEditorState() {
   const [error, setError] = useState('');
   const running = useRef(false);
   const [original, setOriginal] = useState('');
-  /** @param {import('../core/profiles.js').ProfileDraft} profile @param {string} [id] @param {()=>void} [onSaved] */
-  function start(profile, id = '', onSaved) {
+  /** @param {import('../core/profiles.js').ProfileDraft} profile @param {string} [id] @param {()=>void} [onSaved] @param {import('../core/profile-compatibility.js').ProfileCompatibility} [compatibility] */
+  function start(profile, id = '', onSaved, compatibility) {
     const parsed = parseProfile(profile);
     setOriginal(JSON.stringify(parsed));
     setDraft(parsed);
-    setSession({ profile: parsed, id, onSaved });
+    setSession({ profile: parsed, id, onSaved, compatibility });
     setError('');
     setSaved(null);
   }

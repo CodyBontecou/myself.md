@@ -215,6 +215,12 @@ try {
   await store.delete('alice', newer.id);
   store.db.prepare('UPDATE exports SET created=? WHERE id=?').run(Date.now() - 31 * 86400000, id);
   store.cleanup();
+  assert.ok(store.list('alice').some((item) => item.id === id));
+  assert.deepEqual(await store.bytes(store.row('alice', id)), bytes);
+  store.db.close();
+  store = new CloudStore(path, key);
+  assert.deepEqual(await store.bytes(store.row('alice', id)), bytes);
+  await store.delete('alice', id);
   assert.throws(() => store.row('alice', id));
   console.log(
     'Cloud: account isolation, encryption, restart persistence, incomplete uploads, explicit sharing, selection revocation, bounds and retention passed.',

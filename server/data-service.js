@@ -5,10 +5,12 @@ import { PairingError } from './errors.js';
 import {
   parseProfile,
   profileLink,
+  profileShareLink,
   agentProfileAllows,
   parseAgentPermissions,
 } from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
+import { compatibleProfile } from '../core/profile-compatibility.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
 import { createFeedbackService, feedbackSchema } from './feedback-service.js';
 import {
@@ -23,18 +25,80 @@ const ttl = 300000;
 const domainSchema = z.enum(domains);
 const exportSchema = z.enum(exportSchemas().versions.map((version) => version.id));
 const queryFields = {
-  requestKey: z.string().min(1).max(200).optional(),
-  deviceId: z.string().uuid(),
-  profileId: z.string().min(1).max(100),
-  domain: domainSchema,
-  type: z.string().min(1).max(160),
-  source: z.literal('native').default('native'),
-  start: z.iso.datetime(),
-  end: z.iso.datetime(),
-  cursor: z.string().max(16000).default(''),
-  limit: z.number().int().min(1).max(50).default(50),
-  format: z.enum(['json', 'jsonl']).default('json'),
-  schema: exportSchema.default(defaultExportSchema),
+  requestKey: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      'Caller-chosen retry key. Reuse with identical query arguments to retrieve the original live job without another allowance reservation; use a new key for new work.',
+    ),
+  deviceId: z
+    .string()
+    .uuid()
+    .describe(
+      'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+    ),
+  profileId: z
+    .string()
+    .min(1)
+    .max(100)
+    .describe(
+      'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+    ),
+  domain: domainSchema.describe(
+    'Data domain from get_phone_data_catalog. The chosen profile and phone-wide grant must both permit it.',
+  ),
+  type: z
+    .string()
+    .min(1)
+    .max(160)
+    .describe(
+      'Exact native type identifier from the selected catalog domain, without the native: prefix. Do not invent type names.',
+    ),
+  source: z
+    .literal('native')
+    .default('native')
+    .describe(
+      "Capture adapter; native reads data through the phone's operating-system APIs under existing OS permissions.",
+    ),
+  start: z.iso
+    .datetime()
+    .describe(
+      'Inclusive start of the query interval as a UTC ISO 8601 timestamp. The positive interval must be at most 31 days.',
+    ),
+  end: z.iso
+    .datetime()
+    .describe(
+      'End of the query interval as a UTC ISO 8601 timestamp, later than start and no more than 31 days after it.',
+    ),
+  cursor: z
+    .string()
+    .max(16000)
+    .default('')
+    .describe(
+      'Pagination cursor returned by the preceding response. Omit for the first page; preserve the other query arguments when continuing.',
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(50)
+    .describe(
+      'Maximum records in this page, up to 50. Follow the returned nextCursor to continue.',
+    ),
+  format: z
+    .enum(['json', 'jsonl'])
+    .default('json')
+    .describe(
+      'Response serialization format; JSON returns structured records and JSONL returns one serialized record per line.',
+    ),
+  schema: exportSchema
+    .default(defaultExportSchema)
+    .describe(
+      'Export schema version from list_export_schemas; omit to use the released default version.',
+    ),
 };
 export const phoneQueryBodySchema = z.toJSONSchema(
   z.object(queryFields).omit({ requestKey: true }),
@@ -49,45 +113,143 @@ const querySchema = z
     { message: 'Use a positive range of at most 31 days; paginate longer exports.' },
   );
 const profileSchema = z.object({
-  schema: z.literal('myself.md.profile.v1'),
-  name: z.string().min(1).max(80),
+  schema: z
+    .literal('myself.md.profile.v1')
+    .describe('Profile document version. Use the literal myself.md.profile.v1.'),
+  name: z
+    .string()
+    .min(1)
+    .max(80)
+    .describe(
+      'Human-readable profile name shown to the phone owner when reviewing the proposed configuration.',
+    ),
   export: z
     .object({
-      schema: exportSchema.optional(),
+      schema: exportSchema
+        .optional()
+        .describe(
+          'Export schema version from list_export_schemas; omit to use the released default version.',
+        ),
       formats: z
         .array(z.enum(['json', 'jsonl']))
         .min(1)
-        .max(2),
-      lookbackDays: z.number().int().min(1).max(30),
-      includeToday: z.boolean(),
-      folderName: z.string().max(64),
-      filenameTemplate: z.string().max(100),
-      formatFolders: z.boolean(),
-      destination: z.enum(['local', 'http', 'cloud']).optional(),
-      httpUrl: z.string().nullable().optional(),
+        .max(2)
+        .describe('Requested file formats; choose JSON, JSONL or both.'),
+      lookbackDays: z
+        .number()
+        .int()
+        .min(1)
+        .max(30)
+        .describe('Number of completed days to include in scheduled exports, from 1 to 30.'),
+      includeToday: z
+        .boolean()
+        .describe('Whether the proposed export includes the current incomplete day.'),
+      folderName: z
+        .string()
+        .max(64)
+        .describe(
+          'Proposed export folder name; the phone validates and applies it only after owner save.',
+        ),
+      filenameTemplate: z
+        .string()
+        .max(100)
+        .describe("Filename template for exported files; use the app's supported template syntax."),
+      formatFolders: z
+        .boolean()
+        .describe('Whether to separate JSON and JSONL files into format-specific folders.'),
+      destination: z
+        .enum(['local', 'http', 'cloud'])
+        .optional()
+        .describe(
+          'Proposed export destination: local files, HTTP upload or myself.md cloud. Existing eligibility and owner approval still apply.',
+        ),
+      httpUrl: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          'Owner-reviewed HTTP export destination, or null when no URL is configured. Never include credentials in this value.',
+        ),
     })
     .partial()
-    .optional(),
+    .optional()
+    .describe(
+      'Optional export settings proposed for owner review. These settings do not grant uploads, sharing or purchase access.',
+    ),
   schedule: z
     .object({
-      frequency: z.enum(['daily', 'weekly', 'custom']),
-      interval: z.number().int().min(1).max(365),
-      unit: z.enum(['day', 'week', 'month']),
-      anchorDate: z.string().nullable(),
-      hour: z.number().int().min(0).max(23),
-      minute: z.number().int().min(0).max(59),
-      weekday: z.number().int().min(1).max(7),
-      todayRefresh: z.boolean(),
-      refreshHours: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+      frequency: z
+        .enum(['daily', 'weekly', 'custom'])
+        .describe('Daily, weekly or custom calendar cadence for the proposed schedule.'),
+      interval: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .describe('Positive number of calendar units between custom scheduled exports, up to 365.'),
+      unit: z
+        .enum(['day', 'week', 'month'])
+        .describe('Calendar unit used by a custom schedule interval.'),
+      anchorDate: z
+        .string()
+        .nullable()
+        .describe('Custom schedule anchor in YYYY-MM-DD form, or null to use the default anchor.'),
+      hour: z
+        .number()
+        .int()
+        .min(0)
+        .max(23)
+        .describe('Phone-local hour of day, from 0 to 23, for scheduled export execution.'),
+      minute: z
+        .number()
+        .int()
+        .min(0)
+        .max(59)
+        .describe('Phone-local minute within the scheduled hour, from 0 to 59.'),
+      weekday: z
+        .number()
+        .int()
+        .min(1)
+        .max(7)
+        .describe("Weekly schedule day using the app's 1-to-7 weekday convention."),
+      todayRefresh: z
+        .boolean()
+        .describe('Whether to request periodic refresh of the incomplete current day.'),
+      refreshHours: z
+        .union([z.literal(3), z.literal(6), z.literal(12)])
+        .describe('Hours between current-day refresh attempts: 3, 6 or 12.'),
     })
-    .optional(),
-  selection: z.object({
-    health: z.array(z.string()).max(300),
-    time: z.array(z.string()).max(300),
-    location: z.array(z.string()).max(300),
-  }),
+    .optional()
+    .describe(
+      'Proposed phone-local export schedule; it takes effect only after the owner reviews and saves it.',
+    ),
+  selection: z
+    .object({
+      health: z
+        .array(z.string())
+        .max(300)
+        .describe(
+          'Health data type keys selected from the phone catalog; an empty array selects none.',
+        ),
+      time: z
+        .array(z.string())
+        .max(300)
+        .describe(
+          'Screen-time data type keys selected from the phone catalog; an empty array selects none.',
+        ),
+      location: z
+        .array(z.string())
+        .max(300)
+        .describe(
+          'Recorded-location data type keys selected from the phone catalog; an empty array selects none.',
+        ),
+    })
+    .describe(
+      'Exact native:TYPE keys from the phone catalog, grouped by domain. Empty arrays select no data; selections do not grant agent or OS access.',
+    ),
 });
 const catalogSchema = z.object({
+  locationTracking: z.boolean().optional(),
   diagnostics: debugReportSchema.optional(),
   feedback: feedbackSchema.optional(),
   dispatch: z.boolean().default(true),
@@ -228,32 +390,79 @@ export function createDataService({
       }
     }
   }
-  /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
-  function registerDataTools(mcp, subject, client = null) {
+  /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] @param {{chatgpt?:boolean}} [options] */
+  function registerDataTools(mcp, subject, client = null, { chatgpt = false } = {}) {
     registerDebugTools(mcp, subject, own, phones);
     feedback.register(mcp, subject, client);
     mcp.registerTool(
       'list_phone_logs',
       {
+        title: 'Browse phone logs',
         description:
           'Browse owned-phone logs using the same All/App/Exports/Agents categories as the mobile Logs tab. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require phone diagnostics consent, an enabled profile with App logs permission, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of the authorized JSON metadata, matching mobile search; it applies to each loaded page after ownership and consent projection. Use selectedIds to select up to 350 unique IDs from this page; unavailableIds reports missing or inaccessible entries without fetching beyond current grants. Use format=jsonl for copyable raw JSON lines equivalent to the phone’s Raw view. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Structured entries include details; no personal records or local artifact paths.',
         inputSchema: z
           .object({
-            deviceId: z.string().uuid(),
-            historyOffset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
-            category: z.enum(['all', 'app', 'exports', 'agents']).default('all'),
-            issues: z.boolean().default(false),
-            query: z.string().max(200).optional(),
-            format: z.enum(['structured', 'jsonl']).default('structured'),
-            profileId: z.string().min(1).max(100).optional(),
+            deviceId: z
+              .string()
+              .uuid()
+              .describe(
+                'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+              ),
+            historyOffset: z
+              .number()
+              .int()
+              .min(0)
+              .max(Number.MAX_SAFE_INTEGER)
+              .default(0)
+              .describe(
+                "Zero-based offset for saved history pagination. Use the response's continuation metadata; omit for the first page.",
+              ),
+            category: z
+              .enum(['all', 'app', 'exports', 'agents'])
+              .default('all')
+              .describe(
+                'Log category to include: all events, app events, exports or agent activity.',
+              ),
+            issues: z
+              .boolean()
+              .default(false)
+              .describe('If true, return only log entries classified as issues.'),
+            query: z
+              .string()
+              .max(200)
+              .optional()
+              .describe(
+                'Optional text to search within the permitted log entries, up to 200 characters.',
+              ),
+            format: z
+              .enum(['structured', 'jsonl'])
+              .default('structured')
+              .describe('Return structured log entries or their permitted JSONL serialization.'),
+            profileId: z
+              .string()
+              .min(1)
+              .max(100)
+              .optional()
+              .describe(
+                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+              ),
             selectedIds: z
               .array(z.string().min(1).max(1000))
               .max(350)
               .refine((ids) => new Set(ids).size === ids.length)
-              .optional(),
+              .optional()
+              .describe(
+                'Optional unique log IDs returned by a prior logs read, restricting the result to those entries.',
+              ),
           })
           .strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Browse phone logs',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({
         deviceId,
@@ -293,23 +502,49 @@ export function createDataService({
     mcp.registerTool(
       'list_export_schemas',
       {
+        title: 'List export schemas',
         description:
           'Discover released export contracts, the recommended version, JSON Schema definitions, JSONL record definitions, examples and changes. Profiles pin an explicit version; new releases never upgrade saved profiles. Does not read personal data.',
         inputSchema: z.object({}),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'List export schemas',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => content(exportSchemas()),
     );
     mcp.registerTool(
       'list_phone_export_history',
       {
+        title: 'List phone export history',
         description:
           'List saved phone export and agent access metadata for an owned phone, newest first, in pages of 50. Includes failed, partial and interrupted exports. Open myself.md to sync recent phone history; offline results may be stale. No data records or local file paths are returned.',
         inputSchema: z.object({
-          deviceId: z.string().uuid(),
-          offset: z.number().int().min(0).default(0),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          offset: z
+            .number()
+            .int()
+            .min(0)
+            .default(0)
+            .describe(
+              'Zero-based offset into export history; omit for the newest page and continue using the returned pagination state.',
+            ),
         }),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'List phone export history',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deviceId, offset }) => {
         own(deviceId, subject);
@@ -319,13 +554,31 @@ export function createDataService({
     mcp.registerTool(
       'diagnose_phone_export',
       {
+        title: 'Diagnose phone export',
         description:
           'Inspect one saved export failure, partial result or interruption, compare its snapshot with the latest phone configuration, and return deep links to review the existing profile and source permissions on the phone. Start with list_phone_export_history. Current configuration is evidence, not a confirmed cause. Links navigate only; the user reviews and saves fixes in myself.md. Use create_phone_export_profile to propose replacement configuration for review.',
         inputSchema: z.object({
-          deviceId: z.string().uuid(),
-          eventId: z.string().min(1).max(2000),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          eventId: z
+            .string()
+            .min(1)
+            .max(2000)
+            .describe(
+              'Export event ID returned by list_phone_export_history for the same owned phone.',
+            ),
         }),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Diagnose phone export',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deviceId, eventId }) => {
         own(deviceId, subject);
@@ -351,11 +604,68 @@ export function createDataService({
       },
     );
     mcp.registerTool(
+      'preview_phone_profile_import',
+      {
+        title: 'Preview profile import',
+        description:
+          'Preview a profile import on an owned online phone. Automatically match explicit equivalent data types against its current selectable catalog and report unsupported selections excluded from the proposed profile. No save, permission grant or schedule opt-in occurs. Use create_phone_export_profile to send the original profile for the same review on the phone.',
+        inputSchema: z.object({
+          profile: profileSchema.describe(
+            'Proposed versioned profile configuration. Preview compatibility first; delivery and deep links still require the phone owner to save it.',
+          ),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+        }),
+        annotations: {
+          title: 'Preview profile import',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ profile, deviceId }) => {
+        own(deviceId, subject);
+        const phone = phones.get(deviceId);
+        if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
+          throw new PairingError(409, 'Phone is offline. Open myself.md first.');
+        if (phone.catalog.domains.some((d) => !d.selectableTypes))
+          throw new PairingError(409, 'Update the phone catalog before reviewing this import.');
+        const types = /** @type {Record<import('../core/data.js').Domain,string[]>} */ (
+          Object.fromEntries(phone.catalog.domains.map((d) => [d.domain, d.selectableTypes]))
+        );
+        return content({ deviceId, ...compatibleProfile(profile, types), requiresUserSave: true });
+      },
+    );
+    mcp.registerTool(
       'create_phone_export_profile',
       {
+        title: 'Propose phone export profile',
+        annotations: {
+          title: 'Propose phone export profile',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         description:
-          'Generate an explicit per-type export profile and a myselfmd deep link. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
-        inputSchema: z.object({ profile: profileSchema, deviceId: z.string().uuid().optional() }),
+          'Generate an explicit per-type export profile, a native deepLink and an email-compatible HTTPS shareLink. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
+        inputSchema: z.object({
+          profile: profileSchema.describe(
+            'Proposed versioned profile configuration. Preview compatibility first; delivery and deep links still require the phone owner to save it.',
+          ),
+          deviceId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+        }),
       },
       async ({ profile, deviceId }) => {
         const draft = parseProfile({
@@ -363,7 +673,8 @@ export function createDataService({
           export: { ...profile.export, schema: profile.export?.schema ?? defaultExportSchema },
         });
         const deepLink = profileLink(draft);
-        if (!deviceId) return content({ profile: draft, deepLink, delivery: null });
+        const shareLink = profileShareLink(draft);
+        if (!deviceId) return content({ profile: draft, deepLink, shareLink, delivery: null });
         own(deviceId, subject);
         if (
           [...proposals.values()].filter((p) => p.subject === subject && p.expires > Date.now())
@@ -376,6 +687,7 @@ export function createDataService({
         return content({
           profile: draft,
           deepLink,
+          shareLink,
           delivery: { id, status: 'queued', expiresAt: expires },
         });
       },
@@ -383,10 +695,24 @@ export function createDataService({
     mcp.registerTool(
       'get_phone_profile_delivery',
       {
+        title: 'Check profile delivery',
         description:
           'Check whether a generated profile was received for review on the phone. Delivered does not mean saved or granted. Pending deliveries expire after five minutes.',
-        inputSchema: z.object({ deliveryId: z.string().uuid() }),
-        annotations: { readOnlyHint: true },
+        inputSchema: z.object({
+          deliveryId: z
+            .string()
+            .uuid()
+            .describe(
+              'Delivery UUID returned by create_phone_export_profile. Poll this ID to distinguish queued and owner-reviewed outcomes before expiry.',
+            ),
+        }),
+        annotations: {
+          title: 'Check profile delivery',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deliveryId }) => {
         const p = proposals.get(deliveryId);
@@ -399,10 +725,24 @@ export function createDataService({
     mcp.registerTool(
       'get_phone_data_catalog',
       {
+        title: 'Discover approved phone data',
         description:
           'Discover phone data types, profiles with agentAccess approval and independent agentPermissions, explicit domain grants and collection limits before querying. Select an approved profile and intersect its selections with domain types. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
-        inputSchema: z.object({ deviceId: z.string().uuid() }),
-        annotations: { readOnlyHint: true },
+        inputSchema: z.object({
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+        }),
+        annotations: {
+          title: 'Discover approved phone data',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deviceId }) => {
         own(deviceId, subject);
@@ -412,7 +752,21 @@ export function createDataService({
           online: Boolean(p && p.seen > Date.now() - 15000),
           lastSeen: p?.seen ?? null,
           catalog: p
-            ? { ...p.catalog, diagnostics: phoneDebugState(deviceId, p).report ?? undefined }
+            ? chatgpt
+              ? {
+                  domains: p.catalog.domains,
+                  locationTracking: p.catalog.locationTracking,
+                  profiles: p.catalog.profiles.map(
+                    ({ id, name, selection, agentAccess, agentPermissions }) => ({
+                      id,
+                      name,
+                      selection,
+                      agentAccess,
+                      agentPermissions,
+                    }),
+                  ),
+                }
+              : { ...p.catalog, diagnostics: phoneDebugState(deviceId, p).report ?? undefined }
             : null,
         });
       },
@@ -420,12 +774,35 @@ export function createDataService({
     mcp.registerTool(
       'request_phone_profile_agent_access',
       {
+        title: 'Review profile agent access',
+        annotations: {
+          title: 'Review profile agent access',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Initiate a user approval handoff for an existing owned phone profile. Open the returned profile link on the phone and have the user set Allow agent access. This tool never changes consent. Verify the saved outcome with get_phone_data_catalog; an offline catalog may be stale.',
         inputSchema: z.object({
-          deviceId: z.string().uuid(),
-          profileId: z.string().min(1).max(100),
-          enabled: z.boolean(),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          profileId: z
+            .string()
+            .min(1)
+            .max(100)
+            .describe(
+              'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+            ),
+          enabled: z
+            .boolean()
+            .describe(
+              "Requested enabled state. This initiates the tool's owner approval flow; it cannot grant consent by itself.",
+            ),
         }),
       },
       async ({ deviceId, profileId, enabled }) => {
@@ -455,20 +832,58 @@ export function createDataService({
     mcp.registerTool(
       'request_phone_profile_permissions',
       {
+        title: 'Review profile data permissions',
+        annotations: {
+          title: 'Review profile data permissions',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Request owner review of independent Health, Screen time, Location and App logs permissions for an existing phone profile. Never changes consent. The owner uses Profile → Agent permissions; verify via a fresh get_phone_data_catalog. Export selections, phone-wide grants, OS access and diagnostics consent remain separate.',
         inputSchema: z
           .object({
-            deviceId: z.string().uuid(),
-            profileId: z.string().min(1).max(100),
+            deviceId: z
+              .string()
+              .uuid()
+              .describe(
+                'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+              ),
+            profileId: z
+              .string()
+              .min(1)
+              .max(100)
+              .describe(
+                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+              ),
             permissions: z
               .object({
-                health: z.boolean(),
-                time: z.boolean(),
-                location: z.boolean(),
-                logs: z.boolean(),
+                health: z
+                  .boolean()
+                  .describe(
+                    'Requested health agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                  ),
+                time: z
+                  .boolean()
+                  .describe(
+                    'Requested time agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                  ),
+                location: z
+                  .boolean()
+                  .describe(
+                    'Requested location agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                  ),
+                logs: z
+                  .boolean()
+                  .describe(
+                    'Requested permission for agent access to app logs; the owner must approve it on the phone.',
+                  ),
               })
-              .strict(),
+              .strict()
+              .describe(
+                'Requested independent per-domain agent permissions. The phone owner must confirm changes; existing selections and OS permissions remain separate.',
+              ),
           })
           .strict(),
       },
@@ -506,10 +921,17 @@ export function createDataService({
     mcp.registerTool(
       'query_phone_data',
       {
+        title: 'Queue approved phone query',
         description:
-          'Ask the connected phone to read one discovered data type in a UTC interval under any catalog profileId with agentAccess true. Read-only; phone-side consent required. Returns requestId, then poll get_phone_request. Records keep native units and metadata; sources differ. Use nextCursor for every page, and separate date windows for ranges over 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: reuse identical arguments to retrieve the original live job without another charge. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Keep keys unique; activity fingerprints are retained for 90 days.',
+          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with agentAccess true. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; ranges are limited to 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
         inputSchema: querySchema,
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Queue approved phone query',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
       },
       async (query) => {
         own(query.deviceId, subject);
@@ -617,10 +1039,24 @@ export function createDataService({
     mcp.registerTool(
       'get_phone_request',
       {
+        title: 'Read phone query result',
         description:
           'Retrieve a live phone query/export page. Poll while queued/running; stop on failed or expired. Complete results include source fields, capture warnings, and a nextCursor. Never interpret a partial/permission-limited page as all phone data.',
-        inputSchema: z.object({ requestId: z.string().uuid() }),
-        annotations: { readOnlyHint: true },
+        inputSchema: z.object({
+          requestId: z
+            .string()
+            .uuid()
+            .describe(
+              'Existing request ID returned by the corresponding initiating operation; do not create a new ID when polling or retrying it.',
+            ),
+        }),
+        annotations: {
+          title: 'Read phone query result',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ requestId }) => {
         const job = jobs.get(requestId);
@@ -636,15 +1072,34 @@ export function createDataService({
           status: job.state,
           expiresAt: job.expires,
           result: job.result ?? null,
-          error: job.error ?? null,
+          error:
+            chatgpt && job.error
+              ? 'Phone capture failed. Review the failure on your device.'
+              : (job.error ?? null),
         });
       },
     );
     mcp.registerTool(
       'forget_phone_request',
       {
-        description: 'Immediately delete a query response from server memory.',
-        inputSchema: z.object({ requestId: z.string().uuid() }),
+        title: 'Discard phone query',
+        annotations: {
+          title: 'Discard phone query',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        description:
+          'Discard an owned live query and its response from server memory. Pending work is cancelled and its allowance reservation released; completed capture remains in activity history. Does not delete native phone records or stored cloud exports. Repeating the same requestId does not create work.',
+        inputSchema: z.object({
+          requestId: z
+            .string()
+            .uuid()
+            .describe(
+              'Existing request ID returned by the corresponding initiating operation; do not create a new ID when polling or retrying it.',
+            ),
+        }),
       },
       async ({ requestId }) => {
         const job = jobs.get(requestId);

@@ -1,3 +1,7 @@
+import { chatgptMcpPath, restrictChatgptTools } from './chatgpt-tools.js';
+import { readAccountProfile } from './account-profile.js';
+import { loginProvider } from './account-links.js';
+import { reviewerUserId } from './reviewer.js';
 import {
   publicResponse,
   unknownPublicPath,
@@ -37,7 +41,7 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
@@ -50,6 +54,7 @@ export function createApplication(
     supportV1Api,
     registerSupportV1Tools,
     accountApi,
+    accountLoginsApi,
     qrPng,
     billing,
     billingApi,
@@ -116,7 +121,7 @@ export function createApplication(
   const metadata = {
     resource,
     authorization_servers: [issuer],
-    scopes_supported: ['myselfmd'],
+    scopes_supported: ['myselfmd', 'offline_access'],
     bearer_methods_supported: ['header'],
   };
   /** @param {string} subject @returns {Promise<import('../core/account-deletion.js').DeletionStatus>} */
@@ -131,24 +136,85 @@ export function createApplication(
             'Account deletion requires the hosted identity service. Contact the service operator to enable it.',
         };
   }
-  /** @param {string} subject @param {string|null} client */
-  async function makeMcp(subject, client) {
-    const mcp = new McpServer({ name: 'myself.md', version: '1.0.0' });
+  /** @param {string} subject @param {string|null} client @param {string} token @param {string[]} scopes @param {boolean} [chatgpt] */
+  async function makeMcp(subject, client, token, scopes, chatgpt = false) {
+    const mcp = new McpServer({
+      name: 'myself.md',
+      title: 'myself.md',
+      version: '1.0.0',
+      description:
+        'Owner-approved health, screen-time and recorded location data. Discover grants and schemas before querying phones or reading shared cloud exports.',
+      websiteUrl: 'https://myself.md',
+      icons: [
+        {
+          src: 'https://myself.md/dashboard/favicon.png',
+          mimeType: 'image/png',
+          sizes: ['256x256'],
+        },
+      ],
+    });
+    if (chatgpt) restrictChatgptTools(mcp);
+    mcp.registerTool(
+      'get_account_profile',
+      {
+        title: 'Read account profile',
+        description:
+          'Read your signed-in account name, email and avatar URL, limited to the profile/email scopes you authorized. Missing details are null. Contains no credentials and cannot read another account.',
+        inputSchema: z.object({}).strict(),
+        annotations: {
+          title: 'Read account profile',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async () => {
+        const result = await readAccountProfile(
+          issuer ?? '',
+          token,
+          subject.slice(accountNamespace.length + 1),
+          scopes,
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      },
+    );
     mcp.registerTool(
       'get_public_dataset_catalog',
       {
+        title: 'Browse supported datasets',
         description:
           'Read the public dataset adapter catalog. Contains no personal records. Follow nextCursor until hasMore is false.',
         inputSchema: z
           .object({
-            limit: z.number().int().min(1).max(3).optional(),
+            limit: z
+              .number()
+              .int()
+              .min(1)
+              .max(3)
+              .optional()
+              .describe(
+                'Maximum public datasets per page, from 1 to 3. Follow nextCursor while hasMore is true.',
+              ),
             cursor: z
               .string()
               .regex(/^catalog-v1:[0-3]$/)
-              .optional(),
+              .optional()
+              .describe(
+                'Pagination cursor returned by the preceding response. Omit for the first page; preserve the other query arguments when continuing.',
+              ),
           })
           .strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Browse supported datasets',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async (input) => {
         const params = new URLSearchParams();
@@ -166,15 +232,22 @@ export function createApplication(
     mcp.registerTool(
       'get_public_documentation',
       {
-        description: 'Read the public getting-started guide and full API reference.',
+        title: 'Read setup and API documentation',
+        description: 'Read the public getting-started guide, full API reference and service terms.',
         inputSchema: z.object({}).strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Read setup and API documentation',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => ({
         content: [
           {
             type: 'text',
-            text: `${publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/docs/reference', 'text/markdown', issuer ?? '')?.body ?? ''}`,
+            text: `${publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/docs/reference', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/terms', 'text/markdown', issuer ?? '')?.body ?? ''}`,
           },
         ],
       }),
@@ -183,6 +256,18 @@ export function createApplication(
       mcp.registerTool(
         name,
         {
+          title:
+            name === 'get_account_deletion' ? 'Check account deletion' : 'Review account deletion',
+          annotations: {
+            title:
+              name === 'get_account_deletion'
+                ? 'Check account deletion'
+                : 'Review account deletion',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
           description:
             name === 'get_account_deletion'
               ? 'Inspect account deletion status, permanent effects and retained purchase identifiers.'
@@ -213,12 +298,30 @@ export function createApplication(
     mcp.registerTool(
       'delete_account',
       {
+        title: 'Delete your account',
         description:
           'Permanently delete the authenticated myself.md account and associated cloud data. Obtain the user’s explicit deletion confirmation first; inspect get_account_deletion for the effects and exact subject. Account-linked lifetime access is lost. Safe to retry with the same subject. Completion requires all cleanup to succeed; the receipt verifies pending cleanup after tokens are revoked.',
         inputSchema: z
-          .object({ subject: z.literal(subject), confirmation: z.literal('DELETE') })
+          .object({
+            subject: z
+              .literal(subject)
+              .describe(
+                "Exact authenticated account subject returned by get_account_deletion. Requires the user's explicit permanent-deletion confirmation.",
+              ),
+            confirmation: z
+              .literal('DELETE')
+              .describe(
+                'The literal DELETE, supplied only after the user explicitly confirms the permanent effects described by get_account_deletion.',
+              ),
+          })
           .strict(),
-        annotations: { destructiveHint: true, idempotentHint: true },
+        annotations: {
+          title: 'Delete your account',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => {
         if (!accountApi)
@@ -231,13 +334,92 @@ export function createApplication(
       },
     );
     if (!['active', 'unavailable'].includes((await deletionStatus(subject)).state)) return mcp;
+    for (const name of ['get_account_logins', 'request_account_link']) {
+      mcp.registerTool(
+        name,
+        {
+          title:
+            name === 'get_account_logins' ? 'List connected logins' : 'Review login connection',
+
+          description:
+            name === 'get_account_logins'
+              ? 'List connected Apple, GitHub and Google logins and available providers for this account. Contains no provider credentials.'
+              : 'Initiate connecting another login to this same account. The owner must open the handoff, sign in to the original account and authenticate with the selected provider. This tool cannot link accounts or merge existing accounts. Verify completion with get_account_logins.',
+          inputSchema:
+            name === 'get_account_logins'
+              ? z.object({}).strict()
+              : z
+                  .object({
+                    provider: loginProvider.describe(
+                      'Login provider to review for this account. Select an available provider from get_account_logins; the owner completes authentication.',
+                    ),
+                  })
+                  .strict(),
+          annotations: {
+            title:
+              name === 'get_account_logins' ? 'List connected logins' : 'Review login connection',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+        },
+        async (input) => {
+          if (!accountLoginsApi)
+            throw new PairingError(503, 'Connected logins require the hosted identity service.');
+          const result = await accountLoginsApi(subject);
+          const provider = 'provider' in input ? loginProvider.parse(input.provider) : undefined;
+          if (
+            provider &&
+            !result.providers.some((item) => item.provider === provider && item.available)
+          )
+            throw new PairingError(400, 'Provider is unavailable.');
+          const url = new URL(result.handoff.url);
+          if (provider) url.searchParams.set('provider', provider);
+          const connected = Boolean(
+            provider &&
+            result.providers.some((item) => item.provider === provider && item.connected),
+          );
+          const output = {
+            ...result,
+            handoff: {
+              ...result.handoff,
+              url: url.href,
+              status: connected ? 'completed' : 'awaiting_user',
+              requiresUser: !connected,
+            },
+            ...(provider
+              ? {
+                  provider,
+                  status: result.providers.some(
+                    (item) => item.provider === provider && item.connected,
+                  )
+                    ? 'completed'
+                    : 'awaiting_user',
+                }
+              : {}),
+          };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(output) }],
+            structuredContent: output,
+          };
+        },
+      );
+    }
     mcp.registerTool(
       'get_privacy_policy',
       {
+        title: 'Read privacy policy',
         description:
           'Read the public privacy policy and support contact, including health/location collection, cloud retention, deletion and copies held by AI providers. No data grant or user data is needed.',
         inputSchema: z.object({}).strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Read privacy policy',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => ({
         content: [{ type: 'text', text: JSON.stringify(privacyPolicy) }],
@@ -247,6 +429,14 @@ export function createApplication(
     mcp.registerTool(
       'get_lifetime_access',
       {
+        title: 'Check lifetime access',
+        annotations: {
+          title: 'Check lifetime access',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Check lifetime access and export allowance for this account, and guide eligible existing customers through a user-completed claim. This read does not consume an export or grant access. Sign-in and purchase verification require the user; call again to verify the resulting entitlement.',
         inputSchema: z.object({}).strict(),
@@ -276,6 +466,14 @@ export function createApplication(
     mcp.registerTool(
       'create_phone_pairing',
       {
+        title: 'Create phone pairing',
+        annotations: {
+          title: 'Create phone pairing',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         description:
           'Generate a five-minute, one-use QR image. Scan with myself.md and sign in with this same account.',
         inputSchema: z.object({}),
@@ -305,8 +503,23 @@ export function createApplication(
     mcp.registerTool(
       'get_pairing_status',
       {
+        title: 'Check phone pairing',
+        annotations: {
+          title: 'Check phone pairing',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description: 'Check whether a QR pairing was confirmed.',
-        inputSchema: z.object({ pairingId: z.string().uuid() }),
+        inputSchema: z.object({
+          pairingId: z
+            .string()
+            .uuid()
+            .describe(
+              'Pairing UUID returned by create_phone_pairing. Poll this ID to verify that phone pairing actually completed.',
+            ),
+        }),
       },
       async ({ pairingId }) => ({
         content: [{ type: 'text', text: JSON.stringify(status(pairingId, subject)) }],
@@ -314,14 +527,40 @@ export function createApplication(
     );
     mcp.registerTool(
       'list_connected_phones',
-      { description: 'List phones connected to your account.', inputSchema: z.object({}) },
+      {
+        title: 'List connected phones',
+        annotations: {
+          title: 'List connected phones',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        description: 'List phones connected to your account.',
+        inputSchema: z.object({}),
+      },
       async () => ({ content: [{ type: 'text', text: JSON.stringify(devices(subject)) }] }),
     );
     mcp.registerTool(
       'disconnect_phone',
       {
+        title: 'Disconnect phone',
+        annotations: {
+          title: 'Disconnect phone',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description: 'Disconnect a phone from your account.',
-        inputSchema: z.object({ deviceId: z.string().uuid() }),
+        inputSchema: z.object({
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+        }),
       },
       async ({ deviceId }) => {
         disconnect(deviceId, subject);
@@ -329,25 +568,36 @@ export function createApplication(
         return { content: [{ type: 'text', text: 'Disconnected.' }] };
       },
     );
-    registerDataTools(mcp, subject, client);
+    registerDataTools(mcp, subject, client, { chatgpt });
     registerCloudTools(mcp, subject, client);
     registerSupportTools?.(mcp, subject, client);
     if (registerSupportV1Tools) registerSupportV1Tools(mcp, subject, client);
     return mcp;
   }
-  const handler = toNodeHandler(
-    createMcpHandler((ctx) => {
-      const subject = ctx.authInfo?.extra?.subject;
-      if (typeof subject !== 'string') throw new Error('Authentication required.');
-      return makeMcp(subject, ctx.authInfo?.clientId ?? null);
-    }),
-  );
+  /** @param {boolean} chatgpt */
+  const mcpHandler = (chatgpt) =>
+    toNodeHandler(
+      createMcpHandler((ctx) => {
+        const subject = ctx.authInfo?.extra?.subject;
+        if (typeof subject !== 'string') throw new Error('Authentication required.');
+        return makeMcp(
+          subject,
+          ctx.authInfo?.clientId ?? null,
+          ctx.authInfo?.token ?? '',
+          ctx.authInfo?.scopes ?? [],
+          chatgpt,
+        );
+      }),
+    );
+  const handler = mcpHandler(false);
+  const chatgptHandler = mcpHandler(true);
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', publicUrl);
       const requestOrigin =
         publicUrls.find((origin) => new URL(origin).host === req.headers.host) ?? publicUrl;
-      const requestResource = `${requestOrigin}/mcp`;
+      const chatgpt = url.pathname === chatgptMcpPath;
+      const requestResource = `${requestOrigin}${chatgpt ? chatgptMcpPath : '/mcp'}`;
       if (req.method === 'GET' || req.method === 'HEAD') {
         const limit = publicApiPath(url.pathname)
           ? limitPublicRead(req.socket.remoteAddress ?? 'unknown')
@@ -546,20 +796,23 @@ export function createApplication(
       if (!token) {
         res.setHeader(
           'WWW-Authenticate',
-          `Bearer resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource/mcp"`,
+          `Bearer resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource${chatgpt ? chatgptMcpPath : '/mcp'}"`,
         );
         json(res, 401, { error: 'OAuth sign-in required.' });
         return;
       }
       let payload;
       try {
-        ({ payload } = await jwtVerify(token, jwks, { issuer, audience: resources }));
+        ({ payload } = await jwtVerify(token, jwks, {
+          issuer,
+          audience: chatgpt ? publicUrls.map((origin) => `${origin}${chatgptMcpPath}`) : resources,
+        }));
         // Keycloak used azp; RFC 9068 OAuth access tokens use client_id.
         payload.azp ??= payload.client_id;
       } catch {
         res.setHeader(
           'WWW-Authenticate',
-          `Bearer error="invalid_token", resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource/mcp"`,
+          `Bearer error="invalid_token", resource_metadata="${requestOrigin}/.well-known/oauth-protected-resource${chatgpt ? chatgptMcpPath : '/mcp'}"`,
         );
         json(res, 401, { error: 'Invalid or expired access token.' });
         return;
@@ -570,6 +823,10 @@ export function createApplication(
         !payload.scope.split(' ').includes('myselfmd')
       ) {
         json(res, 403, { error: 'myselfmd scope required.' });
+        return;
+      }
+      if (payload.sub === reviewerUserId && config.REVIEWER_LOGIN_ENABLED !== '1') {
+        json(res, 401, { error: 'Reviewer access is disabled.' });
         return;
       }
       const subject = `${accountNamespace}|${payload.sub}`;
@@ -594,6 +851,13 @@ export function createApplication(
         !['active', 'unavailable'].includes((await deletionStatus(subject)).state)
       )
         throw new PairingError(410, 'This account is being deleted or has been deleted.');
+
+      if (url.pathname === '/api/account-logins' && req.method === 'GET') {
+        if (!accountLoginsApi)
+          throw new PairingError(503, 'Connected logins require the hosted identity service.');
+        json(res, 200, await accountLoginsApi(subject));
+        return;
+      }
 
       if (url.pathname === '/api/v1/queries' || url.pathname.startsWith('/api/v1/queries/')) {
         if (
@@ -629,7 +893,7 @@ export function createApplication(
           json(res, 405, { error: 'Method not allowed.' });
           return;
         }
-        const server = await makeMcp(subject, payload.azp);
+        const server = await makeMcp(subject, payload.azp, token, payload.scope.split(' '));
         const agent = new Client({ name: 'myself-rest-adapter', version: '1.0.0' });
         const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
         try {
@@ -701,6 +965,14 @@ export function createApplication(
         json(res, 200, await supportApi(subject, req.method ?? 'GET', url.searchParams, body));
         return;
       }
+      if (url.pathname === '/api/account-profile' && req.method === 'GET') {
+        json(
+          res,
+          200,
+          await readAccountProfile(issuer, token, payload.sub, payload.scope.split(' ')),
+        );
+        return;
+      }
       if (url.pathname === '/api/dashboard' || url.pathname.startsWith('/api/dashboard/')) {
         if (payload.azp !== 'myselfmd-dashboard')
           throw new PairingError(403, 'Dashboard OAuth client required.');
@@ -708,18 +980,21 @@ export function createApplication(
           req.method === 'PUT' || req.method === 'POST'
             ? JSON.parse((await bodyBytes(req, 16384)).toString())
             : null;
-        json(
-          res,
-          200,
-          await dashboardApi(
-            subject,
-            String(payload.preferred_username ?? payload.sub),
-            url.pathname,
-            req.method ?? 'GET',
-            url.searchParams,
-            body,
-          ),
+        const result = await dashboardApi(
+          subject,
+          String(payload.preferred_username ?? payload.sub),
+          url.pathname,
+          req.method ?? 'GET',
+          url.searchParams,
+          body,
         );
+        const accountProfile =
+          url.pathname === '/api/dashboard' && req.method === 'GET'
+            ? await readAccountProfile(issuer, token, payload.sub, payload.scope.split(' ')).catch(
+                () => null,
+              )
+            : undefined;
+        json(res, 200, accountProfile === undefined ? result : { ...result, accountProfile });
         return;
       }
       if (url.pathname === '/api/history' && req.method === 'POST') {
@@ -824,7 +1099,7 @@ export function createApplication(
         else json(res, 404, { error: 'Not found.' });
         return;
       }
-      if (url.pathname === '/mcp') {
+      if (url.pathname === '/mcp' || chatgpt) {
         if (
           typeof payload.azp !== 'string' ||
           ['myselfmd-phone', 'myselfmd-dashboard'].includes(payload.azp)
@@ -832,7 +1107,7 @@ export function createApplication(
           throw new PairingError(403, 'Agent OAuth client required.');
         if (['active', 'unavailable'].includes((await deletionStatus(subject)).state))
           cloud.observeAgent(subject, payload.azp);
-        await handler(
+        await (chatgpt ? chatgptHandler : handler)(
           Object.assign(req, {
             method: req.method ?? 'GET',
             url: req.url ?? '/',

@@ -1,9 +1,11 @@
 import { publicFAQs } from '../core/public-site.js';
+import { buildProfileShare } from './build-profile-share.js';
 import { mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
 mkdirSync('dashboard/dist', { recursive: true });
+await buildProfileShare();
 await build({
   entryPoints: ['dashboard/app.js'],
   outfile: 'dashboard/dist/app.js',
@@ -100,7 +102,7 @@ writeFileSync(
     }),
   ),
 );
-copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
+copyFileSync('dashboard/favicon.png', 'dashboard/dist/favicon.png');
 cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
 cpSync('dashboard/brand-icons', 'dashboard/dist/brand-icons', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');

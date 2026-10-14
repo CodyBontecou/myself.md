@@ -1,8 +1,10 @@
-/** Keep OAuth callback parameters out of navigation; AuthSession handles the original URL.
+/** Route native handoffs to existing screens; their listeners handle the original URL.
  * @param {{path:string,initial:boolean}} event */
 export function redirectSystemPath({ path }) {
   try {
     const url = new URL(path, 'myselfmd://app');
+    if (url.protocol === 'myselfmd:' && url.hostname === 'profile' && !url.pathname)
+      return '/profiles';
     if (
       url.protocol === 'myselfmd:' &&
       ((url.hostname === 'oauth' && (url.pathname === '' || url.pathname === '/')) ||

@@ -5,13 +5,16 @@ import { domains } from '../core/data.js';
 import { localPage } from './library.js';
 import { healthTypes, healthPage } from './health.js';
 import { usageStatus, usagePage } from './usage.js';
+import { locationStatus } from './location-task.js';
 /** @param {string} _owner @param {import('./library.js').Grants} grants @param {import('../core/profiles.js').ExportProfile} [profile] */
 export async function catalog(_owner, grants, profile) {
   const health = await healthTypes();
   const selectableHealth = Platform.OS === 'android' ? await healthTypes(true) : health;
   const usage = await usageStatus();
   const location = await Location.getForegroundPermissionsAsync();
+  const status = await locationStatus(_owner);
   return {
+    locationTracking: status.tracking,
     domains: domains.map((domain) => ({
       domain,
       selectableTypes: (domain === 'health'
@@ -61,6 +64,7 @@ export async function catalog(_owner, grants, profile) {
               ]
             : [
                 `Location access: ${location.granted ? 'authorized' : 'required'}. Only locally recorded points are available. Background tracking is optional. No historical OS location archive is exposed.`,
+                `Recording notification permission: ${status.notificationPermission ?? 'unknown'}. Android background recording requires a visible notification. Recording disclosure and OS approvals must be completed on the phone; agents cannot approve them.`,
               ],
     })),
   };

@@ -126,7 +126,8 @@ export function CloudStorageUsageView({ value, loading, error, signedIn, onRefre
         </Copy>
       )}
       <Copy variant="caption" muted>
-        Cloud files are retained for 30 days. The included allowance has no recurring charge.
+        Cloud files stay until you delete them or replace them. The included allowance has no
+        recurring charge.
       </Copy>
       <View style={styles.actions}>
         <CloudStorageAction
@@ -161,9 +162,6 @@ export function CloudStorageUsageView({ value, loading, error, signedIn, onRefre
           />
         )}
       </View>
-      <Copy variant="caption" muted>
-        Larger cloud plans are coming soon.
-      </Copy>
     </>
   );
 }

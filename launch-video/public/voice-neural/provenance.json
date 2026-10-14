@@ -1,0 +1,7 @@
+{
+  "model": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "voice": "af_bella",
+  "precision": "q8",
+  "engine": "kokoro-js",
+  "localInference": true
+}

@@ -92,7 +92,7 @@ async function authorizationUrl() {
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
-    scope: 'openid profile myselfmd',
+    scope: 'openid profile email myselfmd',
     redirect_uri: `${location.origin}/dashboard/callback`,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -100,11 +100,15 @@ async function authorizationUrl() {
   }).toString();
   return url;
 }
-/** @param {'apple'|'github'|'google'} provider */
+/** @param {'apple'|'github'|'google'|'reviewer'} provider */
 export async function signIn(provider) {
   if (!config) throw new Error('Sign-in is not ready.');
   const query = new URLSearchParams(location.search);
   if (['/login', '/login/'].includes(location.pathname) && query.has('client_id')) {
+    if (provider === 'reviewer') {
+      location.assign(`${config.issuer}/reviewer-login${location.search}`);
+      return;
+    }
     // Continue the provider-signed authorization without replacing the client's PKCE or callback.
     const response = await fetch(`${config.issuer}/sign-in/social`, {
       method: 'POST',
@@ -121,6 +125,7 @@ export async function signIn(provider) {
     return;
   }
   const url = await authorizationUrl();
+  if (provider === 'reviewer') sessionStorage.setItem('myselfmd-reviewer-login', '1');
   url.searchParams.set('kc_idp_hint', provider);
   location.assign(url);
 }
@@ -128,6 +133,15 @@ export async function initializeSession() {
   if (isDemo) return true;
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
   config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
+  if (
+    location.pathname === '/login' &&
+    new URLSearchParams(location.search).has('client_id') &&
+    sessionStorage.getItem('myselfmd-reviewer-login') === '1'
+  ) {
+    sessionStorage.removeItem('myselfmd-reviewer-login');
+    location.assign(`${config.issuer}/reviewer-login${location.search}`);
+    return false;
+  }
   if (location.pathname !== '/dashboard/callback') return false;
   const query = new URLSearchParams(location.search),
     stored = sessionStorage.getItem('myselfmd-dashboard-login');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, openSync, closeSync } from 'node:fs';
@@ -213,7 +214,9 @@ try {
       requestInit: { headers: { Authorization: agent } },
     }),
   );
-  const names = new Set((await client.listTools()).tools.map((tool) => tool.name));
+  const names = new Set(
+    reviewToolMetadata((await client.listTools()).tools).map((tool) => tool.name),
+  );
   for (const name of [
     'get_lifetime_access',
     'create_phone_pairing',
@@ -305,6 +308,7 @@ try {
     200,
   );
   const status = await request('/api/cloud/status', alice);
+  assert.equal(z.object({ retentionDays: z.null() }).parse(status.value).retentionDays, null);
   assert.equal(
     z.object({ limitBytes: z.number(), usedBytes: z.number() }).parse(status.value).limitBytes,
     100_000_000,

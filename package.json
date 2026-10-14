@@ -64,6 +64,12 @@
     "zod": "^4.6.5"
   },
   "scripts": {
+    "reviewer:prepare": "node scripts/prepare-reviewer.js",
+    "mcp:review": "node scripts/review-mcp.js",
+    "verify:mcp-metadata": "npm run dashboard:build && node scripts/verify-cloud-http.js && node scripts/verify-support-v1.js && npm run verify:support",
+    "share:build": "node scripts/build-profile-share.js",
+    "verify:profile-share": "npm run share:build && node scripts/verify-profile-share.js",
+    "share:deploy": "npm run share:build && wrangler deploy --config wrangler.profile-share.jsonc",
     "verify:usage-sessions": "node --experimental-vm-modules scripts/verify-usage-sessions.js",
     "verify:time-series": "node --experimental-vm-modules scripts/verify-time-series.js",
     "start": "expo start",
@@ -144,12 +150,25 @@
     "verify:embedded-debug": "node scripts/verify-embedded-debug.js",
     "gripe:release": "node --env-file-if-exists=.env.gripe-mac scripts/gripe-release.js",
     "verify:feedback-updates": "node --experimental-vm-modules scripts/verify-feedback-updates.js",
-    "build:debug": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile debug --non-interactive"
+    "build:debug": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 build --profile debug --non-interactive",
+    "verify:account-linking": "node scripts/verify-account-linking.js && npm run verify:identity",
+    "build:beta:ios": "node ../local-phone-builds/src/cli.js start-store ios",
+    "build:beta:android": "node ../local-phone-builds/src/cli.js start-store android",
+    "submit:beta:ios": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 submit --platform ios --profile beta",
+    "submit:beta:android": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 submit --platform android --profile beta",
+    "credentials:beta:ios": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 credentials --platform ios",
+    "credentials:beta:android": "EXPO_NO_DOTENV=1 npx --yes eas-cli@24.12.1 credentials --platform android",
+    "video:studio": "remotion studio launch-video/index.js --public-dir=launch-video/public",
+    "video:render": "node launch-video/render.js",
+    "video:capture-agent": "node scripts/capture-launch-agent.js"
   },
   "private": true,
   "type": "module",
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261009.1",
+    "@remotion/bundler": "^4.0.535",
+    "@remotion/cli": "^4.0.535",
+    "@remotion/renderer": "^4.0.535",
     "@tailwindcss/cli": "^4.3.3",
     "@types/node": "^22",
     "@types/punycode": "^2.1.4",
@@ -166,6 +185,7 @@
     "patch-package": "^8.0.1",
     "playwright": "^1.64.0",
     "prettier": "^3.9.9",
+    "remotion": "^4.0.535",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "wrangler": "^4.149.0"

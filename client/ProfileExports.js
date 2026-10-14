@@ -14,11 +14,11 @@ import { domains } from '../core/data.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { localCalendar } from './calendar.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,agentAction?:import('react').ReactNode,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,agentAction?:import('react').ReactNode,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
 function ProfileExportControls({
   session,
   profile,
@@ -27,7 +27,6 @@ function ProfileExportControls({
   roomy = false,
   iconOnly = false,
   showStatus = true,
-  agentAction,
   leadingAction,
   trailingAction,
 }) {
@@ -124,7 +123,6 @@ function ProfileExportControls({
             onPress={exportProfile}
             onDisabledPress={exportProfile}
           />
-          {agentAction}
           {trailingAction}
         </View>
         {showStatus &&

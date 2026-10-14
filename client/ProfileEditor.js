@@ -9,8 +9,10 @@ import { useTheme } from '../src/lib/theme';
 import { usePhoneData } from './DataPanel.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
-import { parseProfile, profileFromLink, uniqueProfileName } from '../core/profiles.js';
+import { parseProfile, profileFromLink, saveProfileDraft } from '../core/profiles.js';
 import { domains } from '../core/data.js';
+import { compatibleProfile } from '../core/profile-compatibility.js';
+import ProfileImportReview from './ProfileImportReview.js';
 
 /** @param {{data?:boolean}} props */
 export default function ProfileEditor({ data = false }) {
@@ -110,20 +112,25 @@ export default function ProfileEditor({ data = false }) {
           />
           <Button
             label="Review pasted profile"
-            disabled={disabled || !importText}
+            disabled={
+              disabled || !importText || !domains.every((d) => d in phone.sourcePermissions)
+            }
             onPress={() =>
               void run(async () => {
-                start(
-                  importText.trim().startsWith('myselfmd:')
+                const review = compatibleProfile(
+                  /^(myselfmd:|https:)/.test(importText.trim())
                     ? profileFromLink(importText.trim())
                     : parseProfile(JSON.parse(importText)),
+                  phone.types,
                 );
+                start(review.profile, '', undefined, review);
                 setImportText('');
               })
             }
           />
         </>
       )}
+      {!section && session.compatibility && <ProfileImportReview review={session.compatibility} />}
       {(!section || section === 'name') && (
         <>
           {!section && <SectionHeader compact title="Profile name" />}
@@ -195,33 +202,16 @@ function useSaveProfile() {
   /** @param {boolean} [location] */
   async function save(location = false) {
     if (!session || !phone.profiles) throw new Error('Open a profile to edit it.');
-    const parsed = parseProfile(draft);
     const state = phone.profiles;
     const id = session.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    if (session.id && !state.profiles.some((p) => p.id === id))
-      throw new Error('This profile no longer exists. Go back to return.');
-    const others = state.profiles.filter((p) => p.id !== id);
-    if (others.length >= 50) throw new Error('Keep at most 50 profiles.');
-    const savedProfile = {
-      ...parsed,
-      agentPermissions: session.id
-        ? state.profiles.find((p) => p.id === id)?.agentPermissions
-        : undefined,
-      id,
-      name: uniqueProfileName(parsed.name, others),
-      agentAccess: session.id
-        ? state.profiles.find((p) => p.id === id)?.agentAccess === true
-        : false,
-    };
-    await phone.changeProfiles({
-      ...state,
-      profiles: session.id
-        ? state.profiles.map((p) => (p.id === id ? savedProfile : p))
-        : [...state.profiles, savedProfile],
-    });
+    const next = saveProfileDraft(state, draft, id, Boolean(session.id));
+    await phone.changeProfiles(next);
     session.onSaved?.();
     setSaved({ id, location });
-    showToast({ message: `${savedProfile.name} saved.`, kind: 'success' });
+    showToast({
+      message: `${next.profiles.find((p) => p.id === id)?.name} saved.`,
+      kind: 'success',
+    });
   }
   return save;
 }

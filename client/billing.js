@@ -5,6 +5,8 @@ import { api, loadSession } from './session.js';
 const db = phoneDatabase();
 // Build-only local preview; never persist a purchase or grant server access.
 const previewLifetime = process.env.EXPO_PUBLIC_PREVIEW_LIFETIME === '1';
+const checkTimeoutMessage =
+  'Checking lifetime access timed out. Check your connection and try again.';
 db.execSync(`CREATE TABLE IF NOT EXISTS export_allowance (id TEXT PRIMARY KEY, state TEXT, offline INTEGER);
 CREATE TABLE IF NOT EXISTS billing_cache (id INTEGER PRIMARY KEY, value TEXT);`);
 const stored = /** @type {{value:string}|null} */ (
@@ -72,8 +74,8 @@ async function billingSession(context) {
   return session;
 }
 /** @typedef {{profileId:string,days:string[],formats:string[]}} ExportScope */
-/** @param {import('./session.js').Session} session @param {string} action @param {string} [id] @param {{store:'ios'|'android',proof:string}} [purchase] @param {ExportScope} [scope] */
-async function send(session, action, id, purchase, scope) {
+/** @param {import('./session.js').Session} session @param {string} action @param {string} [id] @param {{store:'ios'|'android',proof:string}} [purchase] @param {ExportScope} [scope] @param {AbortSignal} [signal] */
+async function send(session, action, id, purchase, scope, signal) {
   const offlineUses = /** @type {{id:string}[]} */ (
     db.getAllSync("SELECT id FROM export_allowance WHERE state='complete' LIMIT 5")
   ).map((row) => row.id);
@@ -81,8 +83,11 @@ async function send(session, action, id, purchase, scope) {
     await api(session, '/api/billing', {
       method: 'POST',
       body: JSON.stringify({ action, id, purchase, offlineUses, scope }),
+      ...(signal ? { signal } : {}),
     })
   );
+  // A late response cannot change access after the check has already timed out.
+  if (signal?.aborted) throw new Error(checkTimeoutMessage);
   db.runSync('INSERT OR REPLACE INTO billing_cache VALUES (3,?)', session.owner);
   acceptAllowance(result);
   return result;
@@ -93,9 +98,33 @@ export async function syncBilling(session) {
     clearAccountAllowance();
     return;
   }
-  const storedProof = await SecureStore.getItemAsync('lifetime-purchase-proof');
-  if (storedProof) await send(session, 'purchase', undefined, JSON.parse(storedProof));
-  else await send(session, 'sync');
+  const controller = new AbortController();
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(checkTimeoutMessage));
+      controller.abort();
+    }, 15000);
+  });
+  const sync = async () => {
+    const storedProof = await SecureStore.getItemAsync('lifetime-purchase-proof');
+    if (controller.signal.aborted) throw new Error(checkTimeoutMessage);
+    await send(
+      session,
+      storedProof ? 'purchase' : 'sync',
+      undefined,
+      storedProof ? JSON.parse(storedProof) : undefined,
+      undefined,
+      controller.signal,
+    );
+  };
+  try {
+    // Bound keychain, token refresh, request and response-body waits together.
+    await Promise.race([sync(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 /** @param {{store:'ios'|'android',proof:string}} proof */
 export async function savePurchase(proof) {

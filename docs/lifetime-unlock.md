@@ -2,7 +2,7 @@
 
 The apps are free to install. The non-consumable `myself_md_lifetime` product unlocks unlimited exports and queries for a one-time US price of $19.99. Payments and restores use native StoreKit and Google Play Billing through `expo-iap`; there is no RevenueCat account or service.
 
-Lifetime app access does not include unlimited hosted cloud storage. An included 100 MB cloud allowance with no recurring charge for lifetime users (including complimentary lifetime grants) and larger 1 GB/10 GB plans billed monthly or yearly are tracked in [Cloud service](cloud-service.md#proposed-hosted-storage-plans). Planned prices are $1.99/month or $19.99/year for 1 GB and $4.99/month or $49.99/year for 10 GB. Included storage is enforced for server-verified lifetime accounts; larger storage subscriptions are not implemented. Settings and the dashboard display account usage. Cloud exports retain their existing 30-day retention; the included allowance itself has no trial expiration.
+Lifetime app access does not include unlimited hosted cloud storage. An included 100 MB cloud allowance with no recurring charge for lifetime users (including complimentary lifetime grants) and larger 1 GB/10 GB plans billed monthly or yearly are tracked in [Cloud service](cloud-service.md#proposed-hosted-storage-plans). Planned prices are $1.99/month or $19.99/year for 1 GB and $4.99/month or $49.99/year for 10 GB. Included storage is enforced for server-verified lifetime accounts; larger storage subscriptions are not implemented. Settings and the dashboard display account usage. Cloud exports stay until deletion or replacement; the included allowance itself has no trial expiration.
 
 ## What counts
 
@@ -108,3 +108,9 @@ An actual iOS simulator screenshot of the normal-mode Lifetime screen was upload
 All regional price records were unchanged by these metadata edits. The product is metadata-ready, but has not been added to or sent in a review submission. Apple requires the first non-consumable product to accompany a new app version. App version 1.0 (`cc375887-17d7-4605-bcf6-01d8590157b5`) is still `PREPARE_FOR_SUBMISSION`, with no uploaded builds, description, support URL, keywords, or review contact details. Complete the app version metadata, privacy disclosures, screenshots and reviewer access requirements, upload/select a signed iOS build, and include this Lifetime product in the same submission.
 
 Sources: [Apple first In-App Purchase submission requirements](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase), [Apple app submission requirements](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-app/).
+
+## Multiple sign-in providers
+
+Lifetime access stays with the internal myself.md account. From Account → Connected logins (or the dashboard account menu), sign in to that original account in the browser and connect Apple, GitHub or Google. Each connected provider then signs in to the same account, preserving its verified purchase or complimentary grant, 100 MB allowance, device grants and history. Different provider emails and Apple's private relay are supported through explicit authentication; matching emails never link accounts automatically.
+
+If the chosen provider already belongs to another myself.md account, linking fails without transferring the purchase or merging records. Sign in with the original login to restore access. Existing-account merges and unlinking are outside this flow. Connecting a login does not create additional lifetime accounts or additional cloud allowances.

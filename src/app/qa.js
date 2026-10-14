@@ -1,7 +1,13 @@
 import { Redirect, router, Stack } from 'expo-router';
 import { useSyncExternalStore } from 'react';
 import { Button, Copy, Screen } from '../components/ui.js';
-import { qaEnabled, qaSnapshot, resetQa, subscribeQa } from '../../client/qa-runtime.js';
+import {
+  qaEnabled,
+  qaSnapshot,
+  resetQa,
+  subscribeQa,
+  setQaAccount,
+} from '../../client/qa-runtime.js';
 import { qaScenarios } from '../../client/qa-fixtures.js';
 
 export default function QaScreen() {
@@ -22,6 +28,11 @@ export default function QaScreen() {
           resetQa('populated', false);
           router.replace('/');
         }}
+      />
+      <Button
+        testID="qa-account-state"
+        label={fixture.accountSignedIn ? 'Preview signed-out account' : 'Preview signed-in account'}
+        onPress={() => setQaAccount(!fixture.accountSignedIn)}
       />
       {qaScenarios.map((scenario) => (
         <Button

@@ -123,7 +123,18 @@ try {
   cloud.db
     .prepare('UPDATE exports SET created=? WHERE id=?')
     .run(Date.now() - 31 * 86400000, granted);
-  assert.equal(cloud.storageStatus('grant').usedBytes, 0, 'Retention frees capacity');
+  assert.equal(cloud.storageStatus('grant').retentionDays, null);
+  assert.equal(
+    cloud.storageStatus('grant').usedBytes,
+    bytes.length,
+    'Old files still consume capacity',
+  );
+  await cloud.sweepObjects();
+  assert.deepEqual(await cloud.bytes(cloud.row('grant', granted)), bytes);
+  assert.ok(objects.has(cloud.row('grant', granted).object_key));
+  assert.throws(() => cloud.row('paid', granted), /not found/);
+  await cloud.delete('grant', granted);
+  assert.equal(cloud.storageStatus('grant').usedBytes, 0, 'Owner deletion frees capacity');
   console.log(
     'Cloud allowance: eligibility, grants, account isolation, exact capacity, concurrent commits, retries, replacements, over-limit reads, deletion, revocation during R2 upload and retention passed.',
   );

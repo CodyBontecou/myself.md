@@ -1,0 +1,169 @@
+{
+  "capturedAt": "2026-10-13T09:09:24.442Z",
+  "connection": "MCP Streamable HTTP · authenticated",
+  "fixture": "Local production server · synthetic phone adapter and test identity issuer",
+  "profile": "My first export for AI",
+  "selected": ["Step count", "App usage"],
+  "approvedBy": "Phone owner fixture",
+  "deniedBeforeApproval": true,
+  "queries": [
+    {
+      "tool": "query_phone_data",
+      "query": {
+        "deviceId": "018e6baa-87a7-43b8-b870-455b0a07eae1",
+        "profileId": "launch-profile",
+        "domain": "health",
+        "type": "HKQuantityTypeIdentifierStepCount",
+        "start": "2026-10-06T00:00:00.000Z",
+        "end": "2026-10-13T00:00:00.000Z"
+      },
+      "requestId": "4c78246d-5fe5-4a1e-8cdd-11b039bd3445",
+      "status": "complete",
+      "records": [
+        {
+          "native": {
+            "count": 7210,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-06T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 8640,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-07T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 9100,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-08T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 7820,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-09T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 10450,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-10T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 12080,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-11T00:00:00.000Z",
+          "end": null
+        },
+        {
+          "native": {
+            "count": 9680,
+            "unit": "count",
+            "synthetic": true
+          },
+          "domain": "health",
+          "type": "HKQuantityTypeIdentifierStepCount",
+          "source": "healthkit",
+          "start": "2026-10-12T00:00:00.000Z",
+          "end": null
+        }
+      ]
+    },
+    {
+      "tool": "query_phone_data",
+      "query": {
+        "deviceId": "018e6baa-87a7-43b8-b870-455b0a07eae1",
+        "profileId": "launch-profile",
+        "domain": "time",
+        "type": "applications",
+        "start": "2026-10-06T00:00:00.000Z",
+        "end": "2026-10-13T00:00:00.000Z"
+      },
+      "requestId": "b195165a-7348-4418-85e7-35ca59fbb1fe",
+      "status": "complete",
+      "records": [
+        {
+          "native": {
+            "app": "Safari",
+            "minutes": 184,
+            "synthetic": true
+          },
+          "domain": "time",
+          "type": "applications",
+          "source": "screen-time",
+          "start": "2026-10-06T00:00:00.000Z",
+          "end": "2026-10-13T00:00:00.000Z"
+        },
+        {
+          "native": {
+            "app": "Messages",
+            "minutes": 96,
+            "synthetic": true
+          },
+          "domain": "time",
+          "type": "applications",
+          "source": "screen-time",
+          "start": "2026-10-06T00:00:00.000Z",
+          "end": "2026-10-13T00:00:00.000Z"
+        },
+        {
+          "native": {
+            "app": "Instagram",
+            "minutes": 72,
+            "synthetic": true
+          },
+          "domain": "time",
+          "type": "applications",
+          "source": "screen-time",
+          "start": "2026-10-06T00:00:00.000Z",
+          "end": "2026-10-13T00:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "totalSteps": 64980,
+    "dailyAverage": 9283,
+    "appMinutes": 352,
+    "topApp": "Safari",
+    "topAppMinutes": 184,
+    "counts": [7210, 8640, 9100, 7820, 10450, 12080, 9680]
+  }
+}

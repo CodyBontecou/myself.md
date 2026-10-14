@@ -10,10 +10,17 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
     mcp.registerTool(
       'get_cloud_storage',
       {
+        title: 'Check cloud storage',
         description:
           'Read your verified cloud storage eligibility, used and available bytes, capacity and file retention. Does not enable uploads or sharing.',
         inputSchema: z.object({}).strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Check cloud storage',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => {
         await refreshEntitlement(subject);
@@ -24,24 +31,58 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
     mcp.registerTool(
       'list_cloud_exports',
       {
+        title: 'List shared cloud exports',
         description:
           'List your stored exports explicitly shared with MCP. Works while your phone is offline.',
         inputSchema: z.object({}),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'List shared cloud exports',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => content(cloud.list(subject, true)),
     );
     mcp.registerTool(
       'read_cloud_export',
       {
+        title: 'Read shared cloud export',
         description:
-          'Read a bounded page of your shared stored JSON/JSONL records. Cloud profile data selections still apply; exportId and cursor come from cloud tools.',
+          'Read a bounded page of your explicitly shared stored JSON/JSONL records. Records remain unchanged, but each successful call consumes an export/query allowance and records agent access in activity history. Repeated calls can consume additional allowance. Cloud profile data selections and grants still apply; exportId and cursor come from cloud tools.',
         inputSchema: z.object({
-          exportId: z.string().uuid(),
-          cursor: z.string().regex(/^\d*$/).max(8).default(''),
-          limit: z.number().int().min(1).max(50).default(50),
+          exportId: z
+            .string()
+            .uuid()
+            .describe(
+              'Shared export UUID from list_cloud_exports; deletion additionally requires ownership and explicit user confirmation.',
+            ),
+          cursor: z
+            .string()
+            .regex(/^\d*$/)
+            .max(8)
+            .default('')
+            .describe(
+              'Pagination cursor returned by the preceding response. Omit for the first page; preserve the other query arguments when continuing.',
+            ),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(50)
+            .describe(
+              'Maximum records in this page, up to 50. Follow the returned nextCursor to continue.',
+            ),
         }),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Read shared cloud export',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
       },
       async ({ exportId, cursor, limit }) => {
         const row = cloud.row(subject, exportId),
@@ -106,9 +147,23 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
     mcp.registerTool(
       'delete_cloud_export',
       {
+        title: 'Delete cloud export',
         description: 'Permanently delete one of your stored cloud exports.',
-        inputSchema: z.object({ exportId: z.string().uuid() }),
-        annotations: { destructiveHint: true },
+        inputSchema: z.object({
+          exportId: z
+            .string()
+            .uuid()
+            .describe(
+              'Shared export UUID from list_cloud_exports; deletion additionally requires ownership and explicit user confirmation.',
+            ),
+        }),
+        annotations: {
+          title: 'Delete cloud export',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
       },
       async ({ exportId }) => content(await cloud.delete(subject, exportId)),
     );

@@ -1,0 +1,72 @@
+{
+  "voice": "af_bella",
+  "rate": 44100,
+  "segments": [
+    {
+      "start": 0.08,
+      "end": 1.2673469387755103,
+      "text": "Your data. Your agent.",
+      "speed": 1
+    },
+    {
+      "start": 1.7,
+      "end": 2.4168480725623582,
+      "text": "Make it yours!",
+      "speed": 1
+    },
+    {
+      "start": 3.25,
+      "end": 3.914920634920635,
+      "text": "Pick your steps.",
+      "speed": 1
+    },
+    {
+      "start": 5.4,
+      "end": 6.174172335600907,
+      "text": "Add your app time.",
+      "speed": 1
+    },
+    {
+      "start": 7.15,
+      "end": 9.028662131519274,
+      "text": "Choose your files. Save your profile!",
+      "speed": 1
+    },
+    {
+      "start": 10.18,
+      "end": 11.394829931972788,
+      "text": "Give your agent the green light.",
+      "speed": 1
+    },
+    {
+      "start": 13.65,
+      "end": 15.070385487528345,
+      "text": "We're connected! Ask away.",
+      "speed": 1
+    },
+    {
+      "start": 18.25,
+      "end": 18.62124716553288,
+      "text": "Wow!",
+      "speed": 1
+    },
+    {
+      "start": 18.95,
+      "end": 21.43312925170068,
+      "text": "Sixty-four thousand, nine hundred eighty steps!",
+      "speed": 1
+    },
+    {
+      "start": 21.9,
+      "end": 23.803514739229026,
+      "text": "Five hours, fifty-two minutes in apps.",
+      "speed": 1
+    },
+    {
+      "start": 24.25,
+      "end": 25.35124716553288,
+      "text": "Myself dot M D.",
+      "speed": 1
+    }
+  ]
+}

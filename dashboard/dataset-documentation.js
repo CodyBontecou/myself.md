@@ -1,7 +1,7 @@
 import { HeroDataFlow } from './hero-data-flow.js';
 import { SiteHeader } from './site-header.js';
 import { DownloadBadges } from './download-badges.js';
-import { publicFAQs } from '../core/public-site.js';
+import { publicFAQs, smitheryListingUrl } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'radix-ui';
@@ -478,7 +478,10 @@ export function DatasetDocumentation({ dataset, landing = false }) {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <p className="text-sm text-muted-foreground">
-            Your data stays in files. You control what agents can read.
+            Your data stays in files. You control what agents can read.{' '}
+            <a href={smitheryListingUrl} className="underline underline-offset-4">
+              Find us on Smithery
+            </a>
           </p>
           <Button asChild>
             <a href="/login">

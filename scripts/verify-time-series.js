@@ -344,6 +344,7 @@ assert.ok(partial.warnings.some((warning) => warning.includes('nested')));
 const phone =
   /** @type {{readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      './location-task.js': { locationStatus: async () => ({ tracking: false }) },
       'expo-location': {},
       'react-native': { Platform: { OS: 'ios' } },
       '../core/profiles.js': profiles,

@@ -1,0 +1,7 @@
+# .md orbit concept
+
+Generated with built-in imagegen using `my-orbit-continuous-ribbon.png` as the edit reference. The leading blue orb doubles as the period in `.md`. Concept asset: `md-orbit.png`.
+
+## Prompt
+
+Use case: logo-brand. Edit the referenced B — Continuous ribbon app icon into a new myself.md icon concept. Preserve its warm off-white square background, charcoal bold rounded lowercase letter style, vivid cobalt blue elliptical orbital ribbon, crisp flat graphic aesthetic and generous margins. Change the central lettering to read exactly '.md': a leading period followed by lowercase m and lowercase d, arranged on one shared baseline. The period MUST be the single cobalt blue circular orb on the orbit, positioned immediately to the LEFT of m near the baseline. The m and d are charcoal, heavy rounded geometric letters, d has a clear tall ascender and open counter. No second period or extra blue dot anywhere. Re-route the single tilted blue ellipse to orbit the whole md lettering, weaving behind and in front with clean occlusion and restrained white gaps at crossings, ending at that leading blue orb on the lower left. Maintain clear readable '.md' at small app-icon sizes; do not obscure letter counters. Fit the complete mark into the square with balanced margins. One standalone opaque square app icon; no labels, no presentation board, no device mockup, no shadows or gradients, no outer corner mask. Exact visible text: '.md'.

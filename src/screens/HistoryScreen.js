@@ -751,15 +751,20 @@ function EventRow({ item, selecting, selected, onSelect, layout, expanded, onExp
       {expanded ? (
         <View testID={`logs-summary-${item.id}`} style={styles.details}>
           <View style={styles.detailHeading}>
-            <LogAction
-              testID={`logs-close-${item.id}`}
-              label="Close log details"
-              icon="close-outline"
-              onPress={onExpand}
-            />
-            <Copy variant="heading">
+            <Copy variant="heading" style={styles.detailTitle}>
               {event ? (event.kind === 'access' ? 'Agent access' : 'Export details') : 'App event'}
             </Copy>
+            <Pressable
+              testID={`logs-close-${item.id}`}
+              accessibilityRole="button"
+              accessibilityLabel="Close log details"
+              onPress={onExpand}
+              style={({ pressed }) => [styles.detailClose, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <View style={[styles.detailCloseIcon, { backgroundColor: colors.subtle }]}>
+                <Icon name="close" size={16} color={colors.secondary} />
+              </View>
+            </Pressable>
           </View>
           {event ? (
             <HistoryDetail key={event.id} event={event} />
@@ -928,7 +933,16 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 12,
   },
-  detailHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' },
+  detailHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  detailTitle: { flex: 1 },
+  detailClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  detailCloseIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   detailsContent: { gap: 12 },
   raw: {
     paddingVertical: 12,

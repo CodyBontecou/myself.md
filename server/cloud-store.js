@@ -71,7 +71,6 @@ export class CloudStore {
     return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]);
   }
   cleanup() {
-    this.db.prepare('DELETE FROM exports WHERE created<?').run(Date.now() - 30 * 86400000);
     this.db
       .prepare('DELETE FROM exports WHERE content IS NULL AND object_key IS NULL AND created<?')
       .run(Date.now() - 3600000);
@@ -373,9 +372,7 @@ export class CloudStore {
       ? await this.requireObjects().get(row.object_key)
       : row.content;
     if (!encrypted) throw new PairingError(404, 'Cloud export not found.');
-    const current = this.row(row.subject, row.id);
-    if (current.created < Date.now() - 30 * 86400000)
-      throw new PairingError(404, 'Cloud export not found.');
+    this.row(row.subject, row.id);
     return this.open(encrypted, `${row.subject}|${row.id}`);
   }
   requireObjects() {

@@ -79,3 +79,105 @@ assert.equal(refreshes, before + 1, 'An unsuccessful refresh is retried only onc
 console.log(
   'PASS session 401 recovery, concurrent refresh, permission isolation, missing credentials and bounded retry. No live credentials used.',
 );
+
+// Drive the real browser-return -> token exchange -> account read -> UI commit path.
+const signInHandler = readFileSync('client/PhoneProvider.js', 'utf8').match(
+  /    signInAccount: async \(provider\) => \{[\s\S]*?\n    \},/,
+)?.[0];
+assert.ok(signInHandler);
+let persisted = '';
+let visible = null;
+let billingFailure = false;
+let storageFailure = false;
+let cancelled = false;
+let exchanges = 0;
+let billingCalls = 0;
+let clearedAllowance = 0;
+context.process = { env: {} };
+context.URL = URL;
+context.canonicalServiceOrigin = (/** @type {string} */ value) => value;
+context.AuthSession.ResponseType = { Code: 'code' };
+context.AuthSession.CodeChallengeMethod = { S256: 'S256' };
+context.AuthSession.AuthRequest = class {
+  codeVerifier = 'fixture-verifier';
+  constructor(/** @type {{redirectUri:string,usePKCE:boolean}} */ options) {
+    assert.equal(options.redirectUri, 'myselfmd://oauth');
+    assert.equal(options.usePKCE, true);
+  }
+  async promptAsync() {
+    return cancelled ? { type: 'cancel' } : { type: 'success', params: { code: 'fixture-code' } };
+  }
+};
+context.AuthSession.exchangeCodeAsync = async (
+  /** @type {{code:string,extraParams:{code_verifier:string}}} */ options,
+) => {
+  assert.equal(options.code, 'fixture-code');
+  assert.equal(options.extraParams.code_verifier, 'fixture-verifier');
+  exchanges++;
+  return {
+    accessToken: 'signed-in',
+    refreshToken: 'signed-in-refresh',
+    issuedAt: Date.now() / 1000,
+    expiresIn: 300,
+  };
+};
+context.fetch = async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
+  if (url.endsWith('/config'))
+    return Response.json({
+      issuer: 'https://myself.md/auth/realms/myselfmd',
+      resource: 'https://myself.md/mcp',
+      clientId: 'myselfmd-phone',
+    });
+  assert.equal(url, 'https://myself.md/api/devices');
+  assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer signed-in');
+  return Response.json({
+    subject: 'https://myself.md/auth/realms/myselfmd|fixture-owner',
+    account: 'Fixture account',
+    devices: [],
+  });
+};
+context.SecureStore.setItemAsync = async (
+  /** @type {string} */ _key,
+  /** @type {string} */ value,
+) => {
+  if (storageFailure) throw new Error('Secure storage unavailable');
+  persisted = value;
+};
+context.setSession = (/** @type {unknown} */ value) => {
+  visible = value;
+};
+context.clearAccountAllowance = () => {
+  clearedAllowance++;
+};
+context.syncBilling = async () => {
+  billingCalls++;
+  if (billingFailure) throw new Error('Billing unavailable');
+};
+const login = () => vm.runInContext(`({${signInHandler}}).signInAccount('google')`, context);
+billingFailure = true;
+await assert.rejects(login(), /Billing unavailable/);
+assert.ok(persisted, 'Successful OAuth must persist even when billing fails');
+assert.equal(JSON.parse(persisted).accessToken, 'signed-in');
+assert.equal(visible, await context.loadSession(), 'Browser return must show the saved account');
+assert.equal(clearedAllowance, 1, 'Previous account allowance cannot survive account sign-in');
+billingFailure = false;
+await login();
+assert.equal(billingCalls, 2, 'Billing remains retryable after successful authentication');
+const lastVisible = visible;
+const lastPersisted = persisted;
+storageFailure = true;
+await assert.rejects(login(), /Secure storage unavailable/);
+assert.equal(visible, lastVisible, 'A failed session write must not claim successful sign-in');
+assert.equal(persisted, lastPersisted);
+assert.equal(billingCalls, 2);
+assert.equal(clearedAllowance, 2);
+storageFailure = false;
+cancelled = true;
+const beforeCancel = exchanges;
+await assert.rejects(login(), /cancelled/);
+assert.equal(exchanges, beforeCancel, 'Cancelled browser handoffs cannot exchange a token');
+assert.equal(visible, lastVisible);
+assert.equal(persisted, lastPersisted);
+console.log(
+  'PASS phone OAuth return persists authentication independently of billing, secure storage failure and cancellation.',
+);

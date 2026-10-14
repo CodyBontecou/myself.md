@@ -28,6 +28,7 @@ async function unavailable() {
   );
 }
 const refreshLocation = async () => ({
+  notificationPermission: 'synthetic',
   backgroundGranted: false,
   permission: 'Synthetic location access',
   tracking: false,
@@ -78,7 +79,7 @@ export default function QaPhoneProvider({ children }) {
         deletionStatusUrl: '',
         incoming: null,
         dismissIncoming: () => {},
-        session: null,
+        session: fixture.accountSignedIn ? qaSession : null,
         connected: false,
         permission: null,
         requestPermission: async () => {
@@ -126,8 +127,8 @@ export default function QaPhoneProvider({ children }) {
           proposal: null,
           setProposal: () => {},
           grants: { health: false, time: false, location: false },
-          isTracking: false,
-          locationInfo: 'Synthetic data: recording off, 0 location points.',
+          isTracking: fixture.scenario === 'location-tracking',
+          locationInfo: `Synthetic data: recording ${fixture.scenario === 'location-tracking' ? 'on' : 'off'}, 0 location points.`,
           notes: {
             health: 'Synthetic Health catalog',
             time: 'Synthetic Screen Time catalog',

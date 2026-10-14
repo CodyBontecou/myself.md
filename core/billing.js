@@ -12,17 +12,18 @@ export function existingCustomerGuide() {
       },
       {
         title: '2. Choose your myself.md account',
-        body: 'The claim opens in your browser. Sign in with Apple or GitHub, check the account shown, and confirm lifetime access.',
+        body: 'The claim opens in your browser. Sign in with Apple, GitHub, or Google, check the account shown, and confirm lifetime access.',
       },
       {
         title: '3. Sign in here with the same account',
-        body: 'Return to myself.md, sign in below, then choose Check lifetime access if needed. No agent pairing is required.',
+        body: 'Return to myself.md, open your account from Settings, and sign in with the same account. Choose Check lifetime access if needed. No agent pairing is required.',
       },
     ],
     eligibility:
       'Eligible paid health.md downloads and lifetime purchases in health.md or iso.me qualify. Individual and Family purchasers can claim for one account; family-shared recipients do not qualify.',
     timeOffer:
-      'Bought time.md? Contact the developer with your Stripe purchase receipt to request your offer. After it is activated, sign in here with the account that received access.',
+      'Bought time.md? Open https://timemd.app/myself-claim.html, enter your activation key, and choose Verify purchase and continue. Sign in and confirm the account receiving access. Trials, free licenses, refunded and disputed payments do not qualify.',
+    timeClaimUrl: 'https://timemd.app/myself-claim.html',
     accountLink: 'myselfmd://account',
     requiresUser: true,
   };

@@ -3,7 +3,21 @@ import { z } from 'zod';
 import { supportText, supportNotice } from '../core/support.js';
 import { PairingError } from './errors.js';
 const sendSchema = z
-  .object({ id: z.string().regex(/^[A-Za-z0-9-]{16,64}$/), text: z.string().min(1).max(1800) })
+  .object({
+    id: z
+      .string()
+      .regex(/^[A-Za-z0-9-]{16,64}$/)
+      .describe(
+        'Caller-generated unique message ID retained across retries of the same message; use a new ID for a different message.',
+      ),
+    text: z
+      .string()
+      .min(1)
+      .max(1800)
+      .describe(
+        'Support message text explicitly requested by the user. Do not include secrets or unapproved personal records.',
+      ),
+  })
   .strict();
 const pageSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional();
 /** @param {unknown} value */
@@ -166,9 +180,21 @@ export function createSupportService({ store, discord, cloud }) {
     mcp.registerTool(
       'get_support_conversation',
       {
+        title: 'Refresh support conversation',
+        annotations: {
+          title: 'Refresh support conversation',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
         description:
-          'Read your support conversation and delivery status. Requires owner-enabled support access. Without access, returns availability and the owner handoff without private messages.',
-        inputSchema: z.object({ before: pageSchema }),
+          'Refresh your support conversation and delivery status. May retry pending message delivery to the private Discord support thread and save incoming staff replies before returning a page. Requires owner-enabled support access. Without access, returns availability and the owner handoff without private messages.',
+        inputSchema: z.object({
+          before: pageSchema.describe(
+            'Pagination sequence returned by the previous support response. Omit for the newest page; pass the returned before value for older messages.',
+          ),
+        }),
       },
       async ({ before }) => {
         if (!agent) throw new PairingError(403, 'Agent identity required.');
@@ -190,6 +216,14 @@ export function createSupportService({ store, discord, cloud }) {
     mcp.registerTool(
       'revoke_support_agent_access',
       {
+        title: 'Revoke support agent access',
+        annotations: {
+          title: 'Revoke support agent access',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Revoke all connected agents’ access to your support conversation. Enabling access requires the account owner in the app or dashboard.',
         inputSchema: z.object({}).strict(),
@@ -206,6 +240,14 @@ export function createSupportService({ store, discord, cloud }) {
     mcp.registerTool(
       'send_support_message',
       {
+        title: 'Send support message',
+        annotations: {
+          title: 'Send support message',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
         description:
           'Send an explicitly requested support message. Use a fresh message ID for each message and retain it for safe retries. Requires owner-enabled support access; queued means saved, delivered means accepted by Discord, not read by staff.',
         inputSchema: sendSchema,

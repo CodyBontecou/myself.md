@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { assets } from '../server/dashboard-assets.js';
@@ -339,6 +340,19 @@ try {
     new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
       requestInit: { headers: { Authorization: `Bearer ${agent}` } },
     }),
+  );
+  const metadata = reviewToolMetadata((await client.listTools()).tools);
+  assert.equal(
+    metadata.find((entry) => entry.name === 'get_support_conversation')?.readOnlyHint,
+    false,
+  );
+  assert.equal(
+    metadata.find((entry) => entry.name === 'send_support_message')?.destructiveHint,
+    true,
+  );
+  assert.equal(
+    metadata.find((entry) => entry.name === 'send_support_message')?.idempotentHint,
+    true,
   );
   const denied = await tool('get_support_conversation');
   assert.equal(denied.value.agentAccess, false);

@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
+import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { build } from 'esbuild';
@@ -86,6 +87,12 @@ const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
 await mcp.connect(serverTransport);
 await client.connect(clientTransport);
 try {
+  const metadata = reviewToolMetadata((await client.listTools()).tools);
+  assert.equal(
+    metadata.find((tool) => tool.name === 'support_conversations')?.destructiveHint,
+    true,
+  );
+  assert.equal(metadata.find((tool) => tool.name === 'support_conversations')?.readOnlyHint, false);
   await remote.supportV1Api('alice', 'POST', new URLSearchParams(), {
     action: 'create',
     id: 'a',

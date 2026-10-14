@@ -1,3 +1,4 @@
+import { chatgptMcpPath } from '../server/chatgpt-tools.js';
 import {
   publicResponse,
   unknownPublicPath,
@@ -16,7 +17,8 @@ import { assets } from '../server/dashboard-assets.js';
 import { readBytes } from './request.js';
 import { migrationRequest } from './import.js';
 import { digest, findTicket, registerTicket } from './tickets.js';
-import { identityRequest } from './identity.js';
+import { identityRequest, reviewerActive } from './identity.js';
+import { reviewerUserId } from '../server/reviewer.js';
 export { Account as MyselfAccount } from './account.js';
 export { Purchase as MyselfPurchase } from './claims.js';
 /** @param {unknown} data @param {number} [status] */
@@ -38,7 +40,7 @@ async function publicAsset(request, env) {
     Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin}; img-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin}; img-src 'self' https:; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const body =
     request.method === 'HEAD'
@@ -107,6 +109,25 @@ export default {
           `${publicOrigin(request, env)}/mcp`,
           url.searchParams,
         );
+        if (
+          page?.status === 302 &&
+          env.IDENTITY_ENABLED === '1' &&
+          'Location' in page.headers &&
+          page.headers.Location?.startsWith(`${env.OAUTH_ISSUER}/.well-known/`)
+        ) {
+          // RFC 8414 discovery clients may not follow metadata redirects.
+          const discovery = await identityRequest(
+            new Request(page.headers.Location, { headers: request.headers }),
+            env,
+          );
+          const headers = new Headers(discovery.headers);
+          if (limit)
+            for (const [name, value] of Object.entries(limit.headers)) headers.set(name, value);
+          return new Response(request.method === 'HEAD' ? null : discovery.body, {
+            status: discovery.status,
+            headers,
+          });
+        }
         if (page && publicApiPath(url.pathname) === '/health')
           page.body = JSON.stringify({ ok: true, platform: 'cloudflare' });
         if (page && limit) Object.assign(page.headers, limit.headers);
@@ -155,7 +176,7 @@ export default {
         return json({
           resource: `${publicOrigin(request, env)}/mcp`,
           authorization_servers: [env.OAUTH_ISSUER],
-          scopes_supported: ['myselfmd'],
+          scopes_supported: ['myselfmd', 'offline_access'],
           bearer_methods_supported: ['header'],
         });
       if (url.pathname === '/.well-known/apple-app-site-association')
@@ -209,7 +230,7 @@ export default {
         return await env.ACCOUNTS.getByName(digest(route.subject)).fetch(request);
       }
       const token = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
-      if (!token) return unauthorized(env);
+      if (!token) return unauthorized(env, url.pathname === chatgptMcpPath);
       let payload;
       try {
         const jwks = createRemoteJWKSet(
@@ -224,14 +245,16 @@ export default {
         ({ payload } = await jwtVerify(token, jwks, {
           issuer: env.OAUTH_ISSUER,
           audience: [
-            `${env.PUBLIC_URL}/mcp`,
+            `${env.PUBLIC_URL}${url.pathname === chatgptMcpPath ? chatgptMcpPath : '/mcp'}`,
             ...env.PUBLIC_URL_ALIASES.split(',')
               .filter(Boolean)
-              .map((origin) => `${origin}/mcp`),
+              .map(
+                (origin) => `${origin}${url.pathname === chatgptMcpPath ? chatgptMcpPath : '/mcp'}`,
+              ),
           ],
         }));
       } catch {
-        return unauthorized(env);
+        return unauthorized(env, url.pathname === chatgptMcpPath);
       }
       if (
         !payload.sub ||
@@ -239,6 +262,11 @@ export default {
         !payload.scope.split(' ').includes('myselfmd')
       )
         return json({ error: 'myselfmd scope required.' }, 403);
+      if (
+        payload.sub === reviewerUserId &&
+        (typeof payload.iat !== 'number' || !(await reviewerActive(env, payload.iat)))
+      )
+        return json({ error: 'Reviewer access is revoked.' }, 401);
       const subject = `${env.ACCOUNT_NAMESPACE}|${payload.sub}`;
       if (url.pathname === '/api/claim' && request.method === 'POST') {
         const input = z
@@ -266,15 +294,15 @@ export default {
     }
   },
 };
-/** @param {Env} env */
-function unauthorized(env) {
+/** @param {Env} env @param {boolean} [chatgpt] */
+function unauthorized(env, chatgpt = false) {
   return Response.json(
     { error: 'OAuth sign-in required or token expired.' },
     {
       status: 401,
       headers: {
         'Cache-Control': 'no-store',
-        'WWW-Authenticate': `Bearer resource_metadata="${env.PUBLIC_URL}/.well-known/oauth-protected-resource/mcp"`,
+        'WWW-Authenticate': `Bearer resource_metadata="${env.PUBLIC_URL}/.well-known/oauth-protected-resource${chatgpt ? chatgptMcpPath : '/mcp'}"`,
       },
     },
   );
