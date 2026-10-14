@@ -10,6 +10,7 @@ const light = {
   accentSoft: '#F2F2F2',
   onAccent: '#FFFFFF',
   danger: '#A33B36',
+  tracking: '#0066CC',
 };
 const dark = {
   background: '#0A0A0A',
@@ -22,6 +23,7 @@ const dark = {
   accentSoft: '#1F1F1F',
   onAccent: '#0A0A0A',
   danger: '#F1A59F',
+  tracking: '#64A8FF',
 };
 export function useTheme() {
   const isDark = useColorScheme() === 'dark';

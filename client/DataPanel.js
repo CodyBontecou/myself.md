@@ -161,7 +161,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     const status = await locationStatus(session.owner);
     setTracking(status.tracking);
     setLocationInfo(
-      `${status.permission}. ${status.count} recorded points.${status.last ? ` Last point: ${new Date(status.last).toLocaleString()}.` : ''}`,
+      `${status.permission}. ${status.count} recorded points.${status.last ? ` Last point: ${new Date(status.last).toLocaleString()}.` : ''}${status.notificationPermission === 'required' || status.notificationPermission === 'blocked' ? ' Allow recording notifications in Android Settings before starting background recording.' : ''}`,
     );
     return status;
   }, [session.owner]);
@@ -172,9 +172,13 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         if (resume && resumeFromSettings.current) {
           resumeFromSettings.current = false;
           if (status.backgroundGranted) {
-            await startTracking(session.owner);
+            const started = await startTracking(session.owner);
             await refreshLocation();
-            setMessage('Location recording is on, including while your phone is locked.');
+            setMessage(
+              started
+                ? 'Location recording is on, including while your phone is locked.'
+                : 'Location recording was not started.',
+            );
           } else setMessage('Choose Always in location settings, then start recording again.');
         }
       } catch (error) {
@@ -337,15 +341,19 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       await stopTracking();
       await refreshLocation();
       setMessage('Location recording stopped.');
+      await publish();
       return;
     }
     const started = await startTracking(session.owner);
     await refreshLocation();
-    resumeFromSettings.current = !started;
+    resumeFromSettings.current = started === false;
+    await publish();
     setMessage(
-      started
-        ? 'Location recording is on, including while your phone is locked.'
-        : 'Use Location permissions to allow Always/background access and precise location, then return. Recording will start when access is granted.',
+      started === null
+        ? 'Location recording cancelled.'
+        : started
+          ? 'Location recording is on, including while your phone is locked.'
+          : 'Use Location permissions to allow Always/background access and precise location, then return. Recording will start when access is granted.',
     );
   }
   /** Request device access without expanding agent grants or starting recording.
@@ -437,6 +445,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     types,
     sourcePermissions,
     busy,
+    isTracking,
     proposal,
     setProposal,
     grants,
@@ -465,6 +474,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
+          isTracking={isTracking}
           draft={incoming ?? proposal?.profile ?? null}
           onDismiss={() => {
             if (incoming) onDismiss();

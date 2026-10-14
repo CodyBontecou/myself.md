@@ -22,7 +22,7 @@ export function PricingSection() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li>Choose the data you want to keep</li>
             <li>Export readable JSON or JSONL files</li>
-            <li>Explore the public demo with fictional data</li>
+            <li>Preview supported datasets with fictional data</li>
           </ul>
         </div>
         <div className="space-y-5 border-t border-border pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
@@ -80,7 +80,7 @@ export function PricingSection() {
           subscription price at checkout.
         </p>
         <a href="/demo" className="inline-block text-sm underline underline-offset-4">
-          Try the free demo
+          Explore the cloud dashboard demo
         </a>
       </section>
       <div className="space-y-3 text-sm leading-6 text-muted-foreground">

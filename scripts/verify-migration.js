@@ -103,6 +103,43 @@ try {
   }
   assert.equal(store.snapshot('carol').complimentary, true);
   assert.equal(store.snapshot('bob').unlocked, false);
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, 'https://timemd.app/api/myself-proof');
+      assert.equal(options?.redirect, 'manual');
+      assert.deepEqual(JSON.parse(String(options?.body)), {
+        activation_key: 'TMD-ABCD-EFGH-JKLM-NPQR-STUV',
+      });
+      return Response.json({ source: 'time.md:stripe', reference: 'pi_fixture' });
+    };
+    const input = {
+      app: 'time.md',
+      store: 'stripe',
+      kind: 'license',
+      proof: 'TMD-ABCD-EFGH-JKLM-NPQR-STUV',
+    };
+    const verified = await verifyMigrationPurchase(input);
+    const automaticTicket = store.createClaim(verified);
+    // Automatic claims reuse manual-grant ownership; a new ticket cannot move the payment.
+    assert.equal(store.claim('carol', automaticTicket).complimentary, true);
+    assert.throws(() => store.claim('bob', store.createClaim(verified)), /another account/);
+    globalThis.fetch = async () => Response.json({ error: 'not eligible' }, { status: 403 });
+    await assert.rejects(verifyMigrationPurchase(input), /active time.md license/);
+    globalThis.fetch = async () => {
+      throw new Error('fixture outage');
+    };
+    await assert.rejects(verifyMigrationPurchase(input), /unavailable/);
+    globalThis.fetch = async () =>
+      new Response(null, { status: 302, headers: { Location: 'https://untrusted.example' } });
+    await assert.rejects(verifyMigrationPurchase(input), /unavailable/);
+    globalThis.fetch = async () =>
+      Response.json({ source: 'iso.me:ios:iap', reference: 'pi_fixture' });
+    await assert.rejects(verifyMigrationPurchase(input));
+    await assert.rejects(verifyMigrationPurchase({ ...input, proof: 'TMDTRIAL-fake' }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
   await assert.rejects(
     verifyMigrationPurchase({ app: 'iso.me', store: 'android', kind: 'iap', proof: 'fake' }),
     /not eligible/,

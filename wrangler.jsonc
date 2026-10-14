@@ -74,6 +74,7 @@
     "IOS_APP_ID": "67KC823C9A.com.myself.md",
     "ALLOW_HTTP_DEV": "0",
     "MIGRATION_ENABLED": "0",
+    "REVIEWER_LOGIN_ENABLED": "1",
     "IDENTITY_ENABLED": "1",
   },
   "secrets": {

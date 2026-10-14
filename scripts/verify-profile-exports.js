@@ -1,5 +1,6 @@
 import { exportSchemas, parseExportSchema } from '../core/export-schemas.js';
 import { parseProfile, profileLink, profileFromLink } from '../core/profiles.js';
+import { redirectSystemPath } from '../src/app/+native-intent.js';
 import assert from 'node:assert/strict';
 import {
   parseSchedule,
@@ -151,6 +152,25 @@ assert.equal(pinned.export.schema, 'myself.md.export.v1');
 const canonicalLink = profileLink(pinned);
 assert.ok(canonicalLink.startsWith('myselfmd://profile?'));
 assert.deepEqual(profileFromLink(canonicalLink), pinned);
+for (const initial of [false, true]) {
+  assert.equal(redirectSystemPath({ path: canonicalLink, initial }), '/profiles');
+  assert.equal(redirectSystemPath({ path: 'myselfmd://oauth?code=test', initial }), '/account');
+  assert.equal(
+    redirectSystemPath({ path: 'myselfmd://pair?payload=test', initial }),
+    'myselfmd://pair?payload=test',
+  );
+  assert.equal(
+    redirectSystemPath({ path: 'myselfmd://profiles/example', initial }),
+    'myselfmd://profiles/example',
+  );
+}
+const shared = {
+  ...pinned,
+  id: 'sender-profile',
+  agentAccess: true,
+  agentPermissions: { health: false, time: true, location: false, logs: false },
+};
+assert.deepEqual(profileFromLink(profileLink(shared)), pinned);
 assert.throws(() => profileFromLink(canonicalLink.replace('myselfmd://', 'qrconnect://')));
 assert.equal(parseProfile({ ...pinned, schema: 'qr-connect.profile.v1' }).schema, pinned.schema);
 for (const schema of ['myself.md.export.v2', 'latest', null, 'v1']) {
@@ -165,4 +185,78 @@ assert.equal(
 );
 console.log(
   'Export schemas: released registry, immutable descriptors, profile pinning, share-link round trip and unsupported-version rejection passed.',
+);
+
+const { compatibleProfile } = await import('../core/profile-compatibility.js');
+const imported = {
+  ...pinned,
+  selection: {
+    health: [
+      'native:HKQuantityTypeIdentifierStepCount',
+      'native:Steps',
+      'native:HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+      'native:HKQuantityTypeIdentifierDietaryProtein',
+    ],
+    time: ['native:applications', 'native:websites'],
+    location: ['native:points'],
+  },
+  export: { ...pinned.export, formats: ['json', 'jsonl'], lookbackDays: 14 },
+  schedule: { ...pinned.schedule, hour: 9, minute: 30 },
+  agentAccess: true,
+};
+const beforeImport = JSON.stringify(imported);
+const androidCatalog = {
+  health: ['native:Steps', 'native:HeartRateVariabilityRmssd', 'native:Nutrition'],
+  time: ['native:applications', 'native:sessions'],
+  location: ['native:points'],
+};
+const reviewed = compatibleProfile(imported, androidCatalog);
+assert.deepEqual(reviewed.profile.selection, {
+  health: ['native:Steps'],
+  time: ['native:applications'],
+  location: ['native:points'],
+});
+assert.equal(reviewed.mapped.length, 1);
+assert.deepEqual(
+  reviewed.unsupported.map((item) => item.type),
+  [
+    'native:HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+    'native:HKQuantityTypeIdentifierDietaryProtein',
+    'native:websites',
+  ],
+);
+assert.equal(JSON.stringify(imported), beforeImport);
+assert.deepEqual(reviewed.profile.export, imported.export);
+assert.deepEqual(reviewed.profile.schedule, imported.schedule);
+assert.equal('agentAccess' in reviewed.profile, false);
+assert.deepEqual(compatibleProfile(reviewed.profile, androidCatalog).mapped, []);
+const iosReviewed = compatibleProfile(
+  {
+    ...pinned,
+    selection: { health: ['native:Steps'], time: ['native:sessions'], location: ['native:points'] },
+  },
+  {
+    health: ['native:HKQuantityTypeIdentifierStepCount'],
+    time: ['native:applications', 'native:websites'],
+    location: ['native:points'],
+  },
+);
+assert.deepEqual(iosReviewed.profile.selection.health, [
+  'native:HKQuantityTypeIdentifierStepCount',
+]);
+assert.equal(iosReviewed.unsupported[0]?.type, 'native:sessions');
+assert.equal(
+  compatibleProfile(imported, { health: [], time: [], location: [] }).unsupported.length,
+  7,
+);
+assert.throws(
+  () =>
+    compatibleProfile(
+      imported,
+      /** @type {Record<import('../core/data.js').Domain,string[]>} */ ({}),
+    ),
+  /catalog/,
+);
+console.log(
+  'Profile compatibility: bidirectional steps, exact selections, deduplication, no grouped/SDNN guesses, unsupported exclusions, consent omission and original preservation passed.',
 );

@@ -3,12 +3,36 @@ import { PairingError } from './errors.js';
 
 const feedbackSettingsSchema = z
   .object({
-    companionEnabled: z.boolean(),
-    cropEnabled: z.boolean(),
-    drawingEnabled: z.boolean(),
-    titleEnabled: z.boolean(),
-    descriptionEnabled: z.boolean(),
-    tagsEnabled: z.boolean(),
+    companionEnabled: z
+      .boolean()
+      .describe(
+        'Requested Gripe Debug companion setting for the next capture, subject to phone approval.',
+      ),
+    cropEnabled: z
+      .boolean()
+      .describe(
+        'Whether cropping should be offered for the next feedback capture, subject to phone approval.',
+      ),
+    drawingEnabled: z
+      .boolean()
+      .describe(
+        'Whether annotation drawing should be offered for the next feedback capture, subject to phone approval.',
+      ),
+    titleEnabled: z
+      .boolean()
+      .describe(
+        'Whether the title field should be offered for the next feedback capture, subject to phone approval.',
+      ),
+    descriptionEnabled: z
+      .boolean()
+      .describe(
+        'Whether the description field should be offered for the next feedback capture, subject to phone approval.',
+      ),
+    tagsEnabled: z
+      .boolean()
+      .describe(
+        'Whether tags should be offered for the next feedback capture, subject to phone approval.',
+      ),
   })
   .strict();
 
@@ -101,10 +125,24 @@ export function createFeedbackService({ own, phones, operations }) {
     mcp.registerTool(
       'get_phone_feedback',
       {
+        title: 'Read phone feedback availability',
         description:
           'Discover development-only iOS screenshot feedback on an owned phone. Reports require user approval and manual screenshot review/submission. No key, screenshot or report text is returned. Availability is from the latest heartbeat; open the phone app first.',
-        inputSchema: z.object({ deviceId: z.string().uuid() }),
-        annotations: { readOnlyHint: true },
+        inputSchema: z.object({
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+        }),
+        annotations: {
+          title: 'Read phone feedback availability',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deviceId }) => {
         own(deviceId, subject);
@@ -126,25 +164,64 @@ export function createFeedbackService({ own, phones, operations }) {
     mcp.registerTool(
       'request_phone_feedback',
       {
+        title: 'Request phone bug report',
+        annotations: {
+          title: 'Request phone bug report',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
         description:
           'Request the same native bug-report flow as Report a bug on an owned iOS dev phone. Use a fresh UUID operationId; repeat it to safely inspect/retry dispatch. Phone asks the user before capture; user crops/annotates/submits. Accepted or opened does not confirm submission. Expires in five minutes. Poll get_phone_feedback_operation for submission completion and its issue or Gripe receipt URL. Completion never means a coding fix finished. Does not read or grant personal data.',
-        inputSchema: z.object({ deviceId: z.string().uuid(), operationId: z.string().uuid() }),
+        inputSchema: z.object({
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          operationId: z
+            .string()
+            .uuid()
+            .describe(
+              'Caller-generated operation UUID for a new feedback action, or the returned UUID when polling. Retain the same ID and arguments for safe retries.',
+            ),
+        }),
       },
       async ({ deviceId, operationId }) => content(createOperation(deviceId, operationId)),
     );
     mcp.registerTool(
       'request_phone_feedback_settings',
       {
+        title: 'Request feedback settings change',
+        annotations: {
+          title: 'Request feedback settings change',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Change local Gripe Debug preferences on an owned foreground phone with explicit phone approval. Read get_phone_feedback for current settings. Configure companion, crop, drawing, title, description/prompt, and tags. Applies to next capture. A fresh operation UUID is required; repeat identical input for safe retry. Poll get_phone_feedback_operation; completed means native saved values confirmed, not a submitted report.',
         inputSchema: z.object({
-          deviceId: z.string().uuid(),
-          operationId: z.string().uuid(),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          operationId: z
+            .string()
+            .uuid()
+            .describe(
+              'Caller-generated operation UUID for a new feedback action, or the returned UUID when polling. Retain the same ID and arguments for safe retries.',
+            ),
           settings: feedbackSettingsSchema
             .partial()
-            .refine(
-              (settings) => Object.keys(settings).length > 0,
-              'Specify at least one setting.',
+            .refine((settings) => Object.keys(settings).length > 0, 'Specify at least one setting.')
+            .describe(
+              'Nonempty set of requested feedback preferences; omitted preferences stay unchanged. Completion requires native owner approval and saved values.',
             ),
         }),
       },
@@ -154,12 +231,34 @@ export function createFeedbackService({ own, phones, operations }) {
     mcp.registerTool(
       'request_phone_feedback_notifications',
       {
+        title: 'Request feedback notifications change',
+        annotations: {
+          title: 'Request feedback notifications change',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Request owner approval to enable or disable report milestone notifications on an owned iOS phone. Enabling may require OS permission. Poll get_phone_feedback_operation; completed means the preference was saved, not that a push arrived.',
         inputSchema: z.object({
-          deviceId: z.string().uuid(),
-          operationId: z.string().uuid(),
-          enabled: z.boolean(),
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          operationId: z
+            .string()
+            .uuid()
+            .describe(
+              'Caller-generated operation UUID for a new feedback action, or the returned UUID when polling. Retain the same ID and arguments for safe retries.',
+            ),
+          enabled: z
+            .boolean()
+            .describe(
+              "Requested enabled state. This initiates the tool's owner approval flow; it cannot grant consent by itself.",
+            ),
         }),
       },
       async ({ deviceId, operationId, enabled }) =>
@@ -218,10 +317,24 @@ export function createFeedbackService({ own, phones, operations }) {
     mcp.registerTool(
       'get_phone_feedback_operation',
       {
+        title: 'Check feedback request',
         description:
           'Inspect a feedback request initiated by this agent. Completed means report submission confirmed on the phone by a GitHub issue or Gripe receipt URL; it does not mean a coding fix completed. Failed submissions may remain in the SDK retry queue; do not create another report after uncertain delivery. Expired requests cannot initiate a capture; an already approved manual flow may still be open on the phone.',
-        inputSchema: z.object({ operationId: z.string().uuid() }),
-        annotations: { readOnlyHint: true },
+        inputSchema: z.object({
+          operationId: z
+            .string()
+            .uuid()
+            .describe(
+              'Caller-generated operation UUID for a new feedback action, or the returned UUID when polling. Retain the same ID and arguments for safe retries.',
+            ),
+        }),
+        annotations: {
+          title: 'Check feedback request',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ operationId }) => {
         const operation = operations.get(operationId);

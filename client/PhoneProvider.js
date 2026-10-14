@@ -316,9 +316,10 @@ function usePhoneState() {
         process.env.EXPO_PUBLIC_ACCOUNT_SERVER ?? 'https://myself.md',
         provider,
       );
-      await syncBilling(next);
       await saveSession(next);
+      clearAccountAllowance();
       setSession(next);
+      await syncBilling(next);
     },
     syncAccount: async () => {
       if (session) await syncBilling(session);

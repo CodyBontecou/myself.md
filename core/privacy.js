@@ -1,7 +1,7 @@
 /** Shared public disclosures for the phone, website and MCP. */
 export const privacyPolicy = {
   title: 'myself.md Privacy Policy',
-  updated: '2026-10-10',
+  updated: '2026-10-14',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/contact',
   supportEmail: 'cody@isolated.tech',
@@ -21,8 +21,12 @@ export const privacyPolicy = {
       body: 'Each profile chooses the data types, date range and destination for an export. You can save files on your phone, send them to your own HTTPS endpoint, or use the paired cloud service. Remote exports send the selected records and their details to that destination. Local exports do not need agent access.\n\nUploading to the cloud and sharing with agents are separate permissions. Live phone reads need your approval on the phone and an approved profile. Reading stored cloud data needs cloud sharing approval.\n\nSigning in also uses your account identity, sessions and connected-phone details. Purchases use store verification and purchase-access records.',
     },
     {
+      title: 'App updates and launch recovery',
+      body: 'The phone app checks Expo’s update service for compatible app updates. These automatic checks send a random installation identifier and app, platform and runtime version information. After a failed launch, a later update check can also send a short error message so the update service can help recover from the failure. These checks do not depend on signing in and there is no in-app switch to turn them off.\n\nExpo processes this information to deliver updates and recover from launch failures. Error text may contain details about the failure. This is separate from the optional debug reports and agent log access described below.',
+    },
+    {
       title: 'Cloud storage and retention',
-      body: 'We use Cloudflare to host the service. A private R2 bucket stores encrypted exports. Account storage holds identity, sharing permissions, phones, billing and activity details.\n\nExport files and their manifests are encrypted in storage. The service decrypts them for approved reads, so this is not end-to-end encryption.\n\nCompleted cloud exports expire after 30 days. Unfinished uploads expire after one hour. We remove expired files during cloud operations and background cleanup, and retry failed deletions. Activity older than 90 days is cleaned up when you view history. Account, sharing and billing records stay until you delete your account.\n\nFiles and recorded points on your phone do not expire automatically. Your own server or export destination may have different storage and backup rules.',
+      body: 'We use Cloudflare to host the service. A private R2 bucket stores encrypted exports. Account storage holds identity, sharing permissions, phones, billing and activity details.\n\nExport files and their manifests are encrypted in storage. The service decrypts them for approved reads, so this is not end-to-end encryption.\n\nCompleted cloud exports stay until you delete or replace them, or delete your account. Unfinished uploads expire after one hour. We remove unfinished uploads during cloud operations and background cleanup, and retry failed deletions. Activity older than 90 days is cleaned up when you view history. Account, sharing and billing records stay until you delete your account.\n\nFiles and recorded points on your phone do not expire automatically. Your own server or export destination may have different storage and backup rules.',
     },
     {
       title: 'After sharing with an AI provider',
@@ -35,6 +39,10 @@ export const privacyPolicy = {
     {
       title: 'Limited records after account deletion',
       body: 'We keep a deletion-status receipt for seven days and a small record that rejects old credentials. We also keep purchase identifiers to prevent duplicate claims, without the account link or receipt proof.\n\nDeleting your account does not cancel store subscriptions or issue refunds. Delete copies in other services, AI providers or your own backups separately.',
+    },
+    {
+      title: 'ChatGPT plugin connection',
+      body: 'The dedicated /mcp/chatgpt connection exposes approved data discovery and reads through a separate OAuth resource. It does not expose diagnostic reports, captured request credentials, raw phone error messages, support-message delivery, deletion or purchase/upgrade flows. Phone catalogs on this connection omit diagnostic/feedback reports and HTTP export destinations. The broader app and other MCP endpoint retain their separately consented capabilities. Health and recorded-location results still require your existing profiles and data grants. Do not submit protected health information, government identifiers or authentication secrets through this connection.',
     },
     {
       title: 'Debug logs',

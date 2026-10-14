@@ -1,5 +1,5 @@
 export const lifetimeCloudBytes = 100_000_000;
-/** @typedef {{eligible:boolean,limitBytes:number,usedBytes:number,availableBytes:number,overLimit:boolean,retentionDays:number}} CloudAllowance */
+/** @typedef {{eligible:boolean,limitBytes:number,usedBytes:number,availableBytes:number,overLimit:boolean,retentionDays:null}} CloudAllowance */
 /** @param {boolean} eligible @param {number} usedBytes @returns {CloudAllowance} */
 export function cloudAllowance(eligible, usedBytes) {
   const limitBytes = eligible ? lifetimeCloudBytes : 0;
@@ -9,7 +9,7 @@ export function cloudAllowance(eligible, usedBytes) {
     usedBytes,
     availableBytes: Math.max(0, limitBytes - usedBytes),
     overLimit: usedBytes > limitBytes,
-    retentionDays: 30,
+    retentionDays: null,
   };
 }
 /** @param {CloudAllowance} value */

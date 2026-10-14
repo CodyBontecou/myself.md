@@ -1,0 +1,10 @@
+{
+  "extends": "../jsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["react", "react-dom", "node"],
+    "tsBuildInfoFile": "../node_modules/.cache/launch-video.tsbuildinfo",
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.js"]
+}

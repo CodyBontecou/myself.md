@@ -3,7 +3,7 @@ import { Screen, Copy } from '../components/ui';
 import { usePhoneData } from '../../client/DataPanel';
 import ProfilePanel from '../../client/ProfilePanel';
 export default function ProfileScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, firstExport } = useLocalSearchParams();
   const {
     session,
     profiles,
@@ -23,6 +23,7 @@ export default function ProfileScreen() {
         <ProfilePanel
           key={profileId}
           profileId={profileId}
+          exportFirst={firstExport === '1'}
           session={session}
           state={profiles}
           types={types}

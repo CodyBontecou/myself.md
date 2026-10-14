@@ -11,6 +11,7 @@ import { logJson, logsJson, selectLogs, logs as unifiedLogs } from '../core/logs
 import { exportEvent } from '../core/history.js';
 import * as core from '../core/debug-log.js';
 import { createDataService } from '../server/data-service.js';
+import { restrictChatgptTools } from '../server/chatgpt-tools.js';
 import { BillingStore } from '../server/billing-store.js';
 import { HistoryStore } from '../server/history-store.js';
 import { parseProfile } from '../core/profiles.js';
@@ -66,10 +67,13 @@ const billing = new BillingStore(':memory:');
 const history = new HistoryStore(':memory:', { seal: (value) => value, open: (value) => value });
 /** @type {Map<string,import('../server/data-service.js').Phone>} */
 const phones = new Map();
+/** @type {Map<string,import('../server/data-service.js').Job>} */
+const jobs = new Map();
 const service = createDataService({
   billing,
   history,
   phones,
+  jobs,
   refreshEntitlement: async () => {},
   devices: (subject) =>
     subject === 'owner' ? [{ id: deviceId, name: 'Test', created: Date.now() }] : [],
@@ -102,11 +106,12 @@ function heartbeat(report) {
     diagnostics: report,
   });
 }
-/** @param {string} subject */
-async function connect(subject) {
+/** @param {string} subject @param {boolean} [chatgpt] */
+async function connect(subject, chatgpt = false) {
   const handler = createMcpHandler(() => {
     const mcp = new McpServer({ name: 'logs-test', version: '1' });
-    service.registerDataTools(mcp, subject, 'test-agent');
+    if (chatgpt) restrictChatgptTools(mcp);
+    service.registerDataTools(mcp, subject, 'test-agent', { chatgpt });
     return mcp;
   });
   const client = new Client({ name: 'test', version: '1' });
@@ -463,6 +468,13 @@ try {
     records: attachment,
   });
   const richReport = logs.debugReport(context, true);
+  const destinationProfile = catalog.profiles[0];
+  assert.ok(destinationProfile);
+  destinationProfile.export = {
+    ...destinationProfile.export,
+    destination: 'http',
+    httpUrl: 'https://destination.fixture/?apiKey=synthetic-destination-key',
+  };
   heartbeat(richReport);
   const deniedRecordReport = /** @type {import('../core/debug-log.js').DebugReport} */ (
     (await read(owner)).structuredContent?.report
@@ -481,6 +493,64 @@ try {
     !JSON.stringify(catalogResult.structuredContent).includes('fixture-record-value'),
     'Catalog cannot bypass diagnostic record authorization',
   );
+  const restricted = await connect('owner', true);
+  try {
+    const safeCatalog = await restricted.callTool({
+      name: 'get_phone_data_catalog',
+      arguments: { deviceId },
+    });
+    const safeText = JSON.stringify(safeCatalog);
+    assert.ok(!safeText.includes('Bearer grant-test'));
+    assert.ok(!safeText.includes('fixture.test/private'));
+    assert.ok(!safeText.includes('diagnostics'));
+    assert.ok(!safeText.includes('feedback'));
+    assert.ok(!safeText.includes('synthetic-destination-key'));
+    await assert.rejects(
+      () => restricted.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }),
+      /not found/,
+    );
+    assert.ok(
+      JSON.stringify(catalogResult).includes('Bearer grant-test'),
+      'The separately consented full endpoint retains its existing diagnostics',
+    );
+    assert.ok(JSON.stringify(catalogResult).includes('synthetic-destination-key'));
+    const requestId = randomUUID();
+    jobs.set(requestId, {
+      id: requestId,
+      subject: 'owner',
+      deviceId,
+      client: 'test-agent',
+      expires: Date.now() + 60000,
+      state: 'failed',
+      query: {
+        deviceId,
+        profileId: 'private',
+        domain: 'health',
+        type: 'fixture',
+        source: 'native',
+        start: '2026-10-12T00:00:00Z',
+        end: '2026-10-13T00:00:00Z',
+        cursor: '',
+        limit: 50,
+        format: 'json',
+        schema: 'myself.md.export.v1',
+      },
+      error: 'Phone adapter failed with Bearer synthetic-capture-secret',
+    });
+    const safeFailure = await restricted.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId },
+    });
+    assert.ok(JSON.stringify(safeFailure).includes('Phone capture failed.'));
+    assert.ok(!JSON.stringify(safeFailure).includes('synthetic-capture-secret'));
+    const fullFailure = await owner.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId },
+    });
+    assert.ok(JSON.stringify(fullFailure).includes('synthetic-capture-secret'));
+  } finally {
+    await restricted.close();
+  }
   const requestContent = await owner.callTool({
     name: 'request_phone_debug_content',
     arguments: { deviceId, content: { records: false, credentials: false, urls: false } },

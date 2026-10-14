@@ -161,12 +161,16 @@ try {
   await assert.rejects(store.delete('alice', replacement), /deletion failed/);
   assert.equal(store.list('alice').length, 1);
   fixture.state.failDelete = false;
-  // Expiry removes visibility immediately and queues physical deletion.
+  // Age does not remove visibility or enqueue physical deletion.
   store.db
     .prepare('UPDATE exports SET created=? WHERE id=?')
     .run(Date.now() - 31 * 86400000, replacement);
-  assert.equal(store.list('alice').length, 0);
+  assert.equal(store.list('alice').length, 1);
   await store.sweepObjects();
+  assert.deepEqual((await store.page('alice', replacement, 0, 50)).records, [record]);
+  assert.equal(fixture.files.size, 1);
+  await store.delete('alice', replacement);
+  assert.equal(store.list('alice').length, 0);
   assert.equal(fixture.files.size, 0);
   const restored = begin();
   await commit(restored);

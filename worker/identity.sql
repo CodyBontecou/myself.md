@@ -59,3 +59,4 @@ create index "oauthConsent_clientId_idx" on "oauthConsent" ("clientId");
 create index "oauthConsent_userId_idx" on "oauthConsent" ("userId");
 
 create unique index "oauthClientResource_clientId_resourceId_uidx" on "oauthClientResource" ("clientId", "resourceId");
+create unique index "account_provider_identity_unique" on "account" ("providerId", "accountId");

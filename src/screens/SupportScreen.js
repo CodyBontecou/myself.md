@@ -30,17 +30,35 @@ export default function SupportScreen() {
   );
 }
 function SupportChannels() {
-  const emailBody = [
-    '',
-    '',
-    '--',
-    'myself.md support details',
+  const supportDetails = [
     `App version: ${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'Unavailable'}`,
     `App build: ${Application.nativeBuildVersion ?? 'Unavailable'}`,
     `Phone model: ${Device.modelName ?? 'Unavailable'}${Device.modelId ? ` (${Device.modelId})` : ''}`,
     `Operating system: ${Device.osName ?? 'Unavailable'} ${Device.osVersion ?? 'Unavailable'}${Device.osBuildId ? ` (build ${Device.osBuildId})` : ''}`,
     ...(Updates.runtimeVersion ? [`App runtime: ${Updates.runtimeVersion}`] : []),
     ...(Updates.updateId ? [`App update: ${Updates.updateId}`] : []),
+  ].join('\n');
+  const emailBody = `\n\n--\nmyself.md support details\n${supportDetails}`;
+  const issueBody = [
+    '## Issue',
+    'Describe the bug or feature request.',
+    '',
+    '## Steps to reproduce (if applicable)',
+    '1. ',
+    '2. ',
+    '3. ',
+    '',
+    '## Expected behavior',
+    'What should happen?',
+    '',
+    '## Actual behavior',
+    'What happened instead?',
+    '',
+    '## Screenshots (optional)',
+    'Add screenshots if helpful. Remove personal data before submitting this public issue.',
+    '',
+    '## App and device details',
+    supportDetails,
   ].join('\n');
   return (
     <Group compact>
@@ -50,7 +68,11 @@ function SupportChannels() {
         title="Submit a GitHub issue"
         subtitle="Bugs and feature requests"
         icon={<Icon name="logo-github" />}
-        onPress={() => void openPrivacyLink(`${privacyPolicy.issuesUrl}/new/choose`)}
+        onPress={() =>
+          void openPrivacyLink(
+            `${privacyPolicy.issuesUrl}/new?body=${encodeURIComponent(issueBody)}`,
+          )
+        }
       />
       <Row
         compact

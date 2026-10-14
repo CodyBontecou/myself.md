@@ -42,7 +42,8 @@ export function MigrationClaim() {
   }
   async function claim() {
     const ticket = sessionStorage.getItem('myself-migration-ticket');
-    if (!ticket) throw new Error('Open “Claim myself.md access” in health.md or iso.me to start.');
+    if (!ticket)
+      throw new Error('Open “Claim myself.md access” in health.md, iso.me, or time.md to start.');
     await api('/api/migration/claim', 'POST', { ticket });
     sessionStorage.removeItem('myself-migration-ticket');
     setClaimed(true);
@@ -57,7 +58,7 @@ export function MigrationClaim() {
           <CardDescription>
             {claimed
               ? `Lifetime access is linked to ${account}. Sign in with the same account in myself.md on iOS or Android.`
-              : 'Your qualifying health.md or iso.me purchase includes complimentary lifetime access. Sign in to choose the account that will receive it.'}
+              : 'Your qualifying health.md, iso.me, or time.md purchase includes complimentary lifetime access. Sign in to choose the account that will receive it.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

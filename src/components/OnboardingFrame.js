@@ -1,69 +1,108 @@
 import { ErrorToast } from './Toast.js';
+import { useRef, useState } from 'react';
 import { Stack } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOnboarding } from '../../client/onboarding';
 import { useTheme } from '../lib/theme';
 import { Copy, Button } from './ui';
 
-function SkipButton() {
+/** @param {{disabled:boolean}} props */
+function SkipButton({ disabled }) {
   const { finish } = useOnboarding();
   return (
     <OnboardingButton
       testID="onboarding-skip"
       label="Skip"
       secondary
+      disabled={disabled}
       onPress={() => finish('/profiles')}
     />
   );
 }
 
 function renderSkipButton() {
-  return <SkipButton />;
+  return <SkipButton disabled={false} />;
+}
+function renderNoSkipButton() {
+  return null;
 }
 
-/** @param {{label:string,onPress:()=>void,secondary?:boolean,testID?:string}} props */
-export function OnboardingButton({ label, onPress, secondary = false, testID }) {
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,testID?:string,disabled?:boolean,busy?:boolean}} props */
+export function OnboardingButton({
+  label,
+  onPress,
+  secondary = false,
+  testID,
+  disabled = false,
+  busy = false,
+}) {
   return (
-    <Button label={label} onPress={onPress} secondary={secondary} {...(testID ? { testID } : {})} />
+    <Button
+      label={label}
+      onPress={onPress}
+      secondary={secondary}
+      disabled={disabled}
+      busy={busy}
+      {...(testID ? { testID } : {})}
+    />
   );
 }
 
-/** @param {{title:string,body:string,children:import('react').ReactNode,footer:import('react').ReactNode,testID:string}} props */
-export default function OnboardingFrame({ title, body, children, footer, testID }) {
+/** @param {{title:string,body:string,children:import('react').ReactNode,footer:import('react').ReactNode,testID:string,disabled?:boolean}} props */
+export default function OnboardingFrame({
+  title,
+  body,
+  children,
+  footer,
+  testID,
+  disabled = false,
+}) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { error } = useOnboarding();
+  const container = useRef(/** @type {View|null} */ (null));
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   return (
     <View
-      testID={testID}
-      collapsable={false}
-      style={[styles.fill, { backgroundColor: colors.background }]}
+      ref={container}
+      onLayout={() => container.current?.measureInWindow((_x, y) => setKeyboardOffset(y))}
+      style={styles.fill}
     >
-      <Stack.Screen options={{ headerRight: renderSkipButton }} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={styles.fill}
-        contentContainerStyle={styles.scroll}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardOffset}
+        testID={testID}
+        collapsable={false}
+        style={[styles.fill, { backgroundColor: colors.background }]}
       >
-        <View style={styles.column}>
-          <View style={styles.heading}>
-            <Copy variant="title" style={styles.title}>
-              {title}
-            </Copy>
-            <Copy muted style={styles.body}>
-              {body}
-            </Copy>
+        <Stack.Screen options={{ headerRight: disabled ? renderNoSkipButton : renderSkipButton }} />
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          style={styles.fill}
+          contentContainerStyle={styles.scroll}
+        >
+          <View style={styles.column}>
+            <View style={styles.heading}>
+              <Copy variant="title" style={styles.title}>
+                {title}
+              </Copy>
+              <Copy muted style={styles.body}>
+                {body}
+              </Copy>
+            </View>
+            {children}
           </View>
-          {children}
+        </ScrollView>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.actions}>
+            <ErrorToast error={error} />
+            {footer}
+          </View>
         </View>
-      </ScrollView>
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.actions}>
-          <ErrorToast error={error} />
-          {footer}
-        </View>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

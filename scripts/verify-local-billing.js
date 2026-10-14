@@ -153,3 +153,5 @@ try {
 } finally {
   db.close();
 }
+
+await import('./verify-billing-timeout.js');

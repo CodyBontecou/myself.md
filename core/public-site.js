@@ -1,5 +1,8 @@
+import { serviceTerms } from './terms.js';
 import { freeExports } from './billing.js';
 import { privacyPolicy } from './privacy.js';
+
+export const smitheryListingUrl = 'https://smithery.ai/servers/cody-82px/myself-md';
 
 export const publicNavigation = [
   { label: 'Home', href: '/' },
@@ -19,9 +22,9 @@ myself.md brings your health, screen time and recorded location data together in
 
 Use myself.md when a person wants an AI agent to analyze their approved health records, understand screen-time patterns, or work with location points they chose to record. Use the public dataset explorer to preview fictional records before connecting any account. Never treat the demo as a real person's health data or infer permission from an empty result.
 
-## Try the free public sandbox
+## Preview the cloud dashboard
 
-The demo at https://myself.md/demo is a free, read-only sandbox with fictional datasets and example exports. It needs no account, API key or sales conversation. Preview supported data at https://myself.md/datasets. Mobile store distribution is coming soon; source and self-hosting instructions are available at https://github.com/CodyBontecou/myself.md.
+The cloud dashboard demo at https://myself.md/demo is a free browser-only sandbox with fictional datasets and example exports. Explore the dashboard without an account or API key; changes stay in the demo and reset when you reload. Preview supported data at https://myself.md/datasets. Mobile store distribution is coming soon; source and self-hosting instructions are available at https://github.com/CodyBontecou/myself.md.
 
 ## JavaScript integration
 
@@ -31,9 +34,11 @@ Install the official SDK with npm install myself-md-sdk. Package: https://www.np
 
 Add https://myself.md/mcp as a remote MCP server in a compatible client. OAuth 2.0 signs you in and asks for consent. Pair your phone and approve specific profiles and data grants before requesting private records. Agents cannot grant themselves access. Read the developer guide at https://myself.md/docs and the privacy policy at https://myself.md/privacy.
 
+Find myself.md in the Smithery MCP directory: ${smitheryListingUrl}.
+
 ## Your data, on your terms
 
-Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and expires after 30 days. The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
+Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and kept until you delete or replace it. The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
 `;
 export const publicFAQs = [
   {
@@ -67,13 +72,15 @@ export const publicCloudPlans = [
   { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
   { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
 ];
-const publicPricing = `The public demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The planned US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Mobile store distribution is coming soon. Eligible existing health.md and iso.me purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
+const publicPricing = `The cloud dashboard demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The planned US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Mobile store distribution is coming soon. Eligible existing health.md and iso.me purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
 const faqMarkdown = publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n');
 const overview = `# Get started
 
 Connect your AI assistant to the health, screen time and location data you choose to share. Or use the SDK and CLI to build your own integration.
 
 ## Connect an AI assistant
+
+Directory listing: ${smitheryListingUrl}.
 
 Add this URL as a remote MCP server in your assistant’s settings. MCP is the connection that lets an assistant use myself.md tools.
 
@@ -164,7 +171,7 @@ Use the returned identifiers rather than guessing them. \`create_phone_export_pr
 
 A phone read may need the app open and OS permissions enabled. Sign-in, permission prompts, purchases and system sharing require the owner on the device. Empty HealthKit results can mean missing records or limited permission; they do not prove authorization.
 
-Try the [fictional-data demo](/demo) or browse [Datasets](/datasets) before connecting a phone. Neither authorizes private reads.
+Try the [cloud dashboard demo](/demo) or browse [Datasets](/datasets) before connecting a phone. Neither authorizes private reads.
 
 ## Query through REST
 
@@ -293,11 +300,11 @@ Connect to [myself.md MCP](https://myself.md/mcp), sign in, and pair your phone.
 
 Review sharing and activity in the app or dashboard. You can stop future access at any time. Copies already sent to another service follow that service’s retention policy.
 
-Cloud exports are encrypted in storage and expire after 30 days. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) for details.
+Cloud exports are encrypted in storage and kept until you delete or replace them. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) for details.
 
 ## Try it out
 
-Explore the [free demo](/demo) and [supported datasets](/datasets) without an account or API key. The demo is read only and uses fictional data.
+Explore the [cloud dashboard demo](/demo) and [supported datasets](/datasets) without an account or API key. The dashboard demo uses fictional data; changes stay in your browser and reset when you reload.
 
 The mobile apps are coming soon. You can find the source code and self-hosting instructions on [GitHub](https://github.com/CodyBontecou/myself.md).
 
@@ -332,12 +339,13 @@ export const publicPages = new Map([
   ],
   ['/about', about],
   ['/contact', contact],
+  ['/terms', serviceTerms],
   [
     '/privacy',
     `# ${privacyPolicy.title}\n\nUpdated ${privacyPolicy.updated}\n\n${privacyPolicy.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\n## Support\n\n[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})\n`,
   ],
 ]);
-export const agentIndex = `${home}\n## Developer resources\n\n- [myself.md MCP and OAuth documentation](https://myself.md/docs)\n- [Privacy policy](https://myself.md/privacy)\n- [Contact](https://myself.md/contact)\n- [OpenAPI public discovery specification](https://myself.md/openapi.json)\n- [MCP server card](https://myself.md/mcp/server-card)\n- [Agent resource catalog](https://myself.md/.well-known/ard.json)\n- [Sitemap](https://myself.md/sitemap.xml)\n`;
+export const agentIndex = `${home}\n## Developer resources\n\n- [myself.md MCP and OAuth documentation](https://myself.md/docs)\n- [Privacy policy](https://myself.md/privacy)\n- [Terms of service](https://myself.md/terms)\n- [Contact](https://myself.md/contact)\n- [OpenAPI public discovery specification](https://myself.md/openapi.json)\n- [MCP server card](https://myself.md/mcp/server-card)\n- [Agent resource catalog](https://myself.md/.well-known/ard.json)\n- [Sitemap](https://myself.md/sitemap.xml)\n`;
 /** @param {string} value */
 function escapeHTML(value) {
   return value.replace(
@@ -360,5 +368,5 @@ export function publicHTML(markdown) {
     })
     .join(
       '\n',
-    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/demo">Demo</a> · <a href="/docs">Developers</a> · <a href="https://www.npmjs.com/package/myself-md-sdk">JavaScript SDK</a> · <a href="https://www.npmjs.com/package/myself-md-cli">CLI</a> · <a href="/pricing">Pricing</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a></nav></main>`;
+    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/demo">Cloud dashboard demo</a> · <a href="/docs">Developers</a> · <a href="https://www.npmjs.com/package/myself-md-sdk">JavaScript SDK</a> · <a href="https://www.npmjs.com/package/myself-md-cli">CLI</a> · <a href="/pricing">Pricing</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a> · <a href="${smitheryListingUrl}">Smithery</a></nav></main>`;
 }

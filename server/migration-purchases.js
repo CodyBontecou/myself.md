@@ -6,12 +6,24 @@ const healthProducts = [
   'com.codybontecou.obsidianhealth.unlock.family',
 ];
 const isoProducts = ['com.bontecou.isome.lifetime.individual', 'com.bontecou.isome.lifetime'];
-const proofSchema = z.object({
-  app: z.enum(['health.md', 'iso.me']),
-  store: z.enum(['ios', 'android']),
-  kind: z.enum(['iap', 'app']),
-  proof: z.string().min(1).max(30000),
+const timeProofSchema = z.object({
+  app: z.literal('time.md'),
+  store: z.literal('stripe'),
+  kind: z.literal('license'),
+  proof: z
+    .string()
+    .trim()
+    .regex(/^TMD(?:-[A-Z2-9]{4}){5}$/i),
 });
+const proofSchema = z.union([
+  timeProofSchema,
+  z.object({
+    app: z.enum(['health.md', 'iso.me']),
+    store: z.enum(['ios', 'android']),
+    kind: z.enum(['iap', 'app']),
+    proof: z.string().min(1).max(30000),
+  }),
+]);
 /** Check decoded, server-verified evidence. Never call with client-decoded JSON.
  * @param {'health.md'|'iso.me'} app @param {'iap'|'app'} kind
  * @param {{productId?:string,type?:string,inAppOwnershipType?:string,revocationDate?:number,originalTransactionId?:string,appTransactionId?:string,originalPurchaseDate?:number}} evidence */
@@ -43,6 +55,40 @@ export function migrationEligibility(app, kind, evidence) {
 /** @param {unknown} body */
 export async function verifyMigrationPurchase(body) {
   const input = proofSchema.parse(body);
+  if (input.app === 'time.md') {
+    let response;
+    try {
+      response = await fetch('https://timemd.app/api/myself-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activation_key: input.proof }),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      throw new PairingError(
+        503,
+        'Time.md purchase verification is unavailable. Try again shortly.',
+      );
+    }
+    if (!response.ok)
+      throw new PairingError(
+        response.status === 403 ? 403 : 503,
+        response.status === 403
+          ? 'An active time.md license with a successful, unrefunded payment is required.'
+          : 'Time.md purchase verification is unavailable. Try again shortly.',
+      );
+    const evidence = z
+      .object({
+        source: z.literal('time.md:stripe'),
+        reference: z
+          .string()
+          .regex(/^pi_[A-Za-z0-9]+$/)
+          .max(255),
+      })
+      .parse(await response.json());
+    return evidence;
+  }
   if (input.store === 'android') {
     if (input.app !== 'health.md' || input.kind !== 'iap')
       throw new PairingError(403, 'This Android purchase is not eligible.');

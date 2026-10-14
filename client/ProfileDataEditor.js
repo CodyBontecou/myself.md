@@ -13,7 +13,7 @@ import { categories } from './health-types.js';
 /** @typedef {{kind:'type',domain:import('../core/data.js').Domain,key:string}} TypeRow */
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
 /** @typedef {{kind:'domain',domain:import('../core/data.js').Domain,key:string,expanded:boolean}} DomainRow */
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onOpenLocation:()=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onOpenLocation?:()=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
 export default function ProfileDataEditor({
   types,
   permissions,
@@ -266,7 +266,7 @@ export default function ProfileDataEditor({
                     : 'Only points recorded by myself.md are exported.'
                 }
               />
-              {item.domain === 'location' && (
+              {item.domain === 'location' && onOpenLocation && (
                 <Row
                   compact
                   title={inline ? 'Set up recording' : 'Save profile and set up recording'}

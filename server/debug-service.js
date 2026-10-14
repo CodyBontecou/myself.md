@@ -10,7 +10,23 @@ import {
 import { agentProfileAllows, parseProfile, agentLogsAllowed } from '../core/profiles.js';
 import { PairingError } from './errors.js';
 const contentSchema = z
-  .object({ records: z.boolean(), credentials: z.boolean(), urls: z.boolean() })
+  .object({
+    records: z
+      .boolean()
+      .describe(
+        'Whether future debug captures may include record attachments; owner approval and current data grants remain required.',
+      ),
+    credentials: z
+      .boolean()
+      .describe(
+        'Whether future debug captures may include credential attachments. Only the phone owner can enable this sensitive setting.',
+      ),
+    urls: z
+      .boolean()
+      .describe(
+        'Whether future debug captures may include URL attachments; only the owner can change this capture setting.',
+      ),
+  })
   .strict();
 export const debugReportSchema = z
   .object({
@@ -74,10 +90,29 @@ export function registerDebugTools(mcp, subject, own, phones) {
   mcp.registerTool(
     'request_phone_debug_content',
     {
+      title: 'Review debug content settings',
       description:
         'Request a trusted phone-owner handoff to set log content inclusion (records, credentials, URLs). Cannot enable capture or expand grants remotely. These switches capture future attachments; turning them off removes retained structured fields. Raw errors always remain and may contain sensitive text. Inspect the returned content state after the user changes the phone controls; records in agent reads still require current data grants and profile approval.',
-      inputSchema: z.object({ deviceId: z.string().uuid(), content: contentSchema }).strict(),
-      annotations: { readOnlyHint: true },
+      inputSchema: z
+        .object({
+          deviceId: z
+            .string()
+            .uuid()
+            .describe(
+              'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+            ),
+          content: contentSchema.describe(
+            'Requested debug attachment settings for owner review. This does not itself enable capture or widen sharing grants.',
+          ),
+        })
+        .strict(),
+      annotations: {
+        title: 'Review debug content settings',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ deviceId, content }) => {
       own(deviceId, subject);
@@ -106,18 +141,45 @@ export function registerDebugTools(mcp, subject, own, phones) {
     mcp.registerTool(
       name,
       {
+        title:
+          name === 'get_phone_debug_logs' ? 'Read phone debug logs' : 'Review debug log sharing',
+
         description:
           name === 'get_phone_debug_logs'
-            ? 'Read or export the phone’s safe debug report: event times, operations, outcomes, request duration and HTTP status. Requires an enabled profile with App logs permission (profileId selects one; otherwise any approved profile) and user-enabled Share logs with agents on the owned phone and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Includes raw error messages. Records, request credentials and URLs are included only when the phone owner enables those fields; records also require current domain/type grants and an approved profile. Errors themselves may contain sensitive information. Does not consume export allowance. Save the structured result as JSON to share with support; copies cannot be recalled.'
+            ? 'Read the phone’s consented debug report: event times, operations, outcomes, request duration and HTTP status. Requires an enabled profile with App logs permission (profileId selects one; otherwise any approved profile) and user-enabled Share logs with agents on the owned phone and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Includes raw error messages. Records, request credentials and URLs are included only when the phone owner enables those fields; records also require current domain/type grants and an approved profile. Raw errors and enabled attachments may contain sensitive information or secrets. Does not consume export allowance. Copies sent to another service cannot be recalled.'
             : 'Ask the user to open Logs → Share & agent access on the paired phone and enable Share logs with agents. Cannot enable consent remotely. Inspect get_phone_debug_logs after phone approval to verify access. Native sharing is a user-completed system share sheet; this tool does not send a report.',
         inputSchema: z
           .object({
-            deviceId: z.string().uuid(),
-            filter: z.enum(['all', 'issues']).default('all'),
-            profileId: z.string().min(1).max(100).optional(),
+            deviceId: z
+              .string()
+              .uuid()
+              .describe(
+                'Owned phone UUID returned by list_connected_phones. Use get_phone_data_catalog to check its current connectivity and grants.',
+              ),
+            filter: z
+              .enum(['all', 'issues'])
+              .default('all')
+              .describe(
+                'Choose all permitted diagnostic events or only issues; private and unapproved attachments remain excluded.',
+              ),
+            profileId: z
+              .string()
+              .min(1)
+              .max(100)
+              .optional()
+              .describe(
+                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+              ),
           })
           .strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title:
+            name === 'get_phone_debug_logs' ? 'Read phone debug logs' : 'Review debug log sharing',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async ({ deviceId, filter, profileId }) => {
         own(deviceId, subject);

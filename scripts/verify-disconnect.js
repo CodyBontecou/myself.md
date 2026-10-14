@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { errorJSON, readJSONResponse } from '../packages/support-chat/errors.js';
+import { errorJSON, errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 import { createPairingUrl, createPairingDeepLink, parsePairingQr } from '../core/index.js';
 // Exercise the actual UI handler with native/network boundaries replaced.
 const app = readFileSync('client/PhoneProvider.js', 'utf8');
@@ -53,6 +53,8 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
   let screen = 'connected';
   const context = vm.createContext({
     errorJSON,
+    errorMessage,
+    showToast: () => {},
     readJSONResponse,
     session: { deviceId: failure === 'account' ? '' : 'old-phone' },
     clearAccountAllowance: () => {

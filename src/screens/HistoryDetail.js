@@ -121,7 +121,7 @@ export default function HistoryDetail({ event }) {
             {event.target === 'local'
               ? 'Tap a file to share it. Files may have been removed or replaced; the original file is verified before sharing.'
               : event.target === 'cloud'
-                ? 'Cloud files are retained for 30 days. This history entry remains after files expire or are replaced.'
+                ? 'Cloud files stay until you delete them or replace them. This history entry remains after files are deleted or replaced.'
                 : 'The destination acknowledged these files. History cannot confirm their current availability there.'}
           </Copy>
         </View>

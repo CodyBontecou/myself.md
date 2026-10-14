@@ -13,7 +13,8 @@
     "!dashboard/dist/**",
     "dashboard/**/*.css",
     "worker/**/*.js",
-    "packages/support-chat/**/*.js"
+    "packages/support-chat/**/*.js",
+    "launch-video/**/*.js"
   ],
   "ignoreDependencies": ["@types/punycode", "cloudflare"],
   "ignoreBinaries": ["fly"],
@@ -24,6 +25,7 @@
     "src/app/**/*.js",
     "dashboard/app.js",
     "dashboard/browser-tools.js",
+    "dashboard/profile-share.js",
     "dashboard/style.css",
     "dashboard/docs.css",
     "worker/index.js",
@@ -33,6 +35,8 @@
     "packages/support-chat/native.js",
     "packages/support-chat/web.js",
     "packages/support-chat/support-native.js",
-    "packages/support-chat/support-web.js"
+    "packages/support-chat/support-web.js",
+    "launch-video/index.js",
+    "launch-video/render.js"
   ]
 }

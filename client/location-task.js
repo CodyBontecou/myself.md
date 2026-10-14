@@ -1,11 +1,56 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import { Alert, Platform } from 'react-native';
 import { phoneDatabase } from './phone-database.js';
 import { record } from '../core/data.js';
 import { saveRecord } from './library.js';
 const locationTask = 'myselfmd-location';
 const legacyLocationTask = 'qr-connect-location';
 const db = phoneDatabase();
+let pendingDisclosureOwner = /** @type {string|null} */ (null);
+const recordingDisclosure =
+  'myself.md collects precise location data to build your personal location history, even when the app is closed or not in use. Points are stored on this phone. Your export profiles and separate sharing approvals control whether points are sent to your chosen cloud, HTTPS destination or agent. Recording uses battery. You can stop it here or revoke location access in Android Settings. Notifications must be allowed so the recording notice stays visible.';
+
+/** @returns {Promise<boolean>} */
+function confirmRecording() {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Record location in the background?',
+      recordingDisclosure,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Continue', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
+async function requireRecordingNotifications() {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync('location-recording', {
+    name: 'Location recording',
+    importance: Notifications.AndroidImportance.LOW,
+  });
+  let permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+  if (!permission.granted)
+    throw new Error(
+      'Allow notifications in Android Settings before starting background recording.',
+    );
+  const channels = await Notifications.getNotificationChannelsAsync();
+  if (
+    channels.some(
+      (channel) =>
+        channel.id.endsWith(`:${locationTask}`) &&
+        channel.importance === Notifications.AndroidImportance.NONE,
+    )
+  )
+    throw new Error(
+      'Enable the location recording notification channel in Android Settings, then retry.',
+    );
+}
 db.execSync('CREATE TABLE IF NOT EXISTS tracking (id INTEGER PRIMARY KEY, owner TEXT)');
 /** @param {string|null} owner */
 function setTrackingOwner(owner) {
@@ -20,6 +65,7 @@ TaskManager.defineTask(locationTask, async ({ data, error }) => {
   for (const point of points) saveRecord(id, record('location', 'points', 'expo-location', point));
 });
 export async function stopTracking() {
+  pendingDisclosureOwner = null;
   setTrackingOwner(null);
   await Promise.all(
     [locationTask, legacyLocationTask].map(async (task) => {
@@ -28,20 +74,32 @@ export async function stopTracking() {
     }),
   );
 }
-/** @param {string} owner @returns {Promise<boolean>} */
+/** Returns null on cancelled disclosure, false while awaiting background permission.
+ * @param {string} owner @returns {Promise<boolean|null>} */
 export async function startTracking(owner) {
-  const foreground = await Location.requestForegroundPermissionsAsync();
-  if (!foreground.granted) throw new Error('Location permission was not granted.');
-  let background = await Location.getBackgroundPermissionsAsync();
-  if (!background.granted) background = await Location.requestBackgroundPermissionsAsync();
-  // iOS Allow Once and denied Always access require a trip to Settings.
-  if (!background.granted) return false;
-  setTrackingOwner(owner);
+  if (Platform.OS === 'android' && pendingDisclosureOwner !== owner) {
+    if (!(await confirmRecording())) return null;
+    pendingDisclosureOwner = owner;
+  }
   try {
-    await startUpdates();
-    return true;
+    await requireRecordingNotifications();
+    const foreground = await Location.requestForegroundPermissionsAsync();
+    if (!foreground.granted) throw new Error('Location permission was not granted.');
+    let background = await Location.getBackgroundPermissionsAsync();
+    if (!background.granted) background = await Location.requestBackgroundPermissionsAsync();
+    // iOS Allow Once and denied Always access require a trip to Settings.
+    if (!background.granted) return false;
+    setTrackingOwner(owner);
+    try {
+      await startUpdates();
+      pendingDisclosureOwner = null;
+      return true;
+    } catch (error) {
+      setTrackingOwner(null);
+      throw error;
+    }
   } catch (error) {
-    setTrackingOwner(null);
+    pendingDisclosureOwner = null;
     throw error;
   }
 }
@@ -65,6 +123,18 @@ export async function captureLocation(owner) {
 export async function locationStatus(owner) {
   const background = await Location.getBackgroundPermissionsAsync();
   const foreground = await Location.getForegroundPermissionsAsync();
+  const notificationPermission =
+    Platform.OS === 'android'
+      ? (await Notifications.getPermissionsAsync()).granted
+        ? (await Notifications.getNotificationChannelsAsync()).some(
+            (channel) =>
+              channel.id.endsWith(`:${locationTask}`) &&
+              channel.importance === Notifications.AndroidImportance.NONE,
+          )
+          ? 'blocked'
+          : 'allowed'
+        : 'required'
+      : 'not-required';
   const summary = /** @type {{count:number,last:string|null}} */ (
     db.getFirstSync(
       "SELECT COUNT(*) AS count,MAX(start) AS last FROM records WHERE owner=? AND domain='location' AND source='expo-location'",
@@ -72,6 +142,7 @@ export async function locationStatus(owner) {
     )
   );
   return {
+    notificationPermission,
     backgroundGranted: background.granted,
     permission: background.granted
       ? 'Always allowed'

@@ -321,8 +321,8 @@ function HistoryDetails({ event, related, workspace }) {
             );
           })}
           <p className="text-xs text-muted-foreground">
-            Cloud files are retained for 30 days. History remains after files expire or are
-            replaced.
+            Cloud files stay until you delete them or replace them. History remains after files are
+            deleted or replaced.
           </p>
         </div>
       ) : null}

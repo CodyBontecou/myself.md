@@ -1,0 +1,97 @@
+{
+  "name": "myself.md",
+  "oneLiner": "Connect Claude to the health, screen time and recorded location data you choose to share.",
+  "description": "Use myself.md to discover your connected phones and the export profiles you have approved, query selected phone records, and read cloud exports you explicitly share. Explore health and screen-time patterns or summarize location points you chose to record. Data types differ between iOS and Android.\n\nPrivate access requires signing in to myself.md, pairing your phone, and approving the relevant profile and data grants. Phone queries may require the app to remain open and OS permissions enabled. Queries create jobs and use the same export allowance as the app; accepted requests are not completed results. The connector can propose profiles for your review, inspect activity and diagnostics with separate consent, and perform explicitly requested account or support actions.\n\nHealth records are provided for personal analysis, not medical advice. Cloud content is encrypted at rest and retained until owner deletion or replacement. Revocation stops future reads but cannot recall data already delivered to Claude. Debug logs may contain sensitive errors or owner-enabled attachments. Review the privacy policy before connecting.",
+  "proposedSlug": "myself-md",
+  "categorySuggestion": "Productivity",
+  "websiteURL": "https://myself.md",
+  "documentationURL": "https://myself.md/docs",
+  "privacyPolicyURL": "https://myself.md/privacy",
+  "supportContact": "cody@isolated.tech",
+  "icon": "./icon.png",
+  "serverURL": "https://myself.md/mcp",
+  "authentication": {
+    "mode": "OAuth with dynamic client registration",
+    "resource": "https://myself.md/mcp",
+    "scope": "myselfmd",
+    "issuer": "https://myself.md/auth/realms/myselfmd",
+    "protectedResourceMetadata": "https://myself.md/.well-known/oauth-protected-resource/mcp",
+    "pkce": "S256",
+    "redirectURI": "https://claude.ai/api/mcp/auth_callback"
+  },
+  "useCases": [
+    "Discover owned phones, supported datasets and approved profiles.",
+    "Query a selected screen-time or health type and poll for a completed page.",
+    "Read an explicitly shared stored export while the phone is offline.",
+    "Propose a profile for owner review without enabling data grants.",
+    "Inspect consented diagnostics, revoke access or request support when the user asks."
+  ],
+  "prerequisites": [
+    "A myself.md account signed in through a configured social provider.",
+    "The myself.md phone app installed; public mobile store distribution is not yet available.",
+    "Phone paired to the same account and approved profiles/data grants for private reads.",
+    "OS source permissions; foreground phone connectivity for live requests.",
+    "Remaining export/query allowance or an existing verified lifetime entitlement."
+  ],
+  "dataHandling": {
+    "handlesPersonalHealthData": true,
+    "handlesRecordedLocationData": true,
+    "sponsoredContent": false,
+    "apiOwnership": "myself.md account, phone and cloud APIs are first-party. Optional support legitimately proxies the operator\u2019s Isobot service and Discord.",
+    "readsAndWrites": "Both. Mutating or allowance-consuming tools require confirmation hints. User approval and server-side ownership checks remain enforced."
+  },
+  "reviewContact": {
+    "proposedPublisher": "Cody Bontecou",
+    "website": "https://myself.md",
+    "email": "cody@isolated.tech"
+  },
+  "submissionStatus": "Submitted and received October 14, 2026. Claude portal confirms In review, Submitted (done), In review (current), Live (not yet). All seven policy acknowledgments accepted with owner authorization. Review updates go to cody@isolated.tech.",
+  "reviewerAccess": {
+    "loginURL": "https://myself.md/auth/realms/myselfmd/reviewer-login",
+    "username": "reviewer",
+    "credentialDelivery": "Password supplied only in private reviewer fields; never a personal Google credential.",
+    "setupInstructions": "./reviewer-instructions.md",
+    "fixtures": "12 fictional exports: 8 shared health/screen-time files and 4 private location files. Fictional source remains offline.",
+    "limitations": "Live phone capture and debug-feedback workflows require an isolated phone installation; these fixtures do not provide one."
+  },
+  "verification": {
+    "date": "2026-10-14",
+    "claudeConnection": "passed",
+    "toolDiscovery": {
+      "readOnly": 28,
+      "modifying": 15,
+      "total": 43
+    },
+    "executedInClaude": [
+      "get_account_profile",
+      "get_account_logins",
+      "list_cloud_exports",
+      "read_cloud_export"
+    ],
+    "sharedExports": 8,
+    "recordPages": [50, 22],
+    "fictionalMarkersVerified": true,
+    "allToolsExecutedInClaude": false,
+    "publisherPortal": "Submission received; listing detail confirms In review on October 14, 2026",
+    "testLedger": "./tool-test-ledger.md",
+    "allToolsInvokedThroughInspector": true,
+    "inspectorCalls": 47,
+    "nativePositiveCapture": false,
+    "permanentAccountDeletion": false,
+    "externalSupportDelivery": false,
+    "metadataTitles": "All 43 match title and annotations.title; no portal title suggestions",
+    "oauthDiscovery": "Root and standard issuer-path authorization-server metadata return HTTP 200 JSON directly",
+    "deploymentVersion": "f9cadf9f-1ac7-48fd-94c0-6ca66775fd95"
+  },
+  "submission": {
+    "date": "2026-10-14",
+    "status": "In review",
+    "portalURL": "https://claude.ai/directory/manage/myself-md",
+    "slug": "myself-md",
+    "received": true,
+    "published": false,
+    "policiesAcknowledged": 7,
+    "contactEmail": "cody@isolated.tech",
+    "toolCount": 43
+  }
+}

@@ -23,11 +23,12 @@
         "com.apple.developer.family-controls.app-and-website-usage": true,
         "com.apple.developer.applesignin": ["Default"]
       },
-      "appleTeamId": "67KC823C9A"
+      "appleTeamId": "67KC823C9A",
+      "buildNumber": "6"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F7F7F4",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/myself-foreground.png",
         "monochromeImage": "./assets/myself-monochrome.png"
       },
@@ -72,7 +73,8 @@
         "android.permission.health.READ_TOTAL_CALORIES_BURNED",
         "android.permission.health.READ_OXYGEN_SATURATION",
         "android.permission.health.READ_POWER"
-      ]
+      ],
+      "versionCode": 7
     },
     "web": {
       "favicon": "./assets/myself-favicon.png",
@@ -95,7 +97,7 @@
         {
           "background": false,
           "NSHealthShareUsageDescription": "Read the health data you choose for your exports and authenticated chat queries.",
-          "NSHealthUpdateUsageDescription": false
+          "NSHealthUpdateUsageDescription": "myself.md only reads the health data you choose for exports and agent queries. It does not add or change Apple Health records."
         }
       ],
       "react-native-health-connect",

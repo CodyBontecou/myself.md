@@ -1,0 +1,1 @@
+myself.md. IN TXT "v=MCPv1; k=ed25519; p=hyn1ek+ozjBTQQHZ9bZS0QaoZZH1Qpkfh7V/IFTKg0A="

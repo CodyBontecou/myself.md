@@ -92,13 +92,15 @@ let androidCatalog = false;
 const catalogPlatform = { OS: 'ios' };
 let foregroundGranted = true;
 let usageAuthorization = 'authorized';
+let locationTracking = false;
 const phone =
-  /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
+  /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{locationTracking:boolean,domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
       'expo-location': {
         getForegroundPermissionsAsync: async () => ({ granted: foregroundGranted }),
       },
       'react-native': { Platform: catalogPlatform },
+      './location-task.js': { locationStatus: async () => ({ tracking: locationTracking }) },
       '../core/profiles.js': profiles,
       '../core/data.js': data,
       './library.js': library,
@@ -257,6 +259,13 @@ library.saveRecord(
   data.record('location', 'points', 'expo-location', { timestamp: '2026-10-07T08:00:00.000Z' }),
 );
 const catalog = await phone.catalog('alice', { health: true, time: true, location: true });
+assert.equal(catalog.locationTracking, false);
+locationTracking = true;
+assert.equal(
+  (await phone.catalog('alice', { health: false, time: false, location: false })).locationTracking,
+  true,
+);
+locationTracking = false;
 assert.deepEqual(
   catalog.domains.map((d) => d.types),
   [
@@ -492,6 +501,90 @@ assert.equal(
 assert.equal(shareEvents.at(-1)?.status, 'complete');
 assert.equal(billed, true);
 assert.equal(exportedFiles.size, 0, 'Temporary shared files are cleaned up');
+// Exercise the native boundary: cancellation/denial must precede location access;
+// a Settings return reuses only the same owner's pending disclosure.
+let disclosureAccepted = false;
+let notificationGranted = false;
+let backgroundGranted = false;
+let channelBlocked = false;
+let updatesStarted = false;
+const recordingEvents = /** @type {string[]} */ ([]);
+const recorder =
+  /** @type {{startTracking:(owner:string)=>Promise<boolean|null>,stopTracking:()=>Promise<void>}} */ (
+    await load('../client/location-task.js', {
+      'react-native': {
+        Platform: { OS: 'android' },
+        Alert: {
+          alert: (
+            /** @type {string} */ _title,
+            /** @type {string} */ message,
+            /** @type {{onPress:()=>void}[]} */ buttons,
+          ) => {
+            recordingEvents.push('disclosure');
+            assert.match(message, /precise location.*closed or not in use/);
+            buttons[disclosureAccepted ? 1 : 0]?.onPress();
+          },
+        },
+      },
+      'expo-notifications': {
+        AndroidImportance: { LOW: 2, NONE: 0 },
+        setNotificationChannelAsync: async () => recordingEvents.push('channel'),
+        getPermissionsAsync: async () => ({ granted: notificationGranted }),
+        requestPermissionsAsync: async () => {
+          recordingEvents.push('notification');
+          return { granted: notificationGranted };
+        },
+        getNotificationChannelsAsync: async () =>
+          channelBlocked ? [{ id: 'scope:myselfmd-location', importance: 0 }] : [],
+      },
+      'expo-location': {
+        Accuracy: { Highest: 6 },
+        requestForegroundPermissionsAsync: async () => {
+          recordingEvents.push('foreground');
+          return { granted: true };
+        },
+        getBackgroundPermissionsAsync: async () => ({ granted: backgroundGranted }),
+        requestBackgroundPermissionsAsync: async () => {
+          recordingEvents.push('background');
+          return { granted: backgroundGranted };
+        },
+        hasStartedLocationUpdatesAsync: async () => updatesStarted,
+        startLocationUpdatesAsync: async () => {
+          recordingEvents.push('start');
+          updatesStarted = true;
+        },
+        stopLocationUpdatesAsync: async () => {
+          updatesStarted = false;
+        },
+      },
+      'expo-task-manager': { defineTask: () => {} },
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      '../core/data.js': data,
+      './library.js': library,
+    })
+  );
+assert.equal(await recorder.startTracking('alice'), null);
+assert.deepEqual(recordingEvents, ['disclosure']);
+disclosureAccepted = true;
+recordingEvents.length = 0;
+await assert.rejects(recorder.startTracking('alice'), /Allow notifications/);
+assert.deepEqual(recordingEvents, ['disclosure', 'channel', 'notification']);
+assert.equal(updatesStarted, false);
+notificationGranted = true;
+assert.equal(await recorder.startTracking('alice'), false);
+assert.equal(updatesStarted, false);
+backgroundGranted = true;
+recordingEvents.length = 0;
+assert.equal(await recorder.startTracking('alice'), true);
+assert.deepEqual(recordingEvents, ['channel', 'foreground', 'start']);
+assert.equal(updatesStarted, true);
+await recorder.stopTracking();
+assert.equal(updatesStarted, false);
+channelBlocked = true;
+recordingEvents.length = 0;
+await assert.rejects(recorder.startTracking('alice'), /notification channel/);
+assert.deepEqual(recordingEvents, ['disclosure', 'channel']);
+assert.equal(updatesStarted, false);
 db.close();
 console.log(
   'Native sources: legacy profile migration, import rejection, pre-permission choices, access requests, catalog, local isolation, date filtering, profile approval, independent schedules and manual sharing passed.',

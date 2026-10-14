@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
 import { exportSchemas } from '../core/export-schemas.js';
@@ -12,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { generateKeyPair, exportJWK, SignJWT, decodeJwt } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile } from '../core/profiles.js';
@@ -25,7 +26,21 @@ const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
 const jwk = await exportJWK(publicKey);
 jwk.kid = 'fixture';
-const identity = createServer((_req, res) => {
+let profileSubjectOverride = '';
+const identity = createServer((req, res) => {
+  if (req.url?.endsWith('/userinfo')) {
+    const subject = decodeJwt((req.headers.authorization ?? '').slice(7)).sub;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        sub: profileSubjectOverride || subject,
+        name: subject === 'alice' ? 'Alice Example' : 'Bob Example',
+        email: `${subject}@example.com`,
+        picture: 'https://avatars.example.com/alice.png',
+      }),
+    );
+    return;
+  }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ keys: [jwk] }));
 });
@@ -76,7 +91,7 @@ const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
 const accessClient = new Client({ name: 'synthetic-access-test', version: '1' });
 /** @param {string} subject @param {string} azp @param {string} [audience] */
 async function token(subject, azp, audience = `${origin}/mcp`) {
-  return new SignJWT({ scope: 'myselfmd', azp })
+  return new SignJWT({ scope: 'openid profile email myselfmd', azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(issuer)
     .setAudience(audience)
@@ -194,6 +209,31 @@ try {
   assert.equal((await request('/api/dashboard', null)).status, 401);
   assert.equal((await request('/api/dashboard', phoneToken)).status, 403);
   assert.equal((await request('/api/dashboard', chatToken)).status, 403);
+  const expectedAccountProfile = {
+    name: 'Alice Example',
+    email: 'alice@example.com',
+    picture: 'https://avatars.example.com/alice.png',
+  };
+  assert.deepEqual(
+    z
+      .object({ accountProfile: z.unknown() })
+      .parse((await request('/api/dashboard', dashboardToken)).value).accountProfile,
+    expectedAccountProfile,
+  );
+  assert.equal((await request('/api/account-profile', null)).status, 401);
+  assert.deepEqual(
+    (await request('/api/account-profile', dashboardToken)).value,
+    expectedAccountProfile,
+  );
+  assert.equal(
+    z
+      .object({ email: z.string() })
+      .parse((await request('/api/account-profile', bobDashboardToken)).value).email,
+    'bob@example.com',
+  );
+  profileSubjectOverride = 'bob';
+  assert.equal((await request('/api/account-profile', dashboardToken)).status, 502);
+  profileSubjectOverride = '';
 
   const association = await request('/.well-known/apple-app-site-association', null);
   assert.equal(association.status, 200);
@@ -314,10 +354,13 @@ try {
   assert.equal((await request('/api/devices', previousIssuerToken)).status, 401);
   const unrelatedToken = await token('alice', 'myselfmd-phone', 'https://untrusted.example/mcp');
   assert.equal((await request('/api/devices', unrelatedToken)).status, 401);
-  const favicon = await fetch(`${origin}/dashboard/favicon.svg`);
+  const favicon = await fetch(`${origin}/dashboard/favicon.png`);
   assert.equal(favicon.status, 200);
-  assert.ok(favicon.headers.get('content-type')?.startsWith('image/svg+xml'));
-  assert.ok((await favicon.text()).includes('<svg'));
+  assert.ok(favicon.headers.get('content-type')?.startsWith('image/png'));
+  assert.deepEqual(
+    Buffer.from(await favicon.arrayBuffer()).subarray(0, 8),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
   const metadata = await request('/.well-known/oauth-protected-resource/mcp', null);
   assert.equal(z.object({ resource: z.string() }).parse(metadata.value).resource, `${origin}/mcp`);
   await client.connect(
@@ -326,9 +369,9 @@ try {
     }),
   );
   // Verify the standalone CLI bundle against the same authenticated service, not a stub.
-  /** @param {string[]} args @param {string} [input] */
-  async function runCli(args, input = '') {
-    const cliProcess = spawn(process.execPath, ['dashboard/dist/myself.mjs', ...args], {
+  /** @param {string[]} args @param {string} [input] @param {string} [entry] */
+  async function runCli(args, input = '', entry = 'dashboard/dist/myself.mjs') {
+    const cliProcess = spawn(process.execPath, [entry, ...args], {
       env: { ...process.env, MYSELF_URL: origin, MYSELF_TOKEN: chatToken },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -363,8 +406,41 @@ try {
   );
   assert.equal((await fetch(`${origin}/v1/mcp`)).status, 404);
   const tools = await client.listTools();
+  const reviewTools = reviewToolMetadata(tools.tools);
+  const reviewReport = await runCli([], '', 'scripts/review-mcp.js');
+  assert.deepEqual(reviewReport.tools, reviewTools);
+  assert.equal(reviewReport.endpoint, `${origin}/mcp`);
+  assert.equal(JSON.stringify(reviewReport).includes(chatToken), false);
+  assert.equal(JSON.stringify(reviewReport).includes('inputSchema'), false);
+  for (const name of [
+    'query_phone_data',
+    'read_cloud_export',
+    'create_phone_pairing',
+    'delete_account',
+  ]) {
+    assert.equal(reviewTools.find((tool) => tool.name === name)?.readOnlyHint, false, name);
+    assert.equal(reviewTools.find((tool) => tool.name === name)?.destructiveHint, true, name);
+  }
+  assert.equal(reviewTools.find((tool) => tool.name === 'query_phone_data')?.idempotentHint, false);
+  assert.equal(
+    reviewTools.find((tool) => tool.name === 'read_cloud_export')?.idempotentHint,
+    false,
+  );
+  assert.equal(reviewTools.find((tool) => tool.name === 'get_phone_request')?.readOnlyHint, true);
+  assert.equal(
+    reviewTools.find((tool) => tool.name === 'request_phone_profile_permissions')?.readOnlyHint,
+    true,
+  );
   assert.ok(tools.tools.some((t) => t.name === 'read_cloud_export'));
   assert.ok(tools.tools.some((t) => t.name === 'list_export_schemas'));
+  const profileResult = await client.callTool({ name: 'get_account_profile', arguments: {} });
+  assert.equal(profileResult.isError, undefined);
+  assert.deepEqual(profileResult.structuredContent, expectedAccountProfile);
+  const invalidProfileRead = await client.callTool({
+    name: 'get_account_profile',
+    arguments: { subject: 'bob' },
+  });
+  assert.equal(invalidProfileRead.isError, true);
   const schemaResult = await client.callTool({ name: 'list_export_schemas', arguments: {} });
   assert.equal(schemaResult.isError, undefined);
   const schemaContent = schemaResult.content;
@@ -401,6 +477,9 @@ try {
   const pinnedText = pinnedContent.find((item) => item.type === 'text');
   assert.ok(pinnedText?.type === 'text');
   assert.equal(JSON.parse(pinnedText.text).profile.export.schema, 'myself.md.export.v1');
+  assert.ok(
+    JSON.parse(pinnedText.text).shareLink.startsWith('https://myself.md/share/profile#payload='),
+  );
 
   assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
   assert.ok(tools.tools.some((t) => t.name === 'get_privacy_policy'));
@@ -420,6 +499,7 @@ try {
     handoff: z.object({
       status: z.string(),
       accountLink: z.string(),
+      timeClaimUrl: z.string(),
       requiresUser: z.boolean(),
       steps: z.array(z.object({ title: z.string(), body: z.string() })),
     }),
@@ -445,14 +525,18 @@ try {
   assert.equal(pendingAccess.handoff.requiresUser, true);
   assert.equal(pendingAccess.handoff.accountLink, 'myselfmd://account');
   assert.equal(pendingAccess.handoff.steps.length, 3);
+  assert.equal(
+    z.object({ timeClaimUrl: z.string() }).parse(pendingAccess.handoff).timeClaimUrl,
+    'https://timemd.app/myself-claim.html',
+  );
   assert.ok(
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: { subject: 'alice' } }))
       .isError,
   );
   const accessTicketStore = new BillingStore(join(directory, 'billing.sqlite'));
   const accessTicket = accessTicketStore.createClaim({
-    source: 'health.md:ios:iap',
-    reference: 'mcp-access-fixture',
+    source: 'time.md:stripe',
+    reference: 'pi_mcpaccessfixture',
   });
   accessTicketStore.db.close();
   assert.equal(
@@ -622,6 +706,7 @@ try {
   const dashboard = dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value);
   assert.equal(dashboard.exports.length, 1);
   const phoneStorage = (await request('/api/cloud/status', phoneToken)).value;
+  assert.equal(z.object({ retentionDays: z.null() }).parse(phoneStorage).retentionDays, null);
   assert.deepEqual(
     z
       .object({
@@ -651,9 +736,37 @@ try {
     await usagePage.route(`${issuer}/protocol/openid-connect/token`, (route) =>
       route.fulfill({ json: { access_token: dashboardToken, expires_in: 300 } }),
     );
+    await usagePage.route('https://avatars.example.com/alice.png', (route) =>
+      route.fulfill({
+        contentType: 'image/png',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#52796f"/><text x="16" y="22" text-anchor="middle" fill="white" font-size="20">A</text></svg>',
+      }),
+    );
     await usagePage.goto(`${origin}/dashboard/callback?code=fixture&state=usage-fixture`);
     await usagePage.getByText('0.0 MB of 100 MB used', { exact: true }).first().waitFor();
+    const accountButton = usagePage.getByRole('button', {
+      name: /Alice Example.*alice@example.com/,
+    });
+    await accountButton.waitFor();
+    await accountButton.click();
+    assert.equal(await usagePage.getByText('alice@example.com', { exact: true }).count(), 2);
+    assert.equal(
+      await usagePage.locator('img[src="https://avatars.example.com/alice.png"]').count(),
+      1,
+    );
+    await usagePage.waitForFunction(`(() => {
+      const image = document.querySelector('img[src="https://avatars.example.com/alice.png"]');
+      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+    })()`);
+    await usagePage.keyboard.press('Escape');
     await usagePage.screenshot({ path: '/tmp/myself-cloud-dashboard.png' });
+    await usagePage.route(`${origin}/api/dashboard`, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ json: { ...(await response.json()), accountProfile: null } });
+    });
+    await usagePage.getByRole('button', { name: 'Refresh dashboard', exact: true }).click();
+    await usagePage.getByRole('button', { name: /Your account.*Personal account/ }).waitFor();
+    assert.equal(await usagePage.getByText('alice', { exact: true }).count(), 0);
   } finally {
     await usageBrowser.close();
   }
@@ -788,13 +901,14 @@ try {
   );
   assert.ok(!JSON.stringify(cloudHistory.value).includes('"native":'));
   const catalog = {
+    locationTracking: true,
     profiles: [{ ...profile, agentAccess: true }],
     domains: ['health', 'time', 'location'].map((domain) => ({
       domain,
       enabled: domain === 'health',
       selectableTypes:
         domain === 'health'
-          ? ['native:sleep']
+          ? ['native:sleep', 'native:HKQuantityTypeIdentifierStepCount']
           : domain === 'time'
             ? ['native:applications', 'native:websites']
             : ['native:points'],
@@ -808,6 +922,52 @@ try {
   assert.equal(
     (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
     200,
+  );
+  const importPreview = await client.callTool({
+    name: 'preview_phone_profile_import',
+    arguments: {
+      deviceId,
+      profile: {
+        ...profile,
+        selection: {
+          health: ['native:Steps'],
+          time: ['native:sessions'],
+          location: ['native:points'],
+        },
+      },
+    },
+  });
+  assert.equal(importPreview.isError, undefined);
+  const importResult = z
+    .object({
+      profile: z.object({
+        selection: z.object({
+          health: z.array(z.string()),
+          time: z.array(z.string()),
+          location: z.array(z.string()),
+        }),
+      }),
+      mapped: z.array(z.object({ from: z.string(), to: z.string() })),
+      unsupported: z.array(z.object({ type: z.string() })),
+      requiresUserSave: z.boolean(),
+    })
+    .parse(importPreview.structuredContent);
+  assert.deepEqual(importResult.profile.selection, {
+    health: ['native:HKQuantityTypeIdentifierStepCount'],
+    time: [],
+    location: ['native:points'],
+  });
+  assert.equal(importResult.mapped[0]?.from, 'native:Steps');
+  assert.equal(importResult.unsupported[0]?.type, 'native:sessions');
+  assert.equal(importResult.requiresUserSave, true);
+  assert.equal(
+    (
+      await client.callTool({
+        name: 'preview_phone_profile_import',
+        arguments: { deviceId: '00000000-0000-4000-8000-000000000000', profile },
+      })
+    ).isError,
+    true,
   );
   const diagnosticsPath = `/api/phones/${deviceId}/diagnostics`;
   const debugReport = {
@@ -896,6 +1056,7 @@ try {
   const discovered = z
     .object({
       catalog: z.object({
+        locationTracking: z.boolean(),
         domains: z.array(
           z.object({
             domain: z.string(),
@@ -908,6 +1069,7 @@ try {
       }),
     })
     .parse(discovery.structuredContent);
+  assert.equal(discovered.catalog.locationTracking, true);
   assert.deepEqual(
     discovered.catalog.domains.find((domain) => domain.domain === 'time')?.selectableTypes,
     ['native:applications', 'native:websites'],
@@ -1410,6 +1572,15 @@ try {
           headers: { Authorization: `Bearer ${await token('bob', 'diagnostics-chat')}` },
         },
       }),
+    );
+    assert.equal(
+      (
+        await otherAgent.callTool({
+          name: 'preview_phone_profile_import',
+          arguments: { deviceId, profile },
+        })
+      ).isError,
+      true,
     );
     assert.ok(
       (await otherAgent.callTool({ name: 'list_phone_export_history', arguments: { deviceId } }))

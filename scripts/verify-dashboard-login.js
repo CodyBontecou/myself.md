@@ -98,6 +98,7 @@ async function verifyProvider(provider) {
   const expectedReturn = location.pathname === '/claim' ? '/claim' : '/dashboard';
   await session.signIn(provider);
   assert.equal(destination.searchParams.get('kc_idp_hint'), provider);
+  assert.equal(destination.searchParams.get('scope'), 'openid profile email myselfmd');
   assert.equal(destination.searchParams.get('code_challenge_method'), 'S256');
   const state = destination.searchParams.get('state');
   location.pathname = '/dashboard/callback';
@@ -139,6 +140,21 @@ await session.signIn('google');
 assert.equal(destination.hostname, 'accounts.google.com');
 assert.equal(storage.has('myselfmd-dashboard-login'), false);
 assert.equal(exchangeCount, 6);
+pendingOAuth = new URLSearchParams({
+  client_id: 'myselfmd-phone',
+  redirect_uri: 'myselfmd://oauth',
+  state: 'phone-state',
+  code_challenge: 'phone-challenge',
+  code_challenge_method: 'S256',
+  resource: 'https://workspace.example/mcp',
+  sig: 'fixture-signature',
+  exp: 'fixture-expiry',
+}).toString();
+location.search = `?${pendingOAuth}`;
+await session.signIn('google');
+assert.equal(destination.hostname, 'accounts.google.com');
+assert.equal(storage.has('myselfmd-dashboard-login'), false);
+assert.equal(exchangeCount, 6, 'Phone login must retain its own native token exchange');
 location.pathname = '/claim';
 location.search = '';
 await session.signIn('github');

@@ -8,9 +8,11 @@ export const qaScenarios = [
   'history-error',
   'permission-denied',
   'loading',
+  'location-tracking',
+  'location-tracking-off',
 ];
-/** @typedef {'populated'|'empty'|'save-error'|'history-error'|'permission-denied'|'loading'} QaScenario */
-/** @typedef {{scenario:QaScenario,revision:number,onboarding:boolean,profiles:import('../core/profiles.js').ProfileState,events:import('../core/history.js').HistoryEvent[],permissions:Record<string,string>}} QaState */
+/** @typedef {'populated'|'empty'|'save-error'|'history-error'|'permission-denied'|'loading'|'location-tracking'|'location-tracking-off'} QaScenario */
+/** @typedef {{scenario:QaScenario,revision:number,onboarding:boolean,accountSignedIn?:boolean,profiles:import('../core/profiles.js').ProfileState,events:import('../core/history.js').HistoryEvent[],permissions:Record<string,string>}} QaState */
 
 /** Synthetic metadata only: no credentials, native records, destinations, or shareable files.
  * @param {QaScenario} scenario @param {number} revision @returns {QaState} */
@@ -19,7 +21,11 @@ export function qaFixture(scenario, revision = 0) {
     ...parseProfile({
       schema: 'myself.md.profile.v1',
       name: 'QA profile',
-      selection: { health: [], time: [], location: [] },
+      selection: {
+        health: [],
+        time: [],
+        location: scenario.startsWith('location-tracking') ? ['native:points'] : [],
+      },
     }),
     id: 'qa-profile',
     agentAccess: false,

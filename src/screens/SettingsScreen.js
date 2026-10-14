@@ -3,13 +3,16 @@ import { qaEnabled } from '../../client/qa-runtime.js';
 import { Platform } from 'react-native';
 import { openFeedback, openFeedbackSettings } from '../../client/gripe.js';
 import { useBilling } from '../../client/BillingPaywalls';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { usePhone } from '../../client/PhoneProvider.js';
+import AccountAvatar from '../components/AccountAvatar.js';
 import { Screen, Group, Row, Divider, SectionHeader } from '../components/ui';
 import PrivacyLinks from '../components/PrivacyLinks';
 export default function SettingsScreen() {
   const billing = useBilling();
   return (
     <Screen testID="settings-screen">
+      <Stack.Screen options={{ headerRight: SettingsAccountAvatar }} />
       {qaEnabled && (
         <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
       )}
@@ -25,13 +28,6 @@ export default function SettingsScreen() {
           }
           {...(billing.unlocked ? { value: 'Unlocked' } : {})}
           onPress={() => router.push('/unlock')}
-        />
-        <Divider />
-        <Row
-          testID="settings-your-account"
-          title="Your account"
-          subtitle="Sign in, claim existing access, or delete your account"
-          onPress={() => router.push('/account')}
         />
       </Group>
       <CloudStorageUsage />
@@ -105,5 +101,17 @@ export default function SettingsScreen() {
         />
       )}
     </Screen>
+  );
+}
+
+function SettingsAccountAvatar() {
+  const { session } = usePhone();
+  const signedIn = Boolean(session?.owner && !session.requiresSignIn);
+  return (
+    <AccountAvatar
+      testID="settings-account-avatar"
+      account={signedIn ? session?.account : undefined}
+      onPress={() => router.push(signedIn ? '/account' : '/login')}
+    />
   );
 }

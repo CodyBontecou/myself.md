@@ -57,10 +57,20 @@ export function profileLink(profile) {
   if (link.length > 64000) throw new Error('Profile is too large for a deep link.');
   return link;
 }
+/** HTTPS links are recognized by email clients; the fragment stays off the server.
+ * @param {ProfileDraft} profile */
+export function profileShareLink(profile) {
+  const link = `https://myself.md/share/profile#payload=${encodeURIComponent(JSON.stringify(parseProfile(profile)))}`;
+  if (link.length > 64000) throw new Error('Profile is too large for a share link.');
+  return link;
+}
 /** @param {string} link */
 export function profileFromLink(link) {
   if (link.length > 64000) throw new Error('Profile link is too large.');
-  const match = /^myselfmd:\/\/profile\?payload=([^&#]+)$/.exec(link);
+  const match =
+    /^(?:myselfmd:\/\/profile\?|https:\/\/myself\.md\/share\/profile\/?#)payload=([^&#]+)$/.exec(
+      link,
+    );
   if (!match?.[1]) throw new Error('Invalid profile link.');
   return parseProfile(JSON.parse(decodeURIComponent(match[1])));
 }
@@ -111,6 +121,28 @@ export function uniqueProfileName(name, profiles) {
     next = `${base.slice(0, 80 - suffix.length)}${suffix}`;
   }
   return next;
+}
+
+/** Build the validated private profile mutation used by setup and the editor.
+ * @param {ProfileState} state @param {ProfileDraft} draft @param {string} id @param {boolean} [editing] */
+export function saveProfileDraft(state, draft, id, editing = false) {
+  const parsed = parseProfile(draft);
+  const previous = state.profiles.find((profile) => profile.id === id);
+  if (editing && !previous) throw new Error('This profile no longer exists. Go back to return.');
+  if (!editing && previous) throw new Error('This profile already exists.');
+  const others = state.profiles.filter((profile) => profile.id !== id);
+  const profile = {
+    ...parsed,
+    id,
+    name: uniqueProfileName(parsed.name, others),
+    agentAccess: editing && previous?.agentAccess === true,
+    agentPermissions: editing ? previous?.agentPermissions : undefined,
+  };
+  return parseProfileState({
+    profiles: editing
+      ? state.profiles.map((entry) => (entry.id === id ? profile : entry))
+      : [...state.profiles, profile],
+  });
 }
 
 /** Same profile parser and minimum-count contract as the mobile save boundary.

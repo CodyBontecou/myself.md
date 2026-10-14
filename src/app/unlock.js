@@ -63,7 +63,7 @@ export default function UnlockScreen() {
         label="Claim existing-customer access"
         secondary
         disabled={busy}
-        onPress={() => router.push('/account')}
+        onPress={() => router.push('/claim-access')}
       />
       <ErrorToast error={error} />
       <Button

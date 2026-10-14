@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myself-md-profile-share",
+  "account_id": "e4265f322e6380ee832b83ad45e3e8c0",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [{ "pattern": "myself.md/share/profile*", "zone_name": "myself.md" }],
+  "observability": { "enabled": false },
+  "assets": { "directory": "dashboard/dist/profile-share", "html_handling": "auto-trailing-slash" },
+}

@@ -26,6 +26,7 @@ module.exports = defineConfig([
     files: ['**/*.{js,jsx}'],
     ignores: [
       'dashboard/**',
+      'launch-video/**',
       'packages/support-chat/web.js',
       'packages/support-chat/support-web.js',
     ],

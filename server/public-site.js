@@ -18,14 +18,28 @@ export function publicResponse(
     'X-Content-Type-Options': 'nosniff',
     Vary: 'Accept',
   };
+  // Public ownership proof issued by the verified OpenAI plugin portal.
+  if (path === '/.well-known/openai-apps-challenge')
+    return {
+      status: 200,
+      headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' },
+      body: 'CmoL749Qa-jnr58RJB1pIK4jg2FlCVYpSLwXKy1ZZUA',
+    };
   if (path === '/support')
     return { status: 308, headers: { ...headers, Location: '/contact' }, body: '' };
   if (
-    ['/.well-known/oauth-authorization-server', '/.well-known/openid-configuration'].includes(path)
+    [
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/openid-configuration',
+      `/.well-known/oauth-authorization-server${new URL(issuer).pathname.replace(/\/$/, '')}`,
+    ].includes(path)
   )
     return {
       status: 302,
-      headers: { ...headers, Location: `${issuer}/.well-known/${path.split('/').at(-1)}` },
+      headers: {
+        ...headers,
+        Location: `${issuer}/.well-known/${path === '/.well-known/openid-configuration' ? 'openid-configuration' : 'oauth-authorization-server'}`,
+      },
       body: '',
     };
   if (path === '/dataset-catalog') {
@@ -75,11 +89,14 @@ export function publicResponse(
         ? { issuer, clientId: 'myselfmd-phone', resource }
         : path === '/dashboard/config'
           ? { issuer, clientId: 'myselfmd-dashboard' }
-          : path === '/.well-known/oauth-protected-resource/mcp'
+          : [
+                '/.well-known/oauth-protected-resource/mcp',
+                '/.well-known/oauth-protected-resource/mcp/chatgpt',
+              ].includes(path)
             ? {
-                resource,
+                resource: path.endsWith('/chatgpt') ? `${resource}/chatgpt` : resource,
                 authorization_servers: [issuer],
-                scopes_supported: ['myselfmd'],
+                scopes_supported: ['myselfmd', 'offline_access'],
                 bearer_methods_supported: ['header'],
               }
             : publicDiscovery(path);
@@ -106,9 +123,16 @@ export function publicResponse(
       type = 'text/markdown';
       body = markdown;
     } else if (
-      ['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/faq', '/pricing'].includes(
-        path,
-      )
+      [
+        '/docs',
+        '/docs/reference',
+        '/about',
+        '/contact',
+        '/privacy',
+        '/terms',
+        '/faq',
+        '/pricing',
+      ].includes(path)
     ) {
       type = 'text/html';
       body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
@@ -125,12 +149,12 @@ export function publicResponse(
             },
           ],
         },
-      )}</script><title>${(markdown.split('\n')[0] ?? 'myself.md').slice(2)}</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
+      )}</script><title>${(markdown.split('\n')[0] ?? 'myself.md').slice(2)}</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
     } else return null;
   }
   return { status: 200, headers: { ...headers, 'Content-Type': `${type}; charset=utf-8` }, body };
 }
-const privatePaths = new Set(['/mcp', '/pair', '/config', '/health']);
+const privatePaths = new Set(['/mcp', '/mcp/chatgpt', '/pair', '/config', '/health']);
 /** Unknown public paths must not masquerade as private resources. @param {string} pathname */
 export function unknownPublicPath(pathname) {
   return (
@@ -149,6 +173,7 @@ const apiPaths = new Set([
   '/config',
   '/dashboard/config',
   '/.well-known/oauth-protected-resource/mcp',
+  '/.well-known/oauth-protected-resource/mcp/chatgpt',
   '/llms.txt',
   '/docs',
   '/docs/reference',

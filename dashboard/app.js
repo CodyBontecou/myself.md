@@ -13,12 +13,11 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { createRoot } from 'react-dom/client';
+import { providerLogos } from '../server/provider-logos.js';
 import { setNonce } from 'get-nonce';
 import { Dialog } from 'radix-ui';
 import {
   IconUser,
-  IconBrandApple,
-  IconBrandGithub,
   IconDatabase,
   IconChartBar,
   IconListDetails,
@@ -187,6 +186,9 @@ function bytes(value) {
 /** @param {{view:View,onNavigate:(view:View)=>void,workspace:Workspace|null,busy:boolean}} props */
 function AppSidebar({ view, onNavigate, workspace, busy }) {
   const { setOpenMobile } = useSidebar();
+  const profile = workspace?.accountProfile;
+  const accountName = profile?.name || profile?.email || 'Your account';
+  const accountEmail = profile?.email || 'Personal account';
   const navigate = (/** @type {View} */ next) => {
     onNavigate(next);
     setOpenMobile(false);
@@ -257,23 +259,66 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <SidebarMenuButton size="lg" disabled={!workspace || busy}>
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-muted font-semibold">
-                      {workspace?.account.slice(0, 1).toUpperCase() ?? 'Q'}
+                    <div className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted font-semibold">
+                      {profile?.name || profile?.email ? (
+                        accountName.slice(0, 1).toUpperCase()
+                      ) : (
+                        <IconUser className="size-4" aria-hidden="true" />
+                      )}
+                      {profile?.picture && (
+                        <img
+                          src={profile.picture}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="absolute inset-0 size-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
                     </div>
-                    <div className="grid flex-1 text-left text-sm leading-tight">
+                    <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-medium">
-                        {workspace?.account ?? 'Your workspace'}
+                        {workspace ? accountName : 'Your workspace'}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {workspace ? 'Personal account' : 'Sign in to continue'}
+                        {workspace ? accountEmail : 'Sign in to continue'}
                       </span>
                     </div>
                     <IconDotsVertical className="ml-auto size-4" />
                   </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="end" className="w-56">
-                  <DropdownMenuLabel>{workspace?.account}</DropdownMenuLabel>
+                  <DropdownMenuLabel className="grid gap-1">
+                    <span className="truncate">{accountName}</span>
+                    {profile?.email && (
+                      <span className="truncate text-xs font-normal text-muted-foreground">
+                        {profile.email}
+                      </span>
+                    )}
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {!isDemo && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void api('/api/account-logins')
+                          .then((result) => {
+                            const logins = /** @type {{handoff:{url:string}}} */ (result);
+                            location.assign(logins.handoff.url);
+                            return null;
+                          })
+                          .catch((error) =>
+                            window.alert(
+                              error instanceof Error
+                                ? error.message
+                                : 'Connected logins could not open.',
+                            ),
+                          );
+                      }}
+                    >
+                      Connected logins
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem asChild>
                     <a href="/delete-account">Delete account</a>
                   </DropdownMenuItem>
@@ -289,6 +334,13 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
     </Sidebar>
   );
 }
+function BrandWordmark() {
+  return (
+    <span className="text-xl font-semibold tracking-[-0.8px] text-[#18181b] dark:text-[#f4f4f5]">
+      myself<span className="text-[#60616b] dark:text-[#a7a7b1]">.md</span>
+    </span>
+  );
+}
 /** @param {{title:string,busy:boolean,onRefresh:()=>void,workspace:Workspace|null,view:View}} props */
 function SiteHeader({ title, busy, onRefresh, workspace, view }) {
   return (
@@ -301,7 +353,12 @@ function SiteHeader({ title, busy, onRefresh, workspace, view }) {
           orientation="vertical"
           className="mx-2 hidden data-[orientation=vertical]:h-4 lg:block"
         />
-        <h1 className="min-w-0 flex-1 truncate text-base font-medium lg:flex-none">{title}</h1>
+        <BrandWordmark />
+        {workspace && (
+          <h1 className="ml-4 hidden truncate border-l pl-4 text-sm font-medium text-muted-foreground lg:block">
+            {title}
+          </h1>
+        )}
         {workspace && !isDemo && (
           <div className="ml-auto hidden lg:block">
             <SummaryPills workspace={workspace} view={view} />
@@ -386,7 +443,7 @@ function SummaryPills({ workspace, view, compact = false }) {
                   : 'Lifetime access required'
                 : 'Cloud storage unavailable',
               detail: storage?.eligible
-                ? `Included cloud storage · ${storage.overLimit ? 'Over allowance; delete files to resume uploads · ' : ''}encrypted at rest · files retained for 30 days`
+                ? `Included cloud storage · ${storage.overLimit ? 'Over allowance; delete files to resume uploads · ' : ''}encrypted at rest · files kept until deleted or replaced`
                 : 'Sign in to the app and purchase or restore lifetime access for 100 MB of included cloud storage',
               icon: IconCloud,
             },
@@ -929,11 +986,12 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
     </div>
   );
 }
-/** @param {{ready:boolean}} props */
-function LoginCard({ ready }) {
+/** @param {{ready:boolean,notice?:string}} props */
+function LoginCard({ ready, notice = '' }) {
+  const standalone = ['/login', '/login/'].includes(location.pathname);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  /** @param {'apple'|'github'|'google'} provider */
+  /** @param {'apple'|'github'|'google'|'reviewer'} provider */
   async function login(provider) {
     setBusy(true);
     setError('');
@@ -945,65 +1003,77 @@ function LoginCard({ ready }) {
     }
   }
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <span aria-hidden="true" className="font-mono text-xl font-semibold">
-              m.
-            </span>
-          </div>
-          <CardTitle className="text-2xl">Sign in to myself.md</CardTitle>
-          <CardDescription>
-            Continue to create your workspace or sign in. Use the same account as myself.md on your
-            phone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {error && (
-            <pre
-              role="alert"
-              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+    <div className="flex min-h-full flex-1 flex-col bg-[#f8f9fa] dark:bg-[#111113]">
+      {standalone && (
+        <header className="flex min-h-14 shrink-0 items-center border-b bg-background px-5 sm:px-8">
+          <BrandWordmark />
+        </header>
+      )}
+      <div
+        className={`flex flex-1 flex-col items-center justify-start px-4 py-6 sm:justify-center sm:px-6 sm:py-12 ${standalone ? 'min-h-[calc(100svh-3.5rem)]' : ''}`}
+      >
+        <Card className="w-full max-w-[440px] gap-5 rounded-[20px] border-[#e6e7eb] bg-white py-6 sm:gap-6 sm:py-8 text-[#18181b] shadow-[0_4px_24px_rgb(0_0_0/0.03)] dark:border-[#333338] dark:bg-[#1b1b1f] dark:text-[#f4f4f5]">
+          <CardHeader className="gap-2 px-5 sm:gap-3 sm:px-8">
+            <CardTitle className="text-2xl leading-tight tracking-[-0.8px] sm:text-[26px]">
+              <h1>Sign in to myself.md</h1>
+            </CardTitle>
+            <CardDescription className="text-sm leading-relaxed text-[#60616b] sm:text-base dark:text-[#a7a7b1]">
+              Use the same account as the myself.md app to keep your exports and purchases together.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 sm:space-y-6 sm:px-8">
+            {(error || notice) && (
+              <pre
+                role="alert"
+                className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+              >
+                {errorJSON(error || notice)}
+              </pre>
+            )}
+            <div className="space-y-2.5">
+              {
+                /** @type {const} */ (['apple', 'github', 'google']).map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    className="grid min-h-12 w-full touch-manipulation select-none active:bg-[#f8f9fa] dark:active:bg-[#222226] grid-cols-[20px_1fr_20px] items-center gap-2 rounded-[9px] border border-[#e6e7eb] px-3 py-3 sm:gap-3 sm:px-[18px] text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50 dark:border-[#333338] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-[#f8f9fa] dark:[@media(hover:hover)_and_(pointer:fine)]:hover:bg-[#222226]"
+                    disabled={!ready || busy}
+                    onClick={() => void login(provider)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      dangerouslySetInnerHTML={{ __html: providerLogos[provider] }}
+                    />
+                    <span>
+                      Continue with{' '}
+                      {provider === 'github' ? 'GitHub' : provider === 'apple' ? 'Apple' : 'Google'}
+                    </span>
+                  </button>
+                ))
+              }
+            </div>
+            <nav
+              className="flex flex-wrap items-center justify-between gap-x-4 text-[13px] text-[#60616b] dark:text-[#a7a7b1]"
+              aria-label="Other sign-in options"
             >
-              {errorJSON(error)}
-            </pre>
-          )}
-          <Button
-            type="button"
-            className="min-h-11 w-full border border-white bg-black text-white hover:bg-black/90"
-            disabled={!ready || busy}
-            onClick={() => void login('apple')}
-          >
-            <IconBrandApple aria-hidden="true" className="size-5" />
-            Sign in with Apple
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full"
-            disabled={!ready || busy}
-            onClick={() => void login('github')}
-          >
-            <IconBrandGithub aria-hidden="true" className="size-5" />
-            Continue with GitHub
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full"
-            disabled={!ready || busy}
-            onClick={() => void login('google')}
-          >
-            Continue with Google
-          </Button>
-          <a
-            href="/"
-            className="block text-center text-sm text-muted-foreground hover:text-foreground"
-          >
-            Back to myself.md
-          </a>
-        </CardContent>
-      </Card>
+              <button
+                type="button"
+                className="min-h-11 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50"
+                disabled={!ready || busy}
+                onClick={() => void login('reviewer')}
+              >
+                Reviewer sign-in
+              </button>
+              <a
+                href="/"
+                className="flex min-h-11 items-center underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current"
+              >
+                Back to myself.md
+              </a>
+            </nav>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1081,6 +1151,8 @@ function App() {
   }, []);
   const currentView = views.find((item) => item.id === (exploring ? 'explore' : view));
   const title = exploring ? 'Data explorer' : (currentView?.title ?? 'Stored data');
+  if (!workspace && ['/login', '/login/'].includes(location.pathname))
+    return <LoginCard ready={ready} notice={notice} />;
   return (
     <SidebarProvider className="dashboard-layout">
       <AppSidebar
@@ -1111,7 +1183,11 @@ function App() {
         />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            <div
+              className={
+                workspace ? 'flex flex-col gap-4 py-4 md:gap-6 md:py-6' : 'flex flex-1 flex-col'
+              }
+            >
               {workspace && !isDemo && (
                 <div className="px-4 lg:hidden">
                   <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
