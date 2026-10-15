@@ -17,6 +17,7 @@ import {
   cancelExports,
   stopAccountExports,
   runScheduledExports,
+  syncExportNotifications,
 } from './export-task.js';
 import { stopTracking, migrateLocationTask } from './location-task.js';
 import { saveExportContext } from './export-context.js';
@@ -144,8 +145,20 @@ function usePhoneState() {
       void runScheduledExports().catch((e) => setError(errorMessage(e)));
     };
     tick();
-    const timer = setInterval(tick, 30000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      tick();
+      void syncExportNotifications().catch((e) => setError(errorMessage(e)));
+    }, 30000);
+    const active = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void reconcileExports().catch((e) => setError(errorMessage(e)));
+        tick();
+      }
+    });
+    return () => {
+      clearInterval(timer);
+      active.remove();
+    };
   }, [session, ready]);
   useEffect(() => {
     if (!session) return;

@@ -193,24 +193,31 @@ export default function ExportSettingsEditor({
                   ))}
             </>
           )}
-          {['json', 'jsonl'].map((format) =>
-            toggle(
-              format.toUpperCase(),
-              settings.formats.includes(
-                /** @type {import('../core/export-files.js').ExportFormat} */ (format),
-              ),
-              (v) =>
-                onSettings({
-                  ...settings,
-                  formats: v
-                    ? [
-                        ...settings.formats,
-                        /** @type {import('../core/export-files.js').ExportFormat} */ (format),
-                      ]
-                    : settings.formats.filter((f) => f !== format),
-                }),
-            ),
-          )}
+          {settings.destination === 'cloud'
+            ? visible('JSON') && (
+                <Copy variant="caption" muted testID="export-format-cloud">
+                  Cloud stores one JSONL file per day. JSON and JSONL choices apply to phone and
+                  HTTPS exports.
+                </Copy>
+              )
+            : ['json', 'jsonl'].map((format) =>
+                toggle(
+                  format.toUpperCase(),
+                  settings.formats.includes(
+                    /** @type {import('../core/export-files.js').ExportFormat} */ (format),
+                  ),
+                  (v) =>
+                    onSettings({
+                      ...settings,
+                      formats: v
+                        ? [
+                            ...settings.formats,
+                            /** @type {import('../core/export-files.js').ExportFormat} */ (format),
+                          ]
+                        : settings.formats.filter((f) => f !== format),
+                    }),
+                ),
+              )}
           {input(
             'Completed days (1–30)',
             String(settings.lookbackDays),

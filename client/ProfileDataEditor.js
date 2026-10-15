@@ -13,10 +13,12 @@ import { categories } from './health-types.js';
 /** @typedef {{kind:'type',domain:import('../core/data.js').Domain,key:string}} TypeRow */
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
 /** @typedef {{kind:'domain',domain:import('../core/data.js').Domain,key:string,expanded:boolean}} DomainRow */
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onOpenLocation?:()=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onOpenLocation?:()=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
 export default function ProfileDataEditor({
   types,
   permissions,
+  isTracking,
+  onRecordingChange,
   onAuthorize,
   onOpenLocation,
   selection,
@@ -27,12 +29,17 @@ export default function ProfileDataEditor({
 }) {
   const [requesting, setRequesting] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
+  const [requestedDomains, setRequestedDomains] = useState(/** @type {string[]} */ ([]));
   const locked = disabled || requesting;
+  const [iosMajor = 0, iosMinor = 0] = String(Platform.Version).split('.').map(Number);
+  const unsupportedIosTime =
+    Platform.OS === 'ios' && (iosMajor < 26 || (iosMajor === 26 && iosMinor < 4));
   /** @param {import('../core/data.js').Domain} domain */
   async function authorize(domain) {
     setRequesting(true);
     try {
       setAccessMessage((await onAuthorize(domain)).message);
+      setRequestedDomains((current) => [...new Set([...current, domain])]);
     } catch (error) {
       showToast({ message: errorMessage(error), kind: 'error' });
     } finally {
@@ -47,9 +54,15 @@ export default function ProfileDataEditor({
       await onSelection(next);
       const added = domains.find(
         (domain) =>
-          domain !== 'health' && next[domain].some((key) => !selection[domain].includes(key)),
+          (inline || domain !== 'health') &&
+          next[domain].some((key) => !selection[domain].includes(key)),
       );
-      if (added && permissions[added] !== 'authorized') await authorize(added);
+      if (
+        added &&
+        permissions[added] !== 'authorized' &&
+        !(added === 'health' && requestedDomains.includes(added))
+      )
+        await authorize(added);
     } catch (error) {
       showToast({ message: errorMessage(error), kind: 'error' });
     } finally {
@@ -119,13 +132,21 @@ export default function ProfileDataEditor({
       const allSelected = selected.length > 0 && available.every((key) => selected.includes(key));
       const toggleDisabled = locked || (!available.length && !selected.length);
       const toggleLabel = allSelected ? 'Deselect all' : 'Select all';
+      const showAccess =
+        !inline ||
+        (requestedDomains.includes(item.domain) && permissions[item.domain] === 'denied') ||
+        (item.domain === 'time' && unsupportedIosTime);
       return (
         <View>
           <View
             style={[
               styles.domainHeader,
               inline && styles.inlineDomain,
-              { backgroundColor: colors.surface, borderColor: colors.border },
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+              inline && styles.transparent,
             ]}
           >
             <Pressable
@@ -137,9 +158,7 @@ export default function ProfileDataEditor({
                 setExpandedDomains((current) =>
                   current.includes(item.domain)
                     ? current.filter((domain) => domain !== item.domain)
-                    : inline
-                      ? [item.domain]
-                      : [...current, item.domain],
+                    : [...current, item.domain],
                 )
               }
               style={({ pressed }) => [
@@ -186,7 +205,7 @@ export default function ProfileDataEditor({
                     }}
                   />
                 )}
-                {(item.domain !== 'health' || Platform.OS === 'android') && (
+                {!inline && (item.domain !== 'health' || Platform.OS === 'android') && (
                   <Pressable
                     accessibilityRole="button"
                     testID={`selection-permissions-${item.domain}`}
@@ -241,6 +260,22 @@ export default function ProfileDataEditor({
               </View>
             )}
           </View>
+          {item.domain === 'location' && (
+            <Row
+              compact
+              title="Background recording"
+              subtitle="This phone · all profiles"
+              trailing={
+                <Checkbox
+                  testID="selection-location-recording"
+                  accessibilityLabel="Record location in background for all profiles"
+                  value={isTracking}
+                  disabled={locked}
+                  onValueChange={onRecordingChange}
+                />
+              }
+            />
+          )}
           {(inline || item.domain === 'health') && item.expanded && (
             <View style={styles.inlineFilters}>
               {inline && status}
@@ -253,33 +288,47 @@ export default function ProfileDataEditor({
               )}
             </View>
           )}
-          {item.domain !== 'health' && item.expanded && (
-            <Group compact>
-              <Row
-                compact
-                title={`Access: ${permissions[item.domain] ?? 'checking'}`}
-                subtitle={
-                  item.domain === 'time'
-                    ? Platform.OS === 'android'
-                      ? 'Enable Usage Access in Android Settings to read app usage totals.'
-                      : 'iOS data access requires 26.4+ and EU eligibility.'
-                    : 'Only points recorded by myself.md are exported.'
-                }
-              />
-              {item.domain === 'location' && onOpenLocation && (
-                <Row
-                  compact
-                  title={inline ? 'Set up recording' : 'Save profile and set up recording'}
-                  subtitle="Choose background recording or save a single point."
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    onOpenLocation();
-                  }}
-                  disabled={locked}
-                />
-              )}
-            </Group>
-          )}
+          {item.domain !== 'health' &&
+            item.expanded &&
+            (showAccess || (item.domain === 'location' && onOpenLocation)) && (
+              <Group compact transparent={inline}>
+                {showAccess && (
+                  <Row
+                    compact
+                    title={
+                      inline
+                        ? permissions[item.domain] === 'denied'
+                          ? 'Access: denied'
+                          : 'Screen time unavailable'
+                        : `Access: ${permissions[item.domain] ?? 'checking'}`
+                    }
+                    subtitle={
+                      inline
+                        ? item.domain === 'time' && unsupportedIosTime
+                          ? 'Screen time data requires iOS 26.4 or later.'
+                          : undefined
+                        : item.domain === 'time'
+                          ? Platform.OS === 'android'
+                            ? 'Enable Usage Access in Android Settings to read app usage totals.'
+                            : 'iOS data access requires 26.4+ and EU eligibility.'
+                          : 'Only points recorded by myself.md are exported.'
+                    }
+                  />
+                )}
+                {item.domain === 'location' && onOpenLocation && (
+                  <Row
+                    compact
+                    title={inline ? 'Set up recording' : 'Save profile and set up recording'}
+                    subtitle="Choose background recording or save a single point."
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      onOpenLocation();
+                    }}
+                    disabled={locked}
+                  />
+                )}
+              </Group>
+            )}
         </View>
       );
     }
@@ -289,7 +338,11 @@ export default function ProfileDataEditor({
           style={[
             styles.groupHeader,
             inline && styles.compactGroup,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+            inline && styles.transparent,
           ]}
         >
           <Pressable
@@ -412,7 +465,7 @@ export default function ProfileDataEditor({
             styles.typeOption,
             {
               borderBottomColor: colors.border,
-              backgroundColor: pressed ? colors.subtle : colors.surface,
+              backgroundColor: pressed ? colors.subtle : 'transparent',
               opacity: locked ? 0.45 : 1,
             },
           ]}
@@ -637,6 +690,7 @@ function healthGroup(key) {
   return 'Other health';
 }
 const styles = StyleSheet.create({
+  transparent: { backgroundColor: 'transparent' },
   inlineDomain: { marginTop: 0, borderRadius: 0, borderWidth: 0, paddingRight: 0 },
   domainTitle: {
     flexDirection: 'row',

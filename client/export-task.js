@@ -1,3 +1,8 @@
+import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
+import { Alert, Platform } from 'react-native';
+import { api, loadSession } from './session.js';
+import { qaEnabled } from './qa-runtime.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { reserveExport, settleExport } from './billing.js';
 import { exportFailureMessage } from '../core/diagnostics.js';
@@ -5,6 +10,7 @@ import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import { phoneDatabase } from './phone-database.js';
 import { dueOccurrences, occurrenceDays, addDays } from '../core/schedules.js';
+import { deliveredFormats } from '../core/export-files.js';
 import { loadExportContext } from './export-context.js';
 import { loadProfiles } from './profiles.js';
 import { localCalendar } from './calendar.js';
@@ -70,6 +76,23 @@ function store(device, id, state) {
 }
 /** @param {string} device @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} enabled */
 export async function setScheduleEnabled(device, profile, enabled) {
+  if (enabled && !qaEnabled) {
+    const session = await loadSession();
+    if (!session?.server || session.deviceId !== device)
+      throw new Error('Connect this phone to enable cloud export notifications.');
+    if (Platform.OS === 'android')
+      await Notifications.setNotificationChannelAsync('exports', {
+        name: 'Scheduled exports',
+        importance: Notifications.AndroidImportance.DEFAULT,
+      });
+    let permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+    if (!permission.granted)
+      throw new Error('Allow notifications in Settings to enable scheduled export reminders.');
+  }
+  const current = loadProfiles(device)?.profiles.find((p) => p.id === profile.id);
+  if (!current || fingerprint(current) !== fingerprint(profile))
+    throw new Error('The profile changed. Reopen it and try again.');
   const state = scheduleState(device, profile);
   if (state.job?.historyId) {
     const context = loadExportContext();
@@ -89,8 +112,141 @@ export async function setScheduleEnabled(device, profile, enabled) {
   store(device, profile.id, state);
   await reconcileExports();
 }
+const reviewedScheduleRequests = new Set();
+let notificationSync = /** @type {Promise<void>|null} */ (null);
+/** Register cloud reminders independently of best-effort background execution. */
+export function syncExportNotifications() {
+  notificationSync ??= synchronizeExportNotifications().finally(() => {
+    notificationSync = null;
+  });
+  return notificationSync;
+}
+/** Ask once for notification permission so cloud storage lapse reminders reach this phone. */
+export async function enableCloudReminders() {
+  if (qaEnabled) return;
+  // Android 13 requires a channel before it can show the notification permission prompt.
+  if (Platform.OS === 'android')
+    await Notifications.setNotificationChannelAsync('cloud-storage', {
+      name: 'Cloud storage',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
+  const permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted && permission.canAskAgain) await Notifications.requestPermissionsAsync();
+  await syncExportNotifications();
+}
+async function synchronizeExportNotifications() {
+  if (qaEnabled) return;
+  const session = await loadSession();
+  if (!session?.server || session.deviceId !== loadExportContext()?.deviceId) return;
+  const profiles = (loadProfiles(session.deviceId)?.profiles ?? []).flatMap((profile) => {
+    const { progress } = scheduleState(session.deviceId, profile);
+    return progress.enabled && progress.enabledAt
+      ? [
+          {
+            profileId: profile.id,
+            schedule: profile.schedule,
+            enabledAt: progress.enabledAt,
+            lastCompleted: progress.lastCompleted,
+            lastRefresh: progress.lastRefresh,
+          },
+        ]
+      : [];
+  });
+  let token = null;
+  // The same token also receives cloud storage lapse reminders, so register it without schedules.
+  if ((await Notifications.getPermissionsAsync()).granted) {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('exports', {
+        name: 'Scheduled exports',
+        importance: Notifications.AndroidImportance.DEFAULT,
+      });
+      await Notifications.setNotificationChannelAsync('cloud-storage', {
+        name: 'Cloud storage',
+        importance: Notifications.AndroidImportance.HIGH,
+      });
+    }
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (typeof projectId !== 'string') throw new Error('Notification project is not configured.');
+    token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+  }
+  const response =
+    /** @type {{requests?:{requestId:string,profileId:string,enabled:boolean,expiresAt:number}[]}} */ (
+      await api(session, '/api/export-schedules', {
+        method: 'POST',
+        body: JSON.stringify({
+          deviceId: session.deviceId,
+          token,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          profiles,
+        }),
+      })
+    );
+  for (const request of response.requests ?? []) {
+    if (reviewedScheduleRequests.has(request.requestId)) continue;
+    reviewedScheduleRequests.add(request.requestId);
+    const profile = loadProfiles(session.deviceId)?.profiles.find(
+      (p) => p.id === request.profileId,
+    );
+    /** @param {'running'|'completed'|'failed'|'cancelled'} state @param {string} [message] */
+    const report = (state, message = '') =>
+      api(session, '/api/export-schedules', {
+        method: 'PUT',
+        body: JSON.stringify({
+          deviceId: session.deviceId,
+          requestId: request.requestId,
+          state,
+          message,
+        }),
+      });
+    if (!profile) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Finish the failed request checkpoint before reviewing the next schedule.
+      await report(
+        'failed',
+        'The saved profile no longer exists. Read the phone catalog and retry with an existing profile.',
+      );
+      continue;
+    }
+    Alert.alert(
+      'Agent requested scheduled exports',
+      `${request.enabled ? 'Enable' : 'Disable'} automatic exports for ${profile.name}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            void report('cancelled').catch(() => {});
+          },
+        },
+        {
+          text: 'Apply',
+          onPress: () => {
+            void (async () => {
+              if (
+                Date.now() > request.expiresAt ||
+                loadExportContext()?.deviceId !== session.deviceId
+              )
+                return;
+              await report('running');
+              try {
+                await setScheduleEnabled(session.deviceId, profile, request.enabled);
+                await report('completed');
+              } catch {
+                await report(
+                  'failed',
+                  'Could not apply the schedule. Check notification permission, connectivity and the profile export settings on the phone.',
+                );
+              }
+            })().catch(() => {});
+          },
+        },
+      ],
+      { cancelable: false },
+    );
+  }
+}
 /** Register one coalesced OS worker. Foreground runs provide catch-up when background execution is delayed. */
 export async function reconcileExports() {
+  await syncExportNotifications();
   const session = loadExportContext();
   const profiles = session ? (loadProfiles(session.deviceId)?.profiles ?? []) : [];
   const enabled =
@@ -98,7 +254,7 @@ export async function reconcileExports() {
   const registered = await TaskManager.isTaskRegisteredAsync(task);
   if (enabled && !registered) {
     if ((await BackgroundTask.getStatusAsync()) !== BackgroundTask.BackgroundTaskStatus.Available)
-      throw new Error('Background execution is restricted. Foreground catch-up still runs.');
+      return; // Cloud reminders still work when the OS restricts background tasks.
     await BackgroundTask.registerTaskAsync(task, { minimumInterval: 15 });
   } else if (!enabled && registered) await BackgroundTask.unregisterTaskAsync(task);
 }
@@ -146,7 +302,7 @@ export async function exportNow(session, profile, progress) {
     await reserveExport(session, historyId, {
       profileId: profile.id,
       days: dates,
-      formats: profile.export.formats,
+      formats: deliveredFormats(profile.export),
     });
     state.files = [];
     let failedSources = 0;
@@ -195,7 +351,8 @@ export async function exportNow(session, profile, progress) {
     running = false;
   }
 }
-export async function runScheduledExports() {
+/** @param {string} [profileId] @param {import('../core/schedules.js').Occurrence} [requested] */
+export async function runScheduledExports(profileId, requested) {
   if (running) return;
   running = true;
   try {
@@ -204,11 +361,20 @@ export async function runScheduledExports() {
     if (!session) return;
     const deadline = Date.now() + 20000;
     for (const profile of loadProfiles(session.deviceId)?.profiles ?? []) {
+      if (profileId && profile.id !== profileId) continue;
       const state = scheduleState(session.deviceId, profile);
       if (!state.progress.enabled || Date.now() < state.retryAt) continue;
       const now = new Date().toISOString();
       if (!state.job) {
-        const occurrence = dueOccurrences(profile.schedule, state.progress, now, localCalendar)[0];
+        const occurrence =
+          requested ?? dueOccurrences(profile.schedule, state.progress, now, localCalendar)[0];
+        if (
+          requested &&
+          !dueOccurrences(profile.schedule, state.progress, requested.fireDate, localCalendar).some(
+            (due) => due.kind === requested.kind && due.fireDate === requested.fireDate,
+          )
+        )
+          continue;
         if (!occurrence) continue;
         state.job = {
           profile,
@@ -248,7 +414,7 @@ export async function runScheduledExports() {
         await reserveExport(session, historyId, {
           profileId: profile.id,
           days: job.days.map((day) => day.day),
-          formats: profile.export.formats,
+          formats: deliveredFormats(job.profile.export),
         });
         if (state.retryAt)
           beginExport(
@@ -318,6 +484,60 @@ export async function runScheduledExports() {
   } finally {
     running = false;
   }
+}
+/** A notification is a hint, never authority to export another account or changed profile.
+ * @param {unknown} input */
+export async function openScheduledExport(input) {
+  if (!input || typeof input !== 'object') return false;
+  const data = /** @type {Record<string,unknown>} */ (input);
+  const session = loadExportContext();
+  if (
+    !session ||
+    data.deviceId !== session.deviceId ||
+    typeof data.profileId !== 'string' ||
+    typeof data.fireDate !== 'string' ||
+    !['completed-day', 'today-refresh'].includes(String(data.kind))
+  )
+    return false;
+  const date = new Date(data.fireDate);
+  if (
+    !Number.isFinite(date.getTime()) ||
+    date.toISOString() !== data.fireDate ||
+    date.getTime() > Date.now()
+  )
+    return false;
+  const profile = loadProfiles(session.deviceId)?.profiles.find((p) => p.id === data.profileId);
+  if (!profile) return false;
+  const state = scheduleState(session.deviceId, profile);
+  if (!state.progress.enabled || data.enabledAt !== state.progress.enabledAt) return false;
+  const occurrence = {
+    kind: /** @type {import('../core/schedules.js').Occurrence['kind']} */ (data.kind),
+    fireDate: data.fireDate,
+  };
+  if (!state.job) {
+    if (
+      !dueOccurrences(profile.schedule, state.progress, occurrence.fireDate, localCalendar).some(
+        (due) => due.kind === occurrence.kind && due.fireDate === occurrence.fireDate,
+      )
+    )
+      return false;
+    const now = new Date().toISOString();
+    state.job = {
+      profile,
+      occurrence,
+      days: occurrenceDays(occurrence, profile.export.lookbackDays, localCalendar).map((day) =>
+        Object.assign(day, { end: occurrence.kind === 'today-refresh' ? now : day.end }),
+      ),
+    };
+  }
+  // Explicit taps retry failed work immediately, preserving its checkpoint and billing identity.
+  state.retryAt = 0;
+  store(session.deviceId, profile.id, state);
+  await runScheduledExports(profile.id, {
+    kind: /** @type {import('../core/schedules.js').Occurrence['kind']} */ (data.kind),
+    fireDate: data.fireDate,
+  });
+  return true;
 }
 TaskManager.defineTask(task, async () => {
   try {

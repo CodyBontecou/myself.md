@@ -2,7 +2,13 @@ import { errorJSON } from '../packages/support-chat/errors.js';
 import { recordDebug } from './debug-log.js';
 import { Directory, File, Paths } from 'expo-file-system';
 import { domains } from '../core/data.js';
-import { exportBasename, fileHeader, recordChunk, fileFooter } from '../core/export-files.js';
+import {
+  deliveredFormats,
+  exportBasename,
+  fileHeader,
+  recordChunk,
+  fileFooter,
+} from '../core/export-files.js';
 import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
@@ -28,7 +34,7 @@ export async function exportProfileDay(
     encodeURIComponent(profile.id),
   );
   root.create({ intermediates: true, idempotent: true });
-  const files = settings.formats.map((format) => {
+  const files = deliveredFormats(settings).map((format) => {
     const folder = settings.formatFolders ? new Directory(root, format) : root;
     folder.create({ intermediates: true, idempotent: true });
     const target = new File(folder, `${exportBasename(settings, interval.day)}.${format}`);

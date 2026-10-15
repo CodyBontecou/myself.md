@@ -39,6 +39,12 @@
       "database_id": "9b949e26-bf7e-43de-b797-9d60fbb7cde8",
     },
   ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["support@myself.md"],
+    },
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -76,6 +82,7 @@
     "MIGRATION_ENABLED": "0",
     "REVIEWER_LOGIN_ENABLED": "1",
     "IDENTITY_ENABLED": "1",
+    "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT": "play-rtdn-push@crested-drive-492000-u7.iam.gserviceaccount.com",
   },
   "secrets": {
     "required": [

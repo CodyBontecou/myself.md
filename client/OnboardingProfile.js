@@ -117,7 +117,7 @@ export default function OnboardingProfile({ step }) {
   };
   const bodies = {
     name: 'An export profile remembers your data and file preferences. You can change them anytime.',
-    data: 'Choose specific data types. Source permissions stay under your control; selecting data does not allow agent access.',
+    data: 'Choose the data you’d like to include.',
     output: 'Save files on this phone. Choose a format and how many completed days to include.',
     review:
       'Review your choices, then save. You’ll land on your profile with Export profile now available.',
@@ -131,32 +131,34 @@ export default function OnboardingProfile({ step }) {
       footer={
         <>
           <ErrorToast error={error} />
-          <OnboardingButton
-            testID={`onboarding-${step}-continue`}
-            label={working ? 'Saving…' : step === 'review' ? 'Save profile' : 'Continue'}
-            disabled={disabled || !draft.name.trim() || (step !== 'name' && !count)}
-            busy={working}
-            onPress={() =>
-              step === 'review'
-                ? void save()
-                : next(
-                    step === 'name'
-                      ? '/onboarding/data'
-                      : step === 'data'
-                        ? '/onboarding/output'
-                        : '/onboarding/review',
-                  )
-            }
-          />
-          {step === 'name' && (
+          <View style={styles.footerActions}>
             <OnboardingButton
-              testID="onboarding-explore"
-              label="Set up later"
-              secondary
-              disabled={working}
-              onPress={() => finish('/profiles')}
+              testID={`onboarding-${step}-continue`}
+              label={working ? 'Saving…' : step === 'review' ? 'Save profile' : 'Continue'}
+              disabled={disabled || !draft.name.trim() || (step !== 'name' && !count)}
+              busy={working}
+              onPress={() =>
+                step === 'review'
+                  ? void save()
+                  : next(
+                      step === 'name'
+                        ? '/onboarding/data'
+                        : step === 'data'
+                          ? '/onboarding/output'
+                          : '/onboarding/review',
+                    )
+              }
             />
-          )}
+            {step === 'name' && (
+              <OnboardingButton
+                testID="onboarding-explore"
+                label="Set up later"
+                secondary
+                disabled={working}
+                onPress={() => finish('/profiles')}
+              />
+            )}
+          </View>
         </>
       }
     >
@@ -189,18 +191,13 @@ export default function OnboardingProfile({ step }) {
             inline
             types={phone.types}
             permissions={phone.sourcePermissions}
+            isTracking={phone.isTracking}
+            onRecordingChange={(enabled) => void phone.run(() => phone.changeRecording(enabled))}
             onAuthorize={phone.reviewSourceAccess}
             selection={draft.selection}
             onSelection={(selection) => setDraft((current) => ({ ...current, selection }))}
             disabled={disabled}
           />
-        )}
-        {step === 'data' && (
-          <Copy variant="caption" muted>
-            Location exports use points already recorded by myself.md. Set up recording from
-            Settings after onboarding. Unavailable or denied sources may produce empty files or
-            capture warnings.
-          </Copy>
         )}
         {step === 'output' && (
           <>
@@ -259,6 +256,13 @@ export default function OnboardingProfile({ step }) {
   );
 }
 const styles = StyleSheet.create({
+  footerActions: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
   fields: { gap: 12 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,

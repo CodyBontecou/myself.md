@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { domains } from '../core/data.js';
+import { deliveredFormats } from '../core/export-files.js';
 import { Copy, Icon, Screen } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import ProfileExports from './ProfileExports.js';
-/** @param {{profiles:import('../core/profiles.js').ExportProfile[],session:import('./session.js').Session,disabled:boolean,isTracking:boolean,onNewProfile:()=>void,children?:import('react').ReactNode}} props */
+/** @param {{profiles:import('../core/profiles.js').ExportProfile[],session:import('./session.js').Session,disabled:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onNewProfile:()=>void,children?:import('react').ReactNode}} props */
 export default function ProfileFeed({
   profiles,
   session,
   disabled,
   isTracking,
+  onRecordingChange,
   onNewProfile,
   children,
 }) {
@@ -139,11 +141,16 @@ export default function ProfileFeed({
                           profile.selection.location.includes('native:points') && (
                             <Pressable
                               testID={`profile-location-tracking-${profile.id}`}
-                              accessibilityRole="button"
-                              accessibilityLabel={`Location tracking ${isTracking ? 'on' : 'off'}, open location settings`}
+                              accessibilityRole="checkbox"
+                              accessibilityLabel="Record location in background for all profiles"
+                              accessibilityState={{
+                                checked: isTracking,
+                                disabled,
+                              }}
+                              disabled={disabled}
                               onPress={(event) => {
                                 event.stopPropagation();
-                                router.push('/data/location');
+                                onRecordingChange(!isTracking);
                               }}
                               style={({ pressed }) => [
                                 styles.tracking,
@@ -151,7 +158,7 @@ export default function ProfileFeed({
                               ]}
                             >
                               <Icon
-                                name="navigate"
+                                name={isTracking ? 'checkbox' : 'square-outline'}
                                 size={12}
                                 color={isTracking ? colors.tracking : colors.secondary}
                               />
@@ -169,7 +176,7 @@ export default function ProfileFeed({
                   <View style={styles.details}>
                     {[
                       ['Destination', destination],
-                      ['Formats', profile.export.formats.join(' + ').toUpperCase()],
+                      ['Formats', deliveredFormats(profile.export).join(' + ').toUpperCase()],
                       [
                         'Export window',
                         `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,

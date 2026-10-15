@@ -12,6 +12,7 @@ import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
 import { verifyMigrationPurchase } from '../server/migration-purchases.js';
 import { PairingError } from '../server/errors.js';
+import { handleStoreNotification, storeSubscriptions } from '../server/store-subscriptions.js';
 import { pairingPage } from '../server/pairing-page.js';
 import { assets } from '../server/dashboard-assets.js';
 import { readBytes } from './request.js';
@@ -40,7 +41,7 @@ async function publicAsset(request, env) {
     Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin}; img-src 'self' https:; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin} https://cloudflareinsights.com; img-src 'self' https:; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const body =
     request.method === 'HEAD'
@@ -212,6 +213,33 @@ export default {
         });
       if (env.MIGRATION_ENABLED === '1')
         return json({ error: 'Migration in progress. Retry shortly.' }, 503);
+      const storeSource =
+        url.pathname === '/api/store/apple/notifications'
+          ? 'apple'
+          : url.pathname === '/api/store/google/notifications'
+            ? 'google'
+            : null;
+      if (storeSource) {
+        if (request.method !== 'POST') throw new PairingError(405, 'Method not allowed.');
+        return json(
+          await handleStoreNotification(
+            storeSource,
+            await readBytes(request, 300000),
+            request.headers.get('authorization'),
+            `${env.PUBLIC_URL}/api/store/${storeSource}/notifications`,
+            {
+              ownerOf: (key) => env.PURCHASES.getByName(digest(key)).owner(key),
+              purchaseOwner: (store, id) =>
+                env.PURCHASES.getByName(digest(`${store}|${id}`)).purchaseOwner(store, id),
+              read: storeSubscriptions.read,
+              deliver: async (subject, event) => {
+                if (subject !== 'deleted')
+                  await env.ACCOUNTS.getByName(digest(subject)).storeNotification(subject, event);
+              },
+            },
+          ),
+        );
+      }
       if (url.pathname === '/api/migration/proof' && request.method === 'POST') {
         const proof = await verifyMigrationPurchase(await boundedJson(request, 40000));
         const purchase = digest(`${proof.source}|${proof.reference}`);

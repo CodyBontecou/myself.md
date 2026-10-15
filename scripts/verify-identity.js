@@ -8,6 +8,7 @@ import { CloudStore } from '../server/cloud-store.js';
 import { BillingStore } from '../server/billing-store.js';
 import { PairingStore } from '../server/pairing-store.js';
 import { HistoryStore } from '../server/history-store.js';
+import { accountTokenKey } from '../server/store-subscriptions.js';
 import { exportRows } from '../server/migration-rows.js';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -19,6 +20,7 @@ import {
   rmSync,
   openSync,
   closeSync,
+  readdirSync,
 } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -456,6 +458,68 @@ try {
             columns: ['source', 'reference', 'subject', 'created'],
             rows: [['fixture', 'identity-lifetime', fixtureSubject, Date.now()]],
           },
+          {
+            name: 'cloud_subscriptions',
+            columns: [
+              'store',
+              'id',
+              'subject',
+              'product',
+              'plan',
+              'period',
+              'status',
+              'expires',
+              'auto_renew',
+              'linked',
+              'verified',
+            ],
+            rows: [
+              [
+                'android',
+                'deletion-cloud-fixture',
+                fixtureSubject,
+                'myself_md_cloud_1gb',
+                'cloud_1gb',
+                'monthly',
+                'expired',
+                Date.now() - 90 * 86400000,
+                0,
+                null,
+                Date.now(),
+              ],
+            ],
+          },
+          {
+            name: 'cloud_notices',
+            columns: [
+              'subject',
+              'id',
+              'kind',
+              'details',
+              'push',
+              'email',
+              'attempts',
+              'error',
+              'channel',
+              'failed',
+              'created',
+            ],
+            rows: [
+              [
+                fixtureSubject,
+                'completed-deletion-fixture',
+                'lapse-0',
+                JSON.stringify({ deleteAt: Date.now(), bytesToDelete: 0, plan: null }),
+                1,
+                1,
+                1,
+                null,
+                null,
+                null,
+                Date.now(),
+              ],
+            ],
+          },
         ],
       },
     }),
@@ -464,11 +528,8 @@ try {
   const reviewerSubject = `https://old.example/realm|${reviewerUserId}`;
   const fixtureBilling = new BillingStore(':memory:');
   const fixturePairing = new PairingStore(':memory:');
-  const fixtureCloud = new CloudStore(
-    ':memory:',
-    Buffer.from('a'.repeat(64), 'hex'),
-    null,
-    (s) => fixtureBilling.snapshot(s).unlocked,
+  const fixtureCloud = new CloudStore(':memory:', Buffer.from('a'.repeat(64), 'hex'), null, (s) =>
+    fixtureBilling.cloudEntitlement(s),
   );
   const fixtureHistory = new HistoryStore(':memory:', fixtureCloud);
   let reviewerFixture;
@@ -497,8 +558,8 @@ try {
       reviewerSubject,
       '2026-10-13',
     );
-    assert.equal(reviewerFixture.exports, 12);
-    assert.equal(reviewerFixture.sharedExports, 8);
+    assert.equal(reviewerFixture.exports, 6);
+    assert.equal(reviewerFixture.sharedExports, 4);
     assert.equal(
       (
         await seedReviewerFixtures(
@@ -512,11 +573,11 @@ try {
           '2026-10-13',
         )
       ).exports,
-      12,
+      6,
     );
     const reviewerEvents = fixtureHistory.list(reviewerSubject, null).events;
     assert.equal(reviewerEvents.length, 6);
-    assert.ok(reviewerEvents.every((event) => event.artifacts.length === 2));
+    assert.ok(reviewerEvents.every((event) => event.artifacts.length === 1));
     const tables = [
       exportRows(fixturePairing.db, ['devices'], 'devices', 0),
       exportRows(fixtureBilling.db, ['billing_grants'], 'billing_grants', 0),
@@ -872,7 +933,7 @@ try {
     const text = listed.content[0];
     assert.ok(text && text.type === 'text');
     const files = z.array(z.object({ id: z.string() })).parse(JSON.parse(text.text));
-    assert.equal(files.length, 8);
+    assert.equal(files.length, 4);
     const fileId = files[0]?.id;
     assert.ok(fileId);
     const page = await reviewerClient.callTool({
@@ -1030,7 +1091,7 @@ try {
     });
     const text = restrictedList.content.find((value) => value.type === 'text');
     assert.ok(text && text.type === 'text');
-    assert.equal(JSON.parse(text.text).length, 8);
+    assert.equal(JSON.parse(text.text).length, 4);
     assert.equal(
       (
         await restrictedClient.callTool({
@@ -1163,7 +1224,7 @@ try {
         });
       await reviewerTab
         .locator('header')
-        .getByLabel('12 files: Stored export files', { exact: true })
+        .getByLabel('6 files: Stored export files', { exact: true })
         .waitFor({ state: 'visible' });
       assert.ok(
         (await reviewerTab.context().cookies()).some((value) =>
@@ -1652,6 +1713,9 @@ try {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   }
+  const deletionPurchaseAccount = z
+    .object({ appAccountToken: z.string().uuid() })
+    .parse(await (await ownerRequest('/api/cloud/purchase-account')).json());
   const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
   const pairingUrl = z
     .object({ pairingUrl: z.string() })
@@ -1817,6 +1881,64 @@ try {
   );
   child.kill('SIGTERM');
   await once(child, 'exit');
+  // Inspect the stopped real workerd SQLite stores, not a second cleanup implementation.
+  let tombstoneFound = false;
+  let billingPartitions = 0;
+  const ownerKey = accountTokenKey(deletionPurchaseAccount.appAccountToken);
+  for (const entry of readdirSync(join(directory, 'state'), {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
+    const persisted = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+    try {
+      if (
+        !persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_subscriptions'")
+          .get()
+      )
+        continue;
+      billingPartitions++;
+      for (const table of [
+        'cloud_subscriptions',
+        'cloud_lapses',
+        'cloud_notices',
+        'cloud_revocations',
+      ])
+        assert.equal(
+          Number(
+            persisted.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE subject=?`).get(subject)
+              ?.count,
+          ),
+          0,
+          `Account deletion clears ${table} in every partition`,
+        );
+      const owner = persisted.prepare('SELECT subject FROM cloud_owners WHERE key=?').get(ownerKey);
+      if (owner) {
+        assert.equal(
+          owner.subject,
+          'deleted',
+          'Global Purchase ownership is tombstoned without retaining the account',
+        );
+        tombstoneFound = true;
+      }
+    } finally {
+      persisted.close();
+    }
+  }
+  assert.ok(billingPartitions > 0);
+  assert.ok(tombstoneFound, 'Account deletion preserves its Purchase ownership tombstone');
+  const tombstone = new BillingStore(':memory:');
+  try {
+    tombstone.bindOwner(ownerKey, 'deleted');
+    assert.throws(
+      () => tombstone.bindOwner(ownerKey, 'another-account'),
+      /another.*account/,
+      'Deleted ownership cannot be reclaimed by a new account',
+    );
+  } finally {
+    tombstone.db.close();
+  }
   await cli([
     'd1',
     'execute',

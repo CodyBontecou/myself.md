@@ -52,6 +52,7 @@ import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './s
 import { AccountDeletion } from './account-deletion.js';
 import { MigrationClaim } from './migration-claim.js';
 import { cloudUsageLabel } from '../core/cloud-allowance.js';
+import { CloudStorageCard, cloudStorageSummary } from './cloud-storage.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
 import { Explorer } from './explorer.js';
@@ -442,9 +443,9 @@ function SummaryPills({ workspace, view, compact = false }) {
                   ? cloudUsageLabel(storage)
                   : 'Lifetime access required'
                 : 'Cloud storage unavailable',
-              detail: storage?.eligible
-                ? `Included cloud storage · ${storage.overLimit ? 'Over allowance; delete files to resume uploads · ' : ''}encrypted at rest · files kept until deleted or replaced`
-                : 'Sign in to the app and purchase or restore lifetime access for 100 MB of included cloud storage',
+              detail: storage
+                ? cloudStorageSummary(storage)
+                : 'Sign in to the app and purchase or restore Lifetime access for included cloud storage',
               icon: IconCloud,
             },
           ];
@@ -1240,6 +1241,11 @@ function App() {
                         />
                       ) : view === 'exports' ? (
                         <>
+                          {workspace.cloudStorage && !isDemo && (
+                            <div className="px-4 lg:px-6">
+                              <CloudStorageCard storage={workspace.cloudStorage} />
+                            </div>
+                          )}
                           <div className="px-4 lg:px-6">
                             <ExportActivity
                               workspace={workspace}

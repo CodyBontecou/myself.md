@@ -3,8 +3,14 @@ import { z } from 'zod';
 const content = (/** @type {unknown} */ value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 });
-/** @param {{cloud:import('./cloud-store.js').CloudStore,billing:import('./billing-store.js').BillingStore,history:import('./history-store.js').HistoryStore,refreshEntitlement:(subject:string)=>Promise<void>}} dependencies */
-export function createCloudService({ cloud, billing, history, refreshEntitlement }) {
+/** @param {{cloud:import('./cloud-store.js').CloudStore,billing:import('./billing-store.js').BillingStore,history:import('./history-store.js').HistoryStore,refreshEntitlement:(subject:string)=>Promise<void>,cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>}} dependencies */
+export function createCloudService({
+  cloud,
+  billing,
+  history,
+  refreshEntitlement,
+  cloudSubscriptions,
+}) {
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerCloudTools(mcp, subject, client = null) {
     mcp.registerTool(
@@ -12,7 +18,7 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
       {
         title: 'Check cloud storage',
         description:
-          'Read your verified cloud storage eligibility, used and available bytes, capacity and file retention. Does not enable uploads or sharing.',
+          'Read verified cloud plan, subscription and store grace/retry state, used/available bytes, lapse deletion deadline and bytes at risk. Includes user handoff to subscribe, upgrade, restore or manage/cancel in the phone/store; agents cannot purchase or cancel. Does not enable uploads or sharing.',
         inputSchema: z.object({}).strict(),
         annotations: {
           title: 'Check cloud storage',
@@ -23,8 +29,10 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
         },
       },
       async () => {
-        await refreshEntitlement(subject);
-        const status = cloud.storageStatus(subject);
+        if (!cloudSubscriptions) await refreshEntitlement(subject);
+        const status = cloudSubscriptions
+          ? await cloudSubscriptions.status(subject)
+          : cloud.storageStatus(subject);
         return { ...content(status), structuredContent: status };
       },
     );

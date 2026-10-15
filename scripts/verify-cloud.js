@@ -168,6 +168,7 @@ try {
   assert.throws(() => store.row('alice', denied.id));
   const json = store.begin('alice', 'device', profile.id, {
     ...metadata,
+    day: '2026-10-09',
     format: 'json',
     manifest: { profileId: profile.id, recordCount: 2 },
   });
@@ -193,6 +194,18 @@ try {
   );
   assert.equal((await store.page('alice', json.id, 0, 1)).nextCursor, '1');
   assert.equal((await store.page('alice', json.id, 1, 1)).nextCursor, null);
+  // One daily file per schema: a JSONL upload replaces the day's JSON file and frees its quota.
+  const jsonl = store.begin('alice', 'device', profile.id, { ...metadata, day: '2026-10-09' });
+  await store.commit('alice', 'device', profile.id, jsonl.id, bytes);
+  assert.throws(() => store.row('alice', json.id), /not found/);
+  assert.deepEqual(
+    store
+      .list('alice')
+      .filter((item) => item.day === '2026-10-09')
+      .map((item) => item.id),
+    [jsonl.id],
+  );
+  await store.delete('alice', jsonl.id);
 
   // Seed a different historical identity without releasing a fictional schema.
   const coexistProfile = { ...profile, id: 'schema-isolation' };

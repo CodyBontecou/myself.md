@@ -80,6 +80,8 @@ export default function ProfileEditor({ data = false }) {
           {...(domain ? { domain } : {})}
           types={phone.types}
           permissions={phone.sourcePermissions}
+          isTracking={phone.isTracking}
+          onRecordingChange={(enabled) => void phone.run(() => phone.changeRecording(enabled))}
           onAuthorize={phone.reviewSourceAccess}
           onOpenLocation={() => void run(() => save(true))}
           selection={draft.selection}

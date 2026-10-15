@@ -17,13 +17,14 @@ export class Purchase extends DurableObject {
       'billing_grants',
       'billing_purchases',
       'billing_claims',
+      'cloud_owners',
     ]);
   }
   /** @param {string} table @param {number} offset */
   exportBatch(table, offset) {
     return exportRows(
       this.billing.db,
-      ['billing_grants', 'billing_purchases', 'billing_claims'],
+      ['billing_grants', 'billing_purchases', 'billing_claims', 'cloud_owners'],
       table,
       offset,
     );
@@ -58,6 +59,24 @@ export class Purchase extends DurableObject {
       return failure(error);
     }
   }
+  /** Atomic one-owner binding for an account token or subscription purchase-chain member.
+   * @param {string} key @param {string} subject */
+  bindOwner(key, subject) {
+    try {
+      this.billing.bindOwner(key, subject);
+      return { ok: /** @type {const} */ (true) };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+  /** @param {string} key */
+  owner(key) {
+    return this.billing.owner(key);
+  }
+  /** @param {'ios'|'android'} store @param {string} id */
+  purchaseOwner(store, id) {
+    return this.billing.purchaseOwner(store, id);
+  }
   /** Preserve one-owner purchase protection without identity or receipt data.
    * @param {string} subject */
   forgetAccount(subject) {
@@ -68,6 +87,9 @@ export class Purchase extends DurableObject {
       .prepare("UPDATE billing_grants SET subject='deleted' WHERE subject=?")
       .run(subject);
     this.billing.db.prepare('DELETE FROM billing_claims WHERE subject=?').run(subject);
+    this.billing.db
+      .prepare("UPDATE cloud_owners SET subject='deleted' WHERE subject=?")
+      .run(subject);
   }
   /** @param {string} subject @param {string} source @param {string} reference */
   importGrant(subject, source, reference) {

@@ -165,15 +165,19 @@ export function Checkbox({
     </Pressable>
   );
 }
-/** @param {{children:import('react').ReactNode,compact?:boolean}} props */
-export function Group({ children, compact = false }) {
+/** @param {{children:import('react').ReactNode,compact?:boolean,transparent?:boolean}} props */
+export function Group({ children, compact = false, transparent = false }) {
   const { colors } = useTheme();
   return (
     <View
       style={[
         styles.group,
         compact && styles.compactGroup,
-        { backgroundColor: colors.surface, borderColor: colors.border },
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+        transparent && styles.transparent,
       ]}
     >
       {children}
@@ -333,6 +337,7 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline', tes
   );
 }
 const styles = StyleSheet.create({
+  transparent: { backgroundColor: 'transparent' },
   fill: { flex: 1 },
   compactScreen: { paddingHorizontal: 16, paddingTop: 8 },
   compactColumn: { gap: 16 },

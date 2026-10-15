@@ -65,7 +65,7 @@ export async function seedReviewerFixtures(
           location: [],
           [spec.domain]: spec.types.map((type) => `native:${type}`),
         },
-        export: { destination: 'cloud', formats: ['json', 'jsonl'] },
+        export: { destination: 'cloud', formats: ['jsonl'] },
       }),
       id: `reviewer-fixture-${spec.id}`,
     };
@@ -113,54 +113,46 @@ export async function seedReviewerFixtures(
         stamp,
         timezone: 'UTC',
       });
-      for (const format of /** @type {const} */ (['json', 'jsonl'])) {
-        const previous = cloud
-          .list(subject)
-          .find(
-            (file) => file.profileId === profile.id && file.day === day && file.format === format,
-          );
-        const bytes = Buffer.from(
-          format === 'json'
-            ? JSON.stringify({
-                schema: profile.export.schema,
-                fictional: true,
-                warnings: [warning],
-                records,
-              })
-            : records.map((record) => JSON.stringify(record)).join('\n') + '\n',
-        );
-        const { id } =
-          previous ??
-          cloud.begin(subject, deviceId, profile.id, {
-            day,
-            format,
-            profile,
-            manifest: {
-              schema: profile.export.schema,
-              profileId: profile.id,
-              recordCount: records.length,
-              interval,
-              fictional: true,
-              warnings: [warning],
-            },
-          });
-        // Each commit validates profile selections, payload shape, encryption and storage quota.
+      // Cloud keeps one JSONL file per day; remove JSON copies seeded before that rule.
+      const files = cloud
+        .list(subject)
+        .filter((file) => file.profileId === profile.id && file.day === day);
+      for (const file of files)
         // oxlint-disable-next-line eslint/no-await-in-loop
-        if (!previous) await cloud.commit(subject, deviceId, profile.id, id, bytes);
-        event.artifacts.push({
-          schema: profile.export.schema,
+        if (file.format === 'json') await cloud.delete(subject, file.id);
+      const previous = files.find((file) => file.format === 'jsonl');
+      const bytes = Buffer.from(records.map((record) => JSON.stringify(record)).join('\n') + '\n');
+      const { id } =
+        previous ??
+        cloud.begin(subject, deviceId, profile.id, {
           day,
-          name: `fictional-${spec.id}-${day}.${format}`,
-          format,
-          recordCount: records.length,
-          bytes: bytes.length,
-          uri: null,
-          cloudId: id,
-          checksum: cloud.digest(bytes),
-          partial: false,
-          warnings: [warning],
+          format: 'jsonl',
+          profile,
+          manifest: {
+            schema: profile.export.schema,
+            profileId: profile.id,
+            recordCount: records.length,
+            interval,
+            fictional: true,
+            warnings: [warning],
+          },
         });
-      }
+      // Each commit validates profile selections, payload shape, encryption and storage quota.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      if (!previous) await cloud.commit(subject, deviceId, profile.id, id, bytes);
+      event.artifacts.push({
+        schema: profile.export.schema,
+        day,
+        name: `fictional-${spec.id}-${day}.jsonl`,
+        format: 'jsonl',
+        recordCount: records.length,
+        bytes: bytes.length,
+        uri: null,
+        cloudId: id,
+        checksum: cloud.digest(bytes),
+        partial: false,
+        warnings: [warning],
+      });
       history.record(subject, deviceId, {
         ...event,
         status: 'complete',

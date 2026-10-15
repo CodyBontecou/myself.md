@@ -1,3 +1,4 @@
+import { createExportSchedules } from '../server/export-schedules.js';
 import { createRemoteSupport } from '../server/support-remote.js';
 import { SupportStore } from '../server/support-store.js';
 import { SupportDiscord } from '../server/support-discord.js';
@@ -20,6 +21,8 @@ import { createDataService } from '../server/data-service.js';
 import { createCloudService } from '../server/cloud-service.js';
 import { createDashboardService } from '../server/dashboard-service.js';
 import { verifyStorePurchase } from '../server/store-purchases.js';
+import { createCloudSubscriptions } from '../server/cloud-subscriptions.js';
+import { createEmailSender } from '../server/email.js';
 import { verifyMigrationPurchase } from '../server/migration-purchases.js';
 import { PairingError } from '../server/errors.js';
 import { proxyAuth } from '../server/auth-proxy.js';
@@ -44,13 +47,25 @@ export class Account extends DurableObject {
     /** @type {Set<()=>void>} */
     this.drainers = new Set();
     this.db = objectDatabase(this.ctx.storage);
+    this.exportSchedules = createExportSchedules(
+      this.db,
+      (subject, device) => {
+        if (!this.pairing.devices(subject).some((d) => d.id === device))
+          throw new PairingError(404, 'Connected phone not found.');
+      },
+      async () => {
+        const alarm = await this.ctx.storage.getAlarm();
+        if (!alarm || alarm > Date.now() + 60000)
+          await this.ctx.storage.setAlarm(Date.now() + 60000);
+      },
+    );
     this.billing = new BillingStore(this.db);
     this.pairing = new PairingStore(this.db);
     this.cloud = new CloudStore(
       this.db,
       Buffer.from(this.env.CLOUD_ENCRYPTION_KEY, 'hex'),
       objectStorage(this.env.EXPORTS),
-      (subject) => this.billing.snapshot(subject).unlocked,
+      (subject) => this.billing.cloudEntitlement(subject),
     );
     this.support = new SupportStore(this.db, this.cloud);
     this.supportDiscord = new SupportDiscord({
@@ -97,6 +112,35 @@ export class Account extends DurableObject {
         this.billing.unlock(subject, purchase);
       },
     });
+    this.cloudSubscriptions = createCloudSubscriptions({
+      billing: this.billing,
+      cloud: this.cloud,
+      history: this.history,
+      refreshEntitlement: billingService.refreshEntitlement,
+      owners: {
+        bind: async (key, subject) => {
+          const result = await this.env.PURCHASES.getByName(digest(key)).bindOwner(key, subject);
+          if (!result.ok) throw new PairingError(result.status, result.error);
+          this.billing.bindOwner(key, subject);
+        },
+        owner: (key) => this.env.PURCHASES.getByName(digest(key)).owner(key),
+      },
+      pushTokens: this.exportSchedules.pushTokens,
+      accountEmail: async (subject) => {
+        const id = subject.slice(subject.indexOf('|') + 1);
+        const row = await this.env.IDENTITY.prepare('SELECT email FROM "user" WHERE id=?')
+          .bind(id)
+          .first();
+        return typeof row?.email === 'string' ? row.email : null;
+      },
+      mailer: createEmailSender(this.env),
+      arm: (at) => this.arm(at),
+    });
+    billingService.configureCloud({
+      run: this.cloudSubscriptions.run,
+      revoked: this.cloudSubscriptions.lifetimeRevoked,
+      changed: this.cloudSubscriptions.reconcile,
+    });
     const jobs = new DurableMap(
       this.db,
       this.cloud,
@@ -142,6 +186,7 @@ export class Account extends DurableObject {
       billing: this.billing,
       history: this.history,
       refreshEntitlement: billingService.refreshEntitlement,
+      cloudSubscriptions: this.cloudSubscriptions,
     });
     const dashboard = createDashboardService({
       cloud: this.cloud,
@@ -149,6 +194,7 @@ export class Account extends DurableObject {
       devices: this.pairing.devices.bind(this.pairing),
       cancelAgent: this.data.cancelAgent,
       refreshEntitlement: billingService.refreshEntitlement,
+      cloudSubscriptions: this.cloudSubscriptions,
     });
     this.listener = createApplication(
       {
@@ -166,6 +212,8 @@ export class Account extends DurableObject {
             ? Promise.resolve(this.deletionStatus(subject))
             : this.deleteAccount(subject),
         accountLoginsApi: (subject) => identityLogins(this.env, subject),
+        exportSchedules: this.exportSchedules,
+        cloudSubscriptions: this.cloudSubscriptions,
         qrPng,
         ...billingService,
         ...this.data,
@@ -208,6 +256,25 @@ export class Account extends DurableObject {
         ? { jwksFetch: (url, options) => identityRequest(new Request(url, options), this.env) }
         : {},
     );
+  }
+  /** Keep the earliest scheduled subscription, cleanup or export-schedule work.
+   * @param {number} at */
+  async arm(at) {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+  /** Store callbacks use the same admission/drain boundary as HTTP account requests.
+   * @param {string} subject @param {Exclude<import('../server/store-subscriptions.js').StoreEvent,{kind:'ignored'}>} event */
+  async storeNotification(subject, event) {
+    if (this.ctx.storage.kv.get('deletion')) return;
+    const active = {};
+    this.activeRequests.add(active);
+    try {
+      await this.ensureAccount(subject);
+      await this.cloudSubscriptions.notification(subject, event);
+    } finally {
+      this.releaseRequest(active);
+    }
   }
   /** @param {string} subject */
   async ensureAccount(subject) {
@@ -268,6 +335,7 @@ export class Account extends DurableObject {
   /** @param {string} subject */
   async purgeAccount(subject) {
     try {
+      this.exportSchedules.remove(subject);
       this.data.cancelAccount(subject);
       // Revoke every phone and upload grant before any asynchronous deletion work.
       for (const device of this.pairing.devices(subject)) {
@@ -295,6 +363,10 @@ export class Account extends DurableObject {
       await [
         ...purchases.map((row) => `${row.store}|${row.id}`),
         ...grants.map((row) => `${row.source}|${row.reference}`),
+        ...this.db
+          .prepare('SELECT key FROM cloud_owners WHERE subject=?')
+          .all(subject)
+          .map((row) => String(row.key)),
       ].reduce(async (previous, key) => {
         await previous;
         await this.env.PURCHASES.getByName(digest(key)).forgetAccount(subject);
@@ -318,6 +390,11 @@ export class Account extends DurableObject {
         'billing_purchases',
         'billing_grants',
         'billing_claims',
+        'cloud_owners',
+        'cloud_subscriptions',
+        'cloud_lapses',
+        'cloud_notices',
+        'cloud_revocations',
         'phone_queue',
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE subject=?`).run(subject);
@@ -408,6 +485,11 @@ export class Account extends DurableObject {
       'billing_uses',
       'billing_purchases',
       'billing_grants',
+      'cloud_owners',
+      'cloud_subscriptions',
+      'cloud_lapses',
+      'cloud_notices',
+      'cloud_revocations',
     ]);
     this.billing.db
       .prepare("DELETE FROM billing_uses WHERE state='reserved' AND scope='agent'")
@@ -461,6 +543,11 @@ export class Account extends DurableObject {
         'billing_uses',
         'billing_purchases',
         'billing_grants',
+        'cloud_owners',
+        'cloud_subscriptions',
+        'cloud_lapses',
+        'cloud_notices',
+        'cloud_revocations',
       ],
       table,
       offset,
@@ -480,14 +567,21 @@ export class Account extends DurableObject {
     }
     this.data.cleanup();
     this.cloud.cleanup();
+    const active = {};
+    this.activeRequests.add(active);
     try {
+      if (typeof subject === 'string') await this.cloudSubscriptions.maintain(subject);
+      await this.exportSchedules.dispatch();
       await this.cloud.sweepObjects();
     } finally {
+      this.releaseRequest(active);
       if (
+        this.exportSchedules.active() ||
         this.db.prepare('SELECT 1 FROM exports LIMIT 1').get() ||
-        this.db.prepare('SELECT 1 FROM object_garbage LIMIT 1').get()
+        this.db.prepare('SELECT 1 FROM object_garbage LIMIT 1').get() ||
+        this.billing.cloudSubjects().length
       )
-        await this.ctx.storage.setAlarm(Date.now() + 3600000);
+        await this.arm(Date.now() + (this.exportSchedules.active() ? 60000 : 3600000));
     }
   }
 }

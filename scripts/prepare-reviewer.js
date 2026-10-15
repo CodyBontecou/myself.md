@@ -43,11 +43,8 @@ const key = Buffer.from(
 );
 const billing = new BillingStore(`${directory}/billing.sqlite`);
 const pairing = new PairingStore(`${directory}/pairing.sqlite`);
-const cloud = new CloudStore(
-  `${directory}/cloud.sqlite`,
-  key,
-  null,
-  (s) => billing.snapshot(s).unlocked,
+const cloud = new CloudStore(`${directory}/cloud.sqlite`, key, null, (s) =>
+  billing.cloudEntitlement(s),
 );
 const history = new HistoryStore(`${directory}/history.sqlite`, cloud);
 try {
