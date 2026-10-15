@@ -115,15 +115,6 @@ export default function Overview() {
           />
         </Group>
       </View>
-      <Group>
-        <Row
-          testID="connections-history"
-          title="Logs"
-          subtitle="Past exports and agent access"
-          icon={<SourceIcon icon="time-outline" />}
-          onPress={() => router.navigate('/history')}
-        />
-      </Group>
       <Button
         testID="connections-pair"
         label={connected ? 'Manage agent connection' : 'Connect agent'}

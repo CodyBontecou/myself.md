@@ -53,10 +53,6 @@ export function exportDiagnostics(event, profile, sources) {
         )
       : null,
     actions: [
-      {
-        label: 'Review export details',
-        deepLink: `myselfmd://history/${encodeURIComponent(event.id)}`,
-      },
       { label: 'Review profile destination, output and schedule', deepLink: profileLink },
       ...domains
         .filter((domain) => event.profile.selection[domain].length > 0)

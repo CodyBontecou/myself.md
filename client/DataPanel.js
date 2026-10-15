@@ -2,7 +2,6 @@ import { showToast } from '../src/components/Toast.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
-import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
@@ -124,7 +123,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     return {
       ...raw,
       diagnostics,
-      feedback: await feedbackState(),
       profiles: profileState.current.profiles,
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
@@ -241,19 +239,13 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{feedback?:import('./gripe.js').FeedbackRequest|null,request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
             })
           );
         if (active) {
-          await requestFeedback(response.feedback ?? null, () =>
-            api(session, `/api/phones/${session.deviceId}/feedback`, {
-              method: 'POST',
-              body: JSON.stringify({ id: response.feedback?.id }),
-            }),
-          );
           acceptAllowance(response.allowance);
           setNotes(
             Object.fromEntries(
@@ -285,14 +277,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           recordDebug(session, 'query', 'started');
           try {
             const page = await readPage(session.owner, request.query, profile);
-            recordDebug(session, 'query', 'succeeded', {
-              records: {
-                domain: request.query.domain,
-                type: request.query.type,
-                profileId: profile.id,
-                values: page.records,
-              },
-            });
+            recordDebug(session, 'query', 'succeeded');
             body = { id: request.id, page };
           } catch (error) {
             recordDebug(session, 'query', 'failed', { error });

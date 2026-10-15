@@ -330,7 +330,7 @@ export default function ProfilePanel({
                     title={label}
                     subtitle={
                       key === 'logs'
-                        ? 'Phone-wide app diagnostics; requires Log sharing consent.'
+                        ? 'Phone-wide app diagnostics; requires Share debug logs with agents in Settings.'
                         : `${profile.selection[key].length} selected · ${grants[key] ? 'system: ' + (permissions[key] ?? 'checking') : 'phone access off'}`
                     }
                     trailing={
@@ -383,9 +383,9 @@ export default function ProfilePanel({
             <Row
               compact
               testID="profile-agent-log-settings"
-              title="Log sharing settings"
-              subtitle="Review app log consent and included content"
-              onPress={() => router.push('/diagnostics')}
+              title="Debug log sharing"
+              subtitle="Phone-wide consent in Settings"
+              onPress={() => router.navigate('/settings')}
             />
           </Group>
           <SectionHeader compact title="Data selection" />
@@ -511,17 +511,6 @@ export default function ProfilePanel({
               disabled={disabled}
             />
           )}
-          <Group compact>
-            <Row
-              compact
-              testID="profile-view-history"
-              title="View logs"
-              subtitle="Exports and agent access for this profile"
-              onPress={() =>
-                router.push({ pathname: '/profiles/history', params: { profileId: profile.id } })
-              }
-            />
-          </Group>
           <SectionHeader compact title="Profile ID" />
           <View
             style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}

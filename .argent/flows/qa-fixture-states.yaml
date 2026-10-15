@@ -24,37 +24,6 @@ steps:
   - await:
       idle: true
   - tap:
-      text: Logs
-  - await:
-      visible:
-        text: Your logs start here
-  - await:
-      idle: true
-  - tap:
-      id: qa-open
-  - await:
-      visible:
-        identifier: qa-reset-history-error
-  - await:
-      idle: true
-  - tap:
-      id: qa-reset-history-error
-  - await:
-      visible:
-        identifier: profile-row-qa-profile
-  - await:
-      idle: true
-  - tap:
-      text: Logs
-  - await:
-      visible:
-        text: Synthetic history refresh failed. Saved entries are still available.
-  - await:
-      idle: true
-  - await:
-      visible:
-        identifier: history-event-qa-export
-  - tap:
       id: qa-open
   - await:
       visible:
@@ -66,13 +35,6 @@ steps:
   - await:
       visible:
         text: Loading export profiles…
-  - await:
-      idle: true
-  - tap:
-      text: Logs
-  - await:
-      visible:
-        text: Loading logs…
   - await:
       idle: true
   - tap:

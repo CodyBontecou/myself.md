@@ -1,7 +1,5 @@
 import { ToastProvider } from '../components/Toast.js';
-import { SupportNotifications } from '../../client/support-notifications.js';
-import { useEffect, useSyncExternalStore } from 'react';
-import { feedbackState } from '../../client/gripe.js';
+import { useSyncExternalStore } from 'react';
 import QaPhoneProvider from '../../client/QaPhoneProvider.js';
 import { qaEnabled, qaSnapshot, subscribeQa } from '../../client/qa-runtime.js';
 import BillingPaywalls from '../../client/BillingPaywalls';
@@ -13,10 +11,6 @@ import PhoneProvider from '../../client/PhoneProvider';
 import { OnboardingProvider, useOnboarding } from '../../client/onboarding';
 export const unstable_settings = { initialRouteName: 'index' };
 export default function RootLayout() {
-  useEffect(() => {
-    if (qaEnabled) return;
-    void feedbackState().catch(() => {});
-  }, []);
   const fixture = useSyncExternalStore(subscribeQa, qaSnapshot);
   return (
     <OnboardingProvider key={qaEnabled ? fixture.revision : 0}>
@@ -48,7 +42,6 @@ function RootStack() {
         <ToastProvider>
           <Provider>
             {!qaEnabled && <BillingPaywalls />}
-            {!qaEnabled && <SupportNotifications />}
             <Stack
               screenOptions={{
                 headerStyle: { backgroundColor: colors.background },
@@ -78,8 +71,6 @@ function RootStack() {
               <Stack.Screen name="login" options={{ title: 'Sign in' }} />
               <Stack.Screen name="claim-access" options={{ title: 'Existing purchases' }} />
               <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
-              <Stack.Screen name="feedback" options={{ title: 'Bug report updates' }} />
-              <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
             </Stack>
           </Provider>
         </ToastProvider>
