@@ -1,6 +1,10 @@
 # Argent phone QA
 
-On 14 October 2026, the dedicated iOS 26.5 Onboarding Profile QA simulator loaded this checkout from QA Metro on port 8082. The signed-out Isobot composer showed the added 16-point separation above the native tab bar with the keyboard closed, retained its 10-point bottom padding with the software keyboard open, and restored the closed spacing after Notifications dismissed the keyboard. Screenshots verified both states; no support message was sent. Metro reported existing notification keychain entitlement and Settings avatar/provider errors, but the fixture Profiles and Support screens remained usable. This verifies composer layout only, not support delivery or physical-device behavior.
+## Current bridge-first scope (15 October 2026)
+
+Mobile has only **Profiles / Settings** tabs. Support, Logs/history routes, the diagnostics viewer and all feedback/Gripe UI are removed. Settings retains one **Share debug logs with agents** owner toggle; agent reads retain raw errors and operation/timing/HTTP metadata without record, credential or URL attachments. `get_phone_debug_logs`, `request_phone_debug_access` and `list_phone_logs` remain; consent handoff opens Settings. The debug-content and feedback MCP tools are removed. Dashboard Support/explorer/History/demo and the portable support-chat package are unchanged; Isobot approvals use web dashboard Support.
+
+`qa-history` is removed. `qa-fixture-states` retains empty/loading profile, denied-source and failed-save checks but no history scenario/reset/navigation steps. Profile/onboarding/source/Settings flows remain. These source edits have not been replayed; the dated journal below is evidence for earlier source only, not a pass for this cut.
 
 ## Start a fixture build
 
@@ -8,18 +12,17 @@ Run `npm run start:qa`, connect an installed Debug build to Metro port 8082, and
 
 On Android, reverse the device's Metro port to the QA server (`adb -s SERIAL reverse tcp:8081 tcp:8082`) and set its debug server host to `localhost:8081`. A host such as `10.0.2.2:8081` bypasses that reverse mapping. On iOS, select `localhost:8082` in the debug bundle-server settings. These are development-device settings, not app configuration. Leave physical phones and shared simulators on their existing server.
 
-The fixtures use one private profile with no selected types, a small native-shaped catalog, and three fixed-time synthetic activity entries. No personal records, artifacts, credentials or server tokens are seeded. Reset operations replace only fixture state. SQLite callers use `argent-qa-data.sqlite`; fixture KV state uses `argent-qa-state-v1`. Normal data lives in its original partition. Startup recovery is tested against both partitions, including invalid and interrupted history. Developer notification banners are suppressed only in fixture mode; console output and fatal errors remain observable.
+Fixtures use one private profile with no selected types and a small native-shaped catalog. No personal records, artifacts, credentials or server tokens are seeded. Reset operations replace fixture state only. SQLite callers use `argent-qa-data.sqlite`; fixture KV state uses `argent-qa-state-v1`, separate from normal data. History storage recovery remains a backend concern; fixtures no longer seed activity rows or offer a history-error scenario.
 
 | Scenario            | Observable state                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------- |
-| `populated`         | One private QA profile; saved export, failed export and agent access metadata                |
-| `empty`             | Same minimum profile; History empty state                                                    |
+| `populated`         | One private QA profile with no selected types                                                |
+| `empty`             | Same minimum profile with empty synthetic storage usage                                      |
 | `save-error`        | Failed profile save retains the original stored profile                                      |
-| `history-error`     | Refresh error retains saved activity                                                         |
 | `permission-denied` | Synthetic permission denial retains the saved selection, with recording and agent grants off |
-| `loading`           | Explicit profile and History loading markers                                                 |
+| `loading`           | Explicit profile and cloud-storage loading markers                                           |
 
-Exports, schedules, destination credentials, OS sharing, authentication, purchases, camera access and recording require normal-build integration QA. Fixtures do not perform those operations. Camera access reports that handoff as a readable error. Screenshot feedback is unavailable in fixtures.
+Exports, schedules, destination credentials, OS sharing, authentication, purchases, camera access and recording require normal-build integration QA. Fixtures do not perform those operations. Camera access reports that handoff as a readable error. Screenshot feedback is removed from all builds, not a fixture-only limitation.
 
 ## Agent diagnostics
 
@@ -35,32 +38,29 @@ Reset validates the scenario and boolean onboarding state, persists the syntheti
 
 ## Selector contract
 
-Prefer stable `testID`s over coordinates or list position. Root IDs include `onboarding-*-screen`, `profile-editor-screen`, `profile-detail-screen`, `profiles-screen`, `profiles-list`, `history-screen`, `history-detail-screen`, `settings-screen`, `connections-screen`, `pair-screen`, `account-screen` and `qa-screen`. Destination controls are also useful when native accessibility projections omit a root container.
+Prefer stable `testID`s over coordinates or list position. Current root IDs include `onboarding-*-screen`, `profile-editor-screen`, `profile-detail-screen`, `profiles-screen`, `profiles-list`, `settings-screen`, `connections-screen`, `pair-screen`, `account-screen` and `qa-screen`. Destination controls are useful when native accessibility projections omit root containers. History, support and diagnostics viewer selectors are no longer contracts.
 
-Key controls include `profile-new-profile`, `profile-name-input`, `profile-save`, `profile-cancel`, `profile-setting-*`, `profile-inline-save`, `profile-inline-cancel`, `selection-domain-*`, `selection-type-*`, `selection-permissions-*`, `history-filter`, `history-event-*` and `settings-*`. The profile list has no visible heading/count; creation flows verify the seeded and newly named profile rows. Dynamic row IDs contain the real profile/activity ID; use fixture IDs for seeded rows, and a controlled unique name for newly created profiles. Do not persist timestamp-generated IDs in a flow.
+Key controls include `profile-new-profile`, `profile-name-input`, `profile-save`, `profile-cancel`, `profile-setting-*`, `profile-inline-save`, `profile-inline-cancel`, `selection-domain-*`, `selection-type-*`, `selection-permissions-*` and `settings-*`. Profile flows use the seeded `profile-row-qa-profile` and a controlled unique name for creation; do not persist timestamp-generated IDs.
 
 Controls publish disabled, busy, selected or checked state where applicable. Loading and errors have named markers and readable copy. Labels describe the operation and source rather than icon names. Do not group interactive descendants under one accessible parent. IDs are automation contracts: update the corresponding flow when renaming one.
 
-iOS native tabs expose `profiles-tab`, `history-tab` and `settings-tab`. Android uses native view tags for those IDs, which UIAutomator does not expose as resource IDs; the portable flows use the stable English tab labels. Native back controls differ too: `chevron.backward` on iOS and `Navigate up` on Android. Platform branches reconverge on required destination checks. The suite currently assumes English UI copy.
+iOS native tabs expose `profiles-tab` and `settings-tab`. Android native view tags are not exposed as UIAutomator resource IDs, so portable flows use stable English tab labels. Native back controls remain `chevron.backward` on iOS and `Navigate up` on Android; branches reconverge on required destination checks. The suite assumes English UI copy.
 
 ## Recorded regression contracts
 
 Every flow starts its app and establishes synthetic state itself. `qa-reset-populated` is the shared recorded reset helper. The other flows restore that baseline at the end, except onboarding, which establishes the same populated completed-onboarding state. No screenshots are used as acceptance checks, and no snapshot baselines require review.
 
-| Flow                          | Ordered actions and acceptance evidence                                                                                                                                                                                 | State effect                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `qa-reset-populated`          | Launch → QA fixtures → Reset populated → `profile-row-qa-profile`                                                                                                                                                       | Replaces fixture state only                   |
-| `qa-onboarding-completion`    | Reset onboarding → Welcome Continue → Privacy Continue → Explore app → private seeded profile → restart → same profile                                                                                                  | Persists completed onboarding                 |
-| `qa-profile-edit-persistence` | Open seeded profile → edit name → verify full input → Save → leave → reopen → saved name                                                                                                                                | Renames synthetic profile; next run resets it |
-| `qa-profile-create-cancel`    | Assert count 1 → create named profile → assert count 2 → reopen → rename → Cancel → leave/reopen → original name → reset/count 1                                                                                        | Creates then resets synthetic profile         |
-| `qa-source-selection`         | Assert 0/1 Screen time choice → select applications → synthetic permission allowed → leave/reopen → 1/1 persisted → QA diagnostics report authorized, grants/recording false                                            | Saves one synthetic choice, then resets       |
-| `qa-history`                  | Establish all three seeded rows → Exports hides previously visible access → Agent access hides previously visible exports → All → inline saved details → row collapse → inline failed details/error → Close → reset     | View/filter state only                        |
-| `qa-settings-navigation`      | Settings → Data sources → private sources/recording off → Connect agent → pairing input → camera action reports normal-build handoff → back to Connections → back to Settings → reset                                   | Navigation only                               |
-| `qa-fixture-states`           | Empty History → refresh error with retained export → profile/History loading → denied permission with choice retained and grants/recording false → failed rename → Cancel → leave/reopen → original stored name → reset | Changes synthetic scenarios and resets        |
+| Flow                          | Ordered actions and acceptance evidence                                                                                                                                                | State effect                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `qa-reset-populated`          | Launch → QA fixtures → Reset populated → `profile-row-qa-profile`                                                                                                                      | Replaces fixture state only                   |
+| `qa-onboarding-completion`    | Reset onboarding → Welcome Continue → Privacy Continue → Explore app → private seeded profile → restart → same profile                                                                 | Persists completed onboarding                 |
+| `qa-profile-edit-persistence` | Open seeded profile → edit name → verify full input → Save → leave → reopen → saved name                                                                                               | Renames synthetic profile; next run resets it |
+| `qa-profile-create-cancel`    | Seeded row → create named profile → verify seeded and new rows → reopen → rename → Cancel → leave/reopen → original name → reset to seeded row                                         | Creates then resets synthetic profile         |
+| `qa-source-selection`         | Assert 0/1 Screen time choice → select applications → synthetic permission allowed → leave/reopen → 1/1 persisted → QA diagnostics report authorized, grants/recording false           | Saves one synthetic choice, then resets       |
+| `qa-settings-navigation`      | Settings → Data sources → private sources/recording off → Connect agent → pairing input → camera action reports normal-build handoff → back to Connections → back to Settings → reset  | Navigation only                               |
+| `qa-fixture-states`           | Empty profile baseline → profile loading → denied permission with selection retained and grants/recording false → failed rename → Cancel → leave/reopen → original stored name → reset | Changes synthetic scenarios and resets        |
 
-History filter segments retain their native controls. iOS exposes them below `history-filter`; Android omits that container, so its recorded text selectors are scoped to `history-list`. The platform branches keep the same filtering acceptance checks.
-
-The History absence checks use a fixed three-entry fixture whose rows were all observed before filtering; they are not claims about arbitrary off-screen collections. Input value checks remain raw `await-ui-element` steps because iOS accessibility exposes a field's value separately from the flow tree's label.
+Input value checks remain raw `await-ui-element` steps because iOS accessibility exposes a field's value separately from the flow tree's label.
 
 | Navigation                                | Required identity evidence                                                                                  | Readiness |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------- |
@@ -70,7 +70,6 @@ The History absence checks use a fixed three-entry fixture whose rows were all o
 | Open profile / creation editor            | `profile-setting-name` / `profile-name-input`                                                               | `idle`    |
 | Save creation / leave / reopen            | Saved name / saved count or seeded row / saved name                                                         | `idle`    |
 | Expand source selection                   | `selection-type-time-native:applications`                                                                   | `idle`    |
-| Open History / details / back             | Seeded event or empty/loading/error state / Export details / seeded event                                   | `idle`    |
 | Open Settings / Connections / Pair / back | `settings-data-sources` / `connections-source-health` / `pair-link-input` / Connections or Settings control | `idle`    |
 
 Filter and state-change checks also use positive replacement evidence. An idle warning alone cannot pass an acceptance contract. Minor native chrome/transition motion has appeared during replay; screenshots showed no unexpected overlay, and subsequent fixed state/control checks remained required. Intentional loading fixtures are gated on their explicit loading copy. A failed check must stop the run; do not add optional branches or extend fixed delays to hide a product failure.
@@ -94,7 +93,9 @@ The create flow initially reproduced `ScreenStackFragment added into a non-stack
 
 These flows prove fixture navigation, shared profile persistence and visible error handling. They do not prove real HealthKit/Health Connect reads, Usage Access, location prompts/background delivery, pairing, OAuth, purchases, network uploads, OS share sheets or ticket submission. Run those in a normal build against a trusted test account/device, record OS handoffs and verify the actual resulting effect. Existing production MCP coverage gaps remain listed in [UI and MCP parity](mcp-parity.md); an Argent tap flow does not replace a semantic application operation.
 
-## Verified replay evidence
+## Historical QA journal (before the bridge-first cut)
+
+The remaining dated replay counts and feature walkthroughs describe earlier source. Removed mobile Logs/history, Support, diagnostics and Gripe controls are not current selectors or runnable acceptance paths. Dock/layout changes also have later superseding entries. Preserve this journal as historical evidence; use the current scope, selector contract and flow table above for QA.
 
 On 9 October 2026, Argent 0.25.0 MCP replay passed all eight unchanged final flows twice on an iPhone 17 Pro simulator running iOS 26.5 and a dedicated Android API 36 emulator. Each flow's first pass started with fresh scoped Argent services; its second pass ran immediately through the same runner, without manual reset or UI rescue. A frozen QA Metro served the checked JavaScript to avoid concurrent workspace edits.
 

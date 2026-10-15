@@ -38,7 +38,6 @@ interface __BaseEnv_Env {
   GOOGLE_PLAY_PACKAGE: string;
   SUPPORT_DISCORD_BOT_TOKEN: string;
   SUPPORT_DISCORD_CHANNEL_ID: string;
-  SUPPORT_DISCORD_STAFF_IDS: string;
   SUPPORT_ISOBOT_ORIGIN: string;
   SUPPORT_ISOBOT_TOKEN: string;
   ACCOUNTS: DurableObjectNamespace<import('./index').MyselfAccount>;
@@ -91,7 +90,6 @@ declare namespace NodeJS {
       | 'GOOGLE_PLAY_PACKAGE'
       | 'SUPPORT_DISCORD_BOT_TOKEN'
       | 'SUPPORT_DISCORD_CHANNEL_ID'
-      | 'SUPPORT_DISCORD_STAFF_IDS'
       | 'SUPPORT_ISOBOT_ORIGIN'
       | 'SUPPORT_ISOBOT_TOKEN'
     >

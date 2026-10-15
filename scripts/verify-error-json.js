@@ -1,9 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { errorJSON, errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 
 const cause = Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' });
@@ -85,51 +80,6 @@ assert.ok(
   ),
 );
 
-// Compile and execute the actual Foundation-only native formatter, without an app or network request.
-const directory = await mkdtemp(join(tmpdir(), 'gripe-error-json-'));
-try {
-  const source = await readFile('modules/gripe/ios/vendor/Internal/GripeAPIClient.swift', 'utf8');
-  const start = source.indexOf('enum GripeError:');
-  const end = source.indexOf('final class GripeAPIClient');
-  assert.ok(start >= 0 && end > start);
-  const file = join(directory, 'main.swift');
-  await writeFile(
-    file,
-    `import Foundation\n${source.slice(start, end)}\n
-let underlying = NSError(domain: NSURLErrorDomain, code: -1005, userInfo: [NSLocalizedDescriptionKey: "Connection lost", NSUnderlyingErrorKey: NSError(domain: "Transport", code: 54)])
-let envelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.network(underlying)).utf8)) as! [String: Any]
-let network = envelope["error"] as! [String: Any]
-assert(network["code"] as? String == "network_error")
-assert(network["retryable"] as? Bool == true)
-let cause = network["cause"] as! [String: Any]
-assert(cause["domain"] as? String == NSURLErrorDomain)
-assert(cause["code"] as? Int == -1005)
-assert((cause["cause"] as! [String: Any])["code"] as? Int == 54)
-let serverEnvelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.serverError(503, "{\\"error\\":\\"r2_failure\\"}")).utf8)) as! [String: Any]
-let server = serverEnvelope["error"] as! [String: Any]
-assert(server["status"] as? Int == 503)
-assert((server["response"] as! [String: Any])["error"] as? String == "r2_failure")
-assert(!GripeErrorDetails.json(GripeError.serverError(500, "fixture-secret"), redacting: "fixture-secret").contains("fixture-secret"))
-let rejectedEnvelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.unauthorized).utf8)) as! [String: Any]
-let rejected = rejectedEnvelope["error"] as! [String: Any]
-assert(rejected["retryable"] as? Bool == false)
-let large = GripeErrorDetails.json(GripeError.serverError(503, String(repeating: "x", count: 100000)))
-assert(large.utf8.count <= 16000)
-let largeEnvelope = try JSONSerialization.jsonObject(with: Data(large.utf8)) as! [String: Any]
-assert((largeEnvelope["error"] as! [String: Any])["truncated"] as? Bool == true)
-print("Native error JSON passed")
-`,
-  );
-  const result = await promisify(execFile)('xcrun', [
-    'swift',
-    '-module-cache-path',
-    join(directory, 'cache'),
-    file,
-  ]);
-  assert.ok(result.stdout.includes('Native error JSON passed'));
-} finally {
-  await rm(directory, { recursive: true, force: true });
-}
 console.log(
-  'Error JSON checks passed: actual causes and status, native iOS errors, valid bounded JSON, legacy messages, server payloads and credential projection. No live report or task started.',
+  'Error JSON checks passed: actual causes and status, valid bounded JSON, legacy messages, server payloads and credential projection. No live report or task started.',
 );

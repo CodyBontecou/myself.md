@@ -18,29 +18,6 @@ export default function TabLayout() {
         />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
-        name="history"
-        testID="history-tab"
-        contentStyle={{ backgroundColor: colors.background }}
-      >
-        <NativeTabs.Trigger.Label>Logs</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="clock" md="history" />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger
-        name="support"
-        testID="support-tab"
-        accessibilityLabel="Contact support"
-        contentStyle={{ backgroundColor: colors.background }}
-      >
-        <NativeTabs.Trigger.Label>Support</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{
-            default: 'bubble.left.and.bubble.right',
-            selected: 'bubble.left.and.bubble.right.fill',
-          }}
-          md="chat"
-        />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger
         name="settings"
         testID="settings-tab"
         contentStyle={{ backgroundColor: colors.background }}

@@ -1,5 +1,11 @@
 # Remote mobile updates
 
+## Current source and distribution boundary
+
+The bridge-first source cut removes mobile Support, Logs/history, diagnostics viewer and all Gripe SDK/feedback/notification/runner functionality. Mobile retains Profiles/Settings and one Share debug logs with agents toggle for raw errors/metadata only. The dated artifacts below describe earlier binaries and do not prove this cut is installed, published or deployed.
+
+Distributable phone builds must use the current `/Users/codybontecou/dev/myself.md` checkout on local `main`, including uncommitted/untracked source, through the [local-phone-build runner](../../local-phone-builds/README.md). Do not distribute a build from the bridge worktree or a Git HEAD archive. The external runner's own release requirements must be checked against the canonical source; old Gripe-containing artifact evidence is historical, not a requirement to restore removed code.
+
 ## Profile-sharing preview release, 12 October 2026
 
 The owner selected existing preview distribution for the tested profile-sharing fix. The current canonical local `main` checkout at `8483cab65805cd78cefc44df3283865cb2349e3f`, including uncommitted and untracked app source, passed formatting, aggregate checks, share-link browser tests and all-platform Metro export. The isolated HTTPS share page remains live at `https://myself.md/share/profile`; the unrelated dirty backend was not deployed. Real Android Gmail and iPhone Apple Mail link → browser review → native import → save → restart checks passed before publication, including Android-to-iPhone Steps mapping and preservation of private status and disabled automatic exports.
@@ -18,7 +24,7 @@ No production channel, store submission, user message, account data, phone grant
 
 The default Build Debug skill now uses the separate [local-phone-builds project](../../local-phone-builds/README.md) at `/Users/codybontecou/dev/local-phone-builds`. It runs the existing Debug profile with EAS `--local` on the owner's Mac, verifies the signed IPA, and publishes an expiring install page at `builds.myself.md`. Compilation consumes no EAS cloud build job. EAS still supplies managed signing credentials and project metadata; Apple ad hoc device eligibility and provisioning expiration remain unchanged. The cloud workflow is retained for explicit cloud requests.
 
-The local runner keeps the phone Gripe key in a private local file, excludes the app's development dotenv files, and retains the standalone embedded bundle and native companion. A separate private R2 bucket holds binaries; it does not use account export storage. CLI and local stdio MCP operations share the same runner. Installation remains an owner action in Safari on the registered phone. See the runner README for commands, status, retries, credential handling, and verification evidence.
+The local runner excludes app development dotenv files and publishes artifacts to a private binary bucket, separate from account exports. CLI and local stdio MCP operations share its canonical-main build pipeline. Installation remains an owner action on the registered phone. Gripe phone/runner credentials and native companion code are no longer app build inputs; the dated releases below describe older artifacts.
 
 The app uses Expo SDK 57 and EAS Update. Preview and production builds have separate channels and use native fingerprint runtime compatibility. JavaScript and assets can update remotely; changes to native modules, config plugins, entitlements or permissions need a new installed binary. Existing installations with updates disabled cannot receive the first update-enabled build over the air.
 
@@ -83,9 +89,7 @@ On October 10, 2026, the [iPhone preview with log clipboard support](https://exp
 
 ## Standalone iOS Debug distribution
 
-`npm run build:debug -- --platform ios` uses the dedicated internal-distribution `debug` profile and channel. It inherits the hosted preview backend and uses Xcode Debug, retaining Gripe's native companion and capture settings. `EXPO_EMBEDDED_DEBUG=1` enables the `with-embedded-debug` Expo plugin: it selects the embedded `main.jsbundle`, unsets Debug's default bundling skip after Xcode environment files are sourced, and excludes the build machine's Metro IP. JavaScript is bundled with development mode enabled. Ordinary local Debug builds still use Metro; preview and production remain Release.
-
-Gripe uses the existing phone report credential stored as an EAS secret in the preview environment, and the Debug profile targets `CodyBontecou/myself.md`. The Mac inbox runner credential is never sent to EAS. Install the finished build from its Expo build page on an iPhone included in its ad hoc profile. This native build replaces the installed app with the same bundle identifier; it is not a JavaScript OTA. Developer Mode may need to be enabled on the phone. An EAS artifact alone does not verify installation or report submission. Developer build distribution is a CLI/EAS operation and phone installation remains a platform handoff, as documented in MCP parity.
+The internal-distribution `debug` profile uses the hosted backend and Xcode Debug. `EXPO_EMBEDDED_DEBUG=1` selects embedded JavaScript/assets and excludes the build machine's Metro IP; ordinary development still uses Metro, and preview/production remain Release. Distributable builds follow the canonical-main runner boundary above. Installing a signed replacement binary is an owner/device handoff, not a JavaScript OTA or proof of installation. Current source does not contain Gripe capture, companion or report credentials; the following October 10 evidence is historical.
 
 On October 10, 2026, the dedicated [iOS Debug build](https://expo.dev/accounts/codybontecou/projects/myself-md/builds/aa337a2d-7a25-4697-9719-0ee033bb1e0c) finished successfully on EAS. It used the checked current checkout, including uncommitted source. The owner explicitly approved storing the existing phone Gripe key as an EAS Secret. The downloaded IPA passed signature verification and contains the registered iPhone, Debug companion code, configured live Gripe route, embedded JavaScript and no Metro IP file. Static checks, all-platform bundle export, feedback regression checks and embedded Debug startup checks passed. Remote installation and report submission on the handset have not been observed.
 

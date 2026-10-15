@@ -25,7 +25,6 @@ import { createPairingUrl, createPairingDeepLink } from '../core/index.js';
 import { pairingPage } from './pairing-page.js';
 import { proxyWorker } from './worker-proxy.js';
 import { PairingError } from './errors.js';
-import { createGuestSupport } from './support-guest.js';
 /** @param {import('node:http').ServerResponse} res @param {number} code @param {unknown} data */
 function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -42,7 +41,7 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
@@ -50,8 +49,6 @@ async function bodyBytes(req, limit) {
 export function createApplication(
   config,
   {
-    supportApi,
-    registerSupportTools,
     supportV1Api,
     registerSupportV1Tools,
     accountApi,
@@ -116,7 +113,6 @@ export function createApplication(
     new URL(`${issuer}/protocol/openid-connect/certs`),
     options.jwksFetch ? { [customFetch]: options.jwksFetch } : {},
   );
-  const guestSupport = supportV1Api ? createGuestSupport(supportV1Api) : null;
   const limitPublicRead = createPublicReadLimiter();
   const limitAgentRest = createPublicReadLimiter();
   const metadata = {
@@ -578,7 +574,6 @@ export function createApplication(
     );
     registerDataTools(mcp, subject, client, { chatgpt });
     registerCloudTools(mcp, subject, client);
-    registerSupportTools?.(mcp, subject, client);
     if (registerSupportV1Tools) registerSupportV1Tools(mcp, subject, client);
     return mcp;
   }
@@ -660,21 +655,6 @@ export function createApplication(
         const ticket = await createMigrationClaim(verified);
         res.setHeader('Cache-Control', 'no-store');
         json(res, 200, { claimUrl: `${requestOrigin}/claim#${ticket}` });
-        return;
-      }
-      if (url.pathname === '/api/support/guest') {
-        if (req.method !== 'POST') throw new PairingError(405, 'Use POST.');
-        if (!guestSupport) throw new PairingError(503, 'Isobot support is not configured.');
-        const input = JSON.parse((await bodyBytes(req, 12000)).toString());
-        json(
-          res,
-          200,
-          await guestSupport(
-            req.headers.authorization,
-            input,
-            req.socket.remoteAddress ?? 'unknown',
-          ),
-        );
         return;
       }
       if (url.pathname === '/health') {
@@ -960,17 +940,6 @@ export function createApplication(
         const input =
           req.method === 'POST' ? JSON.parse((await bodyBytes(req, 200000)).toString()) : null;
         json(res, 200, await supportV1Api(subject, req.method ?? 'GET', url.searchParams, input));
-        return;
-      }
-      if (url.pathname === '/api/support') {
-        if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
-          throw new PairingError(403, 'Use the support MCP tools with an agent client.');
-        if (!supportApi) throw new PairingError(503, 'Support chat is not configured yet.');
-        const body =
-          req.method === 'POST' || req.method === 'PUT'
-            ? JSON.parse((await bodyBytes(req, 16384)).toString())
-            : null;
-        json(res, 200, await supportApi(subject, req.method ?? 'GET', url.searchParams, body));
         return;
       }
       if (url.pathname === '/api/account-profile' && req.method === 'GET') {

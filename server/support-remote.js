@@ -24,7 +24,7 @@ export function createRemoteSupport(
   async function supportV1Api(subject, method, query, body, agent = null) {
     if (!origin || !token) throw new PairingError(503, 'Isobot support is not configured yet.');
     if (!['GET', 'POST'].includes(method)) throw new PairingError(405, 'Use GET or POST.');
-    const role = subject.startsWith('support-guest:') ? 'guest' : await resolveRole(subject);
+    const role = await resolveRole(subject);
     const response = await transport(
       `${origin}/api/support/v1${method === 'GET' ? `?${query}` : ''}`,
       {
@@ -124,7 +124,7 @@ export function createRemoteSupport(
               .enum(['archive', 'delete', 'agentAccess', 'autoReply', 'share', 'notifications'])
               .optional()
               .describe(
-                'Owner-only action to open on the phone when action is ownerHandoff. Agents cannot perform this action themselves.',
+                'Owner-only action to review in the web dashboard when action is ownerHandoff. Agents cannot perform this action themselves.',
               ),
             id: z
               .string()
@@ -210,7 +210,7 @@ export function createRemoteSupport(
           const data = {
             status: 'awaiting_user',
             action: input.ownerAction ?? 'agentAccess',
-            url: `myselfmd://support${input.conversationId ? `?conversationId=${encodeURIComponent(input.conversationId)}` : ''}`,
+            url: `${config.PUBLIC_URL ?? 'http://localhost:3000'}/dashboard?view=support${input.conversationId ? `&conversationId=${encodeURIComponent(input.conversationId)}` : ''}`,
             verificationTool: 'support_conversations',
             conversationId: input.conversationId ?? null,
             requiresUser: true,

@@ -46,9 +46,9 @@ assert.equal(
       action: 'list',
     })
   ).role,
-  'guest',
+  'owner',
 );
-assert.equal(roleResolutions, beforeGuest);
+assert.equal(roleResolutions, beforeGuest + 1, 'Subject spelling cannot bypass verified roles');
 const legacyProxy = createRemoteSupport(
   { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
   () => {},
@@ -74,7 +74,11 @@ const transport = async (input, options) => {
   throw new Error('Unexpected remote fixture request');
 };
 const remote = createRemoteSupport(
-  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
+  {
+    PUBLIC_URL: 'https://myself.fixture',
+    SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture',
+    SUPPORT_ISOBOT_TOKEN: 'fixture-secret',
+  },
   () => {
     if (blocked) throw new Error('Agent is blocked');
   },
@@ -115,10 +119,11 @@ try {
     arguments: { action: 'ownerHandoff', conversationId: 'a', ownerAction: 'share' },
   });
   const handoffState = z
-    .object({ status: z.string(), requiresUser: z.boolean() })
+    .object({ status: z.string(), requiresUser: z.boolean(), url: z.string() })
     .parse(handoff.structuredContent);
   assert.equal(handoffState.status, 'awaiting_user');
   assert.equal(handoffState.requiresUser, true);
+  assert.equal(handoffState.url, 'https://myself.fixture/dashboard?view=support&conversationId=a');
   const count = calls.length;
   blocked = true;
   assert.equal(

@@ -77,9 +77,7 @@ export async function shareDomain(context, grants, domain, profile, days, progre
             profile,
             false,
           );
-          recordDebug(context, 'export', 'succeeded', {
-            records: { domain, type, profileId: profile.id, values: page.records },
-          });
+          recordDebug(context, 'export', 'succeeded');
           for (const row of page.records) {
             file.write(recordChunk('json', row, count, profile.export.schema), { append: true });
             count++;

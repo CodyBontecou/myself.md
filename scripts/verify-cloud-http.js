@@ -1024,7 +1024,23 @@ try {
         (await client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }))
           .structuredContent,
       ).report,
-    debugReport,
+    {
+      schema: debugReport.schema,
+      generatedAt: debugReport.generatedAt,
+      revision: debugReport.revision,
+      shared: true,
+      platform: 'ios',
+      entries: [
+        {
+          time: debugReport.entries[0]?.time,
+          operation: 'connection',
+          outcome: 'failed',
+          error: 'fixture raw server failure',
+          durationMs: 12,
+          httpStatus: 503,
+        },
+      ],
+    },
   );
   assert.equal(
     (

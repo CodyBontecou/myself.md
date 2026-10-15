@@ -115,12 +115,7 @@ export async function deliverExport(context, profile, file, format, manifest, va
       throw new Error('Use an HTTPS endpoint without credentials or fragments.');
     if (credential?.token && credential.url !== url.href)
       throw new Error('Save the HTTP credential for this endpoint before exporting.');
-    recordDebug(context, 'export', 'started', {
-      url: url.href,
-      ...(credential?.token
-        ? { credentials: { Authorization: `Bearer ${credential.token}` } }
-        : {}),
-    });
+    recordDebug(context, 'export', 'started');
     const response = await send(url.href, {
       method: 'POST',
       // Expo fetch replaces explicit Content-Type with File.type, which is null for JSONL.
@@ -158,11 +153,7 @@ export async function uploadCloudFile(credential, profile, file, format, manifes
     'X-Export-Day': String(/** @type {{day:string}} */ (manifest.interval).day),
   };
   const authorization = `Upload ${credential.token}`;
-  if (context)
-    recordDebug(context, 'cloud', 'started', {
-      url: `${credential.server}/api/cloud/uploads`,
-      credentials: { Authorization: authorization },
-    });
+  if (context) recordDebug(context, 'cloud', 'started');
   const begin = await send(`${credential.server}/api/cloud/uploads`, {
     method: 'POST',
     headers: { Authorization: authorization, 'Content-Type': 'application/json' },
@@ -172,11 +163,7 @@ export async function uploadCloudFile(credential, profile, file, format, manifes
   if (!begin.ok) throw await uploadFailure(begin, 'Cloud upload could not start');
   const { id } = /** @type {{id:string}} */ (await begin.json());
   if (!valid()) throw new Error('Export cancelled before upload.');
-  if (context)
-    recordDebug(context, 'cloud', 'started', {
-      url: `${credential.server}/api/cloud/uploads/${id}`,
-      credentials: { Authorization: authorization },
-    });
+  if (context) recordDebug(context, 'cloud', 'started');
   // Raw bytes avoid Expo overriding Content-Type with a null MIME type for JSONL files.
   const result = await send(`${credential.server}/api/cloud/uploads/${id}`, {
     method: 'PUT',
