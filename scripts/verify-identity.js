@@ -1425,6 +1425,102 @@ try {
     body: JSON.stringify({ redirect_uris: ['https://untrusted.example/callback'] }),
   });
   assert.equal(unsupported.status, 400);
+  const vercelRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    // Keep these additional OAuth requests outside the existing fixture's rate-limit bucket.
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: origin,
+      'CF-Connecting-IP': '192.0.2.90',
+    },
+    body: JSON.stringify({
+      client_name: 'Vercel Connect fixture',
+      redirect_uris: ['https://connect.vercel.com/callback'],
+      token_endpoint_auth_method: 'none',
+      scope: 'myselfmd offline_access',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(vercelRegistration.status, 201, await vercelRegistration.clone().text());
+  const vercelClient = z
+    .object({ client_id: z.string(), skip_consent: z.boolean().optional() })
+    .parse(await vercelRegistration.json());
+  assert.notEqual(vercelClient.skip_consent, true);
+  const vercelAuthorization = await fetch(
+    `${issuer}/oauth2/authorize?${new URLSearchParams({
+      client_id: vercelClient.client_id,
+      response_type: 'code',
+      redirect_uri: 'https://connect.vercel.com/callback',
+      scope: 'myselfmd offline_access',
+      resource: `${origin}/mcp`,
+      code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+      code_challenge_method: 'S256',
+      state: 'vercel-fixture-state',
+    })}`,
+    {
+      redirect: 'manual',
+      headers: {
+        Cookie: cookie,
+        Accept: 'text/html',
+        'Sec-Fetch-Mode': 'navigate',
+        'CF-Connecting-IP': '192.0.2.90',
+      },
+    },
+  );
+  assert.equal(vercelAuthorization.status, 302, await vercelAuthorization.clone().text());
+  assert.equal(
+    new URL(vercelAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
+  const zapierRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: origin,
+      'CF-Connecting-IP': '192.0.2.91',
+    },
+    body: JSON.stringify({
+      client_name: 'Zapier origin fixture',
+      // A representative callback on the origin observed from Zapier's live registration.
+      redirect_uris: ['https://zapier.com/oauth/callback'],
+      token_endpoint_auth_method: 'client_secret_basic',
+      scope: 'myselfmd offline_access',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(zapierRegistration.status, 201, await zapierRegistration.clone().text());
+  const zapierClient = z
+    .object({ client_id: z.string(), skip_consent: z.boolean().optional() })
+    .parse(await zapierRegistration.json());
+  assert.notEqual(zapierClient.skip_consent, true);
+  const zapierAuthorization = await fetch(
+    `${issuer}/oauth2/authorize?${new URLSearchParams({
+      client_id: zapierClient.client_id,
+      response_type: 'code',
+      redirect_uri: 'https://zapier.com/oauth/callback',
+      scope: 'myselfmd offline_access',
+      resource: `${origin}/mcp`,
+      code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+      code_challenge_method: 'S256',
+      state: 'zapier-fixture-state',
+    })}`,
+    {
+      redirect: 'manual',
+      headers: {
+        Cookie: cookie,
+        Accept: 'text/html',
+        'Sec-Fetch-Mode': 'navigate',
+        'CF-Connecting-IP': '192.0.2.91',
+      },
+    },
+  );
+  assert.equal(zapierAuthorization.status, 302, await zapierAuthorization.clone().text());
+  assert.equal(
+    new URL(zapierAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
   const smitheryRegistration = await fetch(`${issuer}/oauth2/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin },
@@ -1504,6 +1600,18 @@ try {
   assert.equal(declaredWebRegistration.status, 400);
   await Promise.all(
     [
+      'http://connect.vercel.com/callback',
+      'https://connect.vercel.com/other',
+      'https://connect.vercel.com/callback?forward=elsewhere',
+      'https://connect.vercel.com:444/callback',
+      'https://connect.vercel.com.evil.example/callback',
+      'https://user:secret@connect.vercel.com/callback',
+      'https://connect.vercel.com/callback#fragment',
+      'http://zapier.com/oauth/callback',
+      'https://zapier.com:444/oauth/callback',
+      'https://zapier.com.evil.example/oauth/callback',
+      'https://user:secret@zapier.com/oauth/callback',
+      'https://zapier.com/oauth/callback#fragment',
       'http://connect.smithery.ai/oauth/callback',
       'https://connect.smithery.ai/other',
       'https://connect.smithery.ai/oauth/callback?forward=elsewhere',
@@ -1521,7 +1629,7 @@ try {
         headers: { 'Content-Type': 'application/json', Origin: origin },
         body: JSON.stringify({ redirect_uris: [redirect] }),
       });
-      assert.equal(rejected.status, 400, `Unexpected Smithery callback acceptance: ${redirect}`);
+      assert.equal(rejected.status, 400, `Unexpected directory callback acceptance: ${redirect}`);
     }),
   );
   // Deletion runs through the real hosted HTTP and MCP adapters, using only fixture accounts.

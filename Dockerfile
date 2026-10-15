@@ -7,6 +7,10 @@ COPY core ./core
 COPY dashboard ./dashboard
 COPY client/health-types.js ./client/health-types.js
 COPY scripts/build-dashboard.js ./scripts/build-dashboard.js
+COPY scripts/build-profile-share.js ./scripts/build-profile-share.js
+COPY scripts/build-blog.js ./scripts/build-blog.js
+COPY server/blog-content.js ./server/blog-content.js
+COPY assets/myself-portrait.png ./assets/myself-portrait.png
 RUN npm run dashboard:build
 
 FROM node:24-bookworm-slim

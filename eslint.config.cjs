@@ -11,6 +11,7 @@ module.exports = defineConfig([
       'dist/**',
       'dashboard/dist/**',
       '.local/**',
+      'content/blog/**',
       '.expo/**',
       'node_modules/**',
       'worker/worker-configuration.d.ts',

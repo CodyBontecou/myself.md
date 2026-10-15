@@ -113,6 +113,38 @@ const openapi = {
     },
   },
   paths: {
+    '/blog': readOperation(
+      'listPublicBlogPosts',
+      'Read the complete published blog index, newest first. Send Accept: text/markdown; HTML is the default. No account or private records.',
+      { ...textContent, 'text/html': { schema: { type: 'string' } } },
+    ),
+    '/blog/{slug}': {
+      get: {
+        ...readOperation(
+          'readPublicBlogPost',
+          'Read a published post in full. Discover slugs at /blog. Send Accept: text/markdown, or append .md to the post URL. An unknown post returns 404.',
+          { ...textContent, 'text/html': { schema: { type: 'string' } } },
+        ).get,
+        parameters: [
+          {
+            name: 'slug',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' },
+          },
+        ],
+        responses: {
+          ...readOperation('readPublicBlogPost', 'Read a published post.', {
+            ...textContent,
+            'text/html': { schema: { type: 'string' } },
+          }).get.responses,
+          404: {
+            description: 'Post not found. Return to /blog to discover published slugs.',
+            content: { ...textContent, 'text/html': { schema: { type: 'string' } } },
+          },
+        },
+      },
+    },
     '/v1/dataset-catalog': {
       get: {
         ...readOperation(

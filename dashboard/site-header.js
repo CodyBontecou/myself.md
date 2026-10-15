@@ -15,11 +15,12 @@ function snapshot() {
 }
 export function SiteHeader() {
   const current = useSyncExternalStore(subscribe, snapshot);
+  const home = current.split('#')[0] === '/';
   return (
     <header className="flex flex-wrap items-center gap-x-6 gap-y-3">
       <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" aria-label="Site">
         {publicNavigation
-          .filter(({ href }) => href !== '/' || current.split('#')[0] !== '/')
+          .filter(({ href }) => !home || !['/', '/faq', '/about'].includes(href))
           .map(({ label, href }) => (
             <a
               key={label}

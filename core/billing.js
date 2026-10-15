@@ -1,5 +1,18 @@
 export const freeExports = 5;
 export const lifetimeProductId = 'myself_md_lifetime';
+/** Opening checkout is a user handoff; only verified store proof unlocks access. */
+export function lifetimePurchaseGuide() {
+  return {
+    appLink: 'myselfmd://unlock',
+    requiresUser: true,
+    instructions:
+      'Open the installed iOS or Android app, review the localized store price, then confirm the one-time Lifetime purchase. Use Restore purchases for a purchase already made with this store account.',
+    accountInstructions:
+      'For cloud access, sign in to the app with the same account as your dashboard or MCP connection, then check lifetime access.',
+    availability:
+      'Requires an installed app. Public App Store and Google Play downloads are coming soon. TestFlight sandbox purchases do not unlock production access.',
+  };
+}
 /** Shared guidance for mobile and agent purchase-verification handoffs. */
 export function existingCustomerGuide() {
   return {

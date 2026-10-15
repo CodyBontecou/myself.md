@@ -28,6 +28,7 @@
     "dashboard/profile-share.js",
     "dashboard/style.css",
     "dashboard/docs.css",
+    "dashboard/blog.css",
     "worker/index.js",
     "worker/cloud-qa.js",
     "fingerprint.config.cjs",

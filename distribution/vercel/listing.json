@@ -1,0 +1,29 @@
+{
+  "preparationOnly": true,
+  "note": "Working copy for the Vercel Connect form, not an official import format or a submitted listing.",
+  "serviceName": "myself.md",
+  "description": "Connect applications and AI agents to owner-approved phone data and shared cloud exports.",
+  "details": "Discover connected phones and approved profiles, query selected health, screen-time and recorded location data, and read explicitly shared cloud exports. Availability depends on device support, owner sharing choices and OS permissions. Live phone requests may require the app to remain open. Existing data grants and export allowances apply. Revocation stops future access; recipient copies follow their own controls.",
+  "website": "https://myself.md",
+  "documentation": "https://myself.md/docs",
+  "privacyPolicy": "https://myself.md/privacy",
+  "termsOfService": "https://myself.md/terms",
+  "support": "https://myself.md/contact",
+  "contactEmail": "cody@isolated.tech",
+  "icon": "https://myself.md/dashboard/favicon.svg",
+  "target": {
+    "name": "myself.md MCP",
+    "type": "MCP",
+    "url": "https://myself.md/mcp",
+    "transport": "streamable-http"
+  },
+  "connectionMethod": {
+    "type": "OAuth",
+    "serverUrl": "https://myself.md/mcp",
+    "automaticRegistration": true,
+    "grantTypes": ["authorization_code", "refresh_token"],
+    "scopes": ["myselfmd", "offline_access"],
+    "pkce": "S256",
+    "redirectUri": "https://connect.vercel.com/callback"
+  }
+}

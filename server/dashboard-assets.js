@@ -1,5 +1,6 @@
 /** @type {Map<string, [string, string]>} */
 export const assets = new Map([
+  ['/dashboard/blog.css', ['blog.css', 'text/css']],
   ['/share/profile', ['profile-share/share/profile/index.html', 'text/html']],
   ['/share/profile/', ['profile-share/share/profile/index.html', 'text/html']],
   ['/share/profile/app.js', ['profile-share/share/profile/app.js', 'text/javascript']],
@@ -47,6 +48,7 @@ export const assets = new Map([
       ]),
   ),
   ['/dashboard/favicon.png', ['favicon.png', 'image/png']],
+  ['/dashboard/hero-portrait.png', ['hero-portrait.png', 'image/png']],
   ['/dashboard/store-badges/apple-icon.svg', ['store-badges/apple-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/github-icon.svg', ['store-badges/github-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/app-store.svg', ['store-badges/app-store.svg', 'image/svg+xml']],

@@ -1,5 +1,6 @@
 import { chatgptMcpPath, restrictChatgptTools } from './chatgpt-tools.js';
 import { readAccountProfile } from './account-profile.js';
+import { registerBlogTool } from './blog.js';
 import { loginProvider } from './account-links.js';
 import { reviewerUserId } from './reviewer.js';
 import {
@@ -11,7 +12,7 @@ import {
 } from './public-site.js';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { privacyPolicy } from '../core/privacy.js';
-import { existingCustomerGuide } from '../core/billing.js';
+import { existingCustomerGuide, lifetimePurchaseGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
@@ -229,6 +230,7 @@ export function createApplication(
         };
       },
     );
+    registerBlogTool(mcp);
     mcp.registerTool(
       'get_public_documentation',
       {
@@ -438,7 +440,7 @@ export function createApplication(
           openWorldHint: false,
         },
         description:
-          'Check lifetime access and export allowance for this account, and guide eligible existing customers through a user-completed claim. This read does not consume an export or grant access. Sign-in and purchase verification require the user; call again to verify the resulting entitlement.',
+          'Check lifetime access and export allowance for this account. Return the installed-app checkout/restore handoff and guide eligible existing customers through a user-completed claim. This read does not consume an export or grant access. Sign-in and purchase verification require the user; call again to verify the resulting entitlement.',
         inputSchema: z.object({}).strict(),
       },
       async () => {
@@ -448,6 +450,12 @@ export function createApplication(
           allowance,
           checkedAt: Date.now(),
           scope: 'authenticated-account',
+          purchase: {
+            ...lifetimePurchaseGuide(),
+            status: allowance.unlocked ? 'completed' : 'awaiting_user',
+            requiresUser: !allowance.unlocked,
+            verificationTool: 'get_lifetime_access',
+          },
           handoff: {
             status: allowance.unlocked ? 'completed' : 'awaiting_user',
             ...existingCustomerGuide(),

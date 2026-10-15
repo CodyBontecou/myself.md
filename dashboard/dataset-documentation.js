@@ -1,3 +1,4 @@
+import { HeroPortrait } from './hero-portrait.js';
 import { HeroDataFlow } from './hero-data-flow.js';
 import { SiteHeader } from './site-header.js';
 import { DownloadBadges } from './download-badges.js';
@@ -5,7 +6,7 @@ import { publicFAQs, smitheryListingUrl } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'radix-ui';
-import { IconChevronRight, IconSearch, IconX } from '@tabler/icons-react';
+import { IconChevronRight, IconSearch, IconVideo, IconX } from '@tabler/icons-react';
 import { datasets } from './dataset-catalog.js';
 import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
@@ -14,11 +15,10 @@ import { PricingSection } from './pricing-section.js';
 import { Button } from './components/ui/button.js';
 import { Input } from './components/ui/input.js';
 
-// Replace each videoId with its tutorial's YouTube ID before launch.
 const tutorials = [
-  { id: 'launch', label: 'Launch video', videoId: 'dQw4w9WgXcQ' },
-  { id: 'mcp', label: 'MCP', videoId: 'dQw4w9WgXcQ' },
-  { id: 'agent-design', label: 'Agent-first design', videoId: 'dQw4w9WgXcQ' },
+  { id: 'launch', label: 'Launch video' },
+  { id: 'mcp', label: 'MCP' },
+  { id: 'agent-design', label: 'Agent-first design' },
 ];
 
 /** @param {string} key */
@@ -148,31 +148,36 @@ export function DatasetDocumentation({ dataset, landing = false }) {
     </section>
   );
   return (
-    <div className="mx-auto max-w-7xl px-5 sm:px-8">
+    <div className={`mx-auto max-w-7xl px-5 sm:px-8 ${landing ? 'landing-page' : ''}`}>
       <main className="space-y-10 py-8 sm:py-12">
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="contents">
             {landing ? (
-              <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+              <div className="landing-hero-column min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+                <HeroPortrait />
                 <SiteHeader />
-                <section className="space-y-6 pb-6 sm:pb-10" aria-labelledby="landing-title">
-                  <h1
-                    id="landing-title"
-                    className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-                  >
-                    File over app.
-                    <br />
-                    Yours to keep.
-                  </h1>
-                  <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                    Save health, screen time, and location data from your phone and wearables as
-                    files you can read, back up, and take with you.
-                  </p>
+                <section className="landing-hero" aria-labelledby="landing-title">
+                  <div className="landing-hero-copy">
+                    <h1
+                      id="landing-title"
+                      className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
+                    >
+                      File over app.
+                      <br />
+                      Yours to keep.
+                    </h1>
+                    <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+                      Save health, screen time, and location data from your phone and wearables as
+                      files you can read, back up, and take with you.
+                    </p>
+                    <DownloadBadges />
+                  </div>
+                </section>
+                <section className="space-y-6 pb-6 sm:pb-10" aria-label="How myself.md works">
                   <div className="lg:hidden">
                     <HeroDataFlow />
                     {exportPreview}
                   </div>
-                  <DownloadBadges />
                   <Tabs.Root defaultValue="launch" className="space-y-4">
                     <Tabs.List
                       aria-label="Video tutorials"
@@ -194,23 +199,15 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                         value={tutorial.id}
                         className="outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <figure className="space-y-3">
-                          {/* oxlint-disable react/iframe-missing-sandbox -- Cross-origin YouTube needs scripts and its own origin for playback; it cannot access this page. */}
-                          <iframe
-                            className="block aspect-video min-h-[200px] w-full rounded-lg border-0 bg-black shadow-2xl shadow-black/25 dark:shadow-black/60"
-                            src={`https://www.youtube-nocookie.com/embed/${tutorial.videoId}?playsinline=1&rel=0`}
-                            title={`${tutorial.label} — Rick Astley placeholder`}
-                            loading="lazy"
-                            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
-                            referrerPolicy="strict-origin-when-cross-origin"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
+                        <figure className="flex aspect-video min-h-[200px] w-full flex-col items-center justify-center gap-4 rounded-lg border border-border bg-muted/40 px-6 text-center">
+                          <IconVideo
+                            aria-hidden="true"
+                            className="size-8 text-muted-foreground"
+                            stroke={1.25}
                           />
-                          {/* oxlint-enable react/iframe-missing-sandbox */}
-                          <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span>
-                              {tutorial.label} coming soon. Enjoy a little Rick Astley for now.
-                            </span>
+                          <figcaption className="space-y-1">
+                            <p className="text-sm font-medium">{tutorial.label}</p>
+                            <p className="text-sm text-muted-foreground">Video coming soon</p>
                           </figcaption>
                         </figure>
                       </Tabs.Content>

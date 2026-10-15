@@ -1,4 +1,5 @@
 import { docsHTML } from './docs-page.js';
+import { blogResponse, blogAgentIndex, blogSitemap } from './blog.js';
 import { datasets } from '../dashboard/dataset-catalog.js';
 import { publicDiscovery } from './public-discovery.js';
 import { agentIndex, publicHTML, publicPages, publicFAQs } from '../core/public-site.js';
@@ -13,6 +14,8 @@ export function publicResponse(
 ) {
   const normalized = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
   const path = publicApiPath(normalized) ?? normalized;
+  const blog = blogResponse(path, accept);
+  if (blog) return blog;
   const headers = {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -112,10 +115,10 @@ export function publicResponse(
   if (path === '/robots.txt')
     body =
       'User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /api/\nDisallow: /auth/\nSitemap: https://myself.md/sitemap.xml\n';
-  else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex;
+  else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex + blogAgentIndex;
   else if (path === '/sitemap.xml') {
     type = 'application/xml';
-    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/demo', '/datasets'].map((page) => `<url><loc>https://myself.md${page}</loc><lastmod>2026-10-10</lastmod></url>`).join('')}</urlset>`;
+    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/demo', '/datasets'].map((page) => `<url><loc>https://myself.md${page}</loc><lastmod>2026-10-10</lastmod></url>`).join('')}${blogSitemap}</urlset>`;
   } else {
     const markdown = publicPages.get(path);
     if (!markdown) return null;
