@@ -140,7 +140,7 @@ function readBlog(slug) {
         post: {
           ...summary(post),
           ...neighbors(post),
-          markdown: `# ${post.title}\n\nBy ${post.author} · ${post.date}\n\n${post.markdown}\n`,
+          markdown: `# ${post.title}\n\nBy ${authorMarkdown(post.author)} · ${post.date}\n\n${post.markdown}\n`,
         },
       }
     : { error: 'Post not found.', indexUrl: `${origin}/blog` };
@@ -188,6 +188,19 @@ export const blogSitemap = `<url><loc>${origin}/blog</loc>${
   blogPosts[0] ? `<lastmod>${sorted(blogPosts.map((post) => post.updated)).at(-1)}</lastmod>` : ''
 }</url>${blogPosts.map((post) => `<url><loc>${origin}/blog/${post.slug}</loc><lastmod>${post.updated}</lastmod></url>`).join('')}`;
 
+const authorProfiles = /** @type {Record<string, string>} */ ({
+  'Cody Bontecou': 'https://x.com/CodyBontecou',
+});
+/** @param {string} name */
+function authorMarkdown(name) {
+  return authorProfiles[name] ? `[${name}](${authorProfiles[name]})` : name;
+}
+/** @param {string} name */
+function authorHtml(name) {
+  return authorProfiles[name]
+    ? `<a href="${authorProfiles[name]}" rel="author">${escape(name)}</a>`
+    : escape(name);
+}
 /** @param {typeof blogPosts[number]} post */
 function byline(post) {
   const date = new Intl.DateTimeFormat('en', {
@@ -224,7 +237,7 @@ export function blogResponse(path, accept) {
     'Notes on building myself.md, personal data and ownership. Written by Cody Bontecou.';
   const canonical = `${origin}/blog${post ? `/${post.slug}` : ''}`;
   const plain = post
-    ? `# ${post.title}\n\nBy ${post.author} · ${post.date}\n\n${post.markdown}\n`
+    ? `# ${post.title}\n\nBy ${authorMarkdown(post.author)} · ${post.date}\n\n${post.markdown}\n`
     : missing
       ? '# Post not found\n\n[Browse all posts](https://myself.md/blog)\n'
       : `# Blog\n\n${description}\n\n${blogPosts.map((entry) => `- ${entry.date} · [${entry.title}](${origin}/blog/${entry.slug}) — ${entry.description}`).join('\n')}\n`;
@@ -240,7 +253,7 @@ export function blogResponse(path, accept) {
     };
   const latest = blogPosts[0];
   const content = post
-    ? `<article><header><a class="blog-back" href="/blog">← All posts</a><h1>${escape(post.title)}</h1>${byline(post)}<p class="blog-author">By ${escape(post.author)}</p></header><div class="blog-prose">${markdown.parse(post.markdown, { async: false })}</div><footer class="blog-post-footer">${postNavigation(post)}<div class="blog-post-utilities"><a href="/blog">All posts</a><a href="/blog/${post.slug}.md">Read as Markdown</a></div></footer></article>`
+    ? `<article><header><a class="blog-back" href="/blog">← All posts</a><h1>${escape(post.title)}</h1>${byline(post)}<p class="blog-author">By ${authorHtml(post.author)}</p></header><div class="blog-prose">${markdown.parse(post.markdown, { async: false })}</div><footer class="blog-post-footer">${postNavigation(post)}<div class="blog-post-utilities"><a href="/blog">All posts</a><a href="/blog/${post.slug}.md">Read as Markdown</a></div></footer></article>`
     : missing
       ? '<h1>Post not found</h1><p>This post may have moved or is no longer published.</p><a href="/blog">Browse all posts →</a>'
       : `${latest ? `<section class="blog-latest" aria-labelledby="latest"><h1 id="latest" class="blog-label">Latest</h1><a class="blog-feature" href="/blog/${latest.slug}"><h2>${escape(latest.title)}</h2>${byline(latest)}<p>${escape(latest.description)}</p><span class="blog-continue">Keep reading →</span></a></section><section aria-labelledby="writing"><h2 id="writing" class="blog-label">Writing</h2><ul class="blog-list">${blogPosts.map((entry) => `<li><a href="/blog/${entry.slug}"><time datetime="${entry.date}">${entry.date.slice(0, 7).replace('-', ' · ')}</time><span>${escape(entry.title)}</span></a></li>`).join('')}</ul></section>` : '<p class="blog-empty">Writing is on its way. Check back soon.</p>'}`;
@@ -287,6 +300,6 @@ export function blogResponse(path, accept) {
       )
       .join(
         '',
-      )}</nav></header><main id="content">${content}</main><footer class="blog-footer"><span>myself.md · Writing by Cody Bontecou</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
+      )}</nav></header><main id="content">${content}</main><footer class="blog-footer"><span>myself.md · Writing by ${authorHtml('Cody Bontecou')}</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
   };
 }
