@@ -58,3 +58,17 @@ Each post has a canonical URL, unique title/description, publication/modificatio
 Agents can request `Accept: text/markdown` on archive/post URLs, or fetch `/blog/{slug}.md`. Responses declare `Vary: Accept`, and GET/HEAD share the Node/Worker routing. The full OAuth MCP endpoint exposes `read_public_blog`: omit `slug` for the complete structured index, then pass a discovered slug for the same full Markdown body. Public HTTP reads need no account. The restricted ChatGPT data connector retains its existing tool allowlist and does not expose this editorial tool.
 
 This follows [Is Agentic's public guidance](https://is-agentic.com/) on retrievable initial HTML, correct HTTP status, semantic structure, canonical identity and previews. Search indexing and an Is Agentic score can only be verified after deployment; this implementation does not claim either has occurred.
+
+## Is Agentic audit — 15 October 2026
+
+The live `/blog` scan scored **100/100**, with **10/10 essential checks** passing. [Report](https://is-agentic.com/scan/myself.md/blog). The original snapshot was taken at 10:26 UTC (12:26 Berlin). The report inferred an app from the site's shared API/MCP discovery, so blog and documentation pages now explicitly declare the `content` site type. This changes the report's default lens, not its numeric score. Public documentation page titles now include `myself.md` to improve brand-specific discovery.
+
+Direct unauthenticated checks returned HTTP 200 for `/blog`, `/docs`, `/docs/reference`, `/demo`, `/llms.txt`, `/robots.txt` and `/openapi.json`; `/features` correctly returned 404. The observed journey's claims of 401 documentation pages and a tagline-only homepage were not reproducible on this release. It should not be used as proof that current public documentation requires sign-in.
+
+Remaining recommendations were assessed against the real interfaces:
+
+- Brand and developer searches did not surface this newly published site in one search sample. Sitemap/robots, public documentation, canonical URLs and branded titles are in place. Search-engine indexing and ranking cannot be guaranteed by an application change.
+- The Organization schema lacks a postal address. No public business postal address has been supplied; the blog does not invent an address or expose private location data to satisfy this check.
+- The editorial blog requires no credentials, and `/demo` is a public fictional-data sandbox. Private app reads use owner-approved OAuth rather than self-issued API keys. No new key-generation or account flow is warranted for blog reading.
+- Every documented operation has a typed successful response. The phone-query creation operation correctly uses HTTP 202 with its own JSON schema; HTML, Markdown and plain-text reads declare string schemas with their actual media types. Recommendations favoring JSON or HTTP 200 do not justify changing those contracts.
+- The MCP endpoint requires authentication by design. Its presence is discoverable publicly; existing authenticated Node/workerd fixtures verify emitted tools, scopes and data isolation. The scanner's inability to inspect protected tools is not a reason to remove OAuth.

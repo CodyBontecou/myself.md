@@ -138,7 +138,7 @@ export function publicResponse(
       ].includes(path)
     ) {
       type = 'text/html';
-      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
+      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
         {
           '@context': 'https://schema.org',
           '@type': 'BreadcrumbList',
@@ -152,7 +152,7 @@ export function publicResponse(
             },
           ],
         },
-      )}</script><title>${(markdown.split('\n')[0] ?? 'myself.md').slice(2)}</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
+      )}</script><title>${(markdown.split('\n')[0] ?? '# myself.md').slice(2)} · myself.md</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
     } else return null;
   }
   return { status: 200, headers: { ...headers, 'Content-Type': `${type}; charset=utf-8` }, body };
