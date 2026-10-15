@@ -4,6 +4,7 @@ import { usePhoneData } from '../../client/DataPanel';
 import ProfilePanel from '../../client/ProfilePanel';
 export default function ProfileScreen() {
   const { id, firstExport } = useLocalSearchParams();
+  const data = usePhoneData();
   const {
     session,
     profiles,
@@ -13,7 +14,7 @@ export default function ProfileScreen() {
     reviewSourceAccess,
     busy,
     changeProfiles,
-  } = usePhoneData();
+  } = data;
   const profileId = typeof id === 'string' ? id : '';
   const profile = profiles?.profiles.find((p) => p.id === profileId);
   return (
@@ -31,6 +32,8 @@ export default function ProfileScreen() {
           grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
+          isTracking={data.isTracking}
+          onRecordingChange={(enabled) => void data.run(() => data.changeRecording(enabled))}
           onChange={changeProfiles}
           draft={null}
           onDismiss={() => {}}

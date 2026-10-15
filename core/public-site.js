@@ -1,6 +1,10 @@
 import { serviceTerms } from './terms.js';
 import { freeExports, lifetimePurchaseGuide } from './billing.js';
 import { privacyPolicy } from './privacy.js';
+import { cloudPlans } from './cloud-plans.js';
+import { cloudRetentionDays, lifetimeCloudBytes } from './cloud-allowance.js';
+
+const includedCloud = `${lifetimeCloudBytes / 1_000_000} MB`;
 
 export const smitheryListingUrl = 'https://smithery.ai/servers/cody-82px/myself-md';
 
@@ -39,7 +43,7 @@ Find myself.md in the Smithery MCP directory: ${smitheryListingUrl}.
 
 ## Your data, on your terms
 
-Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and kept until you delete or replace it. The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
+Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and kept until you delete or replace it; the only exception is the ${cloudRetentionDays}-day lapse rule when paid cloud storage ends above the included allowance (see Pricing). The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
 `;
 export const publicFAQs = [
   {
@@ -62,19 +66,29 @@ export const publicFAQs = [
     answer:
       'Review and revoke sharing permissions in the phone app or authenticated dashboard. Revocation prevents future reads but cannot recall copies already delivered.',
   },
+  {
+    question: 'What happens to my cloud files if a storage subscription ends?',
+    answer: `Paid storage continues while your store subscription is active or in the store’s billing grace period. If paid storage ends while you keep Lifetime access and your cloud exports use more than ${includedCloud}, you have ${cloudRetentionDays} days to resubscribe or delete files. Reminders arrive by push notification and email when this starts, 7 days before and 1 day before. After ${cloudRetentionDays} days, the oldest cloud exports are deleted until usage is ${includedCloud} or less. Phone files are not affected.`,
+  },
 ];
 export const publicLifetimePrice = '$19.99';
+/** Public cloud storage rows: the included Lifetime allowance followed by the paid tiers in `cloud-plans.js`. */
 export const publicCloudPlans = [
   {
-    capacity: '100 MB',
+    id: 'included',
+    capacity: includedCloud,
     price: 'Included with Lifetime',
     billing: 'No recurring charge',
   },
-  { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
-  { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
+  ...cloudPlans.map((plan) => ({
+    id: plan.id,
+    capacity: plan.label,
+    price: `${plan.usPrice.monthly} / month`,
+    billing: `or ${plan.usPrice.yearly} / year`,
+  })),
 ];
 const purchaseGuide = lifetimePurchaseGuide();
-const publicPricing = `The cloud dashboard demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Open the installed app for free at myselfmd:// or open Lifetime checkout at ${purchaseGuide.appLink}. ${purchaseGuide.instructions} ${purchaseGuide.accountInstructions} ${purchaseGuide.availability} Opening the app does not confirm payment or grant access. Eligible existing health.md, iso.me and time.md purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
+const publicPricing = `The cloud dashboard demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Open the installed app for free at myselfmd:// or open Lifetime checkout at ${purchaseGuide.appLink}. ${purchaseGuide.instructions} ${purchaseGuide.accountInstructions} ${purchaseGuide.availability} Opening the app does not confirm payment or grant access. Eligible existing health.md, iso.me and time.md purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Optional cloud storage keeps encrypted exports for your account, provides a hosted MCP server for agents and requires an account. Cloud storage plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. The 1 GB and 10 GB plans are auto-renewing App Store or Google Play subscriptions bought in the installed app at myselfmd://cloud-storage. They require Lifetime access and replace the included ${includedCloud}; capacities do not add up. Prices are US prices; checkout shows the localized store price and billing period. A subscription renews automatically unless cancelled at least 24 hours before the current period ends; manage or cancel it in App Store or Google Play subscription settings, and request refunds from Apple or Google. Storage continues during the store's billing grace period. If paid storage ends while usage is above ${includedCloud}, the files stay for ${cloudRetentionDays} days with push and email reminders; resubscribe or delete files before then, or the oldest exports are deleted until usage is ${includedCloud} or less. A refunded Lifetime purchase deletes all cloud exports. The dashboard and agents cannot purchase storage; they hand off to the app. Subscription terms: https://myself.md/terms.`;
 const faqMarkdown = publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n');
 const overview = `# Get started
 
@@ -302,7 +316,7 @@ Connect to [myself.md MCP](https://myself.md/mcp), sign in, and pair your phone.
 
 Review sharing and activity in the app or dashboard. You can stop future access at any time. Copies already sent to another service follow that service’s retention policy.
 
-Cloud exports are encrypted in storage and kept until you delete or replace them. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) for details.
+Cloud exports are encrypted in storage and kept until you delete or replace them. If paid cloud storage ends while you use more than the included ${includedCloud}, the oldest exports are deleted after ${cloudRetentionDays} days unless you resubscribe or delete files first. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) and [terms](/terms) for details.
 
 ## Try it out
 

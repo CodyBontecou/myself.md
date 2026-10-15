@@ -1,4 +1,4 @@
-import { cloudAllowance, cloudUploadFits } from '../core/cloud-allowance.js';
+import { cloudAllowance, cloudUploadFits, lifetimeEntitlement } from '../core/cloud-allowance.js';
 import { parseExportSchema } from '../core/export-schemas.js';
 import { Buffer } from 'node:buffer';
 import { database, transaction } from './database.js';
@@ -14,12 +14,12 @@ const metadataSchema = z.object({
 });
 /** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',schema:string,created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null}} Row */
 export class CloudStore {
-  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] @param {((subject:string)=>boolean)|null} [lifetimeAccess] */
-  constructor(path, key, objects = null, lifetimeAccess = null) {
+  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] @param {((subject:string)=>import('../core/cloud-allowance.js').CloudEntitlement)|null} [entitlement] Server-verified Lifetime, subscription and lapse state. Without it, tooling stores allow a fixed 256 MiB. */
+  constructor(path, key, objects = null, entitlement = null) {
     if (key.length !== 32) throw new Error('Cloud encryption needs a 32-byte key.');
     this.key = key;
     this.objects = objects;
-    this.lifetimeAccess = lifetimeAccess;
+    this.entitlement = entitlement;
     this.sweeping = false;
     this.db = database(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;
@@ -77,8 +77,24 @@ export class CloudStore {
     // Retain hashed approvals for authenticated renewal after inactivity.
     // Expired credentials still fail credential(); rotation removes the old approval.
   }
-  /** Account capacity is read again at commit, after asynchronous object storage.
+  /** Committed exports with the fields the retention executor needs.
    * @param {string} subject */
+  usage(subject) {
+    this.cleanup();
+    return this.db
+      .prepare(
+        'SELECT id,device,size,created FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+      )
+      .all(subject)
+      .map((row) => ({
+        id: String(row.id),
+        device: String(row.device),
+        size: Number(row.size),
+        created: Number(row.created),
+      }));
+  }
+  /** Account capacity is read again at commit, after asynchronous object storage.
+   * @param {string} subject @returns {import('../core/cloud-allowance.js').CloudAllowance} */
   storageStatus(subject) {
     this.cleanup();
     const usedBytes = Number(
@@ -88,10 +104,10 @@ export class CloudStore {
         )
         .get(subject)?.bytes ?? 0,
     );
-    if (this.lifetimeAccess) return cloudAllowance(this.lifetimeAccess(subject), usedBytes);
+    if (this.entitlement) return cloudAllowance(this.entitlement(subject), usedBytes);
     const limitBytes = 256 * 1024 * 1024;
     return {
-      ...cloudAllowance(true, usedBytes),
+      ...cloudAllowance(lifetimeEntitlement(true), usedBytes),
       limitBytes,
       availableBytes: Math.max(0, limitBytes - usedBytes),
       overLimit: usedBytes > limitBytes,
@@ -103,7 +119,7 @@ export class CloudStore {
     if (!status.eligible)
       throw new PairingError(
         402,
-        'Verified lifetime access is required for the included 100 MB cloud allowance. Sign in and purchase or restore lifetime access in the app.',
+        'Verified lifetime access is required for cloud storage. Sign in and purchase or restore lifetime access in the app.',
       );
     return status;
   }
@@ -251,26 +267,29 @@ export class CloudStore {
     input.manifest.schema = schema;
     if (input.manifest.profileId !== profileId)
       throw new PairingError(400, 'Manifest profile does not match upload.');
+    // A day holds one file per schema; a JSON or JSONL upload replaces either format.
     this.db
       .prepare(
-        'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND content IS NULL AND object_key IS NULL',
+        'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND content IS NULL AND object_key IS NULL',
       )
-      .run(subject, device, profileId, input.day, input.format, schema);
-    const previous = /** @type {{size:number}|undefined} */ (
+      .run(subject, device, profileId, input.day, schema);
+    const previous = /** @type {{bytes:number,count:number}} */ (
       this.db
         .prepare(
-          'SELECT size FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+          'SELECT COALESCE(SUM(size),0) bytes,COUNT(*) count FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
         )
-        .get(subject, device, profileId, input.day, input.format, schema)
+        .get(subject, device, profileId, input.day, schema)
     );
     const usage = /** @type {{bytes:number,count:number}} */ (
       this.db
         .prepare('SELECT COALESCE(SUM(size),0) bytes,COUNT(*) count FROM exports WHERE subject=?')
         .get(subject)
     );
+    const { limitBytes } = this.requireStorage(subject);
+    const maxFiles = Math.max(128, Math.ceil(limitBytes / 1_000_000_000) * 128);
     if (
-      usage.bytes - (previous?.size ?? 0) >= this.requireStorage(subject).limitBytes ||
-      usage.count - (previous ? 1 : 0) >= 128
+      usage.bytes - previous.bytes >= limitBytes ||
+      usage.count - Math.min(previous.count, 1) >= maxFiles
     )
       throw new PairingError(413, 'Cloud quota reached. Delete older exports.');
     const id = randomUUID();
@@ -424,9 +443,9 @@ export class CloudStore {
             throw new PairingError(409, 'Upload expired. Start a new upload.');
           const newer = this.db
             .prepare(
-              'SELECT id FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND created>?',
+              'SELECT id FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND created>?',
             )
-            .get(subject, device, profile, row.day, row.format, row.schema, row.created);
+            .get(subject, device, profile, row.day, row.schema, row.created);
           if (newer) throw new PairingError(409, 'A newer daily export was already committed.');
           const usage = Number(
             this.db
@@ -436,9 +455,9 @@ export class CloudStore {
           const replaced = Number(
             this.db
               .prepare(
-                'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+                'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
               )
-              .get(subject, device, profile, row.day, row.format, row.schema)?.bytes ?? 0,
+              .get(subject, device, profile, row.day, row.schema)?.bytes ?? 0,
           );
           if (
             !cloudUploadFits(
@@ -453,9 +472,9 @@ export class CloudStore {
             );
           this.db
             .prepare(
-              'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',
+              'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',
             )
-            .run(subject, device, profile, row.day, row.format, row.schema, id);
+            .run(subject, device, profile, row.day, row.schema, id);
           this.db
             .prepare('UPDATE exports SET content=?,object_key=?,content_hash=?,size=? WHERE id=?')
             .run(objectKey ? null : encrypted, objectKey, hash, bytes.length, id);
@@ -562,7 +581,7 @@ export class CloudStore {
     this.cleanup();
     return this.db
       .prepare(
-        'SELECT id FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL) ORDER BY created DESC LIMIT 128',
+        'SELECT id FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL) ORDER BY created DESC',
       )
       .all(subject)
       .map((v) => this.row(subject, String(v.id)))

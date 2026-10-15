@@ -73,6 +73,7 @@ function RootStack() {
                 <Stack.Screen name="manage" options={{ headerShown: false }} />
               </Stack.Protected>
               <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
+              <Stack.Screen name="cloud-storage" options={{ title: 'Cloud storage' }} />
               <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
               <Stack.Screen name="account" options={{ title: 'Account' }} />
               <Stack.Screen name="login" options={{ title: 'Sign in' }} />

@@ -61,6 +61,19 @@ const migrationTicket = billingFixture.createClaim({
   source: 'iso.me:ios:iap',
   reference: 'migration-fixture',
 });
+const tierSubject = `${accountNamespace}|cloud-tier`;
+billingFixture.grant(tierSubject, 'fixture', 'cloud-tier');
+billingFixture.saveSubscription(tierSubject, {
+  store: 'android',
+  id: 'node-cloud-tier',
+  product: 'myself_md_cloud_10gb',
+  plan: 'cloud_10gb',
+  period: 'yearly',
+  status: 'grace',
+  expiresAt: Date.now() + 86400000,
+  autoRenew: true,
+  linkedId: null,
+});
 billingFixture.db.close();
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
@@ -83,6 +96,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     ALLOW_HTTP_DEV: '1',
     AUTH_PROXY: '0',
     IOS_APP_ID: '67KC823C9A.com.myself.md',
+    GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT: 'push@fixture.iam.gserviceaccount.com',
     HOST: '127.0.0.1',
     PORT: String(port),
   },
@@ -189,6 +203,57 @@ try {
   assert.equal(migrated.status, 200);
   assert.equal(z.object({ unlocked: z.boolean() }).parse(migrated.value).unlocked, true);
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
+  const unpaidToken = await token('unpaid', 'myselfmd-phone');
+  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_1gb' };
+  assert.equal((await request('/api/cloud/purchase-account', null)).status, 401);
+  assert.equal((await request('/api/cloud/purchase-account', chatToken)).status, 403);
+  assert.equal(
+    (await request('/api/cloud/subscription', chatToken, 'POST', purchaseInput)).status,
+    403,
+  );
+  assert.equal(
+    (await request('/api/cloud/subscription', unpaidToken, 'POST', purchaseInput)).status,
+    402,
+  );
+  const purchaseAccount = z.object({ appAccountToken: z.string().uuid() });
+  const accountId = purchaseAccount.parse(
+    (await request('/api/cloud/purchase-account', phoneToken)).value,
+  );
+  assert.deepEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', phoneToken)).value),
+    accountId,
+  );
+  assert.notEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', bobToken)).value)
+      .appAccountToken,
+    accountId.appAccountToken,
+  );
+  assert.equal(
+    (await request('/api/store/google/notifications', null, 'POST', {})).status,
+    401,
+    'Google webhook requires its OIDC token, not phone OAuth',
+  );
+  assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
+  const tierToken = await token('cloud-tier', 'myselfmd-phone');
+  const tierStatus = z
+    .object({
+      plan: z.literal('cloud_10gb'),
+      limitBytes: z.literal(10_000_000_000),
+      subscription: z.object({ status: z.literal('grace') }),
+      plans: z.array(z.object({ id: z.string() })).length(2),
+      handoff: z.object({
+        appLink: z.literal('myselfmd://cloud-storage'),
+        requiresUser: z.literal(true),
+      }),
+    })
+    .parse((await request('/api/cloud/status', tierToken)).value);
+  assert.equal(tierStatus.handoff.requiresUser, true);
+  const includedStatus = z.object({
+    plan: z.literal('included'),
+    lapse: z.null(),
+    plans: z.array(z.unknown()).length(2),
+  });
+  includedStatus.parse((await request('/api/cloud/status', phoneToken)).value);
   const dashboardPage = await fetch(`${origin}/dashboard`);
   assert.equal(dashboardPage.status, 200);
   assert.ok(

@@ -1,6 +1,6 @@
 import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
-import { parseExportSettings } from '../core/export-files.js';
+import { deliveredFormats, parseExportSettings } from '../core/export-files.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
@@ -32,7 +32,7 @@ import {
   uniqueProfileName,
   parseAgentPermissions,
 } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking?:boolean,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
@@ -41,7 +41,8 @@ export default function ProfilePanel({
   grants,
   onAuthorize,
   busy,
-  isTracking = false,
+  isTracking,
+  onRecordingChange,
   exportFirst = false,
   onChange,
   draft,
@@ -277,7 +278,7 @@ export default function ProfilePanel({
               compact
               testID="profile-saved-profile"
               title="Saved profile"
-              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${profile.export.formats.join(' + ').toUpperCase()}`}
+              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${deliveredFormats(profile.export).join(' + ').toUpperCase()}`}
             />
           </Group>
           {exportFirst && (
@@ -395,6 +396,8 @@ export default function ProfilePanel({
               inline
               types={types}
               permissions={permissions}
+              isTracking={isTracking}
+              onRecordingChange={onRecordingChange}
               onAuthorize={onAuthorize}
               onOpenLocation={() => router.push('/data/location')}
               selection={profile.selection}
@@ -452,7 +455,7 @@ export default function ProfilePanel({
             )}
             {setting(
               'Formats',
-              profile.export.formats.join(' + ').toUpperCase(),
+              deliveredFormats(profile.export).join(' + ').toUpperCase(),
               'output',
               'formats',
             )}
@@ -625,6 +628,7 @@ export default function ProfilePanel({
           session={session}
           disabled={disabled}
           isTracking={isTracking}
+          onRecordingChange={onRecordingChange}
           onNewProfile={() =>
             edit({
               schema: 'myself.md.profile.v1',

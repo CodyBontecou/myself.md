@@ -66,6 +66,11 @@ export function parseExportSettings(value) {
     formatFolders: s.formatFolders === true,
   };
 }
+/** Cloud stores one JSONL file per day; local and HTTP destinations write every selected format.
+ * @param {ExportSettings} settings @returns {ExportFormat[]} */
+export function deliveredFormats(settings) {
+  return settings.destination === 'cloud' ? ['jsonl'] : settings.formats;
+}
 /** @param {ExportSettings} settings @param {string} day */
 export function exportBasename(settings, day) {
   const [year = '', month = '', date = ''] = day.split('-');

@@ -18,7 +18,7 @@ Preparation writes only ignored `.local/reviewer-login` files with private permi
 
 The fixture generator accepts only a subject ending in the reserved reviewer ID. It refuses existing non-fixture exports or real devices. It uses ordinary profile validation, CloudStore commit/encryption/quota rules and a clearly named complimentary grant (`reviewer:fictional-fixtures`). It produces:
 
-- 12 JSON/JSONL exports covering the two days before the supplied date.
+- 6 JSONL exports covering the two days before the supplied date. Re-running preparation removes JSON copies seeded by earlier versions.
 - Health and screen-time profiles shared for MCP review, each with 72 fictional records per day to exercise pagination.
 - A fictional location profile initially private, providing a grant-denial case.
 - Six history events with explicit fictional warnings.

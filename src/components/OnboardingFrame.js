@@ -1,11 +1,40 @@
 import { ErrorToast } from './Toast.js';
 import { useRef, useState } from 'react';
-import { Stack } from 'expo-router';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { router, Stack, useNavigation } from 'expo-router';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import portrait from '../../assets/myself-portrait.png';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOnboarding } from '../../client/onboarding';
 import { useTheme } from '../lib/theme';
-import { Copy, Button } from './ui';
+import { Copy, Button, Icon } from './ui';
+
+function renderBackButton() {
+  return (
+    <Pressable
+      testID="onboarding-back"
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      onPress={() => router.back()}
+      style={styles.backButton}
+    >
+      <Icon name="chevron-back" size={28} />
+    </Pressable>
+  );
+}
+
+/** @param {{canGoBack?:boolean}} props */
+function renderHeaderBack({ canGoBack }) {
+  return canGoBack ? renderBackButton() : null;
+}
 
 /** @param {{disabled:boolean}} props */
 function SkipButton({ disabled }) {
@@ -26,6 +55,14 @@ function renderSkipButton() {
 }
 function renderNoSkipButton() {
   return null;
+}
+
+function renderNoHeaderItems() {
+  return [];
+}
+/** @returns {{type:'custom',element:import('react').ReactElement,hidesSharedBackground:boolean}[]} */
+function renderSkipHeaderItems() {
+  return [{ type: 'custom', element: renderSkipButton(), hidesSharedBackground: true }];
 }
 
 /** @param {{label:string,onPress:()=>void,secondary?:boolean,testID?:string,disabled?:boolean,busy?:boolean}} props */
@@ -58,7 +95,10 @@ export default function OnboardingFrame({
   testID,
   disabled = false,
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const navigation = useNavigation();
+  const { width } = useWindowDimensions();
+  const portraitWidth = Math.min(width * 1.5, 760);
   const insets = useSafeAreaInsets();
   const { error } = useOnboarding();
   const container = useRef(/** @type {View|null} */ (null));
@@ -67,16 +107,51 @@ export default function OnboardingFrame({
     <View
       ref={container}
       onLayout={() => container.current?.measureInWindow((_x, y) => setKeyboardOffset(y))}
-      style={styles.fill}
+      style={[styles.background, { backgroundColor: colors.background }]}
     >
+      <View
+        style={StyleSheet.absoluteFill}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
+      >
+        <Image
+          source={portrait}
+          resizeMode="contain"
+          accessible={false}
+          style={[
+            styles.portrait,
+            isDark ? styles.portraitDark : styles.portraitLight,
+            {
+              width: portraitWidth,
+              height: portraitWidth * (1073 / 720),
+              right: -portraitWidth * 0.3,
+              tintColor: colors.text,
+            },
+          ]}
+        />
+      </View>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={keyboardOffset}
         testID={testID}
         collapsable={false}
-        style={[styles.fill, { backgroundColor: colors.background }]}
+        style={styles.fill}
       >
-        <Stack.Screen options={{ headerRight: disabled ? renderNoSkipButton : renderSkipButton }} />
+        <Stack.Screen
+          options={{
+            headerRight: disabled ? renderNoSkipButton : renderSkipButton,
+            headerLeft: renderHeaderBack,
+            headerBackVisible: false,
+            unstable_headerRightItems: disabled ? renderNoHeaderItems : renderSkipHeaderItems,
+            unstable_headerLeftItems: () =>
+              navigation.getState()?.index
+                ? [{ type: 'custom', element: renderBackButton(), hidesSharedBackground: true }]
+                : [],
+            headerTransparent: true,
+            headerStyle: { backgroundColor: 'transparent' },
+          }}
+        />
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
@@ -109,6 +184,11 @@ export default function OnboardingFrame({
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  backButton: { minWidth: 44, minHeight: 44, justifyContent: 'center' },
+  background: { flex: 1, overflow: 'hidden' },
+  portrait: { position: 'absolute', top: -64 },
+  portraitLight: { opacity: 0.07 },
+  portraitDark: { opacity: 0.1 },
   scroll: {
     flexGrow: 1,
     alignItems: 'center',
@@ -121,5 +201,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
   body: { fontSize: 14, lineHeight: 21 },
   footer: { paddingHorizontal: 16, paddingTop: 12, alignItems: 'center' },
-  actions: { width: '100%', maxWidth: 560, gap: 12 },
+  actions: {
+    width: '100%',
+    maxWidth: 560,
+    gap: 12,
+    alignItems: 'flex-end',
+    paddingRight: 12,
+  },
 });

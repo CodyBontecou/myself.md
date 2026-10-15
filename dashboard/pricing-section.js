@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { freeExports, lifetimePurchaseGuide } from '../core/billing.js';
 import { publicLifetimePrice, publicCloudPlans } from '../core/public-site.js';
+import { cloudRetentionDays } from '../core/cloud-allowance.js';
 import { Button } from './components/ui/button.js';
 
 const purchase = lifetimePurchaseGuide();
@@ -96,20 +97,18 @@ export function PricingSection() {
             <h3 id="cloud-pricing-title" className="text-xl font-medium">
               Optional cloud storage
             </h3>
-            <span className="text-xs text-muted-foreground">Coming soon</span>
+            <span className="text-xs text-muted-foreground">In-app subscription</span>
           </div>
           <p className="text-base leading-7 text-muted-foreground">
             Store your exports in the cloud and connect your agents through a hosted MCP server.
-            Lifetime users get 100 MB of included storage with no recurring charge. Requires an
-            account; larger cloud plans are separate subscriptions.
+            Lifetime users get {publicCloudPlans[0]?.capacity} of included storage with no recurring
+            charge. Larger plans require Lifetime access and an account, and replace the included
+            storage rather than adding to it.
           </p>
         </div>
         <div className="divide-y divide-border border-y border-border">
           {publicCloudPlans.map((plan) => (
-            <div
-              key={plan.capacity}
-              className="flex flex-wrap items-center justify-between gap-3 py-5"
-            >
+            <div key={plan.id} className="flex flex-wrap items-center justify-between gap-3 py-5">
               <h4 className="text-lg font-medium">{plan.capacity}</h4>
               <div className="text-right">
                 <p className="text-sm font-medium">{plan.price}</p>
@@ -118,10 +117,27 @@ export function PricingSection() {
             </div>
           ))}
         </div>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Planned US pricing. Cloud plans are coming soon; Apple and Google will show your localized
-          subscription price at checkout.
-        </p>
+        <Button asChild variant="outline">
+          <a href="myselfmd://cloud-storage">Choose a cloud plan in the app</a>
+        </Button>
+        <div className="space-y-3 text-sm leading-6 text-muted-foreground">
+          <p>
+            US prices shown. Apple and Google show your localized price and billing period at
+            checkout. Plans are auto-renewing subscriptions that renew unless cancelled at least 24
+            hours before the current period ends. Manage or cancel them in your App Store or Google
+            Play subscription settings; refunds are handled by the store.
+          </p>
+          <p>
+            Storage continues during the store’s billing grace period. If paid storage ends while
+            you use more than {publicCloudPlans[0]?.capacity}, your files stay for{' '}
+            {cloudRetentionDays} days with push and email reminders. Resubscribe or delete files
+            before then, or the oldest exports are deleted until usage fits. See the{' '}
+            <a href="/terms" className="underline underline-offset-4">
+              terms
+            </a>
+            .
+          </p>
+        </div>
         <a href="/demo" className="inline-block text-sm underline underline-offset-4">
           Explore the cloud dashboard demo
         </a>

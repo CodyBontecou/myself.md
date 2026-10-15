@@ -52,7 +52,7 @@ export class CloudQaStorage extends DurableObject {
       this.db,
       Buffer.from(env.CLOUD_ENCRYPTION_KEY, 'hex'),
       objectStorage(env.EXPORTS),
-      (subject) => this.billing.snapshot(subject).unlocked,
+      (subject) => this.billing.cloudEntitlement(subject),
     );
     this.profile = {
       ...parseProfile({

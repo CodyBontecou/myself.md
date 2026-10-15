@@ -34,6 +34,11 @@ export default function QaScreen() {
         label={fixture.accountSignedIn ? 'Preview signed-out account' : 'Preview signed-in account'}
         onPress={() => setQaAccount(!fixture.accountSignedIn)}
       />
+      <Button
+        testID="qa-open-cloud-storage"
+        label="Open cloud storage plans"
+        onPress={() => router.push('/cloud-storage')}
+      />
       {qaScenarios.map((scenario) => (
         <Button
           key={scenario}

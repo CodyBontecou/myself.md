@@ -7,6 +7,12 @@ export function redirectSystemPath({ path }) {
       return '/profiles';
     if (
       url.protocol === 'myselfmd:' &&
+      url.hostname === 'cloud-storage' &&
+      (url.pathname === '' || url.pathname === '/')
+    )
+      return '/cloud-storage';
+    if (
+      url.protocol === 'myselfmd:' &&
       ((url.hostname === 'oauth' && (url.pathname === '' || url.pathname === '/')) ||
         (url.hostname === 'app' && url.pathname === '/oauth'))
     )

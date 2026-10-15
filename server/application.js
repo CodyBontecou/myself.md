@@ -42,14 +42,17 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],supportApi?:ReturnType<typeof import('./support-service.js').createSupportService>['supportApi'],registerSupportTools?:ReturnType<typeof import('./support-service.js').createSupportService>['registerSupportTools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
- * @param {Record<string,string|undefined>} config @param {ApplicationServices} services
+ * @param {Record<string,string|undefined>} config @param {ApplicationServices & {cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>,storeNotification?:(source:'apple'|'google',bytes:Uint8Array,authorization:string|undefined,audience:string)=>Promise<unknown>}} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
  * @returns {import('node:http').RequestListener} */
 export function createApplication(
   config,
   {
+    exportSchedules,
+    cloudSubscriptions,
+    storeNotification,
     supportApi,
     registerSupportTools,
     supportV1Api,
@@ -571,6 +574,7 @@ export function createApplication(
         }),
       },
       async ({ deviceId }) => {
+        exportSchedules?.remove(subject, deviceId);
         disconnect(deviceId, subject);
         cancelPhone(deviceId, subject);
         return { content: [{ type: 'text', text: 'Disconnected.' }] };
@@ -578,6 +582,7 @@ export function createApplication(
     );
     registerDataTools(mcp, subject, client, { chatgpt });
     registerCloudTools(mcp, subject, client);
+    if (!chatgpt) exportSchedules?.registerTools(mcp, subject);
     registerSupportTools?.(mcp, subject, client);
     if (registerSupportV1Tools) registerSupportV1Tools(mcp, subject, client);
     return mcp;
@@ -647,6 +652,27 @@ export function createApplication(
       }
       if (isApplication && config.WORKER_ORIGIN) {
         await proxyWorker(req, res, config.WORKER_ORIGIN);
+        return;
+      }
+      const storeSource =
+        url.pathname === '/api/store/apple/notifications'
+          ? 'apple'
+          : url.pathname === '/api/store/google/notifications'
+            ? 'google'
+            : null;
+      if (storeSource) {
+        if (req.method !== 'POST') throw new PairingError(405, 'Method not allowed.');
+        if (!storeNotification) throw new PairingError(503, 'Store notifications are unavailable.');
+        json(
+          res,
+          200,
+          await storeNotification(
+            storeSource,
+            await bodyBytes(req, 300000),
+            req.headers.authorization,
+            `${publicUrl}/api/store/${storeSource}/notifications`,
+          ),
+        );
         return;
       }
       if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
@@ -953,6 +979,37 @@ export function createApplication(
         );
         return;
       }
+      if (url.pathname === '/api/export-schedules') {
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Phone OAuth client required.');
+        if (!exportSchedules)
+          throw new PairingError(503, 'Cloud export scheduling is unavailable.');
+        if (req.method === 'POST')
+          json(
+            res,
+            200,
+            await exportSchedules.register(
+              subject,
+              JSON.parse((await bodyBytes(req, 100000)).toString()),
+            ),
+          );
+        else if (req.method === 'PUT')
+          json(
+            res,
+            200,
+            exportSchedules.completeRequest(
+              subject,
+              JSON.parse((await bodyBytes(req, 2000)).toString()),
+            ),
+          );
+        else if (req.method === 'GET')
+          json(res, 200, {
+            schedules: exportSchedules.list(subject),
+            requests: exportSchedules.requests(subject),
+          });
+        else throw new PairingError(405, 'Method not allowed.');
+        return;
+      }
       if (url.pathname === '/api/support/v1') {
         if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
           throw new PairingError(403, 'Use the support MCP tools with an agent client.');
@@ -1049,8 +1106,29 @@ export function createApplication(
         if (payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'Cloud management requires the phone OAuth client.');
         if (url.pathname === '/api/cloud/status' && req.method === 'GET') {
-          await refreshEntitlement(subject);
-          json(res, 200, cloud.storageStatus(subject));
+          if (!cloudSubscriptions)
+            throw new PairingError(503, 'Cloud subscriptions are unavailable.');
+          json(res, 200, await cloudSubscriptions.status(subject));
+          return;
+        }
+        if (url.pathname === '/api/cloud/purchase-account' && req.method === 'GET') {
+          if (!cloudSubscriptions)
+            throw new PairingError(503, 'Cloud subscriptions are unavailable.');
+          json(res, 200, await cloudSubscriptions.purchaseAccount(subject));
+          return;
+        }
+        if (url.pathname === '/api/cloud/subscription' && req.method === 'POST') {
+          if (!cloudSubscriptions)
+            throw new PairingError(503, 'Cloud subscriptions are unavailable.');
+          const input = z
+            .object({
+              store: z.enum(['ios', 'android']),
+              proof: z.string().min(1).max(200000),
+              productId: z.string().min(1).max(200),
+            })
+            .strict()
+            .parse(JSON.parse((await bodyBytes(req, 220000)).toString()));
+          json(res, 200, await cloudSubscriptions.subscribe(subject, input));
           return;
         }
         if (url.pathname === '/api/cloud/credential/renew' && req.method === 'POST') {
@@ -1139,6 +1217,7 @@ export function createApplication(
         return;
       }
       if (url.pathname.startsWith('/api/devices/') && req.method === 'DELETE') {
+        exportSchedules?.remove(subject, url.pathname.slice(13));
         disconnect(url.pathname.slice(13), subject);
         cancelPhone(url.pathname.slice(13), subject);
         json(res, 200, { ok: true });

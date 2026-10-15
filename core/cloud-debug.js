@@ -1,4 +1,4 @@
-import { cloudAllowance, cloudUploadFits } from './cloud-allowance.js';
+import { cloudAllowance, cloudUploadFits, lifetimeEntitlement } from './cloud-allowance.js';
 
 export const cloudDebugScenarios = ['free', 'lifetime', 'used', 'full', 'over-limit'];
 /** @typedef {{eligible:boolean,files:number[]}} CloudDebugState */
@@ -21,7 +21,7 @@ export function cloudDebugFixture(scenario) {
 /** @param {CloudDebugState} state */
 export function cloudDebugUsage(state) {
   return cloudAllowance(
-    state.eligible,
+    lifetimeEntitlement(state.eligible),
     state.files.reduce((sum, bytes) => sum + bytes, 0),
   );
 }

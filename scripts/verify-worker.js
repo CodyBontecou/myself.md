@@ -187,6 +187,52 @@ try {
     ).status,
     409,
   );
+  await migrate({
+    action: 'account',
+    name: `${namespace}|cloud-tier`,
+    batch: {
+      id: 'cloud-tier-fixture',
+      subject: `${namespace}|cloud-tier`,
+      tables: [
+        {
+          name: 'billing_grants',
+          columns: ['source', 'reference', 'subject', 'created'],
+          rows: [['fixture', 'cloud-tier', `${namespace}|cloud-tier`, Date.now()]],
+        },
+        {
+          name: 'cloud_subscriptions',
+          columns: [
+            'store',
+            'id',
+            'subject',
+            'product',
+            'plan',
+            'period',
+            'status',
+            'expires',
+            'auto_renew',
+            'linked',
+            'verified',
+          ],
+          rows: [
+            [
+              'android',
+              'worker-cloud-tier',
+              `${namespace}|cloud-tier`,
+              'myself_md_cloud_10gb',
+              'cloud_10gb',
+              'yearly',
+              'grace',
+              Date.now() + 86400000,
+              1,
+              null,
+              Date.now(),
+            ],
+          ],
+        },
+      ],
+    },
+  });
   await stop();
   config.vars.MIGRATION_ENABLED = '0';
   await start();
@@ -210,6 +256,43 @@ try {
   );
   assert.equal((await request('/api/migration/claim', alice, 'POST', { ticket })).status, 409);
   assert.equal((await request('/api/billing', agent, 'POST', { action: 'sync' })).status, 403);
+  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_1gb' };
+  const unpaid = await token('unpaid', 'myselfmd-phone');
+  assert.equal(
+    (await request('/api/cloud/subscription', unpaid, 'POST', purchaseInput)).status,
+    402,
+  );
+  assert.equal(
+    (await request('/api/cloud/subscription', agent, 'POST', purchaseInput)).status,
+    403,
+  );
+  assert.equal((await request('/api/cloud/purchase-account', agent)).status, 403);
+  const purchaseAccount = z.object({ appAccountToken: z.string().uuid() });
+  const accountId = purchaseAccount.parse(
+    (await request('/api/cloud/purchase-account', alice)).value,
+  );
+  assert.deepEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', alice)).value),
+    accountId,
+  );
+  assert.notEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', bob)).value)
+      .appAccountToken,
+    accountId.appAccountToken,
+  );
+  assert.equal((await request('/api/store/google/notifications', null, 'POST', {})).status, 401);
+  assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
+  const tierToken = await token('cloud-tier', 'myselfmd-phone');
+  z.object({
+    plan: z.literal('cloud_10gb'),
+    limitBytes: z.literal(10_000_000_000),
+    subscription: z.object({ status: z.literal('grace') }),
+    plans: z.array(z.unknown()).length(2),
+    handoff: z.object({
+      appLink: z.literal('myselfmd://cloud-storage'),
+      requiresUser: z.literal(true),
+    }),
+  }).parse((await request('/api/cloud/status', tierToken)).value);
   await client.connect(
     new StreamableHTTPClientTransport(new URL(origin + '/mcp'), {
       requestInit: { headers: { Authorization: agent } },
@@ -253,6 +336,55 @@ try {
     }),
     { id: randomBytes(16).toString('hex') },
   );
+  const scheduleRegistration = {
+    deviceId: device,
+    token: null,
+    timeZone: 'Europe/Berlin',
+    profiles: [
+      {
+        profileId: profile.id,
+        enabledAt: new Date().toISOString(),
+        schedule: profile.schedule,
+        lastCompleted: null,
+        lastRefresh: null,
+      },
+    ],
+  };
+  assert.equal(
+    (await request('/api/export-schedules', bob, 'POST', scheduleRegistration)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/api/export-schedules', agent, 'POST', scheduleRegistration)).status,
+    403,
+  );
+  assert.equal(
+    (await request('/api/export-schedules', alice, 'POST', scheduleRegistration)).status,
+    200,
+  );
+  const scheduleChange = await client.callTool({
+    name: 'set_phone_export_schedule_enabled',
+    arguments: {
+      deviceId: device,
+      profileId: profile.id,
+      enabled: false,
+      requestId: 'worker-schedule-request',
+    },
+  });
+  assert.ok(!scheduleChange.isError, JSON.stringify(scheduleChange.content));
+  const scheduled = z
+    .object({ requests: z.array(z.object({ requestId: z.string(), state: z.string() })) })
+    .parse((await request('/api/export-schedules', alice, 'POST', scheduleRegistration)).value);
+  assert.equal(scheduled.requests[0]?.state, 'awaiting-user');
+  const scheduleOutcome = {
+    deviceId: device,
+    requestId: 'worker-schedule-request',
+    state: 'cancelled',
+  };
+  assert.equal((await request('/api/export-schedules', bob, 'PUT', scheduleOutcome)).status, 404);
+  assert.equal((await request('/api/export-schedules', alice, 'PUT', scheduleOutcome)).status, 200);
+  const scheduleRead = await client.callTool({ name: 'get_phone_export_schedules', arguments: {} });
+  assert.ok(!scheduleRead.isError, JSON.stringify(scheduleRead.content));
   const uploadToken = z
     .object({ token: z.string() })
     .parse(
@@ -338,6 +470,14 @@ try {
   await client.close();
   await stop();
   await start();
+  const restoredSchedules = z
+    .object({
+      schedules: z.array(z.object({ deviceId: z.string() })),
+      requests: z.array(z.object({ state: z.string() })),
+    })
+    .parse((await request('/api/export-schedules', alice)).value);
+  assert.equal(restoredSchedules.schedules[0]?.deviceId, device);
+  assert.equal(restoredSchedules.requests[0]?.state, 'cancelled');
   assert.equal(
     z
       .array(z.object({ id: z.string() }))

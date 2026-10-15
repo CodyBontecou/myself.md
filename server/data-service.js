@@ -134,7 +134,9 @@ const profileSchema = z.object({
         .array(z.enum(['json', 'jsonl']))
         .min(1)
         .max(2)
-        .describe('Requested file formats; choose JSON, JSONL or both.'),
+        .describe(
+          'Requested file formats for local and HTTPS destinations; choose JSON, JSONL or both. Cloud destinations always store one JSONL file per day.',
+        ),
       lookbackDays: z
         .number()
         .int()

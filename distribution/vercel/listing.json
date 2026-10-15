@@ -1,6 +1,6 @@
 {
   "preparationOnly": true,
-  "note": "Working copy for the Vercel Connect form, not an official import format or a submitted listing.",
+  "note": "Working copy for the Vercel Connect form, not an official import format. Submission status is recorded in docs/mcp-vercel-zapier-submission.md.",
   "serviceName": "myself.md",
   "description": "Connect applications and AI agents to owner-approved phone data and shared cloud exports.",
   "details": "Discover connected phones and approved profiles, query selected health, screen-time and recorded location data, and read explicitly shared cloud exports. Availability depends on device support, owner sharing choices and OS permissions. Live phone requests may require the app to remain open. Existing data grants and export allowances apply. Revocation stops future access; recipient copies follow their own controls.",
@@ -10,7 +10,8 @@
   "termsOfService": "https://myself.md/terms",
   "support": "https://myself.md/contact",
   "contactEmail": "cody@isolated.tech",
-  "icon": "https://myself.md/dashboard/favicon.svg",
+  "icon": "https://myself.md/dashboard/favicon.png",
+  "iconUploadNote": "The optional SVG upload was omitted; this PNG is the current public icon reference.",
   "target": {
     "name": "myself.md MCP",
     "type": "MCP",

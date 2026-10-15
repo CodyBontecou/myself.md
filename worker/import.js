@@ -23,7 +23,7 @@ export const batchSchema = z
           })
           .strict(),
       )
-      .max(15),
+      .max(20),
   })
   .strict();
 /** @typedef {z.infer<typeof batchSchema>} ImportBatch */

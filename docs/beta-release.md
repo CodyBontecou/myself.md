@@ -147,3 +147,11 @@ The supplied portrait is packaged in iOS 1.0.0 build 6 (job `5e32bd22-92a1-4b04-
 Verified artifacts remain at `/Users/codybontecou/dev/local-phone-builds/.local/jobs/5e32bd22-92a1-4b04-916f-d89aaeea0ba9/app.ipa` and `/Users/codybontecou/dev/local-phone-builds/.local/jobs/b5ddf6a0-afff-484c-9bb7-aaa92bd07108/app.aab`. IPA SHA-256: `061b33a11b024207b36422d44c7f3a5a2d7d0fee4c20206d492ddce4c0e7de42`; AAB SHA-256: `4b96f27cfa8b636d0b117228dcbae36d594bd44208f394e4649fdcf4ac8e6225`. Neither artifact was submitted to the stores or installed by this operation.
 
 The website favicon was deployed separately as Worker `83be4900-d1c0-4241-af55-6eb814cf336b`, with live image bytes, markup, preserved assets/configuration and health/OAuth/MCP checks verified. See the icon entry in [MCP parity](mcp-parity.md).
+
+## Portrait icon store uploads, 14 October 2026
+
+After owner authorization, iOS build 6 was uploaded directly with Apple's altool and the existing App Store Connect upload key. Apple delivery/build UUID is `22f7a9fa-503a-47cc-ac09-a6ecc09b026f`. The uploader reported success without errors. App Store Connect subsequently reported `VALID`, internal state `READY_FOR_BETA_TESTING` and external state `READY_FOR_BETA_SUBMISSION`. No external beta-review submission or tester invitations were initiated.
+
+Android version code 7 was uploaded through the Google Play Developer API using the existing local service account and committed to the internal track as draft `1.0.0 — Portrait icon 7`. A fresh edit read verified the committed draft and its exact AAB SHA-256. Internal version 4 remains completed; the beta/public, alpha and production tracks were preserved. This uploads the artifact without rolling out version 7. Google required omitting `changesNotSentForReview` on commit; the release itself remains a draft.
+
+The initial EAS archive transfers succeeded, but neither created a submission because managed Apple/Google submission credentials were not configured. Direct vendor uploads used the already verified artifacts and existing credentials; no rebuilt binary was substituted. Private receipts are in ignored `.local/icon-submission`.

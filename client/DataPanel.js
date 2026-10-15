@@ -475,6 +475,7 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           onAuthorize={reviewSourceAccess}
           busy={busy}
           isTracking={isTracking}
+          onRecordingChange={(enabled) => void run(() => data.changeRecording(enabled))}
           draft={incoming ?? proposal?.profile ?? null}
           onDismiss={() => {
             if (incoming) onDismiss();

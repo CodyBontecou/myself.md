@@ -4,7 +4,15 @@ import { billing, billingApi, refreshEntitlement } from './billing.js';
 import { verifyMigrationPurchase } from './migration-purchases.js';
 import { createServer } from 'node:http';
 import { registerDataTools, phoneApi, cancelPhone } from './data.js';
-import { cloud, history, registerCloudTools, ownCloudDevice } from './cloud.js';
+import {
+  cloud,
+  history,
+  registerCloudTools,
+  ownCloudDevice,
+  cloudSubscriptions,
+  storeNotification,
+  exportSchedules,
+} from './cloud.js';
 import { dashboardAsset, dashboardApi } from './dashboard.js';
 import { proxyAuth } from './auth-proxy.js';
 import { claim, createPairing, devices, disconnect, pending, status } from './store.js';
@@ -39,6 +47,9 @@ createServer(
     phoneApi,
     cancelPhone,
     cloud,
+    cloudSubscriptions,
+    storeNotification,
+    exportSchedules,
     history,
     registerCloudTools,
     ownCloudDevice,

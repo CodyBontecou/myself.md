@@ -55,6 +55,8 @@ let failMove = false,
   failWrite = false,
   failDelivery = false;
 let failDetail = false;
+/** @type {string[]} */
+const delivered = [];
 const mocks = {
   recordDebug: () => {},
   Directory,
@@ -87,8 +89,10 @@ const mocks = {
       complete: !failDetail,
     };
   },
-  deliverExport: async () => {
+  /** @param {unknown} _context @param {unknown} _profile @param {unknown} _file @param {string} format */
+  deliverExport: async (_context, _profile, _file, format) => {
     if (failDelivery) throw new Error('Upload failed');
+    delivered.push(format);
   },
 };
 const exporter = new SourceTextModule(
@@ -240,6 +244,25 @@ assert.equal(retainedDetail.status, 'partial');
 assert.equal(retainedDetail.records.length, 1);
 failDetail = false;
 failMove = false;
+// Cloud keeps one JSONL file per day; HTTP receives every selected format.
+for (const [destination, expected] of /** @type {const} */ ([
+  ['cloud', ['jsonl']],
+  ['http', ['json', 'jsonl']],
+])) {
+  delivered.length = 0;
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await exportProfileDay(
+    session,
+    {
+      ...profile,
+      export: { ...profile.export, destination, httpUrl: 'https://example.test/hook' },
+    },
+    interval,
+    () => true,
+    () => {},
+  );
+  assert.deepEqual(delivered, expected);
+}
 failDelivery = true;
 artifacts.length = 0;
 await assert.rejects(

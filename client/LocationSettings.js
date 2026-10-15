@@ -1,5 +1,4 @@
 import { Linking, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
 import { Copy, Divider, Row } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import { Checkbox, Text } from './Terminal.js';
@@ -68,12 +67,6 @@ export default function LocationSettings({ data }) {
         />
         <Divider />
         <Row
-          testID="source-location-choose-types"
-          title="Choose data types"
-          onPress={() => router.navigate('/profiles')}
-        />
-        <Divider />
-        <Row
           testID="source-location-location-capture"
           title="Save location point"
           disabled={busy}
@@ -85,12 +78,6 @@ export default function LocationSettings({ data }) {
               await refreshLocation();
             })
           }
-        />
-        <Divider />
-        <Row
-          testID="source-location-exports"
-          title="Export files"
-          onPress={() => router.navigate('/profiles')}
         />
         <Divider />
       </View>

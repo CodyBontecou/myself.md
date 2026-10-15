@@ -68,6 +68,21 @@ export async function clearSession(session) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
     try {
+      const scheduleResponse = await fetch(`${previous.server}/api/export-schedules`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${previous.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deviceId: previous.deviceId,
+          token: null,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          profiles: [],
+        }),
+        signal: controller.signal,
+      });
+      await scheduleResponse.body?.cancel();
       const response = await fetch(`${previous.server}/api/support/v1`, {
         method: 'POST',
         headers: {
