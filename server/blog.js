@@ -300,6 +300,6 @@ export function blogResponse(path, accept) {
       )
       .join(
         '',
-      )}</nav></header><main id="content">${content}</main><footer class="blog-footer"><span>myself.md · ${authorHtml('Writing by', 'Cody Bontecou')}</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
+      )}</nav></header><main id="content">${content}</main><footer class="blog-footer"><span>${authorHtml('Writing by', 'Cody Bontecou')}</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
   };
 }
