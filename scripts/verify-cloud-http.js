@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { verifyBlogHTTP, verifyBlogMCP } from './verify-blog.js';
 import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
@@ -496,6 +497,13 @@ try {
       used: z.number(),
       complimentary: z.boolean().optional(),
     }),
+    purchase: z.object({
+      appLink: z.string(),
+      status: z.string(),
+      requiresUser: z.boolean(),
+      verificationTool: z.string(),
+      accountInstructions: z.string(),
+    }),
     handoff: z.object({
       status: z.string(),
       accountLink: z.string(),
@@ -508,6 +516,8 @@ try {
     (await client.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(paidAccess.allowance.unlocked, true);
+  assert.equal(paidAccess.purchase.status, 'completed');
+  assert.equal(paidAccess.purchase.requiresUser, false);
   assert.equal(paidAccess.handoff.status, 'completed');
   assert.equal(paidAccess.handoff.requiresUser, false);
   const newBuyerToken = await token('new-buyer', 'fixture-chat');
@@ -520,6 +530,10 @@ try {
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(pendingAccess.allowance.unlocked, false);
+  assert.equal(pendingAccess.purchase.appLink, 'myselfmd://unlock');
+  assert.equal(pendingAccess.purchase.status, 'awaiting_user');
+  assert.equal(pendingAccess.purchase.requiresUser, true);
+  assert.equal(pendingAccess.purchase.verificationTool, 'get_lifetime_access');
   assert.equal(pendingAccess.allowance.used, 0);
   assert.equal(pendingAccess.handoff.status, 'awaiting_user');
   assert.equal(pendingAccess.handoff.requiresUser, true);
@@ -556,6 +570,7 @@ try {
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(claimedAccess.allowance.complimentary, true);
+  assert.equal(claimedAccess.purchase.status, 'completed');
   assert.equal(claimedAccess.allowance.used, 0);
   assert.equal(claimedAccess.handoff.status, 'completed');
   assert.equal(claimedAccess.handoff.requiresUser, false);
@@ -754,10 +769,9 @@ try {
       await usagePage.locator('img[src="https://avatars.example.com/alice.png"]').count(),
       1,
     );
-    await usagePage.waitForFunction(`(() => {
-      const image = document.querySelector('img[src="https://avatars.example.com/alice.png"]');
-      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
-    })()`);
+    await usagePage
+      .locator('img[src="https://avatars.example.com/alice.png"]')
+      .evaluate('image => image.decode()');
     await usagePage.keyboard.press('Escape');
     await usagePage.screenshot({ path: '/tmp/myself-cloud-dashboard.png' });
     await usagePage.route(`${origin}/api/dashboard`, async (route) => {
@@ -1299,6 +1313,8 @@ try {
     }),
   );
   const documentation = await client.callTool({ name: 'get_public_documentation', arguments: {} });
+  await verifyBlogHTTP(origin);
+  await verifyBlogMCP(client);
   assert.match(JSON.stringify(documentation), /# Get started/);
   assert.match(JSON.stringify(documentation), /Idempotency-Key/);
   const publicSdk = createMyselfClient({ origin });

@@ -1,11 +1,12 @@
 import { serviceTerms } from './terms.js';
-import { freeExports } from './billing.js';
+import { freeExports, lifetimePurchaseGuide } from './billing.js';
 import { privacyPolicy } from './privacy.js';
 
 export const smitheryListingUrl = 'https://smithery.ai/servers/cody-82px/myself-md';
 
 export const publicNavigation = [
   { label: 'Home', href: '/' },
+  { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: '/docs' },
   { label: 'Pricing', href: '/#pricing' },
   { label: 'FAQ', href: '/faq' },
@@ -72,7 +73,8 @@ export const publicCloudPlans = [
   { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
   { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
 ];
-const publicPricing = `The cloud dashboard demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The planned US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Mobile store distribution is coming soon. Eligible existing health.md and iso.me purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
+const purchaseGuide = lifetimePurchaseGuide();
+const publicPricing = `The cloud dashboard demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Open the installed app for free at myselfmd:// or open Lifetime checkout at ${purchaseGuide.appLink}. ${purchaseGuide.instructions} ${purchaseGuide.accountInstructions} ${purchaseGuide.availability} Opening the app does not confirm payment or grant access. Eligible existing health.md, iso.me and time.md purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
 const faqMarkdown = publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n');
 const overview = `# Get started
 

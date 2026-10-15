@@ -1,5 +1,15 @@
-import { freeExports } from '../core/billing.js';
+import QRCode from 'qrcode';
+import { freeExports, lifetimePurchaseGuide } from '../core/billing.js';
 import { publicLifetimePrice, publicCloudPlans } from '../core/public-site.js';
+import { Button } from './components/ui/button.js';
+
+const purchase = lifetimePurchaseGuide();
+const qr = QRCode.create(purchase.appLink);
+const qrPath = Array.from(qr.modules.data, (dark, index) =>
+  dark
+    ? `M${(index % qr.modules.size) + 4} ${Math.floor(index / qr.modules.size) + 4}h1v1h-1z`
+    : '',
+).join('');
 
 export function PricingSection() {
   return (
@@ -24,11 +34,17 @@ export function PricingSection() {
             <li>Export readable JSON or JSONL files</li>
             <li>Preview supported datasets with fictional data</li>
           </ul>
+          <Button asChild variant="outline">
+            <a href="myselfmd://">Open the app for free</a>
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Already installed? Start with no purchase.
+          </p>
         </div>
         <div className="space-y-5 border-t border-border pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-lg font-medium">Lifetime</h3>
-            <span className="text-xs text-muted-foreground">Coming soon</span>
+            <span className="text-xs text-muted-foreground">In-app purchase</span>
           </div>
           <p className="text-4xl font-medium tracking-tight">
             {publicLifetimePrice}
@@ -44,7 +60,34 @@ export function PricingSection() {
             <li>Unlimited exports and queries</li>
             <li>No recurring app subscription</li>
           </ul>
-          <p className="text-sm text-muted-foreground">Available on iOS and Android at launch.</p>
+          <Button asChild>
+            <a href={purchase.appLink}>Unlock Lifetime in the app</a>
+          </Button>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {purchase.instructions} Payment is confirmed by Apple or Google.
+          </p>
+          <details className="text-sm">
+            <summary className="cursor-pointer underline underline-offset-4">
+              On a computer? Scan to open checkout on your phone
+            </summary>
+            <div className="mt-4 space-y-3">
+              <svg
+                role="img"
+                aria-label="QR code to open Lifetime checkout in myself.md"
+                width={176}
+                height={176}
+                viewBox={`0 0 ${qr.modules.size + 8} ${qr.modules.size + 8}`}
+                shapeRendering="crispEdges"
+              >
+                <rect width="100%" height="100%" fill="white" />
+                <path d={qrPath} fill="black" />
+              </svg>
+              <p className="leading-6 text-muted-foreground">
+                Scan with your phone’s camera, or open this page on your phone and tap Unlock
+                Lifetime. The app must already be installed.
+              </p>
+            </div>
+          </details>
         </div>
       </div>
       <section aria-labelledby="cloud-pricing-title" className="space-y-5">
@@ -85,9 +128,10 @@ export function PricingSection() {
       </section>
       <div className="space-y-3 text-sm leading-6 text-muted-foreground">
         <p>
-          Planned US price. Apple and Google show your localized price at checkout. Lifetime access
-          does not include unlimited hosted storage.
+          US Lifetime price shown. Apple and Google show your localized price at checkout. Lifetime
+          access does not include unlimited hosted storage. {purchase.availability}
         </p>
+        <p>{purchase.accountInstructions}</p>
         <p>
           Already own an eligible health.md or iso.me purchase? You can claim lifetime access after
           verifying your purchase.

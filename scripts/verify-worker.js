@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyBlogHTTP, verifyBlogMCP } from './verify-blog.js';
 import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -214,6 +215,8 @@ try {
       requestInit: { headers: { Authorization: agent } },
     }),
   );
+  await verifyBlogHTTP(origin);
+  await verifyBlogMCP(client);
   const names = new Set(
     reviewToolMetadata((await client.listTools()).tools).map((tool) => tool.name),
   );

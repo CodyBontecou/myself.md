@@ -254,6 +254,8 @@ export async function identityRequest(request, env) {
         return (
           (!hosts.has(callback.hostname) &&
             callback.href !== 'https://connect.smithery.ai/oauth/callback' &&
+            callback.href !== 'https://connect.vercel.com/callback' &&
+            callback.origin !== 'https://zapier.com' &&
             callback.origin !== 'https://glama.ai') ||
           callback.username ||
           callback.password ||

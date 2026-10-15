@@ -299,6 +299,78 @@ summary.export-json-line:focus-visible {
   }
 }
 
+.landing-page {
+  overflow-x: clip;
+}
+.landing-hero-column {
+  position: relative;
+  isolation: isolate;
+}
+.landing-hero-column > header,
+.landing-hero-column > section {
+  position: relative;
+  z-index: 1;
+}
+.landing-hero {
+  display: flex;
+  align-items: center;
+  min-height: 32rem;
+  padding-block: 4rem;
+}
+.landing-hero-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.75rem;
+  max-width: 44rem;
+}
+.hero-portrait {
+  position: absolute;
+  z-index: 0;
+  top: -7rem;
+  right: -5rem;
+  width: 52rem;
+  height: 49rem;
+  color: var(--foreground);
+  opacity: 0.14;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, transparent, black 12%, black 65%, transparent 98%);
+}
+.hero-portrait-sculpture {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  mask-image: url('/dashboard/hero-portrait.png');
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+.hero-portrait-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hero-portrait-particles span {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+}
+@media (max-width: 63.99rem) {
+  .landing-hero {
+    min-height: 29rem;
+    padding-block: 3rem;
+  }
+  .hero-portrait {
+    top: -3rem;
+    right: -10rem;
+    width: 36rem;
+    height: 40rem;
+    opacity: 0.1;
+  }
+}
+
 /* Source categories flow into a file; the graphic never moves readable data. */
 .hero-data-flow {
   width: 100%;

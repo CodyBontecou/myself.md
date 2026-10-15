@@ -7,5 +7,6 @@ assets/
 package-lock.json
 
 .local/
+content/blog/
 
 dashboard/dist/

@@ -64,6 +64,11 @@
     "zod": "^4.6.5"
   },
   "scripts": {
+    "blog:setup": "node scripts/setup-blog.js",
+    "blog:build": "node scripts/build-blog.js --required",
+    "blog:install-deploy": "node scripts/install-blog-workflow.js",
+    "blog:verify-live": "node scripts/verify-blog-deployment.js",
+    "verify:blog": "node scripts/verify-blog.js",
     "reviewer:prepare": "node scripts/prepare-reviewer.js",
     "mcp:review": "node scripts/review-mcp.js",
     "verify:mcp-metadata": "npm run dashboard:build && node scripts/verify-cloud-http.js && node scripts/verify-support-v1.js && npm run verify:support",
