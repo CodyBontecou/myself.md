@@ -1,5 +1,7 @@
 # myself.md
 
+Recurring [website SEO and analytics audits](docs/website-audits.md) send bounded public-site and read-only analytics evidence to Isobot, with daily technical checks and a weekly deeper review. Evidence-backed changes can produce draft PRs through Codex; nothing merges or deploys automatically. Search Console collection requires the documented owner-granted Restricted user access.
+
 The website's [blog](docs/blog.md) reads Markdown from the Obsidian vault through `content/blog`. Run `npm run blog:setup` once, then `npm run blog:build` after editing or pulling notes. Dashboard builds refresh a linked vault; deployments without the vault use the reviewed `server/blog-content.js` snapshot. `/blog`, posts, RSS, sitemap and Markdown/MCP reads share the same published content. External `content/blog/**` is excluded from formatting/linting because it contains third-party Obsidian plugins and prose; generated application JavaScript remains inside the existing checked `server/` scope.
 
 Restricted reviewer login: [setup and revocation](docs/reviewer-login.md). `npm run reviewer:prepare -- YYYY-MM-DD` generates a separate credential identity and fictional encrypted fixture batch under ignored `.local/reviewer-login`; it does not deploy, import or expose credentials. Public password signup stays disabled. `npm run verify:identity` covers the reviewer password/OAuth flow, account isolation and issued-token revocation in local workerd alongside existing social authentication.
