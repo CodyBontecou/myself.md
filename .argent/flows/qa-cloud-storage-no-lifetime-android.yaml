@@ -1,0 +1,116 @@
+steps:
+  - echo: Launch fixture app and reset cloud-no-lifetime through QA UI. Synthetic data only.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 45000
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-no-lifetime
+  - await:
+      visible:
+        id: qa-reset-cloud-no-lifetime
+  - tap:
+      id: qa-reset-cloud-no-lifetime
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-no-lifetime
+  - echo: Named baseline cloud-no-lifetime reset. Open cloud storage plans.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        id: cloud-plans-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: Lifetime access required
+  - await:
+      visible:
+        text: Unlock Lifetime first, then choose a plan.
+  - await:
+      text:
+        in:
+          id: cloud-plans-lifetime
+        contains: Unlock Lifetime
+  - echo: Lifetime navigation only; never initiate a real purchase.
+  - tap:
+      id: cloud-plans-lifetime
+  - await:
+      visible:
+        id: unlock-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        id: unlock-claim-existing-customer-access
+  - tool: button
+    args:
+      button: back
+  - await:
+      visible:
+        id: cloud-plans-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Subscribe to 10 GB · $2.99/month
+  - echo: Restore cloud-included fixture baseline through recorded UI; no normal data changes.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: qa-reset-cloud-included
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-included

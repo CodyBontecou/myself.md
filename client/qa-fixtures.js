@@ -11,14 +11,14 @@ export const qaScenarios = [
   'location-tracking',
   'location-tracking-off',
   'cloud-included',
-  'cloud-1gb',
+  'cloud-10gb',
   'cloud-grace',
   'cloud-billing-retry',
   'cloud-lapse',
   'cloud-no-lifetime',
 ];
 /** Cloud scenarios differ only in synthetic cloud storage status; see client/cloud-storage.js.
- * @typedef {'populated'|'empty'|'save-error'|'history-error'|'permission-denied'|'loading'|'location-tracking'|'location-tracking-off'|'cloud-included'|'cloud-1gb'|'cloud-grace'|'cloud-billing-retry'|'cloud-lapse'|'cloud-no-lifetime'} QaScenario */
+ * @typedef {'populated'|'empty'|'save-error'|'history-error'|'permission-denied'|'loading'|'location-tracking'|'location-tracking-off'|'cloud-included'|'cloud-10gb'|'cloud-grace'|'cloud-billing-retry'|'cloud-lapse'|'cloud-no-lifetime'} QaScenario */
 /** @typedef {{scenario:QaScenario,revision:number,onboarding:boolean,accountSignedIn?:boolean,profiles:import('../core/profiles.js').ProfileState,events:import('../core/history.js').HistoryEvent[],permissions:Record<string,string>}} QaState */
 
 /** Synthetic metadata only: no credentials, native records, destinations, or shareable files.

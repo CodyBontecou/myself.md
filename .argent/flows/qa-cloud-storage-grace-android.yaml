@@ -1,0 +1,105 @@
+steps:
+  - echo: Launch fixture app and reset cloud-grace through QA UI. Synthetic data only.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 45000
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-grace
+  - await:
+      visible:
+        id: qa-reset-cloud-grace
+  - tap:
+      id: qa-reset-cloud-grace
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-grace
+  - echo: Named baseline cloud-grace reset. Open cloud storage plans.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        id: cloud-plans-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: Payment problem · storage continues for now
+  - await:
+      visible:
+        text: Your paid storage stays available during the store's billing grace period.
+  - await:
+      visible:
+        text: 3200.0 MB of 10 GB used · Yearly · payment problem, grace period
+  - echo: Select yearly and active10GB; Current plan blocks duplicate purchase.
+  - tap:
+      id: cloud-plan-period-yearly
+  - scroll-to:
+      target:
+        id: cloud-plan-cloud_10gb
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        contains: $29.99 per year, current plan
+  - tap:
+      id: cloud-plan-cloud_10gb
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Current plan
+  - echo: Restore cloud-included fixture baseline through recorded UI; no normal data changes.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: qa-reset-cloud-included
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-included

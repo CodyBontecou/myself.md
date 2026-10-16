@@ -1,0 +1,115 @@
+steps:
+  - echo: Dedicated iOS fixture baseline through UI; synthetic partition only, nothing charged.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-10gb by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-10gb
+  - echo: Activate qa-reset-cloud-10gb; require resulting state.
+  - tap:
+      id: qa-reset-cloud-10gb
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Activate qa-open-cloud-storage; require resulting state.
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        text: Choose a cloud storage plan
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: 420.0 MB of 10 GB used
+        equals: "420.0 MB of 10 GB used \xB7 Monthly \xB7 renews November 3, 2026 (UTC)"
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        equals: 10 GB cloud storage, $2.99 per month, current plan
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - echo: Activate cloud-plan-cloud_10gb; require resulting state.
+  - tap:
+      id: cloud-plan-cloud_10gb
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Current plan
+  - echo: Activate cloud-plan-manage; require resulting state.
+  - tap:
+      id: cloud-plan-manage
+  - await:
+      text:
+        in:
+          text: Purchases require a normal build for integration QA. Nothing was charged.
+        equals: Purchases require a normal build for integration QA. Nothing was charged.
+  - await:
+      visible:
+        id: action-toast-dismiss
+  - echo: Activate action-toast-dismiss; require resulting state.
+  - tap:
+      id: action-toast-dismiss
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - echo: Activate cloud-plan-subscribe; require resulting state.
+  - tap:
+      id: cloud-plan-subscribe
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Current plan
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

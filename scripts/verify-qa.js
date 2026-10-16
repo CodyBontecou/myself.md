@@ -6,6 +6,7 @@ import * as profiles from '../core/profiles.js';
 import * as fixtures from '../client/qa-fixtures.js';
 import * as history from '../core/history.js';
 import * as display from '../core/history-display.js';
+import { qaCloudStatus, qaCloudTime, cloudStatusNotices } from '../client/cloud-storage.js';
 
 /** @param {boolean} dev @param {string} flag */
 async function runtime(dev, flag) {
@@ -207,6 +208,19 @@ async function verifyDatabase(enabled) {
   for (const db of databases.values()) db.close();
 }
 await Promise.all([false, true].map(verifyDatabase));
+
+// A recorded fixture must survive the next day without freezing production notice timing.
+const originalNow = Date.now;
+const lapseFixture = qaCloudStatus('cloud-lapse', 'ios');
+assert.ok(lapseFixture);
+try {
+  Date.now = () => qaCloudTime + 100 * 86_400_000;
+  assert.deepEqual(qaCloudStatus('cloud-lapse', 'ios'), lapseFixture);
+  assert.match(cloudStatusNotices(lapseFixture, qaCloudTime)[0]?.body ?? '', /23 days left/);
+  assert.match(cloudStatusNotices(lapseFixture)[0]?.body ?? '', /0 days left/);
+} finally {
+  Date.now = originalNow;
+}
 console.log(
   'QA release gating, validated resets, persistence, isolated storage/startup recovery, and synthetic fixtures pass.',
 );

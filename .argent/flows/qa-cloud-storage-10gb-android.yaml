@@ -1,0 +1,97 @@
+steps:
+  - echo: Launch fixture app and reset cloud-10gb through QA UI. Synthetic data only.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 45000
+  - await:
+      idle: true
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-10gb
+  - await:
+      visible:
+        id: qa-reset-cloud-10gb
+  - tap:
+      id: qa-reset-cloud-10gb
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-10gb
+  - echo: Named baseline cloud-10gb reset. Open cloud storage plans.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        id: cloud-plans-screen
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: 420.0 MB of 10 GB used · Monthly
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        contains: $2.99 per month, current plan
+  - echo: Selecting active monthly tier yields Current plan rather than checkout.
+  - tap:
+      id: cloud-plan-cloud_10gb
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Current plan
+  - echo: Restore cloud-included fixture baseline through recorded UI; no normal data changes.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-screen
+  - await:
+      idle: true
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: qa-reset-cloud-included
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          id: qa-active
+        contains: cloud-included

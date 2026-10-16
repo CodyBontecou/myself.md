@@ -256,7 +256,7 @@ try {
   );
   assert.equal((await request('/api/migration/claim', alice, 'POST', { ticket })).status, 409);
   assert.equal((await request('/api/billing', agent, 'POST', { action: 'sync' })).status, 403);
-  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_1gb' };
+  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_10gb' };
   const unpaid = await token('unpaid', 'myselfmd-phone');
   assert.equal(
     (await request('/api/cloud/subscription', unpaid, 'POST', purchaseInput)).status,

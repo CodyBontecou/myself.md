@@ -64,6 +64,9 @@
     "zod": "^4.6.5"
   },
   "scripts": {
+    "website:audit": "node scripts/website-audit.js",
+    "website:audit:agent": "node scripts/website-audit-agent.js",
+    "verify:website-audit": "node scripts/verify-website-audit.js",
     "blog:setup": "node scripts/setup-blog.js",
     "blog:build": "node scripts/build-blog.js --required",
     "blog:install-deploy": "node scripts/install-blog-workflow.js",

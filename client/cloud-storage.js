@@ -19,6 +19,8 @@ export const cloudManageUrls = {
   android: 'https://play.google.com/store/account/subscriptions?package=com.myself.md',
 };
 const day = 86_400_000;
+/** Fixed synthetic time keeps recorded fixture deadlines repeatable without changing the device clock. */
+export const qaCloudTime = Date.parse('2026-10-16T12:00:00.000Z');
 
 /** Latest server status per signed-in account, shared by Settings and the plans screen. */
 let latest = /** @type {{key:string,value:CloudStatus|null}} */ ({ key: '', value: null });
@@ -45,6 +47,7 @@ export function subscribeCloudStatus(listener) {
 
 /** @param {number} bytes */
 function formatCloudBytes(bytes) {
+  if (bytes >= 1_000_000_000_000) return `${Number((bytes / 1_000_000_000_000).toFixed(1))} TB`;
   return bytes >= 1_000_000_000
     ? `${Number((bytes / 1_000_000_000).toFixed(1))} GB`
     : `${Number((bytes / 1_000_000).toFixed(1))} MB`;
@@ -115,7 +118,7 @@ export function cloudStatusNotices(value, now = Date.now()) {
 /** Synthetic cloud status for QA fixtures. No account, store or network state is read.
  * @param {import('./qa-fixtures.js').QaScenario} scenario @param {'ios'|'android'} store @param {number} [now]
  * @returns {CloudStatus|null} */
-export function qaCloudStatus(scenario, store, now = Date.now()) {
+export function qaCloudStatus(scenario, store, now = qaCloudTime) {
   const mb = 1_000_000;
   /** @param {import('../core/cloud-plans.js').CloudPlanId} plan @param {import('../core/cloud-plans.js').CloudPeriod} period @param {import('../core/cloud-allowance.js').SubscriptionStatus} status @param {number} expiresAt @param {boolean} autoRenew */
   const subscription = (plan, period, status, expiresAt, autoRenew) => ({
@@ -133,11 +136,11 @@ export function qaCloudStatus(scenario, store, now = Date.now()) {
       return cloudAllowance(lifetimeEntitlement(true), 0);
     case 'cloud-no-lifetime':
       return cloudAllowance(lifetimeEntitlement(false), 0);
-    case 'cloud-1gb':
+    case 'cloud-10gb':
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_1gb', 'monthly', 'active', now + 18 * day, true),
+          subscription: subscription('cloud_10gb', 'monthly', 'active', now + 18 * day, true),
           lapse: null,
         },
         420 * mb,
@@ -155,7 +158,7 @@ export function qaCloudStatus(scenario, store, now = Date.now()) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_1gb', 'monthly', 'billing_retry', now - 2 * day, true),
+          subscription: subscription('cloud_10gb', 'monthly', 'billing_retry', now - 2 * day, true),
           lapse: {
             startedAt: now - 2 * day,
             deleteAt: now + 28 * day,
@@ -168,7 +171,7 @@ export function qaCloudStatus(scenario, store, now = Date.now()) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_1gb', 'monthly', 'expired', now - 7 * day, false),
+          subscription: subscription('cloud_10gb', 'monthly', 'expired', now - 7 * day, false),
           lapse: {
             startedAt: now - 7 * day,
             deleteAt: now + 23 * day,
