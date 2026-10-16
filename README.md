@@ -1,5 +1,7 @@
 # myself.md
 
+Recurring [website SEO and analytics audits](docs/website-audits.md) send bounded public-site and read-only analytics evidence to Isobot, with daily technical checks and a weekly deeper review. Evidence-backed changes can produce draft PRs through Codex; nothing merges or deploys automatically. Search Console collection requires the documented owner-granted Restricted user access.
+
 The website's [blog](docs/blog.md) reads Markdown from the Obsidian vault through `content/blog`. Run `npm run blog:setup` once, then `npm run blog:build` after editing or pulling notes. Dashboard builds refresh a linked vault; deployments without the vault use the reviewed `server/blog-content.js` snapshot. `/blog`, posts, RSS, sitemap and Markdown/MCP reads share the same published content. External `content/blog/**` is excluded from formatting/linting because it contains third-party Obsidian plugins and prose; generated application JavaScript remains inside the existing checked `server/` scope.
 
 Restricted reviewer login: [setup and revocation](docs/reviewer-login.md). `npm run reviewer:prepare -- YYYY-MM-DD` generates a separate credential identity and fictional encrypted fixture batch under ignored `.local/reviewer-login`; it does not deploy, import or expose credentials. Public password signup stays disabled. `npm run verify:identity` covers the reviewer password/OAuth flow, account isolation and issued-token revocation in local workerd alongside existing social authentication.
@@ -301,6 +303,7 @@ npm run unused        # Knip only
 
 Sequential native pagination and page-size retries have narrow `no-await-in-loop` exceptions: each request needs the previous cursor or reduced page size.
 Scheduled export review also waits for a missing profile's failed-request checkpoint before reviewing the next request.
+The website audit runner likewise keeps narrow serial-await exceptions for durable status polling, dependent GitHub pagination and bounded local smoke requests. Its finding fingerprint sorts a newly mapped, locally owned ID array in place because the server checker's ES2022 library does not declare `toSorted`.
 
 The public YouTube iframe has a narrow `react/iframe-missing-sandbox` exception for combining `allow-scripts` and `allow-same-origin`: playback needs scripts and YouTube's own origin. The fixed cross-origin `youtube-nocookie.com` URL cannot access the host document; the remaining sandbox restrictions and CSP frame allowlist still apply.
 
