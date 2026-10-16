@@ -2,6 +2,8 @@
 
 Server: `https://myself.md/mcp`. Authentication: OAuth with automatic dynamic client registration, S256 PKCE and scope `myselfmd`. Claude's callback is `https://claude.ai/api/mcp/auth_callback`. No client ID or client secret needs to be entered manually.
 
+Current source scope (15 October): mobile contains Profiles/Settings only. Debug errors/metadata require the single Settings sharing toggle; no record, credential or URL attachments are captured. Feedback and debug-content tools and the legacy Discord support tools are removed. `get_phone_debug_logs`, `request_phone_debug_access`, `list_phone_logs` and Isobot `support_conversations` remain; support approvals open web dashboard Support. October 14 tool counts/ledger are historical deployment evidence, not a claim that this cut has been deployed or rescanned.
+
 The operator supplies the password only through private reviewer fields. Username: `reviewer`. Do not use Google, Apple or GitHub sign-in, and do not use an existing personal myself.md session.
 
 1. Use a fresh/private browser session. Open <https://myself.md/auth/realms/myselfmd/reviewer-login> and sign in with the supplied reviewer credentials before connecting Claude. The password form establishes the reviewer session; the dashboard may still ask you to start its own OAuth sign-in.
@@ -22,7 +24,7 @@ Suggested prompts:
 - “Read a shared fictional health JSON export in pages of 50. Report each page's record count and verify source reviewer-fixture and native.fictional true. Do not provide medical advice.”
 - “List connected phones and explain whether the fictional source is online. Do not claim a queued request is a completed capture.”
 
-The single source is labeled **Fictional reviewer source (offline; not a real phone)**. It cannot complete live phone capture, OS permission or Debug-only feedback flows. Do not represent those scenarios as tested successfully. A separate isolated phone installation and approved fictional data sources are needed for that coverage. Do not delete the persistent reviewer account or its exports, disconnect its fixture source, change sharing, or send support messages while running these cloud scenarios. Destructive and external-delivery tests need separate disposable targets and explicit instructions.
+The single source is labeled **Fictional reviewer source (offline; not a real phone)**. It cannot complete live phone capture or OS permissions. An isolated phone installation with approved fictional sources is required for those cases. Feedback/Gripe is removed, not an outstanding positive test. Do not delete the persistent reviewer account/exports, disconnect its source, change sharing or send support messages during these cloud scenarios. Destructive/external-delivery tests require disposable targets and explicit instructions.
 
 ## Private submission material
 

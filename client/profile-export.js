@@ -90,9 +90,7 @@ export async function exportProfileDay(
               profile,
               false,
             );
-            recordDebug(session, 'export', 'succeeded', {
-              records: { domain, type, profileId: profile.id, values: page.records },
-            });
+            recordDebug(session, 'export', 'succeeded');
           } catch (error) {
             recordDebug(session, 'export', 'failed', { error });
             if (!valid())

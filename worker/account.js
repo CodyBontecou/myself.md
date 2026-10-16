@@ -1,8 +1,6 @@
 import { createExportSchedules } from '../server/export-schedules.js';
 import { createRemoteSupport } from '../server/support-remote.js';
-import { SupportStore } from '../server/support-store.js';
-import { SupportDiscord } from '../server/support-discord.js';
-import { createSupportService } from '../server/support-service.js';
+import { deleteLegacySupport } from '../server/support-cleanup.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { accountDeletionNotice } from '../core/account-deletion.js';
@@ -67,21 +65,11 @@ export class Account extends DurableObject {
       objectStorage(this.env.EXPORTS),
       (subject) => this.billing.cloudEntitlement(subject),
     );
-    this.support = new SupportStore(this.db, this.cloud);
-    this.supportDiscord = new SupportDiscord({
-      SUPPORT_DISCORD_BOT_TOKEN: this.env.SUPPORT_DISCORD_BOT_TOKEN,
-      SUPPORT_DISCORD_CHANNEL_ID: this.env.SUPPORT_DISCORD_CHANNEL_ID,
-      SUPPORT_DISCORD_STAFF_IDS: this.env.SUPPORT_DISCORD_STAFF_IDS,
-    });
-    const supportService = createSupportService({
-      store: this.support,
-      discord: this.supportDiscord,
-      cloud: this.cloud,
-    });
     this.remoteSupport = createRemoteSupport(
       {
         SUPPORT_ISOBOT_ORIGIN: this.env.SUPPORT_ISOBOT_ORIGIN,
         SUPPORT_ISOBOT_TOKEN: this.env.SUPPORT_ISOBOT_TOKEN,
+        PUBLIC_URL: this.env.PUBLIC_URL,
       },
       (subject, agent) => {
         this.cloud.observeAgent(subject, agent);
@@ -165,15 +153,6 @@ export class Account extends DurableObject {
       (/** @type {import('../server/data-service.js').Proposal} */ proposal) => proposal,
     );
     this.data = createDataService({
-      feedbackOperations: new DurableMap(
-        this.db,
-        this.cloud,
-        'feedbackOperations',
-        (/** @type {import('../server/feedback-service.js').FeedbackOperation} */ operation) =>
-          operation,
-        (/** @type {import('../server/feedback-service.js').FeedbackOperation} */ operation) =>
-          operation,
-      ),
       jobs,
       proposals,
       billing: this.billing,
@@ -219,7 +198,6 @@ export class Account extends DurableObject {
         ...this.data,
         ...cloudService,
         ...dashboard,
-        ...supportService,
         ...this.remoteSupport,
         billing: this.billing,
         cloud: this.cloud,
@@ -371,9 +349,10 @@ export class Account extends DurableObject {
         await previous;
         await this.env.PURCHASES.getByName(digest(key)).forgetAccount(subject);
       }, Promise.resolve());
-      const supportThread = this.support.conversation(subject)?.thread;
-      if (typeof supportThread === 'string') await this.supportDiscord.deleteThread(supportThread);
-      this.support.deleteAccount(subject);
+      await deleteLegacySupport(this.db, subject, {
+        SUPPORT_DISCORD_BOT_TOKEN: this.env.SUPPORT_DISCORD_BOT_TOKEN,
+        SUPPORT_DISCORD_CHANNEL_ID: this.env.SUPPORT_DISCORD_CHANNEL_ID,
+      });
       await this.remoteSupport.deleteRemoteSupport(subject);
       this.db.prepare('DELETE FROM exports WHERE subject=?').run(subject);
       // Pending PUT candidates keep their one-hour uncertainty window. Completion waits for them.

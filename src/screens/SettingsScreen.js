@@ -1,12 +1,17 @@
 import CloudStorageUsage from '../../client/CloudStorageUsage.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
-import { Platform } from 'react-native';
-import { openFeedback, openFeedbackSettings } from '../../client/gripe.js';
+import { useCallback, useState } from 'react';
+import { Alert } from 'react-native';
 import { useBilling } from '../../client/BillingPaywalls';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { usePhone } from '../../client/PhoneProvider.js';
+import { usePhoneData } from '../../client/DataPanel.js';
+import { debugReport, debugSharing, setDebugSharing } from '../../client/debug-log.js';
+import { api } from '../../client/session.js';
+import { errorMessage } from '../../packages/support-chat/errors.js';
+import { showToast } from '../components/Toast.js';
 import AccountAvatar from '../components/AccountAvatar.js';
-import { Screen, Group, Row, Divider, SectionHeader } from '../components/ui';
+import { Screen, Group, Row, Divider, SectionHeader, Checkbox } from '../components/ui';
 import PrivacyLinks from '../components/PrivacyLinks';
 export default function SettingsScreen() {
   const billing = useBilling();
@@ -56,50 +61,12 @@ export default function SettingsScreen() {
           onPress={() => router.push('/pair')}
         />
       </Group>
-      <SectionHeader title="Privacy & support" />
+      <SectionHeader title="Privacy" />
       <Group>
-        <Row
-          testID="settings-diagnostics"
-          title="Log sharing"
-          subtitle="Review app events and share a debug report"
-          onPress={() => router.push('/diagnostics')}
-        />
-        <Divider />
-        <Row
-          testID="settings-support"
-          title="Contact support"
-          subtitle="Ask Isobot a question or report a problem"
-          onPress={() => router.push('/support')}
-        />
+        <LogSharingRow />
         <Divider />
         <PrivacyLinks />
       </Group>
-      {!qaEnabled && __DEV__ && Platform.OS === 'ios' && (
-        <>
-          <Row
-            testID="settings-gripe-settings"
-            title="Gripe settings"
-            subtitle="Floating companion and quick capture preferences"
-            onPress={() => void openFeedbackSettings()}
-          />
-          <Group>
-            <Row
-              testID="settings-feedback"
-              title="Report a bug"
-              subtitle="Capture a screenshot and send a report"
-              onPress={() => void openFeedback()}
-            />
-          </Group>
-        </>
-      )}
-      {!qaEnabled && Platform.OS === 'ios' && (
-        <Row
-          testID="settings-feedback-updates"
-          title="Bug report updates"
-          subtitle="Follow fixes and manage notifications"
-          onPress={() => router.push('/feedback')}
-        />
-      )}
     </Screen>
   );
 }
@@ -112,6 +79,62 @@ function SettingsAccountAvatar() {
       testID="settings-account-avatar"
       account={signedIn ? session?.account : undefined}
       onPress={() => router.push(signedIn ? '/account' : '/login')}
+    />
+  );
+}
+
+/** The phone-only consent behind agent debug-log reads. Agents cannot change it. */
+function LogSharingRow() {
+  const { session } = usePhoneData();
+  const [shared, setShared] = useState(() => debugSharing(session).shared);
+  const [busy, setBusy] = useState(false);
+  useFocusEffect(useCallback(() => setShared(debugSharing(session).shared), [session]));
+  /** @param {boolean} next */
+  async function change(next) {
+    setBusy(true);
+    try {
+      setDebugSharing(session, next);
+      setShared(next);
+      await api(session, `/api/phones/${session.deviceId}/diagnostics`, {
+        method: 'POST',
+        body: JSON.stringify(debugReport(session, true)),
+      });
+    } catch (failure) {
+      showToast({ message: errorMessage(failure), kind: 'error' });
+    } finally {
+      setBusy(false);
+      setShared(debugSharing(session).shared);
+    }
+  }
+  /** @param {boolean} next */
+  function confirm(next) {
+    if (!next) {
+      void change(false);
+      return;
+    }
+    Alert.alert(
+      'Share debug logs with agents?',
+      'Connected agents can read app error messages and event metadata to diagnose problems. Errors may contain sensitive information. Agents may retain copies after you turn sharing off.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Allow', onPress: () => void change(true) },
+      ],
+    );
+  }
+  return (
+    <Row
+      testID="settings-log-sharing"
+      title="Share debug logs with agents"
+      subtitle="Off by default. Lets your agent or support diagnose problems while the app is open."
+      trailing={
+        <Checkbox
+          testID="settings-log-sharing-toggle"
+          accessibilityLabel="Share debug logs with agents"
+          value={shared}
+          disabled={busy || qaEnabled || !session.server}
+          onValueChange={confirm}
+        />
+      }
     />
   );
 }

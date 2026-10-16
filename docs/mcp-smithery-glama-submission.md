@@ -2,6 +2,8 @@
 
 Updated October 14, 2026. Glama's public listing is ownership-verified and its authenticated test passed with 43 tools. Renewable reviewer authorization and a successful health check beyond the original token expiry are verified, with one transient renewal failure recorded below. Smithery's authenticated release scan succeeds with 43 tools and its quality score is now 86/100.
 
+Source scope caveat (15 October): these counts and scans are historical deployed-release evidence. Current source removes feedback/debug-content and legacy Discord tools while retaining error/metadata agent logs, Settings consent and Isobot `support_conversations` with web dashboard Support approvals. Mobile Support/Logs/history/diagnostics/Gripe is removed; dashboard and portable support-chat remain unchanged. No replacement live tool scan or deployment is claimed.
+
 ## Listing materials
 
 | Field             | Value                                                               |
