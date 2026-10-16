@@ -1,5 +1,9 @@
 # UI and MCP parity
 
+## Recurring website audits
+
+Recurring [website audits](website-audits.md) are repository-operator automation: GitHub Actions supplies cadence, Isobot analyzes bounded evidence in a dedicated durable conversation, and Codex may submit a guarded draft PR. Workflow dispatch/read/disable remain GitHub-authorized operator actions, not customer app controls. Google Search Console access requires the property owner's Restricted user grant; neither Pi nor the application MCP server can grant it. Mobile/dashboard data access, billing, owner approval and MCP authorization are unchanged.
+
 ## Website analytics and search ownership
 
 Cloudflare Web Analytics and Google Search Console are site-operator services, not mobile/dashboard account actions or private-data grants. Cloudflare configuration is inspectable through `cf rum site-info list`; Search Console ownership requires an authorized Google account and DNS verification. Existing public sitemap and privacy reads remain the agent discovery surfaces. No analytics administration or Google ownership credentials are exposed through the app MCP server. The shared privacy policy describes website measurement; no phone analytics SDK or new Google browser tracker is installed.
