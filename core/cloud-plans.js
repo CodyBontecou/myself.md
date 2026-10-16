@@ -1,29 +1,29 @@
 /** Paid hosted-storage tiers. Each tier replaces the included Lifetime allowance and requires Lifetime access. */
-/** @typedef {'cloud_1gb'|'cloud_10gb'} CloudPlanId */
+/** @typedef {'cloud_10gb'|'cloud_1tb'} CloudPlanId */
 /** @typedef {'monthly'|'yearly'} CloudPeriod */
 /** @typedef {{id:CloudPlanId,capacityBytes:number,label:string,usPrice:Record<CloudPeriod,string>,ios:Record<CloudPeriod,string>,android:{productId:string,basePlans:Record<CloudPeriod,string>}}} CloudPlan */
 
 /** Ordered from lowest to highest service level. @type {readonly CloudPlan[]} */
 export const cloudPlans = [
   {
-    id: 'cloud_1gb',
-    capacityBytes: 1_000_000_000,
-    label: '1 GB',
-    usPrice: { monthly: '$1.99', yearly: '$19.99' },
-    ios: { monthly: 'myself_md_cloud_1gb_monthly', yearly: 'myself_md_cloud_1gb_yearly' },
+    id: 'cloud_10gb',
+    capacityBytes: 10_000_000_000,
+    label: '10 GB',
+    usPrice: { monthly: '$2.99', yearly: '$29.99' },
+    ios: { monthly: 'myself_md_cloud_10gb_monthly', yearly: 'myself_md_cloud_10gb_yearly' },
     android: {
-      productId: 'myself_md_cloud_1gb',
+      productId: 'myself_md_cloud_10gb',
       basePlans: { monthly: 'monthly', yearly: 'yearly' },
     },
   },
   {
-    id: 'cloud_10gb',
-    capacityBytes: 10_000_000_000,
-    label: '10 GB',
-    usPrice: { monthly: '$4.99', yearly: '$49.99' },
-    ios: { monthly: 'myself_md_cloud_10gb_monthly', yearly: 'myself_md_cloud_10gb_yearly' },
+    id: 'cloud_1tb',
+    capacityBytes: 1_000_000_000_000,
+    label: '1 TB',
+    usPrice: { monthly: '$24.99', yearly: '$249.99' },
+    ios: { monthly: 'myself_md_cloud_1tb_monthly', yearly: 'myself_md_cloud_1tb_yearly' },
     android: {
-      productId: 'myself_md_cloud_10gb',
+      productId: 'myself_md_cloud_1tb',
       basePlans: { monthly: 'monthly', yearly: 'yearly' },
     },
   },

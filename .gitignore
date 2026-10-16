@@ -58,6 +58,18 @@ yarn-error.*
 !.argent/flows/qa-history.yaml
 !.argent/flows/qa-settings-navigation.yaml
 !.argent/flows/qa-fixture-states.yaml
+!.argent/flows/qa-cloud-included-catalog-ios.yaml
+!.argent/flows/qa-cloud-10gb-catalog-ios.yaml
+!.argent/flows/qa-cloud-grace-catalog-ios.yaml
+!.argent/flows/qa-cloud-billing-retry-catalog-ios.yaml
+!.argent/flows/qa-cloud-lapse-catalog-ios.yaml
+!.argent/flows/qa-cloud-no-lifetime-catalog-ios.yaml
+!.argent/flows/qa-cloud-storage-included-android.yaml
+!.argent/flows/qa-cloud-storage-10gb-android.yaml
+!.argent/flows/qa-cloud-storage-grace-android.yaml
+!.argent/flows/qa-cloud-storage-billing-retry-android.yaml
+!.argent/flows/qa-cloud-storage-lapse-android.yaml
+!.argent/flows/qa-cloud-storage-no-lifetime-android.yaml
 
 # generated native folders
 /ios

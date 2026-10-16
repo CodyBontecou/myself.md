@@ -1,0 +1,143 @@
+steps:
+  - echo: Dedicated iOS fixture baseline through UI; synthetic partition only, nothing charged.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-no-lifetime by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-no-lifetime
+  - echo: Reveal qa-reset-cloud-no-lifetime by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-no-lifetime
+  - echo: Activate qa-reset-cloud-no-lifetime; require resulting state.
+  - tap:
+      id: qa-reset-cloud-no-lifetime
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Activate qa-open-cloud-storage; require resulting state.
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        text: Choose a cloud storage plan
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: Lifetime access required
+        equals: Lifetime access required
+  - await:
+      text:
+        in:
+          text: 'Cloud storage plans build on Lifetime access:'
+        equals:
+          'Cloud storage plans build on Lifetime access: each plan replaces the 100 MB included with Lifetime.
+          Unlock Lifetime first, then choose a plan.'
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: "Subscribe to 10 GB \xB7 $2.99/month"
+  - echo: Activate cloud-plan-manage; require resulting state.
+  - tap:
+      id: cloud-plan-manage
+  - await:
+      text:
+        in:
+          text: Purchases require a normal build for integration QA. Nothing was charged.
+        equals: Purchases require a normal build for integration QA. Nothing was charged.
+  - await:
+      visible:
+        id: action-toast-dismiss
+  - echo: Activate action-toast-dismiss; require resulting state.
+  - tap:
+      id: action-toast-dismiss
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - echo: Activate cloud-plan-subscribe; require resulting state.
+  - tap:
+      id: cloud-plan-subscribe
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: "Subscribe to 10 GB \xB7 $2.99/month"
+  - echo: Reveal cloud-plans-lifetime by scrolling upward; open Lifetime unlock without purchase.
+  - scroll-to:
+      target:
+        id: cloud-plans-lifetime
+      direction: up
+  - echo: Activate cloud-plans-lifetime; require resulting state.
+  - tap:
+      id: cloud-plans-lifetime
+  - await:
+      visible:
+        text: Unlock myself.md forever
+  - await:
+      idle: true
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: cloud-plans-lifetime
+  - await:
+      idle: true
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

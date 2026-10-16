@@ -6,7 +6,7 @@ import { openPrivacyLink } from '../src/components/PrivacyLinks.js';
 import { Button, Copy, Group, Notice, Row, Screen, SectionHeader } from '../src/components/ui.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { showToast } from '../src/components/Toast.js';
-import { cloudUsageLabel } from '../core/cloud-allowance.js';
+import { cloudUsageLabel, lifetimeCloudBytes } from '../core/cloud-allowance.js';
 import { cloudPlan, cloudPlans } from '../core/cloud-plans.js';
 import { useBilling } from './BillingPaywalls.js';
 import { CloudStatusNotices, useCloudStatus } from './CloudStorageUsage.js';
@@ -76,7 +76,7 @@ export default function CloudStoragePlans() {
     };
   }, []);
 
-  const chosen = selected ?? (live?.plan === 'cloud_1gb' ? 'cloud_10gb' : 'cloud_1gb');
+  const chosen = selected ?? (live?.plan === 'cloud_10gb' ? 'cloud_1tb' : 'cloud_10gb');
   const plan = cloudPlan(chosen);
   const offer = offers.find((item) => item.plan === chosen && item.period === period) ?? null;
   const isCurrent = Boolean(live && live.plan === chosen && live.period === period);
@@ -126,7 +126,7 @@ export default function CloudStoragePlans() {
     void run('restore', async () => {
       const restored = await restoreCloudPlan();
       setMessage(
-        restored.plan === 'cloud_1gb' || restored.plan === 'cloud_10gb'
+        restored.plan === 'cloud_10gb' || restored.plan === 'cloud_1tb'
           ? `${cloudPlan(restored.plan)?.label} cloud storage restored to this account.`
           : 'Your store subscription is linked to this account, but it is not currently active.',
       );
@@ -277,9 +277,7 @@ export default function CloudStoragePlans() {
               {itemOffer ? `${itemOffer.displayPrice} / ${unit}` : 'Price unavailable'}
             </Copy>
             <Copy variant="caption" muted>
-              {item.id === 'cloud_1gb'
-                ? '10× the 100 MB included with Lifetime'
-                : '100× the 100 MB included with Lifetime'}
+              {`${item.capacityBytes / lifetimeCloudBytes}× the 100 MB included with Lifetime`}
             </Copy>
           </Pressable>
         );

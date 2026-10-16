@@ -1,0 +1,110 @@
+steps:
+  - echo: Dedicated iOS fixture baseline through UI; synthetic partition only, nothing charged.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-grace by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-grace
+  - echo: Reveal qa-reset-cloud-grace by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-grace
+  - echo: Activate qa-reset-cloud-grace; require resulting state.
+  - tap:
+      id: qa-reset-cloud-grace
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Activate qa-open-cloud-storage; require resulting state.
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        text: Choose a cloud storage plan
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: "Payment problem \xB7 storage continues for now"
+        equals: "Payment problem \xB7 storage continues for now"
+  - await:
+      text:
+        in:
+          text: App Store could not renew your 10 GB plan.
+        equals:
+          App Store could not renew your 10 GB plan. Your paid storage stays available during the store's billing
+          grace period. Update your payment method in Manage subscription to keep it.
+  - await:
+      text:
+        in:
+          text: 3200.0 MB of 10 GB used
+        equals: "3200.0 MB of 10 GB used \xB7 Yearly \xB7 payment problem, grace period"
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - echo: Activate cloud-plan-period-yearly; require resulting state.
+  - tap:
+      id: cloud-plan-period-yearly
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        equals: 10 GB cloud storage, $29.99 per year, current plan
+  - echo: Activate cloud-plan-cloud_10gb; require resulting state.
+  - tap:
+      id: cloud-plan-cloud_10gb
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: Current plan
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

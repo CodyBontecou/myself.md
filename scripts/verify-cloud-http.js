@@ -204,7 +204,7 @@ try {
   assert.equal(z.object({ unlocked: z.boolean() }).parse(migrated.value).unlocked, true);
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
   const unpaidToken = await token('unpaid', 'myselfmd-phone');
-  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_1gb' };
+  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_10gb' };
   assert.equal((await request('/api/cloud/purchase-account', null)).status, 401);
   assert.equal((await request('/api/cloud/purchase-account', chatToken)).status, 403);
   assert.equal(
@@ -801,7 +801,10 @@ try {
   assert.equal(dashboard.cloudStorage.limitBytes, 100_000_000);
   const usageBrowser = await chromium.launch({ headless: true });
   try {
-    const usagePage = await usageBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+    const usagePage = await usageBrowser.newPage({
+      viewport: { width: 1280, height: 900 },
+      timezoneId: 'America/Los_Angeles',
+    });
     await usagePage.addInitScript(() =>
       sessionStorage.setItem(
         'myselfmd-dashboard-login',
@@ -841,11 +844,33 @@ try {
     await usagePage.screenshot({ path: '/tmp/myself-cloud-dashboard.png' });
     await usagePage.route(`${origin}/api/dashboard`, async (route) => {
       const response = await route.fetch();
-      await route.fulfill({ json: { ...(await response.json()), accountProfile: null } });
+      await route.fulfill({
+        json: {
+          ...(await response.json()),
+          accountProfile: null,
+          cloudStorage: {
+            ...z.record(z.string(), z.unknown()).parse(phoneStorage),
+            usedBytes: 250_000_000,
+            availableBytes: 0,
+            overLimit: true,
+            retentionDays: 30,
+            lapse: {
+              startedAt: Date.parse('2029-12-03T00:30:00Z'),
+              deleteAt: Date.parse('2030-01-02T00:30:00Z'),
+              targetBytes: 100_000_000,
+              bytesToDelete: 150_000_000,
+            },
+          },
+        },
+      });
     });
     await usagePage.getByRole('button', { name: 'Refresh dashboard', exact: true }).click();
     await usagePage.getByRole('button', { name: /Your account.*Personal account/ }).waitFor();
     assert.equal(await usagePage.getByText('alice', { exact: true }).count(), 0);
+    const lapseWarning = await usagePage.getByRole('alert').textContent();
+    assert.match(lapseWarning ?? '', /Jan 2, 2030 \(UTC\)/);
+    assert.match(lapseWarning ?? '', /whole exports/);
+    assert.match(lapseWarning ?? '', /at least 150 MB/);
   } finally {
     await usageBrowser.close();
   }

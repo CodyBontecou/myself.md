@@ -1,0 +1,272 @@
+name: Website SEO and analytics audit
+
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Daily technical checks or weekly analytics review
+        type: choice
+        options: [daily, weekly]
+        default: daily
+        required: true
+      publish:
+        description: Permit one validated draft PR (never merge or deploy)
+        type: boolean
+        default: false
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: website-audit
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    outputs:
+      actionable: ${{ steps.prepare.outputs.actionable }}
+      publish: ${{ steps.mode.outputs.publish }}
+      base: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install trusted collector dependencies
+        run: npm ci
+      - name: Select audit mode and publication policy
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            mode=daily
+            [ "$(date -u +%u)" != 1 ] || mode=weekly
+            publish=true
+          else
+            mode="$REQUESTED_MODE"
+            publish="$REQUESTED_PUBLISH"
+          fi
+          case "$mode" in daily|weekly) ;; *) exit 1 ;; esac
+          case "$publish" in true|false) ;; *) exit 1 ;; esac
+          printf 'mode=%s\npublish=%s\n' "$mode" "$publish" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/website-audit"
+          chmod 700 "$RUNNER_TEMP/website-audit"
+          if [ "$publish" = false ]; then
+            printf '## Analysis-only run\nPublication is disabled. No implementation or PR-write job will run.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Obtain read-only Search Console access
+        id: google
+        if: steps.mode.outputs.mode == 'weekly' && vars.GSC_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GSC_SERVICE_ACCOUNT != ''
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GSC_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GSC_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/webmasters.readonly
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Collect bounded evidence without logging analytics
+        env:
+          AUDIT_MODE: ${{ steps.mode.outputs.mode }}
+          CF_ANALYTICS_API_TOKEN: ${{ secrets.CF_ANALYTICS_API_TOKEN }}
+          GSC_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          umask 077
+          node scripts/website-audit.js "$AUDIT_MODE" > "$RUNNER_TEMP/website-audit/collector.json"
+      - name: Analyze with durable Isobot request and bounded polling
+        env:
+          ISOBOT_PROMPT_API_TOKEN: ${{ secrets.ISOBOT_PROMPT_API_TOKEN }}
+        run: node scripts/website-audit-agent.js analyze "$RUNNER_TEMP/website-audit/collector.json" "$RUNNER_TEMP/website-audit/analysis"
+      - name: Deduplicate and prepare secret-free evidence
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/website-audit-agent.js prepare "$RUNNER_TEMP/website-audit/analysis"
+      - name: Save public-safe audit status only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-audit-status
+          path: ${{ runner.temp }}/website-audit/analysis/public-status.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save sanitized implementation evidence only
+        if: steps.prepare.outputs.actionable == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-audit-evidence
+          path: |
+            ${{ runner.temp }}/website-audit/analysis/implementation/plan.json
+            ${{ runner.temp }}/website-audit/analysis/implementation/prompt.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove raw temporary analytics and model output
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/website-audit"
+
+  implement:
+    needs: analyze
+    if: needs.analyze.outputs.actionable == 'true' && needs.analyze.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.capture.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze.outputs.base }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: website-audit-evidence
+          path: ${{ runner.temp }}/website-audit-evidence
+      - name: Install tooling and preserve trusted guard outside model workspace
+        run: |
+          npm ci
+          npm install --global @openai/codex
+          mkdir -p "$RUNNER_TEMP/audit-trusted/node_modules" "$RUNNER_TEMP/audit-codex-home"
+          cp scripts/website-audit-agent.js "$RUNNER_TEMP/audit-trusted/agent.mjs"
+          cp -R node_modules/zod "$RUNNER_TEMP/audit-trusted/node_modules/zod"
+      - name: Implement with Codex without analytics, Isobot, or GitHub credentials
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          env -i PATH="$PATH" HOME="$RUNNER_TEMP/audit-codex-home" CODEX_API_KEY="$CODEX_API_KEY" \
+            codex exec --sandbox workspace-write \
+            --output-last-message "$RUNNER_TEMP/audit-codex-home/result.txt" - \
+            < "$RUNNER_TEMP/website-audit-evidence/prompt.txt" \
+            > "$RUNNER_TEMP/audit-codex-home/output.log" 2>&1
+      - name: Refuse unexpected changes and capture candidate patch
+        id: capture
+        env:
+          AUDIT_BASE: ${{ needs.analyze.outputs.base }}
+        run: |
+          node "$RUNNER_TEMP/audit-trusted/agent.mjs" guard "$AUDIT_BASE"
+          git diff --no-ext-diff --no-textconv --binary "$AUDIT_BASE" -- > "$RUNNER_TEMP/candidate.patch"
+      - name: Record a no-op
+        if: steps.capture.outputs.changed != 'true'
+        run: printf '## No code change\nCodex made no in-scope change. No draft PR will be published.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Save allowlisted candidate patch
+        if: steps.capture.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-audit-candidate
+          path: ${{ runner.temp }}/candidate.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  validate:
+    needs: [analyze, implement]
+    if: needs.implement.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.capture.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze.outputs.base }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: website-audit-evidence
+          path: ${{ runner.temp }}/website-audit-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: website-audit-candidate
+          path: ${{ runner.temp }}/website-audit-candidate
+      - name: Install dependencies in a clean credential-free validation job
+        run: npm ci
+      - name: Apply candidate and enforce trusted file boundary
+        env:
+          AUDIT_BASE: ${{ needs.analyze.outputs.base }}
+        run: |
+          node scripts/website-audit-agent.js apply "$RUNNER_TEMP/website-audit-candidate/candidate.patch" "$AUDIT_BASE"
+      - name: Format, check, build dashboard, and smoke relevant public pages
+        run: node scripts/website-audit-agent.js validate "$RUNNER_TEMP/website-audit-evidence"
+      - name: Refuse any validation-induced out-of-scope changes
+        id: capture
+        env:
+          AUDIT_BASE: ${{ needs.analyze.outputs.base }}
+        run: |
+          node scripts/website-audit-agent.js guard "$AUDIT_BASE"
+          mkdir -p "$RUNNER_TEMP/website-audit-validated"
+          git diff --no-ext-diff --no-textconv --binary "$AUDIT_BASE" -- > "$RUNNER_TEMP/website-audit-validated/validated.patch"
+          cp "$RUNNER_TEMP/website-audit-evidence/validation.json" "$RUNNER_TEMP/website-audit-validated/validation.json"
+      - name: Save validated patch and runtime evidence only
+        if: steps.capture.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-audit-validated
+          path: |
+            ${{ runner.temp }}/website-audit-validated/validated.patch
+            ${{ runner.temp }}/website-audit-validated/validation.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [analyze, validate]
+    if: needs.analyze.outputs.publish == 'true' && needs.validate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.analyze.outputs.base }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: website-audit-evidence
+          path: ${{ runner.temp }}/website-audit-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: website-audit-validated
+          path: ${{ runner.temp }}/website-audit-validated
+      - name: Install trusted publication dependencies before applying patch
+        run: npm ci --ignore-scripts
+      - name: Apply validated patch and recheck allowlist
+        env:
+          AUDIT_BASE: ${{ needs.analyze.outputs.base }}
+        run: |
+          node scripts/website-audit-agent.js apply "$RUNNER_TEMP/website-audit-validated/validated.patch" "$AUDIT_BASE"
+          cp "$RUNNER_TEMP/website-audit-validated/validation.json" "$RUNNER_TEMP/website-audit-evidence/validation.json"
+      - name: Recheck recommendation markers and publish at most one draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUDIT_BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/website-audit-agent.js publish "$RUNNER_TEMP/website-audit-evidence"

@@ -18,6 +18,7 @@ Remaining: await Vercel's decision and address specific findings. Read-only moni
 
 ### Review monitoring
 
+- October 16, 2026, 14:57 UTC scheduled check: refreshed the official portal. Submission `7825870d-8dc0-428f-9287-de25a3b1387a` still shows **Service Submitted**, **OAuth Token Verified**, **DCR**, with the reminder that submission does not publish the service. No approval, rejection or actionable reviewer requests were displayed. No listing, credentials, grants or submission state were changed.
 - October 15, 2026, 22:27 UTC scheduled check: refreshed the official portal and confirmed the same submission ID with **Service Submitted**, **OAuth Token Verified**, **DCR**. No approval, rejection or actionable reviewer requests were displayed. A Connect catalog search for `myself.md` showed no matching listing; this does not establish a review decision. Returned to the existing submission receipt. No listing, credentials, grants or submission state were changed.
 - October 15, 2026, 18:25 Berlin (16:25 UTC scheduled check): refreshed the official portal. The same submission ID still shows **Service Submitted**, **OAuth Token Verified**, **DCR**. No approval, rejection or actionable reviewer requests were displayed. A Connect catalog search for `myself.md` returned only search-assist, request-service and submit-service options, with no matching listing shown; this does not establish a review decision. The portal receipt was left open. No listing, credentials, grants or submission state were changed.
 

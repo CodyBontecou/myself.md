@@ -33,7 +33,7 @@ function megabytes(value) {
 }
 /** @param {number} value */
 function date(value) {
-  return new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return `${new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' })} (UTC)`;
 }
 /** @param {CloudStorageStatus} storage */
 export function cloudPlanName(storage) {
@@ -65,7 +65,7 @@ export function lapseLabel(storage) {
   const { lapse } = storage;
   if (!lapse) return null;
   return lapse.bytesToDelete > 0
-    ? `Paid storage ended. On ${date(lapse.deleteAt)}, the oldest exports (${megabytes(lapse.bytesToDelete)}) will be deleted to bring usage to ${megabytes(lapse.targetBytes)}, unless you resubscribe or delete files first.`
+    ? `Paid storage ended. On ${date(lapse.deleteAt)}, the oldest whole exports will be deleted until usage is ${megabytes(lapse.targetBytes)} or less (at least ${megabytes(lapse.bytesToDelete)} removed), unless you resubscribe or delete enough files first.`
     : `Paid storage ended. Usage now fits in ${megabytes(lapse.targetBytes)}, so nothing will be deleted; the pending deletion clears automatically.`;
 }
 /** One-line description for summary tooltips.

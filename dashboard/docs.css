@@ -265,6 +265,9 @@
     display: block;
     padding: 32px 24px 56px;
   }
+  .docs-sidebar-toc {
+    display: none;
+  }
   .docs-sidebar {
     margin-bottom: 32px;
     border-bottom: 1px solid var(--border);

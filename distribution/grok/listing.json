@@ -1,0 +1,32 @@
+{
+  "preparationOnly": false,
+  "note": "Submitted October 16, 2026 to Grok Bot only with explicit disclosure of Grok web testing and no Grok Bot desktop test. Awaiting review; no approval or publication claimed.",
+  "submissionUrl": "https://x.ai/bot/marketplace/submit-a-plugin",
+  "firstName": "Cody",
+  "lastName": "Bontecou",
+  "workEmail": "cody@isolated.tech",
+  "organizationName": "Isotech",
+  "organizationHandle": "isotech",
+  "websiteUrl": "https://myself.md",
+  "logotypeUrl": "https://myself.md/dashboard/favicon.png",
+  "destinations": ["Grok Bot"],
+  "mcpServerUrl": "https://myself.md/mcp",
+  "description": "myself.md connects agents to owner-approved phone data and explicitly shared cloud exports. Discover connected phones and profiles, query selected health, screen-time and recorded-location data, and read shared exports. OAuth, device ownership, sharing grants and service allowances apply. Availability depends on device support, OS permissions and phone connectivity. Some features require paid myself.md entitlements. Documentation: https://myself.md/docs. Privacy: https://myself.md/privacy. Terms: https://myself.md/terms.",
+  "testingInstructions": "Tested locally/server-side and in Grok web with fictional reviewer data; Grok Bot desktop not tested. Connect https://myself.md/mcp via Streamable HTTP + OAuth (DCR/PKCE). Use Reviewer sign-in; request private credentials from cody@isolated.tech. Run get_account_profile, list_cloud_exports, then read_cloud_export with a listed ID. Verify pagination. Fixture phone is offline; queued queries are not completed captures.",
+  "inAppTestCompleted": false,
+  "publisherTermsAccepted": true,
+  "publisherTermsUrl": "https://cursor.com/marketplace-publisher-terms",
+  "publisherTermsAcceptanceAuthorized": true,
+  "submissionAuthorizedAfterTesting": true,
+  "grokWebTest": {
+    "status": "passed",
+    "fictionalReviewerGrantVerified": true,
+    "tools": ["get_account_profile", "list_cloud_exports", "read_cloud_export"],
+    "sharedExports": 8,
+    "pagination": "Two pages of one record; cursors 1 then 2",
+    "conversationUrl": "https://grok.com/c/226fe373-bf5f-4498-b398-e2aa99e1e089"
+  },
+  "grokBotTestBlocker": "Official Apple silicon DMG app fails macOS code-signature verification; desktop test not completed.",
+  "submissionStatus": "submitted-for-review",
+  "submissionReceipt": "Thanks for submitting your plugin! We'll review it and follow up by email."
+}

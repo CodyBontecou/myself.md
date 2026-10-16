@@ -478,8 +478,8 @@ try {
                 'android',
                 'deletion-cloud-fixture',
                 fixtureSubject,
-                'myself_md_cloud_1gb',
-                'cloud_1gb',
+                'myself_md_cloud_10gb',
+                'cloud_10gb',
                 'monthly',
                 'expired',
                 Date.now() - 90 * 86400000,
@@ -1143,7 +1143,15 @@ try {
     resource: `${origin}/mcp`,
   });
   assert.equal(retryRefresh.status, 200, await retryRefresh.clone().text());
-  assert.deepEqual(await retryRefresh.json(), await refresh.clone().json());
+  const refreshResult = z.object({ expires_in: z.number() }).loose();
+  const { expires_in: originalLifetime, ...originalTokens } = refreshResult.parse(
+    await refresh.clone().json(),
+  );
+  const { expires_in: retryLifetime, ...retryTokens } = refreshResult.parse(
+    await retryRefresh.json(),
+  );
+  assert.deepEqual(retryTokens, originalTokens);
+  assert.ok(retryLifetime > 0 && retryLifetime <= originalLifetime);
   let mcp = await authorize('myselfmd-mcp', true);
   const consentURL = new URL(mcp.response.headers.get('location') ?? '');
   assert.equal(consentURL.pathname, '/auth/realms/myselfmd/consent');

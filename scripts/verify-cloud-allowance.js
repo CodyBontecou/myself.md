@@ -262,8 +262,8 @@ function purchase(id, subject, changes = {}) {
   const value = {
     store: /** @type {const} */ ('android'),
     id,
-    product: 'myself_md_cloud_1gb',
-    plan: /** @type {const} */ ('cloud_1gb'),
+    product: 'myself_md_cloud_10gb',
+    plan: /** @type {const} */ ('cloud_10gb'),
     period: /** @type {const} */ ('monthly'),
     status: /** @type {const} */ ('active'),
     expiresAt: clock + 365 * 86400000,
@@ -297,7 +297,7 @@ try {
     lifecycle.subscribe('free', {
       store: 'android',
       proof: 'unpaid',
-      productId: 'myself_md_cloud_1gb',
+      productId: 'myself_md_cloud_10gb',
     }),
     (error) => error instanceof PairingError && error.status === 402,
   );
@@ -311,7 +311,7 @@ try {
   });
   assert.equal(
     status.limitBytes,
-    cloudPlan('cloud_1gb')?.capacityBytes,
+    cloudPlan('cloud_10gb')?.capacityBytes,
     'Tier replaces, rather than adds to, 100 MB',
   );
   const oldest = await archive('subscriber', '2026-10-01', 90_000_000, clock - 2000);
@@ -327,7 +327,7 @@ try {
   });
   assert.equal(
     (await lifecycle.status('subscriber')).plan,
-    'cloud_1gb',
+    'cloud_10gb',
     'Store grace preserves paid capacity',
   );
   values.set('first', { ...firstSubscription, status: 'billing_retry' });
@@ -462,15 +462,15 @@ try {
   );
   subscriptionsBilling.grant('downgrade', 'fixture', 'downgrade');
   const large = purchase('large', 'downgrade', {
-    plan: 'cloud_10gb',
-    product: 'myself_md_cloud_10gb',
+    plan: 'cloud_1tb',
+    product: 'myself_md_cloud_1tb',
   });
   await lifecycle.subscribe('downgrade', {
     store: 'android',
     proof: large.id,
     productId: large.product,
   });
-  const largeExport = await archive('downgrade', '2026-10-01', 5_000_000_000, clock);
+  const largeExport = await archive('downgrade', '2026-10-01', 50_000_000_000, clock);
   const small = purchase('small', 'downgrade', { linkedId: large.id });
   const downgraded = await lifecycle.subscribe('downgrade', {
     store: 'android',
@@ -479,7 +479,7 @@ try {
   });
   assert.equal(downgraded.overLimit, true);
   assert.equal(downgraded.lapse, null, 'Paid downgrade never starts destructive lapse');
-  assert.equal(subscriptionCloud.row('downgrade', largeExport).size, 5_000_000_000);
+  assert.equal(subscriptionCloud.row('downgrade', largeExport).size, 50_000_000_000);
   assert.equal((await subscriptionCloud.page('downgrade', largeExport, 0, 50)).records.length, 1);
   assert.throws(
     () =>
@@ -629,7 +629,7 @@ try {
   const concurrentPurchase = lifecycle.subscribe('racing', {
     store: 'android',
     proof: 'racing-subscription',
-    productId: 'myself_md_cloud_1gb',
+    productId: 'myself_md_cloud_10gb',
   });
   releaseDeletion();
   await refund;
@@ -638,16 +638,58 @@ try {
     (error) => error instanceof PairingError && error.status === 402,
   );
   subscriptionCloud.delete = normalDelete;
+  for (const plan of /** @type {const} */ (['cloud_10gb', 'cloud_1tb'])) {
+    const tier = cloudPlan(plan);
+    assert.ok(tier);
+    const subject = `bytes-${plan}`;
+    subscriptionsBilling.grant(subject, 'fixture', subject);
+    subscriptionsBilling.saveSubscription(
+      subject,
+      purchase(subject, subject, { plan, product: tier.android.productId }),
+      clock,
+    );
+    // Model a nearly full paid archive without allocating gigabytes or a terabyte.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each tier has its own sequential capacity boundary.
+    await archive(subject, '2026-10-01', tier.capacityBytes - bytes.length, clock);
+    const final = subscriptionCloud.begin(subject, 'device', profile.id, {
+      profile,
+      day: '2026-10-02',
+      format: 'jsonl',
+      manifest: { profileId: profile.id, recordCount: 1 },
+    });
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Commit the exact remaining capacity before asserting its limit.
+    await subscriptionCloud.commit(subject, 'device', profile.id, final.id, bytes);
+    assert.equal(subscriptionCloud.storageStatus(subject).usedBytes, tier.capacityBytes);
+    assert.equal(subscriptionCloud.storageStatus(subject).availableBytes, 0);
+    assert.throws(
+      () =>
+        subscriptionCloud.begin(subject, 'device', profile.id, {
+          profile,
+          day: '2026-10-03',
+          format: 'jsonl',
+          manifest: { profileId: profile.id, recordCount: 1 },
+        }),
+      /quota/,
+      `${tier.label} blocks new uploads at its decimal byte capacity`,
+    );
+  }
 
-  // Count staged and completed exports together without making the 10 GB plan unusable.
+  // Count staged and completed exports together across both paid capacities.
   for (const [subject, plan, count] of /** @type {const} */ ([
     ['count-included', null, 128],
-    ['count-1gb', 'cloud_1gb', 128],
     ['count-10gb', 'cloud_10gb', 1280],
+    ['count-1tb', 'cloud_1tb', 128000],
   ])) {
     subscriptionsBilling.grant(subject, 'fixture', subject);
-    if (plan)
-      subscriptionsBilling.saveSubscription(subject, purchase(subject, subject, { plan }), clock);
+    if (plan) {
+      const tier = cloudPlan(plan);
+      assert.ok(tier);
+      subscriptionsBilling.saveSubscription(
+        subject,
+        purchase(subject, subject, { plan, product: tier.android.productId }),
+        clock,
+      );
+    }
     subscriptionCloud.authorize(subject, 'device', profile);
     subscriptionCloud.setSharing(subject, 'device', profile.id, true);
     /** @param {number} index */
@@ -658,16 +700,48 @@ try {
         format: 'jsonl',
         manifest: { profileId: profile.id, recordCount: 1 },
       });
-    for (let index = 0; index < count; index++) {
+    for (let index = 0; index < Math.min(count, 130); index++) {
       const item = stage(index);
-      if (plan === 'cloud_10gb' && index < 129) {
+      if (plan && index < 129) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- Exercise sequential real commits without overlapping encrypted writes.
         await subscriptionCloud.commit(subject, 'device', profile.id, item.id, bytes);
       }
     }
-    assert.equal(subscriptionCloud.usage(subject).length, plan === 'cloud_10gb' ? 129 : 0);
+    if (count > 130) {
+      // Seed valid staged rows in one transaction; calling begin 128,000 times
+      // would repeatedly scan the growing table rather than test the boundary.
+      const template = subscriptionCloud.row(subject, stage(129).id);
+      const metadata = JSON.parse(
+        subscriptionCloud.open(template.metadata, `${subject}|${template.id}|metadata`).toString(),
+      );
+      const insert = subscriptionCloud.db.prepare(
+        'INSERT INTO exports(id,subject,device,profile,day,format,schema,created,metadata,size) VALUES (?,?,?,?,?,?,?,?,?,0)',
+      );
+      subscriptionCloud.db.exec('BEGIN');
+      for (let index = 130; index < count - 1; index++) {
+        const id = `${subject}-staged-${index}`;
+        const day = new Date(Date.UTC(2020, 0, 1 + index)).toISOString().slice(0, 10);
+        insert.run(
+          id,
+          subject,
+          template.device,
+          template.profile,
+          day,
+          template.format,
+          template.schema,
+          template.created,
+          subscriptionCloud.seal(
+            Buffer.from(JSON.stringify({ ...metadata, day })),
+            `${subject}|${id}|metadata`,
+          ),
+        );
+      }
+      subscriptionCloud.db.exec('COMMIT');
+      stage(count - 1);
+    }
+    assert.equal(subscriptionCloud.usage(subject).length, plan ? 129 : 0);
     assert.throws(() => stage(count), /quota/, `${subject} includes staged uploads in its cap`);
-    if (plan === 'cloud_10gb') {
+    if (plan) {
       assert.equal(
         subscriptionCloud.list(subject).length,
         129,
@@ -683,17 +757,19 @@ try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Finish this tier's replacement before asserting its persisted count and downgrade.
       await subscriptionCloud.commit(subject, 'device', profile.id, replacement.id, bytes);
       assert.equal(subscriptionCloud.list(subject).length, 129);
-      subscriptionsBilling.saveSubscription(
-        subject,
-        purchase(`${subject}-smaller`, subject, { linkedId: subject }),
-        clock,
-      );
-      assert.equal(
-        subscriptionCloud.list(subject).length,
-        129,
-        'Downgrade retains all existing files',
-      );
-      assert.throws(() => stage(count), /quota/, 'Reduced count cap blocks additional uploads');
+      if (plan === 'cloud_1tb') {
+        subscriptionsBilling.saveSubscription(
+          subject,
+          purchase(`${subject}-smaller`, subject, { linkedId: subject }),
+          clock,
+        );
+        assert.equal(
+          subscriptionCloud.list(subject).length,
+          129,
+          'Downgrade retains all existing files',
+        );
+        assert.throws(() => stage(count), /quota/, 'Reduced count cap blocks additional uploads');
+      }
     }
   }
   console.log(

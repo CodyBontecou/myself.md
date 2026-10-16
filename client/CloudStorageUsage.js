@@ -15,6 +15,7 @@ import {
   cloudStatusNotices,
   cloudStatusSnapshot,
   qaCloudStatus,
+  qaCloudTime,
   subscribeCloudStatus,
 } from './cloud-storage.js';
 
@@ -96,7 +97,7 @@ export default function CloudStorageUsage() {
 }
 /** @param {{value:import('../core/cloud-allowance.js').CloudAllowance|null,loading:boolean,error:string,signedIn:boolean,onRefresh:()=>void,onSignIn:()=>void}} props */
 export function CloudStorageUsageView({ value, loading, error, signedIn, onRefresh, onSignIn }) {
-  const paid = value?.plan === 'cloud_1gb' || value?.plan === 'cloud_10gb';
+  const paid = value?.plan === 'cloud_10gb' || value?.plan === 'cloud_1tb';
   return (
     <>
       <SectionHeader title="Cloud storage" />
@@ -125,7 +126,7 @@ export function CloudStorageUsageView({ value, loading, error, signedIn, onRefre
         </Copy>
       )}
       <Copy variant="caption" muted>
-        Lifetime includes 100 MB with no recurring charge; 1 GB and 10 GB plans are optional
+        Lifetime includes 100 MB with no recurring charge; 10 GB and 1 TB plans are optional
         subscriptions. Files stay until deletion or replacement, except after a paid-storage lapse
         or a refunded Lifetime purchase.
       </Copy>
@@ -162,7 +163,7 @@ export function CloudStatusNotices({ value }) {
   const { colors } = useTheme();
   return (
     <>
-      {cloudStatusNotices(value).map((notice) => {
+      {cloudStatusNotices(value, qaEnabled ? qaCloudTime : undefined).map((notice) => {
         const urgent = notice.id === 'lapse';
         return (
           <View
