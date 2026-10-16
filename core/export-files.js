@@ -1,6 +1,7 @@
 import { defaultExportSchema, parseExportSchema, serializeExportRecord } from './export-schemas.js';
 /** @typedef {'json'|'jsonl'} ExportFormat */
-/** @typedef {{schema:import('./export-schemas.js').ExportSchema,formats:ExportFormat[],lookbackDays:number,includeToday:boolean,folderName:string,filenameTemplate:string,formatFolders:boolean,destination:'local'|'http'|'cloud',httpUrl:string|null}} ExportSettings */
+/** @typedef {'replace'|'append'|'new_file'|'skip'} ExportWriteMode */
+/** @typedef {{writeMode?:ExportWriteMode,schema:import('./export-schemas.js').ExportSchema,formats:ExportFormat[],localFolderId?:string,lookbackDays:number,includeToday:boolean,folderName:string,filenameTemplate:string,formatFolders:boolean,destination:'local'|'http'|'cloud',httpUrl:string|null}} ExportSettings */
 /** @param {unknown} value @returns {ExportSettings} */
 export function parseExportSettings(value) {
   const s = /** @type {Record<string,unknown>} */ (value ?? {});
@@ -54,7 +55,17 @@ export function parseExportSettings(value) {
   )
     throw new Error('HTTP destinations require an HTTPS URL without credentials or fragments.');
   if (destination === 'http' && !httpUrl) throw new Error('Enter an HTTPS destination URL.');
+  if (
+    s.localFolderId !== undefined &&
+    (typeof s.localFolderId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(s.localFolderId))
+  )
+    throw new Error('Invalid local folder selection. Choose a folder on the phone.');
+  const writeMode = s.writeMode ?? 'replace';
+  if (!['replace', 'append', 'new_file', 'skip'].includes(String(writeMode)))
+    throw new Error('Choose replace, append, create a new file or skip.');
   return {
+    writeMode: /** @type {ExportWriteMode} */ (writeMode),
+    ...(typeof s.localFolderId === 'string' ? { localFolderId: s.localFolderId } : {}),
     schema: parseExportSchema(s.schema),
     destination: /** @type {ExportSettings['destination']} */ (destination),
     httpUrl: /** @type {string|null} */ (httpUrl),
@@ -104,4 +115,71 @@ export function fileFooter(format, manifest) {
       ? `],${JSON.stringify(metadata).slice(1)}`
       : ']}'
     : '';
+}
+
+/** Local file conflict choices shared by profile UI and validated export settings. */
+export const exportWriteModes = [
+  {
+    value: 'replace',
+    title: 'Replace matching file',
+    description: 'Replace the existing file with the latest export.',
+  },
+  {
+    value: 'append',
+    title: 'Append to matching file',
+    description: 'Add records to the existing file. Repeated exports may duplicate records.',
+  },
+  {
+    value: 'new_file',
+    title: 'Create a new file',
+    description: 'Keep existing files and add a numbered suffix to the new filename.',
+  },
+  {
+    value: 'skip',
+    title: 'Skip existing file',
+    description: 'Keep the existing file and export only missing files.',
+  },
+];
+/** Append structured exports without producing concatenated invalid JSON documents.
+ * @param {string} existing @param {string} incoming @param {'json'|'jsonl'|'manifest'} format */
+export function appendExportContent(existing, incoming, format) {
+  if (format === 'jsonl') {
+    for (const line of (existing + '\n' + incoming).split('\n')) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line);
+      if (!record || typeof record !== 'object' || Array.isArray(record))
+        throw new Error('Cannot append: the existing JSONL file contains invalid records.');
+    }
+    return existing + (existing && !existing.endsWith('\n') ? '\n' : '') + incoming;
+  }
+  const previous = JSON.parse(existing),
+    next = JSON.parse(incoming);
+  if (!previous || !next || previous.schema !== next.schema || typeof next.schema !== 'string')
+    throw new Error('Cannot append files with different export schemas.');
+  for (const document of [previous, next]) {
+    if (
+      (document.recordCount !== undefined &&
+        (!Number.isSafeInteger(document.recordCount) || document.recordCount < 0)) ||
+      (document.captures !== undefined && !Array.isArray(document.captures)) ||
+      (document.failures !== undefined && !Array.isArray(document.failures))
+    )
+      throw new Error('Cannot append: the existing export metadata is invalid.');
+  }
+  const merged = {
+    ...previous,
+    ...next,
+    recordCount:
+      (previous.recordCount ?? previous.records?.length ?? 0) +
+      (next.recordCount ?? next.records?.length ?? 0),
+    captures: [...(previous.captures ?? []), ...(next.captures ?? [])],
+    failures: [...(previous.failures ?? []), ...(next.failures ?? [])],
+    status: previous.status === 'partial' || next.status === 'partial' ? 'partial' : next.status,
+  };
+  if (format === 'json') {
+    if (!Array.isArray(previous.records) || !Array.isArray(next.records))
+      throw new Error('Cannot append: the existing JSON file has no records array.');
+    merged.records = [...previous.records, ...next.records];
+    merged.recordCount = merged.records.length;
+  }
+  return JSON.stringify(merged);
 }

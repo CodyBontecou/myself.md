@@ -81,7 +81,7 @@ export function profileAllows(profile, query) {
     profile.selection[query.domain].includes(`${query.source}:${query.type}`)
   );
 }
-/** Live access requires phone approval in addition to the profile selection.
+/** Live access requires individually approved permissions and the profile selection.
  * @param {ExportProfile|undefined} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
 export function agentProfileAllows(profile, query) {
   return (
@@ -135,8 +135,10 @@ export function saveProfileDraft(state, draft, id, editing = false) {
     ...parsed,
     id,
     name: uniqueProfileName(parsed.name, others),
-    agentAccess: editing && previous?.agentAccess === true,
-    agentPermissions: editing ? previous?.agentPermissions : undefined,
+    agentAccess: editing ? previous?.agentAccess === true : true,
+    agentPermissions: editing
+      ? previous?.agentPermissions
+      : { health: false, time: false, location: false, logs: false },
   };
   return parseProfileState({
     profiles: editing
@@ -156,11 +158,18 @@ export function parseProfileState(state) {
       if (typeof profile.id !== 'string' || !profile.id || ids.has(profile.id))
         throw new Error('Use unique profile IDs.');
       ids.add(profile.id);
+      // Legacy master denials become individual denials. agentAccess is now only a
+      // compatibility summary for older catalog readers, never a separate setting.
+      const savedPermissions = parseAgentPermissions(profile.agentPermissions);
+      const permissions =
+        profile.agentAccess !== true
+          ? { health: false, time: false, location: false, logs: false }
+          : savedPermissions;
       return {
         ...parseProfile(profile),
         id: profile.id,
-        agentAccess: profile.agentAccess === true,
-        agentPermissions: parseAgentPermissions(profile.agentPermissions),
+        agentAccess: Object.values(permissions).some(Boolean),
+        agentPermissions: permissions,
       };
     }),
   };

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { parseSchedule, dueOccurrences } from '../core/schedules.js';
+import { parseSchedule, dueOccurrences, scheduleIntervalMs } from '../core/schedules.js';
 import { scheduleCalendar } from './schedule-calendar.js';
 import { PairingError } from './errors.js';
 import { transaction } from './database.js';
@@ -87,7 +87,15 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         return {
           deviceId: String(row.device),
           timeZone: value.timeZone,
-          profiles: value.profiles,
+          profiles: /** @type {RegisteredProfile[]} */ (value.profiles).map((profile) =>
+            Object.assign({}, profile, {
+              timing: {
+                intervalMs: scheduleIntervalMs(profile.schedule),
+                background: 'best_effort',
+                reminders: scheduleIntervalMs(profile.schedule) ? 'disabled' : 'enabled',
+              },
+            }),
+          ),
           notificationStatus: value.status,
           lastError: value.lastError ?? null,
           updatedAt: value.updatedAt,
@@ -207,6 +215,8 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         const value = JSON.parse(String(row.value));
         if (!value.token) continue;
         for (const profile of /** @type {RegisteredProfile[]} */ (value.profiles)) {
+          // Frequent refreshes run on the phone; do not send a reminder every minute.
+          if (scheduleIntervalMs(profile.schedule)) continue;
           const due = dueOccurrences(
             profile.schedule,
             {
@@ -332,7 +342,7 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         {
           title: 'Read automatic export schedules',
           description:
-            'Read cloud-registered scheduled export notification delivery for owned phones. accepted-by-expo means Expo accepted a notification, not that it reached the phone or exported. Phone Export History verifies completion. Enable scheduling and notification permission on the phone.',
+            'Read cloud-registered scheduled export notification delivery for owned phones. accepted-by-expo means Expo accepted a notification, not that it reached the phone or exported. Phone Export History verifies completion. Enable scheduling on the phone. Minute/hour cadences refresh today while open, with OS-controlled background timing and no per-slot cloud reminders; timing metadata reports this policy. Calendar cadences use notification permission for reminders.',
           inputSchema: z.object({}),
           annotations: {
             title: 'Read automatic export schedules',

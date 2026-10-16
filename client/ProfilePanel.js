@@ -1,12 +1,12 @@
 import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
-import { deliveredFormats, parseExportSettings } from '../core/export-files.js';
+import { deliveredFormats, parseExportSettings, exportWriteModes } from '../core/export-files.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
-import { router, useNavigation } from 'expo-router';
+import { router, useNavigation, useFocusEffect } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Copy,
   Checkbox,
@@ -22,7 +22,9 @@ import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ProfileExports from './ProfileExports.js';
 import ProfileFeed from './ProfileFeed.js';
+import { exportFolderStatus } from './export-folder.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
+import { scheduleIntervalMs } from '../core/schedules.js';
 import { domains } from '../core/data.js';
 import { compatibleProfile } from '../core/profile-compatibility.js';
 import ProfileImportReview from './ProfileImportReview.js';
@@ -32,13 +34,12 @@ import {
   uniqueProfileName,
   parseAgentPermissions,
 } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,grants:import('./library.js').Grants,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
   types,
   permissions,
-  grants,
   onAuthorize,
   busy,
   isTracking,
@@ -48,8 +49,15 @@ export default function ProfilePanel({
   draft,
   onDismiss,
   profileId,
+  openAgentPermissions = false,
 }) {
   const { colors } = useTheme();
+  const [permissionsExpanded, setPermissionsExpanded] = useState(openAgentPermissions);
+  useFocusEffect(
+    useCallback(() => {
+      if (openAgentPermissions) setPermissionsExpanded(true);
+    }, [openAgentPermissions]),
+  );
   const showToast = useToast();
   const { start } = useProfileEditor();
   const actionRunning = useRef(false);
@@ -140,6 +148,7 @@ export default function ProfilePanel({
               />
             ) : (
               <ExportSettingsEditor
+                folderContext={session}
                 section={section}
                 field={field}
                 settings={editing.draft.export}
@@ -239,33 +248,6 @@ export default function ProfilePanel({
       setWorking(false);
     }
   }
-  /** @param {import('../core/profiles.js').ExportProfile} target @param {boolean} enabled */
-  function changeAgentAccess(target, enabled) {
-    if (disabled || actionRunning.current) return;
-    const save = () =>
-      void run(
-        () =>
-          onChange({
-            ...state,
-            profiles: state.profiles.map((p) =>
-              p.id === target.id ? { ...p, agentAccess: enabled } : p,
-            ),
-          }),
-        {
-          success: `${target.name} ${enabled ? 'unlocked for agents' : 'locked'}.`,
-          failure: `Could not ${enabled ? 'unlock' : 'lock'} ${target.name}.`,
-        },
-      );
-    if (!enabled) return save();
-    Alert.alert(
-      'Allow agent access?',
-      `Paired agents can use the enabled permissions in ${target.name} to read selected data and shared phone-wide app logs. Phone-wide grants, log-sharing consent and source permissions still apply.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Allow', onPress: save },
-      ],
-    );
-  }
   const content = (
     <View testID={profile ? 'profile-content' : 'profiles-list'} style={styles.container}>
       {profileId && !profile && (
@@ -273,14 +255,6 @@ export default function ProfilePanel({
       )}
       {profile && (
         <>
-          <Group compact>
-            <Row
-              compact
-              testID="profile-saved-profile"
-              title="Saved profile"
-              value={`${domains.reduce((n, d) => n + profile.selection[d].length, 0)}/${domains.reduce((n, d) => n + new Set([...types[d], ...profile.selection[d]]).size, 0)} · ${deliveredFormats(profile.export).join(' + ').toUpperCase()}`}
-            />
-          </Group>
           {exportFirst && (
             <ProfileExports
               key={profile.id}
@@ -290,105 +264,107 @@ export default function ProfilePanel({
             />
           )}
           <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
-          <SectionHeader compact title="Agent permissions" />
-          <Copy variant="caption" muted>
-            Choose what agents can read through this profile. Export selections stay unchanged.
-          </Copy>
           <Group compact>
-            <Row
-              compact
-              testID="profile-allow-agent-access"
-              title="Allow agent access"
-              trailing={
-                <Checkbox
-                  testID="profile-agent-access"
-                  accessibilityLabel={`Allow agent access for ${profile.name}`}
-                  value={profile.agentAccess === true}
-                  disabled={disabled}
-                  onValueChange={(enabled) => changeAgentAccess(profile, enabled)}
-                />
-              }
-            />
-            {
-              /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
-                'health',
-                'time',
-                'location',
-                'logs',
-              ]).map((key) => {
-                const label =
-                  key === 'health'
-                    ? 'Health'
-                    : key === 'time'
-                      ? 'Screen time'
-                      : key === 'location'
-                        ? 'Location'
-                        : 'App logs';
-                return (
-                  <Row
-                    compact
-                    key={key}
-                    title={label}
-                    subtitle={
-                      key === 'logs'
-                        ? 'Phone-wide app diagnostics; requires Share debug logs with agents in Settings.'
-                        : `${profile.selection[key].length} selected · ${grants[key] ? 'system: ' + (permissions[key] ?? 'checking') : 'phone access off'}`
-                    }
-                    trailing={
-                      <Checkbox
-                        testID={`profile-agent-permission-${key}`}
-                        accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
-                        value={parseAgentPermissions(profile.agentPermissions)[key]}
-                        disabled={disabled}
-                        onValueChange={(enabled) => {
-                          const save = () =>
-                            void run(() =>
-                              onChange({
-                                ...state,
-                                profiles: state.profiles.map((p) =>
-                                  p.id === profile.id
-                                    ? {
-                                        ...p,
-                                        agentPermissions: {
-                                          ...parseAgentPermissions(p.agentPermissions),
-                                          [key]: enabled,
-                                        },
-                                      }
-                                    : p,
-                                ),
-                              }),
-                            );
-                          if (!enabled) return save();
-                          Alert.alert(
-                            `Allow ${label} access?`,
-                            `Agents using ${profile.name} can read ${key === 'logs' ? 'shared phone-wide app logs' : 'selected ' + label + ' data'} when this profile is enabled and phone-wide access is allowed.`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              { text: 'Allow', onPress: save },
-                            ],
-                          );
-                        }}
-                      />
-                    }
-                  />
-                );
-              })
-            }
-            <Row
-              compact
-              testID="profile-agent-phone-permissions"
-              title="Phone-wide permissions"
-              subtitle="Review source grants and system access"
-              onPress={() => router.push('/settings/connections')}
-            />
-            <Row
-              compact
-              testID="profile-agent-log-settings"
-              title="Debug log sharing"
-              subtitle="Phone-wide consent in Settings"
-              onPress={() => router.navigate('/settings')}
-            />
+            <Pressable
+              testID="profile-agent-permissions-toggle"
+              accessibilityRole="button"
+              accessibilityLabel="Agent permissions"
+              accessibilityState={{ expanded: permissionsExpanded }}
+              onPress={() => setPermissionsExpanded((expanded) => !expanded)}
+              style={({ pressed }) => [styles.permissionsHeader, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Icon
+                name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
+                size={18}
+                color={colors.secondary}
+              />
+              <Copy>Agent permissions</Copy>
+              <Copy variant="caption" muted style={styles.permissionsSummary}>
+                {profile.agentAccess ? 'Enabled' : 'Private'}
+              </Copy>
+            </Pressable>
           </Group>
+          {permissionsExpanded && (
+            <View
+              testID="profile-agent-permissions-content"
+              collapsable={false}
+              style={styles.permissionsBody}
+            >
+              <Copy variant="caption" muted>
+                Choose what agents can read through this profile. Export selections stay unchanged.
+              </Copy>
+              <Group compact>
+                {
+                  /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
+                    'health',
+                    'time',
+                    'location',
+                    'logs',
+                  ]).map((key) => {
+                    const label =
+                      key === 'health'
+                        ? 'Health'
+                        : key === 'time'
+                          ? 'Screen time'
+                          : key === 'location'
+                            ? 'Location'
+                            : 'Logs';
+                    return (
+                      <Row
+                        compact
+                        key={key}
+                        title={label}
+                        subtitle={
+                          key === 'logs'
+                            ? 'Share app errors and diagnostic metadata through this profile.'
+                            : `${profile.selection[key].length} selected · system: ${permissions[key] ?? 'checking'}`
+                        }
+                        trailing={
+                          <Checkbox
+                            testID={`profile-agent-permission-${key}`}
+                            accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
+                            value={parseAgentPermissions(profile.agentPermissions)[key]}
+                            disabled={disabled}
+                            onValueChange={(enabled) => {
+                              const save = () =>
+                                void run(() =>
+                                  onChange({
+                                    ...state,
+                                    profiles: state.profiles.map((p) =>
+                                      p.id === profile.id
+                                        ? {
+                                            ...p,
+                                            agentAccess: true,
+                                            agentPermissions: {
+                                              ...parseAgentPermissions(p.agentPermissions),
+                                              [key]: enabled,
+                                            },
+                                          }
+                                        : p,
+                                    ),
+                                  }),
+                                );
+                              if (!enabled) return save();
+                              Alert.alert(
+                                `Allow ${label} access?`,
+                                key === 'logs'
+                                  ? `Agents using ${profile.name} can read phone-wide app errors and event metadata while the app is open. Errors may contain sensitive information. Agents may retain copies after you turn Logs off.`
+                                  : `Agents using ${profile.name} can read selected ${label} data when system permissions allow it.`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  { text: 'Allow', onPress: save },
+                                ],
+                              );
+                            }}
+                          />
+                        }
+                      />
+                    );
+                  })
+                }
+              </Group>
+            </View>
+          )}
           <SectionHeader compact title="Data selection" />
           <Group compact>
             <ProfileDataEditor
@@ -399,7 +375,6 @@ export default function ProfilePanel({
               isTracking={isTracking}
               onRecordingChange={onRecordingChange}
               onAuthorize={onAuthorize}
-              onOpenLocation={() => router.push('/data/location')}
               selection={profile.selection}
               onSelection={async (selection) => {
                 if (actionRunning.current)
@@ -438,7 +413,7 @@ export default function ProfilePanel({
                   ? 'HTTPS endpoint'
                   : 'Cloud service',
               profile.export.destination === 'local'
-                ? `Documents/${profile.export.folderName}`
+                ? ''
                 : profile.export.destination === 'http'
                   ? (profile.export.httpUrl ?? '')
                   : session.server || 'Connect an agent to use cloud exports',
@@ -453,11 +428,15 @@ export default function ProfilePanel({
               'output',
               'schema',
             )}
-            {setting(
-              'Formats',
-              deliveredFormats(profile.export).join(' + ').toUpperCase(),
-              'output',
-              'formats',
+            {profile.export.destination === 'cloud' ? (
+              <Row compact testID="export-format-cloud" title="Format" value="JSONL" />
+            ) : (
+              setting(
+                'Formats',
+                deliveredFormats(profile.export).join(' + ').toUpperCase(),
+                'output',
+                'formats',
+              )
             )}
             {setting(
               'Export window',
@@ -465,46 +444,54 @@ export default function ProfilePanel({
               'output',
               'window',
             )}
-            {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
-            {setting(
-              'Folders',
-              `${profile.export.folderName}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
-              'output',
-              'folders',
+            {profile.export.destination === 'local' && (
+              <>
+                {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+                {setting(
+                  'Folders',
+                  `${exportFolderStatus(session, profile).name}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
+                  'output',
+                  'folders',
+                )}
+                {setting(
+                  'When files exist',
+                  exportWriteModes.find(
+                    (mode) => mode.value === (profile.export.writeMode ?? 'replace'),
+                  )?.title ?? 'Replace matching file',
+                  'output',
+                  'writeMode',
+                )}
+              </>
             )}
-            <Row
-              compact
-              testID="profile-when-files-exist"
-              title="When files exist"
-              value="Replace matching daily files"
-            />
           </Group>
           <SectionHeader compact title="Schedule" />
           <Group compact>
             {setting(
               'Cadence',
               profile.schedule.frequency === 'custom'
-                ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
+                ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${scheduleIntervalMs(profile.schedule) ? '' : profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
                 : profile.schedule.frequency === 'weekly'
                   ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
                   : 'Daily',
               'schedule',
               'cadence',
             )}
-            {setting(
-              'Preferred time',
-              `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
-              'schedule',
-              'time',
-            )}
-            {setting(
-              'Today Refresh',
-              profile.schedule.todayRefresh
-                ? `Every ${profile.schedule.refreshHours} hours`
-                : 'Off',
-              'schedule',
-              'refresh',
-            )}
+            {!scheduleIntervalMs(profile.schedule) &&
+              setting(
+                'Preferred time',
+                `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
+                'schedule',
+                'time',
+              )}
+            {!scheduleIntervalMs(profile.schedule) &&
+              setting(
+                'Today Refresh',
+                profile.schedule.todayRefresh
+                  ? `Every ${profile.schedule.refreshHours} hours`
+                  : 'Off',
+                'schedule',
+                'refresh',
+              )}
           </Group>
           {!exportFirst && (
             <ProfileExports
@@ -514,15 +501,6 @@ export default function ProfilePanel({
               disabled={disabled}
             />
           )}
-          <SectionHeader compact title="Profile ID" />
-          <View
-            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Text selectable>{profile.id}</Text>
-            <Copy variant="caption" muted>
-              Use this ID to identify the profile in exports and agent requests.
-            </Copy>
-          </View>
           <SectionHeader compact title="Manage profile" />
           <Group compact>
             <Row
@@ -668,6 +646,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   container: { gap: 16 },
+  permissionsHeader: {
+    minHeight: 44,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  permissionsSummary: { marginLeft: 'auto' },
+  permissionsBody: { gap: 12 },
   feed: { flex: 1 },
   card: {
     gap: 8,

@@ -1,4 +1,4 @@
-/** @typedef {{frequency:'daily'|'weekly'|'custom',interval:number,unit:'day'|'week'|'month',anchorDate:string|null,hour:number,minute:number,weekday:number,todayRefresh:boolean,refreshHours:3|6|12}} ScheduleConfig */
+/** @typedef {{frequency:'daily'|'weekly'|'custom',interval:number,unit:'minute'|'hour'|'day'|'week'|'month',anchorDate:string|null,hour:number,minute:number,weekday:number,todayRefresh:boolean,refreshHours:3|6|12}} ScheduleConfig */
 /** @typedef {{enabled:boolean,enabledAt:string|null,lastCompleted:string|null,lastRefresh:string|null}} ScheduleProgress */
 /** @typedef {{day:(instant:string)=>string,instant:(day:string,hour:number,minute:number)=>string}} Calendar */
 /** @typedef {{kind:'completed-day'|'today-refresh',fireDate:string}} Occurrence */
@@ -11,7 +11,7 @@ export function parseSchedule(value) {
     anchorDate = s.anchorDate ?? null;
   if (
     !['daily', 'weekly', 'custom'].includes(String(frequency)) ||
-    !['day', 'week', 'month'].includes(String(unit)) ||
+    !['minute', 'hour', 'day', 'week', 'month'].includes(String(unit)) ||
     (anchorDate !== null && (typeof anchorDate !== 'string' || !validDay(anchorDate)))
   )
     throw new Error('Invalid calendar cadence or anchor date.');
@@ -36,6 +36,27 @@ export function parseSchedule(value) {
     weekday: integer('weekday', 1, 1, 7),
     todayRefresh: s.todayRefresh === true,
     refreshHours: /** @type {3|6|12} */ (refreshHours),
+  };
+}
+/** Elapsed-time cadences refresh today's file; calendar cadences export completed days.
+ * @param {ScheduleConfig} config */
+export function scheduleIntervalMs(config) {
+  if (config.frequency !== 'custom') return null;
+  return config.unit === 'minute'
+    ? config.interval * 60000
+    : config.unit === 'hour'
+      ? config.interval * 3600000
+      : null;
+}
+/** @param {ScheduleConfig} config @param {ScheduleProgress} progress @param {string} now */
+function intervalSlot(config, progress, now) {
+  const period = scheduleIntervalMs(config);
+  if (!period || !progress.enabledAt) return null;
+  const anchor = Date.parse(progress.enabledAt);
+  const count = Math.floor((Date.parse(now) - anchor) / period);
+  return {
+    previous: new Date(anchor + count * period).toISOString(),
+    next: new Date(anchor + (Math.max(0, count) + 1) * period).toISOString(),
   };
 }
 /** @param {string} day */
@@ -98,10 +119,16 @@ function candidates(s, progress, now, calendar) {
  * @param {ScheduleConfig} config @param {ScheduleProgress} progress @param {string} now @param {Calendar} calendar @returns {Occurrence[]} */
 export function dueOccurrences(config, progress, now, calendar) {
   if (!progress.enabled || !progress.enabledAt) return [];
-  const s = parseSchedule(config),
-    completed = candidates(s, progress, now, calendar)
-      .filter((d) => d <= now)
-      .reduce((latest, day) => (day > latest ? day : latest), '');
+  const s = parseSchedule(config);
+  const slot = intervalSlot(s, progress, now);
+  if (slot)
+    return slot.previous > progress.enabledAt &&
+      (!progress.lastRefresh || slot.previous > progress.lastRefresh)
+      ? [{ kind: 'today-refresh', fireDate: slot.previous }]
+      : [];
+  const completed = candidates(s, progress, now, calendar)
+    .filter((d) => d <= now)
+    .reduce((latest, day) => (day > latest ? day : latest), '');
   /** @type {Occurrence[]} */ const result = [];
   if (
     completed &&
@@ -127,8 +154,10 @@ export function dueOccurrences(config, progress, now, calendar) {
 /** @param {ScheduleConfig} config @param {ScheduleProgress} progress @param {string} now @param {Calendar} calendar */
 export function nextOccurrence(config, progress, now, calendar) {
   if (!progress.enabled) return null;
-  const s = parseSchedule(config),
-    dates = candidates(s, progress, now, calendar).filter((d) => d > now);
+  const s = parseSchedule(config);
+  const slot = intervalSlot(s, progress, now);
+  if (slot) return slot.next;
+  const dates = candidates(s, progress, now, calendar).filter((d) => d > now);
   if (s.todayRefresh)
     for (const day of [calendar.day(now), addDays(calendar.day(now), 1)])
       for (let hour = s.hour; hour < 24; hour += s.refreshHours) {

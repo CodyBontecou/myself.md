@@ -547,8 +547,53 @@ try {
     JSON.parse(pinnedText.text).shareLink.startsWith('https://myself.md/share/profile#payload='),
   );
 
+  const minuteProposal = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: parseProfile({
+        schema: 'myself.md.profile.v1',
+        name: 'Minute cadence',
+        selection: { health: [], time: [], location: [] },
+        schedule: { frequency: 'custom', unit: 'minute', interval: 1 },
+      }),
+    },
+  });
+  assert.equal(minuteProposal.isError, undefined);
+  const minuteText = Array.isArray(minuteProposal.content)
+    ? minuteProposal.content.find((item) => item.type === 'text')
+    : undefined;
+  assert.ok(minuteText?.type === 'text');
+  assert.equal(JSON.parse(minuteText.text).profile.schedule.unit, 'minute');
+  assert.equal(JSON.parse(minuteText.text).profile.schedule.interval, 1);
   assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
   assert.ok(tools.tools.some((t) => t.name === 'get_privacy_policy'));
+  const conflictProposal = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: {
+        schema: 'myself.md.profile.v1',
+        name: 'Append fixture',
+        selection: { health: ['native:sleep'], time: [], location: [] },
+        export: {
+          schema: 'myself.md.export.v1',
+          formats: ['jsonl'],
+          lookbackDays: 7,
+          includeToday: false,
+          folderName: 'Exports',
+          filenameTemplate: '{date}',
+          formatFolders: false,
+          writeMode: 'append',
+        },
+      },
+    },
+  });
+  assert.equal(conflictProposal.isError, undefined, JSON.stringify(conflictProposal));
+  assert.equal(
+    z
+      .object({ profile: z.object({ export: z.object({ writeMode: z.literal('append') }) }) })
+      .parse(conflictProposal.structuredContent).profile.export.writeMode,
+    'append',
+  );
   const policyResult = await client.callTool({ name: 'get_privacy_policy', arguments: {} });
   assert.equal(policyResult.isError, undefined);
   assert.deepEqual(policyResult.structuredContent, privacyPolicy);
@@ -1017,7 +1062,7 @@ try {
             ? ['native:applications', 'native:websites']
             : ['native:points'],
       permission: domain === 'health' ? 'system-managed' : 'required',
-      permissionHandoff: `myselfmd://data/${domain}`,
+      permissionHandoff: 'myselfmd://profiles',
       availableTypes: domain === 'health' ? ['native:sleep'] : [],
       types: domain === 'health' ? ['native:sleep'] : [],
       notes: [],
@@ -1196,7 +1241,7 @@ try {
   );
   assert.equal(
     discovered.catalog.domains.find((domain) => domain.domain === 'location')?.permissionHandoff,
-    'myselfmd://data/location',
+    'myselfmd://profiles',
   );
   assert.deepEqual(
     discovered.catalog.domains.find((domain) => domain.domain === 'time')?.types,
@@ -1215,7 +1260,20 @@ try {
   });
   assert.equal(deniedUsage.isError, true, 'Discovery of selectable types never grants read access');
   // Agents choose independently among approved profiles; selection in another profile never grants access.
-  const secondary = { ...profile, id: 'secondary', name: 'Secondary', agentAccess: true };
+  const folderDiscovery = {
+    status: 'selected',
+    name: 'Fixture exports',
+    requiresUser: true,
+    deepLink: 'myselfmd://profiles/secondary',
+    instructions: 'Choose a folder on the phone and Save.',
+  };
+  const secondary = {
+    ...profile,
+    id: 'secondary',
+    name: 'Secondary',
+    agentAccess: true,
+    localExportFolder: folderDiscovery,
+  };
   const privateProfile = { ...profile, id: 'private', name: 'Private', agentAccess: false };
   const excluded = {
     ...profile,
@@ -1246,6 +1304,64 @@ try {
       },
     });
   await pollPhone(multiCatalog);
+  const folderCatalog = await client.callTool({
+    name: 'get_phone_data_catalog',
+    arguments: { deviceId },
+  });
+  const folderProfiles = z
+    .object({
+      catalog: z.object({
+        profiles: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            localExportFolder: z
+              .object({
+                status: z.string(),
+                name: z.string(),
+                requiresUser: z.boolean(),
+                deepLink: z.string(),
+                instructions: z.string(),
+              })
+              .optional(),
+          }),
+        ),
+      }),
+    })
+    .parse(folderCatalog.structuredContent).catalog.profiles;
+  assert.deepEqual(
+    folderProfiles.find((p) => p.id === 'secondary')?.localExportFolder,
+    folderDiscovery,
+    'MCP exposes owner folder selection and native grant handoff',
+  );
+  assert.equal(
+    folderProfiles.find((p) => p.name === secondary.name)?.id,
+    secondary.id,
+    'Agents can resolve a displayed profile name to its stable ID',
+  );
+  const renamedCatalog = {
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.map((p) =>
+      p.id === secondary.id || p.id === privateProfile.id ? { ...p, name: 'Renamed fitness' } : p,
+    ),
+  };
+  await pollPhone(renamedCatalog);
+  const renamedDiscovery = await client.callTool({
+    name: 'get_phone_data_catalog',
+    arguments: { deviceId },
+  });
+  const renamedProfiles = z
+    .object({
+      catalog: z.object({ profiles: z.array(z.object({ id: z.string(), name: z.string() })) }),
+    })
+    .parse(renamedDiscovery.structuredContent).catalog.profiles;
+  assert.deepEqual(
+    new Set(renamedProfiles.filter((p) => p.name === 'Renamed fitness').map((p) => p.id)),
+    new Set([secondary.id, privateProfile.id]),
+    'Renames preserve stable IDs and duplicate names remain separate candidates',
+  );
+  assert.ok(!renamedProfiles.some((p) => p.id === secondary.id && p.name === secondary.name));
+  await pollPhone(multiCatalog);
   for (const deniedResponse of await Promise.all(
     ['private', 'excluded', 'missing'].map(queryProfile),
   ))
@@ -1263,7 +1379,7 @@ try {
     .parse(handoff.structuredContent);
   assert.equal(approval.status, 'awaiting_user');
   assert.equal(approval.agentAccess, false);
-  assert.equal(approval.handoff.deepLink, 'myselfmd://profiles/private');
+  assert.equal(approval.handoff.deepLink, 'myselfmd://profiles/private?section=agent-permissions');
   assert.equal(
     (await queryProfile('private')).isError,
     true,

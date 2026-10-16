@@ -10,12 +10,10 @@ export default function LocationSettings({ data }) {
   const {
     session,
     busy,
-    grants,
     isTracking,
     locationInfo,
     message,
     run,
-    changeGrant,
     changeRecording,
     setMessage,
     publish,
@@ -34,22 +32,6 @@ export default function LocationSettings({ data }) {
               value={isTracking}
               disabled={busy}
               onValueChange={(enabled) => void run(() => changeRecording(enabled))}
-            />
-          }
-        />
-        <Divider />
-        <Row
-          title="Agent access"
-          subtitle={
-            grants.location ? 'Shared with your paired agent' : 'Only you can read these points'
-          }
-          trailing={
-            <Checkbox
-              testID="source-grant-location"
-              accessibilityLabel="Allow chat to read location data"
-              value={grants.location}
-              disabled={busy || !session.server}
-              onValueChange={(enabled) => void run(() => changeGrant('location', enabled))}
             />
           }
         />

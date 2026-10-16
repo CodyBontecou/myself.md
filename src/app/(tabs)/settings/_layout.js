@@ -5,7 +5,6 @@ export default function SettingsLayout() {
   return (
     <AppStack>
       <Stack.Screen name="index" options={{ title: 'Settings' }} />
-      <Stack.Screen name="connections" options={{ title: 'Connections' }} />
     </AppStack>
   );
 }

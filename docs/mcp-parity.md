@@ -1,5 +1,95 @@
 # UI and MCP parity
 
+## Removed saved-profile summary row (16 October 2026)
+
+The profile detail screen no longer displays the redundant Saved profile selection-count/format row (`profile-saved-profile`). Data selection and Output retain those details. Profile persistence, MCP catalog discovery, permissions and dashboard behavior are unchanged.
+
+## Export copy cleanup (16 October 2026)
+
+The profile Exports section hides the default No exports yet message and removes the background-timing note. Active progress, completion and error messages remain visible. Scheduling behavior, MCP state/history and dashboard capabilities are unchanged.
+
+## Export row alignment (16 October 2026)
+
+Export checkboxes align their visible control to the row’s right inset while retaining their 44-point touch target. The share-day input has a consistent minimum control width and centered digits. These are layout-only changes; scheduling, sharing, editable values, MCP operations and dashboard behavior are unchanged.
+
+## Local export file-conflict policy (16 October 2026)
+
+Profile Output → When files exist offers Replace matching file (default for older profiles), Append to matching file, Create a new file (numbered suffix), and Skip existing file. `export.writeMode` is validated by the shared profile parser and accepted by `create_phone_export_profile`/profile import; owner review and Save apply the same settings used by manual and scheduled local exports. Catalog profiles expose the saved export settings to standard MCP clients; ChatGPT discovery includes the saved `export.writeMode` without exposing destination URLs. Owner proposals use the shared profile contract and grants. Remote HTTPS/cloud delivery ignores this local setting. JSON append combines records into a single valid document; JSONL appends records and combines the sidecar counts/captures/failures. Append intentionally does not deduplicate records and is bounded to 32 MB; malformed or incompatible existing data fails before replacement. Numbered JSONL exports use matching numbered manifests. Skip preserves existing files. Existing OS folder grants and authorization checks are unchanged; native sharing remains an owner system-sheet handoff. Health-md’s Markdown-only Update has no separate meaning for this app’s JSON/JSONL exports. Dashboard behavior is unchanged.
+
+## Removed export Files count row (16 October 2026)
+
+The profile Exports section no longer displays the redundant Files count row (`export-files`). Individual exported-file sharing controls and empty/export status remain unchanged. This presentation change adds no action or authorization; existing export state/history discovery and system-sharing handoffs retain their MCP coverage. Dashboard behavior is unchanged.
+
+## Profile names in UI and agent discovery (16 October 2026)
+
+The saved-profile UI hides the internal Profile ID section. Stable IDs remain unchanged through renames and continue to identify schedules, grants, history, credentials and agent actions. `get_phone_data_catalog` already returns profile names alongside IDs, including the ChatGPT surface; its tool description and profile-ID parameter guidance now explicitly instruct agents to resolve user names using a fresh catalog, ask for clarification for duplicate names, and avoid guessing missing IDs. Offline catalogs disclose freshness limits. No new permission or action is granted; normal profile authorization remains required after lookup. Dashboard and export metadata retain their existing identifiers. HTTP/MCP fixtures verify name-to-ID discovery, renamed names with unchanged IDs and duplicate-name candidates.
+
+## Direct selected-folder exports (16 October 2026)
+
+Local exports with an owner-selected folder now copy daily files and manifests directly into that folder. They do not add the legacy Exports, device or profile subfolders. Explicit separate-format folders remain optional. Default app storage retains its existing layout, and existing files are not moved. UI summaries and MCP `localExportFolder.name` show the actual root; the shared native grant, owner/device checks, bookmark restoration, replacement and failure behavior remain unchanged. The same export pipeline serves manual and scheduled actions. Dashboard delivery is unchanged.
+
+## Single local folder control (16 October 2026)
+
+Output → Folders uses one Folder picker displaying the complete parent/subfolder location. The separate Export subfolder text field is removed. Existing subfolder values and device/profile organization are preserved, including portable profile settings; no files are relocated. The existing owner-only native picker handoff and `localExportFolder` discovery remain available to agents with updated navigation instructions. Dashboard behavior is unchanged.
+
+## Removed Location details row (16 October 2026)
+
+Profiles no longer show the Location details navigation row. Expanded Location retains recorded-location selection, background recording and OS permission review with their existing MCP coverage. Single-point capture and recording diagnostics retain the existing MCP operations and location route; the profile navigation shortcut is removed. Dashboard capabilities and authorization are unchanged.
+
+## Destination-specific output controls (16 October 2026)
+
+Destination selects the delivery target and, for HTTPS, the endpoint. Output shows local folder selection, subfolders, filenames and replacement behavior only for On this phone. HTTPS exposes formats, schema and export window; Cloud shows its fixed JSONL format plus schema and export window. Switching destinations preserves hidden local configuration. Local folder access uses Output → Folders → Folder and the existing system-picker handoff; catalog instructions reflect that location. The shared export settings, MCP operations, validation, grants and dashboard coverage are unchanged.
+
+## Simplified profile Location controls (16 October 2026)
+
+Expanded Location shows Recorded locations (the existing native:points export selection), followed by the phone-wide recording toggle, a Location access row with a readable status, and Location details for single-point capture and recording settings. Redundant Select all and the boxed Access/setup panel are removed for Location. Permission review uses the same `onAuthorize('location')` action and stable `selection-permissions-location` selector; selection, recording, OS prompts and agent grants retain their existing shared logic and MCP coverage. Successful Location permission review updates the status instead of leaving synthetic/native diagnostic prose in the selection list. Location details preserves the existing platform handoff. Health and Screen time controls are unchanged.
+
+## Location recording placement (16 October 2026)
+
+The profile Data selection recording toggle is shown only inside expanded Location and is labeled Record location in background. Its phone-wide scope subtitle, stable `selection-location-recording` selector, OS handoffs, shared recording action and existing MCP location-recording operations are unchanged. Expanding or collapsing Location changes presentation only and never starts or stops collection. Dashboard capabilities are unchanged.
+
+## Minute and hour export cadence (16 October 2026)
+
+Custom intervals now accept 1–365 minutes or hours as well as days/weeks/months. Elapsed intervals start at automatic-export opt-in and refresh the current local day's file; they use the existing lastRefresh checkpoint, coalesce missed slots and retain one active export with existing billing, retry and owner-approval rules. Daily/weekly/monthly completed-day semantics and Today Refresh remain unchanged. Minute/hour UI hides calendar time/anchor/Today Refresh controls and explains foreground and OS-controlled background timing. Cloud reminders skip elapsed intervals to avoid per-minute notifications; the phone's foreground loop and existing OS worker perform the work.
+
+MCP profile generation/import discovery accepts the same minute/hour units through the shared `parseSchedule` contract. Existing schedule state/owner review/enable handoffs and export history expose saved cadence, progress, results and failures. Agents cannot opt in without owner review. Android background work has a 15-minute minimum, and iOS chooses when background execution runs; one-minute precision is supported while the app is open, not promised while closed. Native background scheduling configuration is unchanged. Dashboard cloud delivery/retention is unchanged.
+
+## Beta distribution and profile-handoff compatibility (16 October 2026)
+
+iOS 1.0.0 build 8 is valid in TestFlight and approved/in beta testing for the existing Demo Beta audience; Android version code 8 is a completed Google Play internal-testing release. Both standard local-runner artifacts include the cloud tier catalog and profile consent migration, without the removed master control. Packaged-source/signing checks and store API read-backs prove the submitted artifacts and distribution state, not handset installation or real purchases. Existing testers/public-link settings and other store tracks/reviews were preserved. See [beta release evidence](beta-release.md#cloud-storage-and-profile-permission-distribution--16-october-2026).
+
+Worker `ec6a430c-71e5-41ab-90d4-860c27e0b2fb` deployed the matching profile permission-handoff schema, debug-review destinations and policy at 100% traffic before mobile availability. UI and MCP continue through the shared source/profile authorization; agents cannot grant access. Static, cloud HTTP/MCP, debug-log, workerd and identity checks passed, along with live public/access-boundary checks and preserved bindings/secrets. No real phone pairing, OS permission grant, cloud entitlement purchase, refund or deletion was performed by distribution. TestFlight sandbox receipts remain rejected by the production backend; existing reviewer access includes only its granted storage.
+
+## Owner-selected local export folders (16 October 2026)
+
+Validation: the real iOS system picker granted a normal-build isolated test folder; synthetic content was verified outside app Documents before and after a full app restart, using the persisted bookmark without a second picker. Fixture cleanup and QA restoration completed. SQLite tests cover provider writes/replacements, cancellation, owner/device isolation, revoked-folder failure and bookmark restoration. HTTP/MCP discovery, account cleanup, all-platform bundles and iOS Debug compilation passed. Android native UI was not exercised.
+
+Profile Output → Folders → Folder opens the native folder picker. Selection stays in the draft until profile Save. Use app folder restores the default. Local daily exports and automatic jobs copy completed staged JSON/JSONL and manifests into the selected folder under the existing folder/device/profile/optional-format structure. A failed or revoked folder never silently falls back; the export fails and its history provides the error. Existing files are not moved when changing folders. iOS security-scoped bookmarks restore access across launches; Android uses the system picker’s persisted URI permission. Folder grants/bookmarks stay partitioned by account/device in SQLite and are cleared during account deletion; files copied outside the app remain owner-managed.
+
+`get_phone_data_catalog` profiles include `localExportFolder` with selection status, display name, owner-only native-picker handoff and verification instructions. Raw folder URLs/bookmarks are excluded. A selected status records the saved choice, not proof that a provider remains online; export completion/history verifies the write. The opaque `export.localFolderId` never authorizes a foreign account/device; unknown handles require re-selection. The native picker is an OS grant handoff and cannot be completed by an agent. Dashboard cloud destinations remain unchanged.
+
+## Individual permissions replace the master switch (16 October 2026)
+
+Agent permissions contains only Health, Screen time, Location and Logs. Enabling each requires owner confirmation and directly authorizes that category. Old master-off profiles migrate to all permissions off, preserving source selections and exports. New profiles default every permission off. `agentAccess` remains a derived compatibility summary (any permission enabled) in persisted state/catalogs; current UI has no independent master setting. Legacy catalogs with a false master remain denied. Shared `parseProfileState` normalizes phone saves; source reads use the corresponding permission and explicit selections, while Logs follows its per-profile consent.
+
+`request_phone_profile_permissions` reviews exact individual values. The legacy `request_phone_profile_agent_access` remains an owner handoff: enabled means review and enable needed individual permissions; disabled means turn all individual permissions off. It cannot mutate consent. Both return the expanded profile permissions link; current catalogs verify the outcome. Debug access asks only for Logs. Dashboard app-log reads retain the same profile/ownership/freshness boundary.
+
+## Profile Agent permissions accordion and debug sharing (16 October 2026)
+
+Each saved profile has a collapsed-by-default Agent permissions accordion with Health/Screen time/Location/Logs controls. Logs is one per-profile consent, with an on-phone confirmation explaining sensitive app errors and retained copies. The former phone-wide sharing row is removed. Existing phone-wide denials become explicit Logs denials on every profile before presentation; new profiles default Logs off. Saving owner permissions derives the report transport gate from profiles with Logs permission. Turning one profile off preserves other approved profiles; disabling the last stops publication. Collapsing the section never changes consent.
+
+`request_phone_debug_access` and diagnostic reads return `myselfmd://profiles/<id>?section=agent-permissions`, or Profiles without a saved profile. The handoff expands the section but cannot grant access. `get_phone_data_catalog` exposes per-profile permissions; debug reads and dashboard app-log queries retain account/device ownership, profile authorization, consent-report revision and freshness checks. UI saves publish the updated catalog and report through existing phone-only endpoints. Agents cannot grant consent. Export history retains its existing authorization.
+
+## Profile-owned source access (16 October 2026)
+
+Validation: native-source fixtures cover device-partition isolation, persisted legacy-denial migration, independent profile permissions and owner exports; real HTTP/MCP fixtures cover catalog profile handoffs, query authorization, retries, revocation and cross-account denial. iOS fixture UI verified the profile controls and Settings pairing handoff; the updated Settings flow passed twice with a disclosed idle warning. Real OS consent and device data remain platform handoffs, not claimed integration success.
+
+Mobile no longer has a Connections configuration screen or phone-wide Health, Screen time and Location sharing switches. Each saved profile owns independent source permissions and selected native types. OS permission review stays within the profile data section; location recording and single-point capture are reached from that profile's Location section and remain phone-wide collection actions. Pairing/disconnect remain in Settings → Agent connection. Logs describe the app and are approved independently within each profile.
+
+Existing saved profiles migrate once by intersecting their per-profile source permissions with the old device-partition grants. A legacy denial stays denied; migration does not request OS access, change exports, enable recording or approve an agent. Later profile permission changes are independent, including after restart. New/portable profiles remain locked until owner approval.
+
+`get_phone_data_catalog` exposes each profile's agentAccess, agentPermissions and selections. Domain enabled/types are derived from approved profiles and readable native types, with OS permission state and a `myselfmd://profiles` handoff. `request_phone_profile_agent_access` and `request_phone_profile_data_permissions` return the specific profile owner-review link without changing consent. UI and MCP queries share `agentProfileAllows`; changed profiles invalidate in-flight results and the next heartbeat revokes queued/retained server reads. Existing location MCP operations and their OS handoffs are unchanged; agents cannot approve prompts or enable their own grants. Dashboard stored-export controls are unchanged. Old Connections and non-location source URLs redirect to Profiles.
+
 ## Bridge-first scope (15 October 2026)
 
 The merge into main retains scheduled-export and cloud-storage notification taps through `PhoneNotifications`. Export taps validate the current device and use `openScheduledExport`; cloud notices open the owner-only cloud-storage screen. Existing MCP schedule operations and `get_cloud_storage` remain the corresponding agent entry points; removed Support/feedback notifications do not open mobile routes.
@@ -32,9 +122,11 @@ Validation on 15 October 2026: the dashboard build and local desktop/mobile brow
 
 ## Cloud storage subscriptions
 
-Lifetime is required for all cloud storage, including the 100 MB allowance with no recurring charge. The 10 GB ($2.99/month, $29.99/year US) and 1 TB ($24.99/month, $249.99/year US) tiers replace, rather than add to, the included 100 MB. Phone, dashboard, public pricing and MCP plan discovery share the source catalog. Checkout uses store-localized prices; new products and price changes need separate store configuration before release. A paid downgrade blocks new bytes above the smaller limit but preserves download/delete and never starts destructive retention while a paid plan remains active.
+Lifetime is required for all cloud storage, including the 100 MB allowance with no recurring charge. The 10 GB ($2.99/month, $29.99/year US) and 1 TB ($24.99/month, $249.99/year US) tiers replace, rather than add to, the included 100 MB. Phone, dashboard, public pricing and MCP plan discovery share the catalog; checkout uses store-localized prices. Both store catalogs were configured and the backend/website deployed on 16 October 2026; Apple approval and updated phone distribution remain separate. A paid downgrade blocks new bytes above the smaller limit but preserves download/delete and never starts destructive retention while a paid plan remains active.
 
 HTTP, dashboard and MCP lists expose every completed export, including after a downgrade. Upload admission shares a staged/stored count cap of `max(128, ceil(limitBytes / 1_000_000_000) * 128)` (128 included; 1,280 at 10 GB; 128,000 at 1 TB), with only the completed daily replacement discounted, bounding temporary overlap to one extra row. The 16 MiB file limit and account byte limit still apply.
+
+Release verification on 16 October 2026: Worker `2af1aa7f-1896-4d26-80f1-0f2794eb5ea1` serves the new catalog at 100% traffic. Live public pricing and the authenticated fictional-reviewer dashboard exposed the correct capacities/prices; a separately consented isolated reviewer agent read the same catalog through `get_cloud_storage`. Agent and dashboard credentials were denied phone-only management. Static, cloud HTTP/MCP, workerd and identity fixtures passed; current iOS QA captures supplied Apple's four complete review assets. No real purchase, entitlement upgrade, refund/deletion, phone binary/OTA publication or production store checkout was exercised. The pre-existing Google RTDN end-to-end verification/owner-console prerequisites remain unverified; catalog activation does not prove notification delivery.
 
 Phone-owner `GET /api/cloud/status`, dashboard `workspace.cloudStorage` and MCP `get_cloud_storage` expose the same plan, subscription/store state, byte usage, lapse deadline/bytes at risk, available plans, safe notice-delivery diagnostics and owner handoff. `GET /api/cloud/purchase-account` provides the account-bound UUID; `POST /api/cloud/subscription` verifies purchase/restore and returns that status (402 without verified Lifetime). Only the phone OAuth client may initiate these operations. One subscription chain, including every verifiable Google linked token, belongs to one account; deletion retains ownership tombstones.
 
@@ -369,7 +461,7 @@ The mobile picker’s iOS Screen Time guidance states the OS version and EU elig
 
 The mobile profile picker exposes Screen Time applications (and websites on iOS) and location points before permission is granted. Selecting these types requests OS access through the same source-access service used by source permission review. Denial leaves the choice visible with a retry action. Selecting location does not start background recording or change agent grants; the picker offers an explicit save-and-open recording setup, which uses the existing recording and single-point capture services. Onboarding's source exploration remains optional.
 
-`get_phone_data_catalog` now includes `selectableTypes`, `permission` and `permissionHandoff` per domain; `availableTypes` and active-profile `types` retain permission-gated read semantics. `create_phone_export_profile` can propose selectable types for trusted phone review without granting access. The handoff URI opens the existing source screen where the user approves the OS prompt; agents observe the next authenticated catalog heartbeat and existing freshness fields. iOS Screen Time can remain limited or unavailable even after authorization because of OS, entitlement and eligibility restrictions. Health read permission remains system-managed and is not inferred from empty results. Dashboard behavior is unchanged.
+`get_phone_data_catalog` now includes `selectableTypes`, `permission` and `permissionHandoff` per domain; `availableTypes` and active-profile `types` retain permission-gated read semantics. `create_phone_export_profile` can propose selectable types for trusted phone review without granting access. The handoff URI opens Profiles, where the user chooses a profile and reviews its OS permissions; agents observe the next authenticated catalog heartbeat and existing freshness fields. iOS Screen Time can remain limited or unavailable even after authorization because of OS, entitlement and eligibility restrictions. Health read permission remains system-managed and is not inferred from empty results. Dashboard behavior is unchanged.
 
 These OS steps are user handoffs, not completed remote permission changes. Recording dispatch and existing-profile mutation gaps in the inventory remain. `npm run verify:native-sources` exercises the actual catalog and shared access service with authorized, pending, unavailable, limited, cancelled and Settings-handoff fixtures. The real HTTP/MCP regression verifies the authenticated catalog retains the new discovery/handoff fields while an ungranted Screen Time query is rejected. `npm run check` passes.
 
@@ -401,7 +493,7 @@ Physical iPhone QA reproduced the startup crash (`RCTFatalException: Invalid his
 
 ## Profile choice and approval
 
-Live queries now choose any saved profile with `agentAccess: true`; Active/Make active are removed. Phone and server use the same `agentProfileAllows` rule, intersected with domain grants and readable native types. Catalog `domains[].types` is the union across approved profiles; agents must intersect it with the chosen profile selection. Query acceptance, heartbeat revocation and result publication validate that specific profile. Disabling/deleting/editing a profile removes affected queued and retained responses on the next heartbeat; local edits invalidate in-flight phone responses.
+Live queries now choose any saved profile with `agentAccess: true`; Active/Make active are removed. Phone and server use the same `agentProfileAllows` rule, intersected with readable native types; legacy phone-wide source denials migrate into each profile. Catalog `domains[].types` is the union across approved profiles; agents must intersect it with the chosen profile selection. Query acceptance, heartbeat revocation and result publication validate that specific profile. Disabling/deleting/editing a profile removes affected queued and retained responses on the next heartbeat; local edits invalidate in-flight phone responses.
 
 Approval is a device-local setting. Migration preserves approval only for the legacy active profile; new/imported/duplicated profiles start private, and portable links strip approval. Editing a saved profile preserves its approval. Mobile enabling requires explicit Allow confirmation; MCP initiates that trusted user step with `request_phone_profile_agent_access` and reports awaiting_user until a fresh owned-phone catalog observes the desired state. Retries are read-only and safe; no phone work is queued by this handoff.
 

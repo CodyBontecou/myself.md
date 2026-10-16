@@ -13,6 +13,20 @@ class Directory {
     this.uri = parts.map((p) => (typeof p === 'string' ? p : p.uri)).join('/');
   }
   create() {}
+  get exists() {
+    return true;
+  }
+  list() {
+    return [...files.keys()]
+      .filter((uri) => uri.slice(0, uri.lastIndexOf('/')) === this.uri)
+      .map((uri) => new File(this, uri.slice(uri.lastIndexOf('/') + 1)));
+  }
+  /** @param {string} name */
+  createFile(name) {
+    const file = new File(this, name);
+    file.create();
+    return file;
+  }
 }
 class File {
   /** @param {Directory} folder @param {string} name */
@@ -38,6 +52,14 @@ class File {
     this.uri = target.uri;
     this.name = target.name;
   }
+  async text() {
+    return files.get(this.uri) ?? '';
+  }
+  /** @param {File} target */
+  async copy(target) {
+    if (failWrite) throw new Error('Disk full');
+    files.set(target.uri, files.get(this.uri) ?? '');
+  }
   get size() {
     return files.has(this.uri) ? files.get(this.uri)?.length : null;
   }
@@ -59,6 +81,7 @@ let failDetail = false;
 const delivered = [];
 const mocks = {
   recordDebug: () => {},
+
   Directory,
   File,
   Paths: { document: 'documents', cache: 'cache' },
@@ -95,10 +118,42 @@ const mocks = {
     delivered.push(format);
   },
 };
+const folderModule = new SourceTextModule(
+  await readFile(new URL('../client/export-folder.js', import.meta.url), 'utf8'),
+);
+await folderModule.link((specifier) => {
+  const values =
+    specifier === '../core/export-files.js'
+      ? exportFiles
+      : specifier === 'expo-file-system'
+        ? mocks
+        : specifier === './phone-database.js'
+          ? {
+              phoneDatabase: () => ({
+                execSync: () => {},
+                getFirstSync: () => ({
+                  id: 'fixture',
+                  name: 'Chosen folder',
+                  uri: 'content://chosen',
+                  bookmark: null,
+                }),
+              }),
+            }
+          : specifier === './qa-runtime.js'
+            ? { qaEnabled: false }
+            : specifier === 'expo'
+              ? { requireOptionalNativeModule: () => null }
+              : { Platform: { OS: 'android' } };
+  return new SyntheticModule(Object.keys(values), function () {
+    for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+  });
+});
+await folderModule.evaluate();
 const exporter = new SourceTextModule(
   await readFile(new URL('../client/profile-export.js', import.meta.url), 'utf8'),
 );
 await exporter.link((specifier) => {
+  if (specifier === './export-folder.js') return folderModule;
   const values =
     specifier === '../packages/support-chat/errors.js'
       ? errors
@@ -242,8 +297,92 @@ const retainedDetail = JSON.parse(
 );
 assert.equal(retainedDetail.status, 'partial');
 assert.equal(retainedDetail.records.length, 1);
+// Re-export through the real local commit path for each conflict policy.
+const exportAgain = (/** @type {import('../core/export-files.js').ExportWriteMode} */ writeMode) =>
+  exportProfileDay(
+    session,
+    { ...profile, export: { ...profile.export, writeMode } },
+    interval,
+    () => true,
+    () => {},
+  );
+const jsonPath = 'documents/Exports/phone/default/2026-10-07.v1.json';
+const jsonlPath = 'documents/Exports/phone/default/2026-10-07.v1.jsonl';
+failDetail = false;
+await exportAgain('replace');
+const beforeAppend = files.get(jsonPath);
+await exportAgain('append');
+assert.equal(JSON.parse(files.get(jsonPath) ?? '{}').records.length, 6);
+assert.equal(JSON.parse(files.get(jsonPath) ?? '{}').recordCount, 6);
+assert.equal((files.get(jsonlPath) ?? '').trim().split('\n').length, 6);
+assert.equal(JSON.parse(files.get(`${jsonlPath}.manifest.json`) ?? '{}').recordCount, 6);
+const beforeSkip = new Map(files);
+const skipped = await exportAgain('skip');
+assert.deepEqual(files, beforeSkip, 'Skip preserves every existing destination byte');
+assert.deepEqual(skipped.files, []);
+await exportAgain('new_file');
+await exportAgain('new_file');
+assert.deepEqual(
+  JSON.parse(files.get('documents/Exports/phone/default/2026-10-07.v1 (1).json') ?? '{}').records,
+  JSON.parse(beforeAppend ?? '{}').records,
+);
+assert.deepEqual(
+  JSON.parse(files.get('documents/Exports/phone/default/2026-10-07.v1 (2).json') ?? '{}').records,
+  JSON.parse(beforeAppend ?? '{}').records,
+);
+assert.ok(files.has('documents/Exports/phone/default/2026-10-07.v1 (1).jsonl.manifest.json'));
+files.set(jsonPath, 'invalid JSON');
+await assert.rejects(exportAgain('append'));
+assert.equal(files.get(jsonPath), 'invalid JSON', 'Malformed append input never replaces the file');
+await exportAgain('replace');
 failDetail = false;
 failMove = false;
+// The same policies apply at an owner-selected provider root.
+const exportToFolder = (
+  /** @type {import('../core/export-files.js').ExportWriteMode} */ writeMode,
+) =>
+  exportProfileDay(
+    session,
+    { ...profile, export: { ...profile.export, localFolderId: 'fixture', writeMode } },
+    interval,
+    () => true,
+    () => {},
+  );
+await exportToFolder('replace');
+await exportToFolder('append');
+assert.equal(
+  JSON.parse(files.get('content://chosen/2026-10-07.v1.json') ?? '{}').records.length,
+  6,
+);
+assert.equal(
+  JSON.parse(files.get('content://chosen/2026-10-07.v1.jsonl.manifest.json') ?? '{}').recordCount,
+  6,
+);
+const selectedBeforeSkip = new Map(files);
+await exportToFolder('skip');
+assert.deepEqual(files, selectedBeforeSkip);
+await exportToFolder('new_file');
+assert.ok(files.has('content://chosen/2026-10-07.v1 (1).json'));
+assert.ok(files.has('content://chosen/2026-10-07.v1 (1).jsonl.manifest.json'));
+// An orphaned sidecar must not add nonexistent old records to a newly created data file.
+files.delete('content://chosen/2026-10-07.v1.jsonl');
+await exportToFolder('append');
+assert.equal(
+  JSON.parse(files.get('content://chosen/2026-10-07.v1.jsonl.manifest.json') ?? '{}').recordCount,
+  3,
+);
+const preservedJsonl = files.get('content://chosen/2026-10-07.v1.jsonl');
+files.set(
+  'content://chosen/2026-10-07.v1.jsonl.manifest.json',
+  '{"schema":"myself.md.export.v1","recordCount":"invalid"}',
+);
+await assert.rejects(exportToFolder('append'));
+assert.equal(
+  files.get('content://chosen/2026-10-07.v1.jsonl'),
+  preservedJsonl,
+  'Invalid sidecar fails before appending data',
+);
+
 // Cloud keeps one JSONL file per day; HTTP receives every selected format.
 for (const [destination, expected] of /** @type {const} */ ([
   ['cloud', ['jsonl']],

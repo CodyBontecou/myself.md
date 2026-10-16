@@ -63,8 +63,8 @@ export function registerDebugTools(mcp, subject, own, phones) {
 
         description:
           name === 'get_phone_debug_logs'
-            ? 'Read the phone’s consented debug report: event times, operations, outcomes, request duration, HTTP status and raw error messages. Requires an enabled profile with App logs permission (profileId selects one; otherwise any approved profile), the owner-enabled Share logs with agents switch in Settings, and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Record, credential and URL attachments are never included. Raw errors may contain sensitive information or secrets. Does not consume export allowance. Copies sent to another service cannot be recalled.'
-            : 'Ask the user to open Settings on the paired phone and enable Share logs with agents. Cannot enable consent remotely. An enabled profile with App logs permission is also required. Inspect get_phone_debug_logs after phone approval to verify access.',
+            ? 'Read the phone’s consented debug report: event times, operations, outcomes, request duration, HTTP status and raw error messages. Requires owner-approved Logs access in a profile (profileId selects one; otherwise any approved profile), a published consented report, and a heartbeat within 15 seconds. Up to 300 events from seven days, newest first. Record, credential and URL attachments are never included. Raw errors may contain sensitive information or secrets. Does not consume export allowance. Copies sent to another service cannot be recalled.'
+            : 'Ask the user to open Agent permissions in a profile on the paired phone and enable Logs. Cannot enable consent remotely. Inspect get_phone_debug_logs after phone approval to verify access.',
         inputSchema: z
           .object({
             deviceId: z
@@ -83,7 +83,7 @@ export function registerDebugTools(mcp, subject, own, phones) {
               .max(100)
               .optional()
               .describe(
-                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+                'Existing profile ID returned by get_phone_data_catalog; query access requires the relevant individual permission.',
               ),
           })
           .strict(),
@@ -120,6 +120,7 @@ export function phoneDebugState(deviceId, phone, filter = 'all', profileId) {
   const profiles = phone?.catalog.profiles.filter((p) => !profileId || p.id === profileId) ?? [];
   const profileAllowed = profiles.some(agentLogsAllowed);
   const allowed = online && report?.shared === true && profileAllowed;
+  const handoffProfile = profiles.find(agentLogsAllowed) ?? profiles[0];
   return {
     deviceId,
     online,
@@ -136,10 +137,12 @@ export function phoneDebugState(deviceId, phone, filter = 'all', profileId) {
           }
         : null,
     handoff: {
-      deepLink: 'myselfmd://settings',
+      deepLink: handoffProfile
+        ? `myselfmd://profiles/${encodeURIComponent(handoffProfile.id)}?section=agent-permissions`
+        : 'myselfmd://profiles',
       requiresUser: !allowed,
       instructions:
-        'Enable App logs and Allow agent access in the requested profile’s Agent permissions section, and enable Share logs with agents in Settings. Re-read get_phone_debug_logs to verify.',
+        'Enable Logs in the requested profile’s Agent permissions section. Logs describe the whole app; permission applies only to this profile. Re-read get_phone_debug_logs to verify.',
       verificationTool: 'get_phone_debug_logs',
     },
   };

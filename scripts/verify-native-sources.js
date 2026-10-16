@@ -39,7 +39,7 @@ async function load(path, dependencies) {
   return module.namespace;
 }
 const library =
-  /** @type {{saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
+  /** @type {{loadGrants:(owner:string)=>Record<import('../core/data.js').Domain,boolean>,saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
     await load('../client/library.js', {
       '../core/time-series.js': timeSeries,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
@@ -48,6 +48,7 @@ const library =
 const storedProfiles =
   /** @type {{saveProfiles:(owner:string,state:import('../core/profiles.js').ProfileState)=>void,loadProfiles:(owner:string)=>import('../core/profiles.js').ProfileState|null}} */ (
     await load('../client/profiles.js', {
+      './library.js': library,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/profiles.js': profiles,
       './qa-runtime.js': {
@@ -62,6 +63,273 @@ const storedProfiles =
       },
     })
   );
+// Exercise owner consent migration and the single profile control against real profile persistence.
+const logConsent = new Map();
+const profileLogs =
+  /** @type {{loadAgentProfiles:(session:{owner:string,deviceId:string})=>import('../core/profiles.js').ProfileState|null,saveAgentProfiles:(session:{owner:string,deviceId:string},state:import('../core/profiles.js').ProfileState)=>void}} */ (
+    await load('../client/profile-logs.js', {
+      './profiles.js': storedProfiles,
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      './qa-runtime.js': { qaEnabled: false },
+      '../core/profiles.js': profiles,
+      './debug-log.js': {
+        debugSharing: (/** @type {{owner:string,deviceId:string}} */ context) => ({
+          shared: logConsent.get(`${context.owner}:${context.deviceId}`) === true,
+        }),
+        setDebugSharing: (
+          /** @type {{owner:string,deviceId:string}} */ context,
+          /** @type {boolean} */ shared,
+        ) => logConsent.set(`${context.owner}:${context.deviceId}`, shared),
+      },
+    })
+  );
+const logSession = {
+  owner: 'logs-owner',
+  deviceId: 'logs-device',
+  server: '',
+  issuer: '',
+  resource: '',
+  accessToken: '',
+  refreshToken: '',
+  expires: 0,
+  account: '',
+};
+const logState = {
+  profiles: ['one', 'two'].map((id) =>
+    Object.assign(
+      profiles.parseProfile({
+        schema: 'myself.md.profile.v1',
+        name: id,
+        selection: { health: [], time: [], location: [] },
+      }),
+      {
+        id,
+        agentAccess: true,
+        agentPermissions: { health: true, time: true, location: true, logs: true },
+      },
+    ),
+  ),
+};
+storedProfiles.saveProfiles(logSession.deviceId, logState);
+const deniedLogs = profileLogs.loadAgentProfiles(logSession);
+assert.ok(deniedLogs);
+assert.ok(
+  deniedLogs.profiles.every((p) => p.agentPermissions?.logs === false),
+  'Legacy global denial applies to every profile',
+);
+const firstLogs = deniedLogs.profiles[0];
+const secondLogs = deniedLogs.profiles[1];
+assert.ok(firstLogs?.agentPermissions);
+assert.ok(secondLogs?.agentPermissions);
+firstLogs.agentPermissions.logs = true;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(logConsent.get('logs-owner:logs-device'), true);
+assert.equal(
+  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
+  false,
+  'Enabling one profile never grants another',
+);
+secondLogs.agentPermissions.logs = true;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+firstLogs.agentPermissions.logs = false;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(
+  logConsent.get('logs-owner:logs-device'),
+  true,
+  'Other approved profile retains publication',
+);
+secondLogs.agentAccess = false;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(
+  logConsent.get('logs-owner:logs-device'),
+  false,
+  'Legacy master denial stops publication',
+);
+assert.equal(
+  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
+  false,
+  'Legacy master denial migrates to an individual Logs denial across restart',
+);
+const approvedSession = { ...logSession, deviceId: 'previously-approved' };
+logConsent.set('logs-owner:previously-approved', true);
+const originalSecond = logState.profiles[1];
+assert.ok(originalSecond);
+originalSecond.agentPermissions.logs = false;
+storedProfiles.saveProfiles(approvedSession.deviceId, logState);
+assert.deepEqual(
+  profileLogs.loadAgentProfiles(approvedSession),
+  logState,
+  'Migration preserves existing explicit approvals and denials',
+);
+assert.equal(
+  profiles.saveProfileDraft(logState, originalSecond, 'new').profiles.at(-1)?.agentPermissions
+    ?.logs,
+  false,
+  'New profiles never inherit log consent',
+);
+// System folder grants stay account/device-local and writes use the selected provider.
+const folderNodes = new Map();
+let pickerCancelled = false;
+let folderDenied = false;
+class PickedDirectory {
+  /** @param {string} uri */
+  constructor(uri) {
+    this.uri = uri;
+    this.parent = '';
+    this.name = uri.split('/').at(-1) ?? '';
+  }
+  get exists() {
+    return !folderDenied;
+  }
+  list() {
+    return [...folderNodes.values()].filter((item) => item.parent === this.uri);
+  }
+  /** @param {string} name */
+  createDirectory(name) {
+    const dir = new PickedDirectory(`${this.uri}/${name}`);
+    folderNodes.set(dir.uri, dir);
+    dir.parent = this.uri;
+    return dir;
+  }
+  /** @param {string} name */
+  createFile(name) {
+    const file = new PickedFile(`${this.uri}/${name}`);
+    file.parent = this.uri;
+    folderNodes.set(file.uri, file);
+    return file;
+  }
+  static async pickDirectoryAsync() {
+    if (pickerCancelled) throw new Error('Picker cancelled');
+    return new PickedDirectory('content://picked/exports');
+  }
+}
+class PickedFile {
+  /** @param {string} uri */
+  constructor(uri) {
+    this.uri = uri;
+    this.parent = '';
+    this.name = uri.split('/').at(-1) ?? '';
+    this.size = 12;
+  }
+  /** @param {PickedFile} target */
+  async copy(target) {
+    target.size = this.size;
+  }
+}
+const folderPlatform = { OS: 'android' };
+let bookmarkRestores = 0;
+const bookmarkBridge = {
+  bookmark: async () => 'fixture-bookmark',
+  restore: async () => {
+    bookmarkRestores++;
+    return { uri: 'file://restored/exports', bookmark: 'fixture-bookmark-renewed' };
+  },
+};
+const folderContext = { owner: 'folder-owner', deviceId: 'folder-device' };
+const folderRuntime =
+  /** @type {{chooseExportFolder:(context:typeof folderContext,previous?:string)=>Promise<string>,exportFolder:(context:typeof folderContext,id?:string)=>{name:string}|null,exportFolderStatus:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile)=>{status:string},saveInExportFolder:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile,file:PickedFile,format:string)=>Promise<PickedFile>}} */ (
+    await load('../client/export-folder.js', {
+      'expo-file-system': { Directory: PickedDirectory, File: PickedFile, Paths: {} },
+      '../core/export-files.js': exportFiles,
+      'react-native': { Platform: folderPlatform },
+      expo: { requireOptionalNativeModule: () => bookmarkBridge },
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      './qa-runtime.js': { qaEnabled: false },
+    })
+  );
+const selectedFolder = await folderRuntime.chooseExportFolder(folderContext);
+assert.ok(folderRuntime.exportFolder(folderContext, selectedFolder));
+assert.equal(
+  folderRuntime.exportFolder({ ...folderContext, owner: 'foreign' }, selectedFolder),
+  null,
+);
+assert.equal(
+  folderRuntime.exportFolder({ ...folderContext, deviceId: 'foreign' }, selectedFolder),
+  null,
+);
+pickerCancelled = true;
+await assert.rejects(folderRuntime.chooseExportFolder(folderContext, selectedFolder), /cancelled/);
+assert.ok(
+  folderRuntime.exportFolder(folderContext, selectedFolder),
+  'Picker cancellation preserves existing selection',
+);
+const folderProfile = {
+  ...logState.profiles[0],
+  id: 'folder-profile',
+  ...profiles.parseProfile({
+    schema: 'myself.md.profile.v1',
+    name: 'Folder test',
+    selection: { health: [], time: [], location: [] },
+    export: { localFolderId: selectedFolder, formatFolders: true },
+  }),
+};
+const stagedFolderFile = new PickedFile('cache/2026-10-16.json');
+const savedFolderFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  folderProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(savedFolderFile.uri, `content://picked/exports/json/2026-10-16.json`);
+assert.equal(
+  await folderRuntime.saveInExportFolder(folderContext, folderProfile, stagedFolderFile, 'json'),
+  savedFolderFile,
+  'Daily replacement reuses the same file',
+);
+assert.equal(folderRuntime.exportFolderStatus(folderContext, folderProfile).status, 'selected');
+const directProfile = {
+  ...folderProfile,
+  export: { ...folderProfile.export, formatFolders: false },
+};
+const directFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  directProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(directFile.uri, 'content://picked/exports/2026-10-16.json');
+assert.equal(
+  await folderRuntime.saveInExportFolder(folderContext, directProfile, stagedFolderFile, 'json'),
+  directFile,
+  'Direct daily replacement reuses the file in the selected root',
+);
+
+await assert.rejects(
+  folderRuntime.saveInExportFolder(
+    { ...folderContext, owner: 'foreign' },
+    folderProfile,
+    stagedFolderFile,
+    'json',
+  ),
+  /Choose/,
+);
+folderDenied = true;
+await assert.rejects(
+  folderRuntime.saveInExportFolder(folderContext, folderProfile, stagedFolderFile, 'json'),
+  /unavailable/,
+  'Revoked provider access cannot fall back to app storage',
+);
+assert.equal(stagedFolderFile.uri, 'cache/2026-10-16.json');
+folderDenied = false;
+pickerCancelled = false;
+folderPlatform.OS = 'ios';
+const bookmarkedFolder = await folderRuntime.chooseExportFolder(folderContext);
+const bookmarkedProfile = {
+  ...folderProfile,
+  export: { ...folderProfile.export, localFolderId: bookmarkedFolder },
+};
+const restoredFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  bookmarkedProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(restoredFile.uri, 'file://restored/exports/json/2026-10-16.json');
+assert.equal(
+  bookmarkRestores,
+  1,
+  'iOS restores OS bookmark before accessing the selected directory',
+);
 let healthConnectAvailable = true;
 /** @type {{accessType:string,recordType:string}[]} */
 let healthPermissions = [];
@@ -227,11 +495,93 @@ db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
     ),
   }),
 );
+db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
+  'phone',
+  JSON.stringify({ health: true, time: false, location: true }),
+);
 const migrated = storedProfiles.loadProfiles('phone');
 assert.ok(migrated);
 assert.equal(migrated.profiles[0]?.agentAccess, true);
 assert.equal(migrated.profiles[1]?.agentAccess, false);
 assert.ok(!('activeId' in migrated));
+assert.deepEqual(
+  migrated.profiles[1]?.agentPermissions,
+  { health: false, time: false, location: false, logs: false },
+  'Legacy master-off profiles never gain access',
+);
+assert.deepEqual(migrated.profiles[0]?.agentPermissions, {
+  health: true,
+  time: false,
+  location: true,
+  logs: true,
+});
+// A single permission now grants access without another owner switch.
+const individual = profiles.parseProfileState({
+  profiles: [
+    {
+      ...migrated.profiles[1],
+      agentAccess: true,
+      agentPermissions: { health: true, time: false, location: false, logs: false },
+    },
+  ],
+});
+const individuallyAllowed = individual.profiles[0];
+assert.ok(individuallyAllowed);
+assert.equal(
+  profiles.agentProfileAllows(individuallyAllowed, {
+    domain: 'health',
+    source: 'native',
+    type: 'HKQuantityTypeIdentifierStepCount',
+  }),
+  true,
+);
+assert.equal(
+  profiles.agentProfileAllows(individuallyAllowed, {
+    domain: 'location',
+    source: 'native',
+    type: 'points',
+  }),
+  false,
+);
+assert.equal(profiles.agentLogsAllowed(individuallyAllowed), false);
+const individualOff = profiles.parseProfileState({
+  profiles: [
+    {
+      ...individuallyAllowed,
+      agentPermissions: { health: false, time: false, location: false, logs: false },
+    },
+  ],
+});
+assert.equal(
+  individualOff.profiles[0]?.agentAccess,
+  false,
+  'Compatibility summary follows the last individual permission',
+);
+assert.deepEqual(
+  individualOff.profiles[0]?.selection,
+  individuallyAllowed.selection,
+  'Permission revocation preserves selections',
+);
+// A migrated phone-wide denial remains a per-profile denial across restarts.
+db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
+  'phone',
+  JSON.stringify({ health: false, time: true, location: false }),
+);
+assert.deepEqual(storedProfiles.loadProfiles('phone'), migrated);
+// A different device partition with no legacy approval must not inherit any source access.
+db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
+  'unapproved',
+  JSON.stringify({
+    profiles: [{ ...profiles.parseProfile(legacy, true), id: 'existing', agentAccess: true }],
+  }),
+);
+const unapproved = storedProfiles.loadProfiles('unapproved');
+assert.deepEqual(unapproved?.profiles[0]?.agentPermissions, {
+  health: false,
+  time: false,
+  location: false,
+  logs: true,
+});
 storedProfiles.saveProfiles('phone', migrated);
 assert.deepEqual(storedProfiles.loadProfiles('phone'), migrated);
 assert.deepEqual(migrated.profiles[0]?.selection, {
@@ -361,6 +711,12 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
+      'expo-constants': { default: { expoConfig: {} } },
+      'expo-notifications': {},
+      'react-native': { Alert: { alert() {} }, Platform: { OS: 'ios' } },
+      './session.js': { api: async () => ({}), loadSession: async () => null },
+      './qa-runtime.js': { qaEnabled: false },
+      '../core/export-files.js': await import('../core/export-files.js'),
       './billing.js': { reserveExport: async () => {}, settleExport: async () => {} },
       '../core/diagnostics.js': diagnostics,
       'expo-background-task': {},

@@ -2,6 +2,27 @@
 
 Console inspection on 12 October 2026 used the owner's authenticated Apple and Google accounts. These observations are approval evidence at that time, not a claim that a beta has passed review or been installed.
 
+## Cloud storage and profile-permission distribution — 16 October 2026
+
+Both store artifacts were compiled locally through the standard runner from canonical `main` at `467408e7bf705735bf100b610316fb4f8cf1917a`, including the uncommitted/untracked source captured by each job. App identifiers remain `com.myself.md`, app version remains `1.0.0`, and native build numbers are retained in `app.json`. These are beta releases, not a production App Store rollout.
+
+| Platform | Build | Verified distribution                                                                                                                        |
+| -------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS      | 8     | App Store Connect processing `VALID`; Internal QA `READY_FOR_BETA_TESTING`; Demo Beta review `APPROVED` and external state `IN_BETA_TESTING` |
+| Android  | 8     | Google Play internal testing release `1.0.0 — Cloud tiers 8`, committed and independently read back as `completed`                           |
+
+The [existing TestFlight public link](https://testflight.apple.com/join/5GwaFaQD) and [Google internal tester opt-in](https://play.google.com/apps/internaltest/4700960087233428532) remain the install handoffs. Existing TestFlight audiences/public-link settings and Google tester resources were preserved; no new invitations, audience expansion or production-track release was performed. Google commit explicitly used `changesInReviewBehavior=ERROR_IF_IN_REVIEW`, preserving the existing open-beta review and all other tracks. The obsolete internal draft 7 was superseded without deleting its bundle.
+
+iOS job `989bb4ab-8ea9-453d-a44c-76efc3a37d55` produced the signed IPA, SHA-256 `3c10b7189799c8d9176a762a0a87c72fbaa158559240caea50f1c34bd00201bb`, native runtime `226dc84de2a7c5e99896ec37e5f82acacc8296b5`. Apple delivery/build ID is `406fdc72-af07-42d3-a98f-4c85c97f817c`. Store provisioning, signature, HealthKit/Family Controls/usage/Apple sign-in entitlements, purpose strings, embedded JavaScript, no Metro/debugger and nonexpired signing checks passed. Apple automatically approved this build for the existing external group. Reviewer credentials/contact fields were preserved; reviewer instructions and What to Test now describe the current build and purchase limitations.
+
+Android job `27196d48-3536-4a01-8c9e-fdaaa69bcf82` produced the signed AAB, SHA-256 `eb43bc8a706fb8b361d3820a323beaed4f8e5f0f8dfbc71d8ed481b65d940adc`. Bundletool structure, signature, identifier/version, Release manifest and embedded JavaScript checks passed; Google's upload checksum matched exactly.
+
+Both packaged bundles were independently checked for the 10 GB/1 TB cloud catalog and the untracked profile-log consent migration. Obsolete 1 GB products and the removed master profile-access control are absent. Initial iOS build 7 captured an earlier permission UI while source work continued; it was uploaded before the packaging discrepancy was found, but received no group assignment or distribution. Its receipts remain under `ios/held-build7/`; build 8 is the intended install.
+
+The required profile-permission backend compatibility deployed as Worker `ec6a430c-71e5-41ab-90d4-860c27e0b2fb` at 100% traffic before availability. It accepts profile-owned permission handoffs and updates debug review links/policy while preserving existing secrets/bindings and the deployed documentation-sidebar presentation. Static checks, cloud HTTP/MCP, debug-log, real workerd and identity fixtures passed; live health/discovery/JWKS, unauthenticated denials, disabled migration endpoint, updated policy and asset hashes passed. Native-source, billing, export, scheduling and QA fixtures also passed. Private source manifests, upload receipts, checksums and fresh store read-backs are retained under ignored `.local/cloud-tier-mobile-release/`.
+
+Installation and physical-device behavior were not observed. TestFlight purchases remain sandbox purchases and cannot unlock production Lifetime/cloud entitlements; the existing reviewer grant supports included storage only. No production subscription review or sandbox-acceptance setting was changed.
+
 ## Latest preparation — 14 October 2026
 
 Android build 6 replaces build 4 in the open-beta draft. The disclosure/notification fixes, current-source AAB, native background-recording video and SDK Data safety audit are prepared. The privacy-only update is published and verified through the website and authenticated MCP read. The review video is published as unlisted, both location/foreground-service declarations are saved, and release validation has zero blocking errors. The owner approved sending all 13 changes, both quick-check stages passed, and Google confirms they are in review. Approval/public availability are pending and a 15-minute monitor is active; see the [open-beta packet](google-open-beta.md). Internal testing remains on build 4.

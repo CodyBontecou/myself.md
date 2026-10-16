@@ -153,6 +153,7 @@ function ProfileExportControls({
           title="Automatic exports"
           trailing={
             <Checkbox
+              style={styles.trailingControl}
               testID="export-automatic"
               accessibilityLabel={`Automatic exports for ${profile.name}`}
               disabled={disabled || busy}
@@ -197,7 +198,11 @@ function ProfileExportControls({
               value={days}
               onChangeText={setDays}
               editable={!disabled && !busy}
-              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              style={[
+                styles.input,
+                styles.daysInput,
+                { color: colors.text, borderColor: colors.border },
+              ]}
             />
           }
         />
@@ -226,7 +231,6 @@ function ProfileExportControls({
               }
             />
           ))}
-        <Row compact testID="export-files" title="Files" value={String(state.files.length)} />
         {state.files.map((uri) => (
           <Row
             compact
@@ -242,14 +246,11 @@ function ProfileExportControls({
           />
         ))}
       </Group>
-      {message || (!state.retryAt && state.message) ? (
+      {message || (!state.retryAt && state.message && state.message !== 'No exports yet.') ? (
         <Copy testID="export-status" accessibilityRole="alert" variant="caption" selectable>
           {message || state.message}
         </Copy>
       ) : null}
-      <Copy variant="caption" muted>
-        Background timing depends on the OS. Opening the app catches up.
-      </Copy>
       {profile.export.destination === 'http' ? (
         <>
           <TextInput
@@ -313,6 +314,7 @@ function ProfileExportControls({
             title="Allow stored data in connectors"
             trailing={
               <Checkbox
+                style={styles.trailingControl}
                 testID="export-cloud-access"
                 accessibilityLabel={`Cloud MCP access for ${profile.name}`}
                 value={shared}
@@ -371,6 +373,8 @@ const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineActions: { flexWrap: 'nowrap', alignItems: 'center', gap: 0 },
   container: { gap: 8 },
+  trailingControl: { alignItems: 'flex-end' },
+  daysInput: { minWidth: 44, textAlign: 'center' },
   input: {
     minHeight: 44,
     padding: 12,

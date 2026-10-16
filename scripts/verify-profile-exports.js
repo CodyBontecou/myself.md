@@ -27,6 +27,64 @@ const progress = {
   lastCompleted: null,
   lastRefresh: null,
 };
+const minuteCadence = parseSchedule({
+  frequency: 'custom',
+  unit: 'minute',
+  interval: 1,
+  todayRefresh: true,
+});
+const minuteProgress = { ...progress, enabledAt: '2026-10-16T12:00:30.000Z' };
+assert.deepEqual(
+  dueOccurrences(minuteCadence, minuteProgress, '2026-10-16T12:01:29.999Z', calendar),
+  [],
+);
+assert.deepEqual(
+  dueOccurrences(minuteCadence, minuteProgress, '2026-10-16T12:01:30.000Z', calendar),
+  [{ kind: 'today-refresh', fireDate: '2026-10-16T12:01:30.000Z' }],
+);
+assert.equal(
+  nextOccurrence(minuteCadence, minuteProgress, '2026-10-16T12:01:30.000Z', calendar),
+  '2026-10-16T12:02:30.000Z',
+);
+assert.deepEqual(
+  dueOccurrences(
+    minuteCadence,
+    { ...minuteProgress, lastRefresh: '2026-10-16T12:01:30.000Z' },
+    '2026-10-16T12:01:59.000Z',
+    calendar,
+  ),
+  [],
+);
+assert.deepEqual(
+  dueOccurrences(minuteCadence, minuteProgress, '2026-10-17T13:10:59.000Z', calendar),
+  [{ kind: 'today-refresh', fireDate: '2026-10-17T13:10:30.000Z' }],
+  'Missed slots coalesce to one latest refresh, with no duplicate Today Refresh',
+);
+assert.equal(
+  dueOccurrences(
+    minuteCadence,
+    { ...minuteProgress, enabled: false },
+    '2026-10-17T13:10:59.000Z',
+    calendar,
+  ).length,
+  0,
+);
+assert.equal(
+  nextOccurrence(
+    parseSchedule({ frequency: 'custom', unit: 'hour', interval: 2 }),
+    minuteProgress,
+    '2026-10-16T13:59:30.000Z',
+    calendar,
+  ),
+  '2026-10-16T14:00:30.000Z',
+);
+assert.equal(
+  nextOccurrence(minuteCadence, minuteProgress, '2026-10-15T12:00:30.000Z', calendar),
+  '2026-10-16T12:01:30.000Z',
+  'No runs before opt-in',
+);
+for (const interval of [0, -1, 0.5, 366])
+  assert.throws(() => parseSchedule({ frequency: 'custom', unit: 'minute', interval }));
 const monthly = parseSchedule({ frequency: 'custom', unit: 'month', anchorDate: '2026-01-31' });
 assert.equal(
   dueOccurrences(monthly, progress, '2026-02-28T09:00:00.000Z', calendar)[0]?.fireDate,
@@ -125,6 +183,7 @@ for (const value of [
   { formats: ['markdown'] },
   { folderName: '../escape' },
   { filenameTemplate: 'same' },
+  { writeMode: 'unknown' },
 ])
   assert.throws(() => parseExportSettings(value));
 console.log(

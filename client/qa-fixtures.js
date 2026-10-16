@@ -34,6 +34,7 @@ export function qaFixture(scenario, revision = 0) {
     }),
     id: 'qa-profile',
     agentAccess: false,
+    agentPermissions: { health: false, time: false, location: false, logs: false },
   };
   return {
     scenario,

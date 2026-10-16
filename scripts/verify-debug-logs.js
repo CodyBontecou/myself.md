@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
@@ -311,8 +312,8 @@ try {
   const ownerHandoff = /** @type {{handoff:{deepLink:string,instructions:string}}} */ (
     handoff.structuredContent
   ).handoff;
-  assert.equal(ownerHandoff.deepLink, 'myselfmd://settings');
-  assert.ok(ownerHandoff.instructions.includes('Share logs with agents in Settings'));
+  assert.equal(ownerHandoff.deepLink, 'myselfmd://profiles/private?section=agent-permissions');
+  assert.ok(ownerHandoff.instructions.includes('Enable Logs'));
   assert.equal(logs.debugSharing(context).shared, false, 'Agent cannot grant itself access');
   assert.equal((await read(other)).isError, true);
   assert.throws(
@@ -434,6 +435,7 @@ try {
   destinationProfile.export = {
     ...destinationProfile.export,
     destination: 'http',
+    writeMode: 'append',
     httpUrl: 'https://destination.fixture/?apiKey=synthetic-destination-key',
   };
   heartbeat(metadataReport);
@@ -452,6 +454,19 @@ try {
       arguments: { deviceId },
     });
     const safeText = JSON.stringify(safeCatalog);
+    assert.equal(
+      z
+        .object({
+          catalog: z.object({
+            profiles: z.array(
+              z.object({ id: z.string(), export: z.object({ writeMode: z.string() }) }),
+            ),
+          }),
+        })
+        .parse(safeCatalog.structuredContent)
+        .catalog.profiles.find((p) => p.id === destinationProfile.id)?.export.writeMode,
+      'append',
+    );
     assert.ok(!safeText.includes('metadata-test failure'));
     assert.ok(!safeText.includes('diagnostics'));
     assert.ok(!safeText.includes('synthetic-destination-key'));

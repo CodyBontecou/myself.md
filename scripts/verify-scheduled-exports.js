@@ -84,7 +84,7 @@ await module.link((specifier) => {
 });
 await module.evaluate();
 const task =
-  /** @type {{setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress},openScheduledExport:(value:unknown)=>Promise<boolean>}} */ (
+  /** @type {{setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>}} */ (
     /** @type {unknown} */ (module.namespace)
   );
 const first = profiles[0];
@@ -128,6 +128,23 @@ await task.setScheduleEnabled(session.deviceId, second, false);
 assert.equal(await task.openScheduledExport(payload), false);
 console.log('Correct-profile tap, stale/device rejection, disable and duplicate delivery passed.');
 
+// Elapsed cadence executes the current day even if its latest missed slot was yesterday.
+second.schedule = schedules.parseSchedule({ frequency: 'custom', unit: 'hour', interval: 365 });
+await task.setScheduleEnabled(session.deviceId, second, true);
+const elapsedState = task.scheduleState(session.deviceId, second);
+elapsedState.progress.enabledAt = new Date(Date.now() - (365 + 24) * 3600000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(elapsedState));
+const beforeElapsed = exported.length;
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeElapsed + 1);
+assert.equal(
+  exported.at(-1)?.day,
+  localCalendar.day(new Date().toISOString()),
+  'Frequent cadence refreshes execution day, not the missed slot day',
+);
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeElapsed + 1, 'Checkpoint prevents a duplicate interval export');
+await task.setScheduleEnabled(session.deviceId, second, false);
 const { DatabaseSync } = await import('node:sqlite');
 const { createExportSchedules } = await import('../server/export-schedules.js');
 const { scheduleCalendar } = await import('../server/schedule-calendar.js');
@@ -178,7 +195,7 @@ await cloud.register('owner-a', registration);
 await cloud.dispatch('2026-10-15T06:02:00.000Z');
 assert.equal(pushes, 1, 'Re-registration must preserve notification checkpoints');
 assert.equal(
-  cloud.list('owner-a')[0]?.profiles[0].lastCompleted,
+  cloud.list('owner-a')[0]?.profiles[0]?.lastCompleted,
   null,
   'Notification acceptance must not claim export completion',
 );
@@ -279,6 +296,24 @@ assert.equal(
   scheduleCalendar('Europe/Berlin').instant('2026-10-25', 2, 30),
   '2026-10-25T00:30:00.000Z',
 );
+const beforeFrequentPushes = pushes;
+await cloud.register('owner-a', {
+  ...registration,
+  profiles: [
+    {
+      ...registration.profiles[0],
+      profileId: 'minute-profile',
+      schedule: schedules.parseSchedule({ frequency: 'custom', unit: 'minute', interval: 1 }),
+    },
+  ],
+});
+await cloud.dispatch('2026-10-17T06:01:00.000Z');
+assert.equal(
+  pushes,
+  beforeFrequentPushes,
+  'Elapsed schedules never send per-minute reminder notifications',
+);
+assert.equal(cloud.list('owner-a')[0]?.profiles[0]?.timing.reminders, 'disabled');
 connected = false;
 await cloud.dispatch('2026-10-18T06:01:00.000Z');
 assert.deepEqual(cloud.list('owner-a'), []);
