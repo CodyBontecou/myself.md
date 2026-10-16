@@ -40,7 +40,7 @@ let privateChannel = true,
   failSend = false,
   uncertainSend = false,
   uncertainThread = false;
-/** @type {typeof fetch} */
+/** @param {string|URL|Request} input @param {RequestInit} [init] @returns {Promise<Response>} */
 const discordFetch = async (input, init) => {
   const url = new URL(String(input));
   const body = init?.body ? JSON.parse(String(init.body)) : null;
