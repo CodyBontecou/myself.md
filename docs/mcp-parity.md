@@ -1,5 +1,9 @@
 # UI and MCP parity
 
+## Public navigation and recovery polish (16 October 2026)
+
+The shared public mobile menu uses a centered decorative SVG chevron. This alignment-only change preserves the existing navigation links and public documentation reads, with no new mobile, dashboard or MCP operation.
+
 ## Removed saved-profile summary row (16 October 2026)
 
 The profile detail screen no longer displays the redundant Saved profile selection-count/format row (`profile-saved-profile`). Data selection and Output retain those details. Profile persistence, MCP catalog discovery, permissions and dashboard behavior are unchanged.
