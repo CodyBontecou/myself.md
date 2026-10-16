@@ -30,7 +30,7 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   if (session?.owner && !session.requiresSignIn) return <Redirect href="/account" />;
   return (
-    <Screen testID="login-screen">
+    <Screen compact testID="login-screen">
       <Stack.Screen options={{ title: 'Sign in' }} />
       <Copy muted style={styles.center}>
         Sign in to save exports in the cloud and manage your account.

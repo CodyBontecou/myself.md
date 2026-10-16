@@ -13,7 +13,7 @@ export default function AccountScreen() {
   const current = useBilling();
   if (!session?.owner || session.requiresSignIn) return <Redirect href="/login" />;
   return (
-    <Screen testID="account-screen">
+    <Screen compact testID="account-screen">
       <Stack.Screen options={{ title: 'Account' }} />
       <View style={styles.identity}>
         <AccountAvatar account={session.account} />
@@ -116,6 +116,6 @@ export default function AccountScreen() {
   );
 }
 const styles = StyleSheet.create({
-  identity: { alignItems: 'center', gap: 16, paddingVertical: 24 },
+  identity: { alignItems: 'center', gap: 12, paddingVertical: 12 },
   center: { textAlign: 'center' },
 });

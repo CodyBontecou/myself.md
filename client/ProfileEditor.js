@@ -4,7 +4,7 @@ import { useProfileEditor } from './ProfileEditorState.js';
 import { router, Stack, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Copy, Group, Row, Screen, SectionHeader } from '../src/components/ui';
+import { Button, Copy, Group, Icon, Row, Screen, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { usePhoneData } from './DataPanel.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
@@ -47,6 +47,7 @@ export default function ProfileEditor({ data = false }) {
   const phone = usePhoneData();
   const navigation = useNavigation();
   const [importText, setImportText] = useState('');
+  const [importExpanded, setImportExpanded] = useState(false);
   const disabled = phone.busy || working;
   usePreventRemove(
     (!data || Boolean(section)) && !saved && (dirty || working),
@@ -58,7 +59,6 @@ export default function ProfileEditor({ data = false }) {
       ]);
     },
   );
-  const save = useSaveProfile();
   useEffect(() => {
     if ((data && !section) || !saved || working) return;
     router.dismissTo({ pathname: '/profiles/[id]', params: { id: saved.id } });
@@ -92,44 +92,69 @@ export default function ProfileEditor({ data = false }) {
     );
   return (
     <Screen testID="profile-editor-screen" compact>
-      <Stack.Screen
-        options={{ title, ...(section ? { headerRight: renderSaveProfileButton } : {}) }}
-      />
+      <Stack.Screen options={{ title, headerRight: renderSaveProfileButton }} />
       <ErrorToast error={error} />
+      {!section && (
+        <Copy variant="caption" muted>
+          Name your profile, choose data and files, then save.
+        </Copy>
+      )}
       {!section && !session.id && !session.onSaved && (
         <>
-          <SectionHeader compact title="Import profile" />
-          <TextInput
-            testID="profile-import-input"
-            accessibilityLabel="Profile JSON or deep link"
-            placeholder="Paste profile JSON or myselfmd link"
-            editable={!disabled}
-            value={importText}
-            onChangeText={setImportText}
-            multiline
-            style={[
-              styles.input,
-              { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-            ]}
-          />
-          <Button
-            label="Review pasted profile"
-            disabled={
-              disabled || !importText || !domains.every((d) => d in phone.sourcePermissions)
-            }
-            onPress={() =>
-              void run(async () => {
-                const review = compatibleProfile(
-                  /^(myselfmd:|https:)/.test(importText.trim())
-                    ? profileFromLink(importText.trim())
-                    : parseProfile(JSON.parse(importText)),
-                  phone.types,
-                );
-                start(review.profile, '', undefined, review);
-                setImportText('');
-              })
-            }
-          />
+          <Group compact>
+            <Row
+              compact
+              testID="profile-import-toggle"
+              title="Import an existing profile"
+              subtitle="Use a shared link or profile JSON"
+              selected={importExpanded}
+              trailing={<Icon name={importExpanded ? 'chevron-up' : 'chevron-down'} size={16} />}
+              disabled={disabled}
+              onPress={() => setImportExpanded((value) => !value)}
+            />
+          </Group>
+          {importExpanded && (
+            <View style={styles.importFields}>
+              <TextInput
+                testID="profile-import-input"
+                accessibilityLabel="Profile JSON or deep link"
+                placeholder="Paste profile JSON or myselfmd link"
+                editable={!disabled}
+                value={importText}
+                onChangeText={setImportText}
+                multiline
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    color: colors.text,
+                  },
+                ]}
+              />
+              <Button
+                testID="profile-import-review"
+                filled
+                label="Review pasted profile"
+                disabled={
+                  disabled || !importText || !domains.every((d) => d in phone.sourcePermissions)
+                }
+                onPress={() =>
+                  void run(async () => {
+                    const review = compatibleProfile(
+                      /^(myselfmd:|https:)/.test(importText.trim())
+                        ? profileFromLink(importText.trim())
+                        : parseProfile(JSON.parse(importText)),
+                      phone.types,
+                    );
+                    start(review.profile, '', undefined, review);
+                    setImportText('');
+                    setImportExpanded(false);
+                  })
+                }
+              />
+            </View>
+          )}
         </>
       )}
       {!section && session.compatibility && <ProfileImportReview review={session.compatibility} />}
@@ -181,13 +206,6 @@ export default function ProfileEditor({ data = false }) {
             on the saved profile.
           </Copy>
           <Button
-            testID="profile-save"
-            busy={working}
-            label={working ? 'Saving…' : 'Save profile'}
-            disabled={disabled}
-            onPress={() => void run(() => save())}
-          />
-          <Button
             testID="profile-cancel"
             label="Cancel"
             secondary
@@ -235,19 +253,28 @@ function SaveProfileButton() {
       accessibilityState={{ disabled, busy: working }}
       disabled={disabled}
       onPress={() => void run(() => save())}
-      style={[styles.saveAction, disabled && styles.disabled]}
+      style={[styles.saveAction, { backgroundColor: colors.accent }, disabled && styles.disabled]}
     >
-      <Copy style={[styles.saveLabel, { color: colors.accent }]}>
+      <Copy style={[styles.saveLabel, { color: colors.onAccent }]}>
         {working ? 'Saving…' : 'Save'}
       </Copy>
     </Pressable>
   );
 }
 const styles = StyleSheet.create({
+  importFields: { gap: 8 },
   fill: { flex: 1 },
   saveLabel: { fontWeight: '600' },
   disabled: { opacity: 0.45 },
-  saveAction: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
+  saveAction: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,

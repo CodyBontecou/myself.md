@@ -17,7 +17,7 @@ import {
   Button as BridgeButton,
 } from '../src/components/ui';
 import { Alert, Pressable, Share, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Text } from './Terminal.js';
+import { Text } from './Terminal.js';
 import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ProfileExports from './ProfileExports.js';
@@ -557,30 +557,49 @@ export default function ProfilePanel({
       )}
       {draft ? (
         <View
+          testID="profile-generated-review"
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
-          <Text>Generated profile: {draft.name}</Text>
-          {importReview && <ProfileImportReview review={importReview} />}
+          <Copy variant="caption" muted>
+            Suggested profile
+          </Copy>
+          <Copy variant="heading">{draft.name}</Copy>
+          <Copy variant="caption" muted>
+            Review the data and file settings before saving.
+          </Copy>
           {!catalogReady && <Copy>Checking available data on this phone…</Copy>}
-          <Text>
-            {domains
-              .map((d) => `${d}: ${importReview?.profile.selection[d].length ?? 0}`)
-              .join(' / ')}{' '}
-            selected types. Review before saving; access stays unchanged.
-          </Text>
-          <Button
-            testID="profile-review-generated-profile"
-            title="Review generated profile"
-            disabled={disabled || !catalogReady}
-            onPress={() => {
-              edit(draft);
-            }}
-          />
-          <Button
-            testID="profile-dismiss-generated-profile"
-            title="Dismiss generated profile"
-            onPress={onDismiss}
-          />
+          <Group compact>
+            {domains.map((domain) => (
+              <Row
+                compact
+                key={domain}
+                title={
+                  domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'
+                }
+                value={
+                  catalogReady
+                    ? `${importReview?.profile.selection[domain].length ?? 0} selected`
+                    : 'Checking…'
+                }
+              />
+            ))}
+          </Group>
+          {importReview && <ProfileImportReview review={importReview} />}
+          <View style={styles.reviewActions}>
+            <BridgeButton
+              testID="profile-review-generated-profile"
+              label="Review generated profile"
+              filled
+              disabled={disabled || !catalogReady}
+              onPress={() => edit(draft)}
+            />
+            <BridgeButton
+              testID="profile-dismiss-generated-profile"
+              label="Dismiss generated profile"
+              secondary
+              onPress={onDismiss}
+            />
+          </View>
         </View>
       ) : null}
     </View>
@@ -626,6 +645,7 @@ function changedFields(before, after) {
   );
 }
 const styles = StyleSheet.create({
+  reviewActions: { gap: 4 },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,5 +1,5 @@
 import { Copy, SectionHeader } from '../src/components/ui.js';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { domains } from '../core/data.js';
 /** @param {{review:import('../core/profile-compatibility.js').ProfileCompatibility}} props */
 export default function ProfileImportReview({ review }) {
@@ -8,7 +8,7 @@ export default function ProfileImportReview({ review }) {
     0,
   );
   return (
-    <View testID="profile-import-review">
+    <View testID="profile-import-review" style={styles.review}>
       <SectionHeader compact title="Ready for this phone" />
       <Copy variant="caption" muted>
         Equivalent data types are selected automatically. Saving does not allow agent access or turn
@@ -48,3 +48,5 @@ export default function ProfileImportReview({ review }) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({ review: { gap: 8 } });
