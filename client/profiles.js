@@ -1,3 +1,4 @@
+import { loadGrants } from './library.js';
 import { phoneDatabase } from './phone-database.js';
 import { qaEnabled, qaSession, qaSnapshot, updateQa } from './qa-runtime.js';
 import { parseProfile, parseProfileState, parseAgentPermissions } from '../core/profiles.js';
@@ -10,14 +11,17 @@ export function loadProfiles(owner) {
     db.getFirstSync('SELECT value FROM export_profiles WHERE owner=?', owner)
   );
   if (!row) return null;
-  const state = /** @type {import('../core/profiles.js').ProfileState & {activeId?:string}} */ (
-    JSON.parse(row.value)
-  );
+  const state =
+    /** @type {import('../core/profiles.js').ProfileState & {activeId?:string,agentConsentVersion?:number}} */ (
+      JSON.parse(row.value)
+    );
   if (!Array.isArray(state.profiles) || !state.profiles.length)
     throw new Error('Invalid saved profiles.');
-  return {
+  const legacyGrants = state.agentConsentVersion === 1 ? null : loadGrants(owner);
+  const result = parseProfileState({
     profiles: state.profiles.map((p) => {
       const legacy = parseProfile(p, true);
+      const permissions = parseAgentPermissions(p.agentPermissions);
       return Object.assign(
         parseProfile({
           ...legacy,
@@ -29,13 +33,22 @@ export function loadProfiles(owner) {
         }),
         {
           id: p.id,
-          agentPermissions: parseAgentPermissions(p.agentPermissions),
+          agentPermissions: legacyGrants
+            ? {
+                ...permissions,
+                health: permissions.health && legacyGrants.health === true,
+                time: permissions.time && legacyGrants.time === true,
+                location: permissions.location && legacyGrants.location === true,
+              }
+            : permissions,
           agentAccess:
             p.agentAccess === undefined ? p.id === state.activeId : p.agentAccess === true,
         },
       );
     }),
-  };
+  });
+  if (legacyGrants) saveProfiles(owner, result);
+  return result;
 }
 /** @param {string} owner @param {import('../core/profiles.js').ProfileState} state */
 export function saveProfiles(owner, state) {
@@ -44,5 +57,9 @@ export function saveProfiles(owner, state) {
     updateQa({ profiles: state });
     return;
   }
-  db.runSync('INSERT OR REPLACE INTO export_profiles VALUES (?,?)', owner, JSON.stringify(state));
+  db.runSync(
+    'INSERT OR REPLACE INTO export_profiles VALUES (?,?)',
+    owner,
+    JSON.stringify({ ...state, agentConsentVersion: 1 }),
+  );
 }

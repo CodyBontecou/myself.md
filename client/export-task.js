@@ -9,7 +9,7 @@ import { exportFailureMessage } from '../core/diagnostics.js';
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import { phoneDatabase } from './phone-database.js';
-import { dueOccurrences, occurrenceDays, addDays } from '../core/schedules.js';
+import { dueOccurrences, occurrenceDays, addDays, scheduleIntervalMs } from '../core/schedules.js';
 import { deliveredFormats } from '../core/export-files.js';
 import { loadExportContext } from './export-context.js';
 import { loadProfiles } from './profiles.js';
@@ -379,7 +379,11 @@ export async function runScheduledExports(profileId, requested) {
         state.job = {
           profile,
           occurrence,
-          days: occurrenceDays(occurrence, profile.export.lookbackDays, localCalendar).map((d) => ({
+          days: occurrenceDays(
+            scheduleIntervalMs(profile.schedule) ? { ...occurrence, fireDate: now } : occurrence,
+            profile.export.lookbackDays,
+            localCalendar,
+          ).map((d) => ({
             day: d.day,
             start: d.start,
             end: occurrence.kind === 'today-refresh' ? now : d.end,
@@ -525,7 +529,11 @@ export async function openScheduledExport(input) {
     state.job = {
       profile,
       occurrence,
-      days: occurrenceDays(occurrence, profile.export.lookbackDays, localCalendar).map((day) =>
+      days: occurrenceDays(
+        scheduleIntervalMs(profile.schedule) ? { ...occurrence, fireDate: now } : occurrence,
+        profile.export.lookbackDays,
+        localCalendar,
+      ).map((day) =>
         Object.assign(day, { end: occurrence.kind === 'today-refresh' ? now : day.end }),
       ),
     };

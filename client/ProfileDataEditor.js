@@ -12,15 +12,15 @@ import { domains } from '../core/data.js';
 import { categories } from './health-types.js';
 /** @typedef {{kind:'type',domain:import('../core/data.js').Domain,key:string}} TypeRow */
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
+/** @typedef {{kind:'location-controls',key:string}} LocationControlsRow */
 /** @typedef {{kind:'domain',domain:import('../core/data.js').Domain,key:string,expanded:boolean}} DomainRow */
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onOpenLocation?:()=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
 export default function ProfileDataEditor({
   types,
   permissions,
   isTracking,
   onRecordingChange,
   onAuthorize,
-  onOpenLocation,
   selection,
   onSelection,
   disabled,
@@ -38,7 +38,8 @@ export default function ProfileDataEditor({
   async function authorize(domain) {
     setRequesting(true);
     try {
-      setAccessMessage((await onAuthorize(domain)).message);
+      const result = await onAuthorize(domain);
+      setAccessMessage(domain === 'location' ? '' : result.message);
       setRequestedDomains((current) => [...new Set([...current, domain])]);
     } catch (error) {
       showToast({ message: errorMessage(error), kind: 'error' });
@@ -90,7 +91,7 @@ export default function ProfileDataEditor({
     domain !== 'health' ||
     !query ||
     `${domain} ${healthGroup(key)} ${key}`.toLowerCase().replace(/\s+/g, '').includes(query);
-  /** @type {(TypeRow|GroupRow|DomainRow)[]} */
+  /** @type {(TypeRow|GroupRow|DomainRow|LocationControlsRow)[]} */
   const data = [];
   for (const domain of domains) {
     if (selectedDomain && domain !== selectedDomain) continue;
@@ -104,6 +105,7 @@ export default function ProfileDataEditor({
     }
     if (domain !== 'health') {
       data.push(...domainTypes.filter(matches));
+      if (domain === 'location') data.push({ kind: 'location-controls', key: 'location-controls' });
       continue;
     }
     const groups = [...new Set(domainTypes.map(({ key }) => healthGroup(key)))];
@@ -122,8 +124,45 @@ export default function ProfileDataEditor({
       if (groupExpanded) data.push(...visible);
     }
   }
-  /** @param {{item:TypeRow|GroupRow|DomainRow}} props */
+  /** @param {{item:TypeRow|GroupRow|DomainRow|LocationControlsRow}} props */
   function renderItem({ item }) {
+    if (item.kind === 'location-controls') {
+      const permission = permissions.location;
+      const access =
+        permission === 'authorized'
+          ? 'Allowed'
+          : permission === 'denied'
+            ? 'Not allowed'
+            : permission === undefined
+              ? 'Checking…'
+              : 'Permission needed';
+      return (
+        <View style={styles.locationControls}>
+          <Row
+            compact
+            title="Record location in background"
+            subtitle="This phone · all profiles"
+            trailing={
+              <Checkbox
+                testID="selection-location-recording"
+                accessibilityLabel="Record location in background for all profiles"
+                value={isTracking}
+                disabled={locked}
+                onValueChange={onRecordingChange}
+              />
+            }
+          />
+          <Row
+            compact
+            testID="selection-permissions-location"
+            title="Location access"
+            value={access}
+            onPress={() => void authorize('location')}
+            disabled={locked}
+          />
+        </View>
+      );
+    }
     if (item.kind === 'domain') {
       const label =
         item.domain === 'health' ? 'Health' : item.domain === 'time' ? 'Screen time' : 'Location';
@@ -132,10 +171,6 @@ export default function ProfileDataEditor({
       const allSelected = selected.length > 0 && available.every((key) => selected.includes(key));
       const toggleDisabled = locked || (!available.length && !selected.length);
       const toggleLabel = allSelected ? 'Deselect all' : 'Select all';
-      const showAccess =
-        !inline ||
-        (requestedDomains.includes(item.domain) && permissions[item.domain] === 'denied') ||
-        (item.domain === 'time' && unsupportedIosTime);
       return (
         <View>
           <View
@@ -180,7 +215,7 @@ export default function ProfileDataEditor({
                 </Copy>
               </View>
             </Pressable>
-            {(!inline || item.expanded) && (
+            {item.domain !== 'location' && (!inline || item.expanded) && (
               <View
                 style={[
                   styles.actions,
@@ -205,20 +240,18 @@ export default function ProfileDataEditor({
                     }}
                   />
                 )}
-                {!inline && (item.domain !== 'health' || Platform.OS === 'android') && (
-                  <Pressable
-                    accessibilityRole="button"
-                    testID={`selection-permissions-${item.domain}`}
-                    accessibilityLabel={`Review ${label} permissions`}
-                    disabled={locked}
-                    onPress={() => void authorize(item.domain)}
-                    style={styles.action}
-                  >
-                    <Copy variant="caption" style={{ color: colors.accent }}>
-                      Permissions
-                    </Copy>
-                  </Pressable>
-                )}
+                <Pressable
+                  accessibilityRole="button"
+                  testID={`selection-permissions-${item.domain}`}
+                  accessibilityLabel={`Review ${label} permissions`}
+                  disabled={locked}
+                  onPress={() => void authorize(item.domain)}
+                  style={styles.action}
+                >
+                  <Copy variant="caption" style={{ color: colors.accent }}>
+                    Permissions
+                  </Copy>
+                </Pressable>
                 <Pressable
                   accessibilityRole="checkbox"
                   testID={`selection-all-${item.domain}`}
@@ -260,23 +293,7 @@ export default function ProfileDataEditor({
               </View>
             )}
           </View>
-          {item.domain === 'location' && (
-            <Row
-              compact
-              title="Background recording"
-              subtitle="This phone · all profiles"
-              trailing={
-                <Checkbox
-                  testID="selection-location-recording"
-                  accessibilityLabel="Record location in background for all profiles"
-                  value={isTracking}
-                  disabled={locked}
-                  onValueChange={onRecordingChange}
-                />
-              }
-            />
-          )}
-          {(inline || item.domain === 'health') && item.expanded && (
+          {item.domain !== 'location' && (inline || item.domain === 'health') && item.expanded && (
             <View style={styles.inlineFilters}>
               {inline && status}
               {!allTypes.some((type) => type.domain === item.domain && matches(type)) && (
@@ -288,47 +305,23 @@ export default function ProfileDataEditor({
               )}
             </View>
           )}
-          {item.domain !== 'health' &&
-            item.expanded &&
-            (showAccess || (item.domain === 'location' && onOpenLocation)) && (
-              <Group compact transparent={inline}>
-                {showAccess && (
-                  <Row
-                    compact
-                    title={
-                      inline
-                        ? permissions[item.domain] === 'denied'
-                          ? 'Access: denied'
-                          : 'Screen time unavailable'
-                        : `Access: ${permissions[item.domain] ?? 'checking'}`
-                    }
-                    subtitle={
-                      inline
-                        ? item.domain === 'time' && unsupportedIosTime
-                          ? 'Screen time data requires iOS 26.4 or later.'
-                          : undefined
-                        : item.domain === 'time'
-                          ? Platform.OS === 'android'
-                            ? 'Enable Usage Access in Android Settings to read app usage totals.'
-                            : 'iOS data access requires 26.4+ and EU eligibility.'
-                          : 'Only points recorded by myself.md are exported.'
-                    }
-                  />
-                )}
-                {item.domain === 'location' && onOpenLocation && (
-                  <Row
-                    compact
-                    title={inline ? 'Set up recording' : 'Save profile and set up recording'}
-                    subtitle="Choose background recording or save a single point."
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      onOpenLocation();
-                    }}
-                    disabled={locked}
-                  />
-                )}
-              </Group>
-            )}
+          {item.domain === 'time' && item.expanded && (
+            <Group compact transparent={inline}>
+              <Row
+                compact
+                title={`Access: ${permissions.time ?? 'checking'}`}
+                subtitle={
+                  inline
+                    ? unsupportedIosTime
+                      ? 'Screen time data requires iOS 26.4 or later.'
+                      : undefined
+                    : Platform.OS === 'android'
+                      ? 'Enable Usage Access in Android Settings to read app usage totals.'
+                      : 'iOS data access requires 26.4+ and EU eligibility.'
+                }
+              />
+            </Group>
+          )}
         </View>
       );
     }
@@ -441,16 +434,23 @@ export default function ProfileDataEditor({
       );
     }
     const { domain, key } = item;
-    const label = key
-      .replace(/^native:/, '')
-      .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
-      .replace(/([a-z])([A-Z])/g, '$1 $2');
+    const label =
+      domain === 'location' && key === 'native:points'
+        ? 'Recorded locations'
+        : key
+            .replace(/^native:/, '')
+            .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
+            .replace(/([a-z])([A-Z])/g, '$1 $2');
     if (inline)
       return (
         <Pressable
           accessibilityRole="checkbox"
           testID={`selection-type-${domain}-${key}`}
-          accessibilityLabel={`Include ${domain} ${key}`}
+          accessibilityLabel={
+            domain === 'location' && key === 'native:points'
+              ? 'Include recorded locations in this profile’s exports'
+              : `Include ${domain} ${key}`
+          }
           accessibilityState={{ checked: selection[domain].includes(key), disabled: locked }}
           disabled={locked}
           onPress={() =>
@@ -472,6 +472,11 @@ export default function ProfileDataEditor({
         >
           <View style={styles.groupText}>
             <Copy variant="caption">{label}</Copy>
+            {domain === 'location' && (
+              <Copy variant="caption" muted>
+                Include saved points in this profile’s exports.
+              </Copy>
+            )}
             {!types[domain].includes(key) && (
               <Copy variant="caption" muted>
                 Unavailable on this phone
@@ -499,10 +504,14 @@ export default function ProfileDataEditor({
       <View style={!query && (domain === 'health' ? styles.healthTypes : styles.domainTypes)}>
         <Row
           compact
-          title={key
-            .replace(/^native:/, '')
-            .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
-            .replace(/([a-z])([A-Z])/g, '$1 $2')}
+          title={
+            domain === 'location' && key === 'native:points'
+              ? 'Recorded locations'
+              : key
+                  .replace(/^native:/, '')
+                  .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
+                  .replace(/([a-z])([A-Z])/g, '$1 $2')
+          }
           subtitle={
             domain === 'health' && key.startsWith('native:') && types.health.includes(key)
               ? undefined
@@ -512,7 +521,11 @@ export default function ProfileDataEditor({
             <Checkbox
               disabled={locked}
               testID={`selection-type-${domain}-${key}`}
-              accessibilityLabel={`Include ${domain} ${key}`}
+              accessibilityLabel={
+                domain === 'location' && key === 'native:points'
+                  ? 'Include recorded locations in this profile’s exports'
+                  : `Include ${domain} ${key}`
+              }
               value={selection[domain].includes(key)}
               onValueChange={(enabled) =>
                 select({
@@ -537,7 +550,9 @@ export default function ProfileDataEditor({
     return (
       <View>
         {data.map((item) => (
-          <View key={`${item.kind}:${item.kind === 'group' ? 'health' : item.domain}:${item.key}`}>
+          <View
+            key={`${item.kind}:${item.kind === 'group' ? 'health' : item.kind === 'location-controls' ? 'location' : item.domain}:${item.key}`}
+          >
             {renderItem({ item })}
           </View>
         ))}
@@ -547,7 +562,9 @@ export default function ProfileDataEditor({
     <FlashList
       testID="selection-list"
       data={data}
-      keyExtractor={(item) => `${item.kind === 'group' ? 'group' : item.domain}:${item.key}`}
+      keyExtractor={(item) =>
+        `${item.kind === 'group' ? 'group' : item.kind === 'location-controls' ? 'location' : item.domain}:${item.key}`
+      }
       getItemType={(item) => item.kind}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
@@ -690,6 +707,7 @@ function healthGroup(key) {
   return 'Other health';
 }
 const styles = StyleSheet.create({
+  locationControls: { paddingTop: 8 },
   transparent: { backgroundColor: 'transparent' },
   inlineDomain: { marginTop: 0, borderRadius: 0, borderWidth: 0, paddingRight: 0 },
   domainTitle: {

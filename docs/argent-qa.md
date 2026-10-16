@@ -1,5 +1,45 @@
 # Argent phone QA
 
+## Local file conflicts (16 October 2026)
+
+Output → When files exist (`profile-setting-writeMode`) expands Replace, Append, Create a new file and Skip (`export-write-mode-replace`, `export-write-mode-append`, `export-write-mode-new_file`, `export-write-mode-skip`). The isolated iOS fixture selected Append and saved; the collapsed row and persisted fixture state both retained Append. No native data export was triggered. Export runtime fixtures exercise all four policies for app Documents and selected-provider roots, JSON/JSONL append and numbered sidecars, malformed-file preservation and skip byte preservation. Append is limited to 32 MB and intentionally retains repeated records. Real provider/device commit behavior for these new modes remains unverified.
+
+Selected-folder exports now write into the selected root, with only explicitly enabled format folders. `verify:native-sources` verifies exact direct and format-folder paths, replacement, owner isolation, revoked grants and restored iOS bookmarks using synthetic file providers. This path change has not been exercised through a real system picker on a device. Existing app-default layout remains unchanged.
+
+The profile Location details shortcut and `selection-location-details` selector are retired. Expanded Location now contains only Recorded locations, Record location in background and Location access. Earlier verification notes below describe the previous layout.
+
+## Destination-specific Output (16 October 2026)
+
+The dedicated iOS fixture simulator switched a saved profile from On this phone to Cloud service and back. Cloud showed Schema version, fixed JSONL and Export window, with Filename, Folders and replacement behavior absent. Switching back restored JSON and Documents/Exports. Output → Folders exposed Save to, the subfolder and format-folder controls; Destination contained only destination choices. Profile cards also omit Folder and Filename for remote destinations. This verifies presentation and saved fixture settings only; no remote upload or real folder grant was performed.
+
+## Location selection cleanup (16 October 2026)
+
+Expanded Location presents Recorded locations (`selection-type-location-native:points`), Record location in background (`selection-location-recording`), Location access (`selection-permissions-location`) and Location details (`selection-location-details`). Location Select all and the old Access/setup panel are removed; each data type remains individually selectable. The dedicated iOS fixture simulator verified expanded/collapsed placement and permission review retained Allowed without adding synthetic diagnostic prose to the form. The recording toggle stayed off; no real OS permission or recording action was performed. Health and Screen time selectors remain unchanged.
+
+## Minute export cadence (16 October 2026)
+
+Custom cadence includes `schedule-unit-minute` and `schedule-unit-hour` alongside existing calendar units. `schedule-interval-input` accepts 1–365; `schedule-interval-timing` explains elapsed refresh and phone-controlled background behavior. The dedicated iOS fixture simulator selected Custom → Minutes → 1 and saved; the collapsed row read Every 1 minute, with calendar Preferred time and Today Refresh controls absent. Automatic export execution remains disabled in QA. Core/runtime fixtures cover exact first slot, deduplication, missed-slot coalescing, next execution, disable, hours, midnight catch-up to the current day, and no per-minute cloud reminders. HTTP/MCP fixtures validate a one-minute proposal through real SDK transport. Real minute-by-minute phone exports and physical-device background timing were not tested; OS background timing is not guaranteed.
+
+## Local export folders (16 October 2026)
+
+`export-choose-folder` opens the system folder picker from Profile → Output → Folders → Folder. `export-reset-folder` restores the default in the draft; profile Save applies either selection. QA fixtures refuse real native grants. The dedicated simulator was temporarily connected to normal Metro 8084 for an isolated synthetic owner/device: the real iOS picker selected On My iPhone, an 18-byte synthetic JSON file was copied outside app Documents, then a full app termination/relaunch restored the persisted bookmark and replaced it with verified 29-byte content without reopening the picker. No native phone data was read or exported. Synthetic files and the grant row were removed and QA Metro 8083 restored. iOS Debug compilation, all-platform JS bundles, SQLite/provider fixtures, export resilience, MCP discovery and account deletion passed. Android's document-tree path was exercised with runtime doubles; its native picker and physical phones were not tested.
+
+## Individual agent permissions (16 October 2026)
+
+The master Allow agent access control (`profile-agent-access`) is removed. Only `profile-agent-permission-health`, `-time`, `-location` and `-logs` control access. Expand Agent permissions before checking them. Existing master-off profiles and fresh fixtures have every permission off; each enable requires its own owner confirmation. `agentAccess` in catalog/storage is a compatibility summary derived from individual permissions, not an editable state. Source selections, exports and native permissions remain separate.
+
+The dedicated iOS QA simulator showed the four controls with no master row, and Health enable confirmation changed only its permission. SQLite/runtime fixtures verify legacy-denial preservation, individual source authorization, unrelated denial, last-permission revocation and unchanged selections; HTTP/MCP checks verify review handoffs and server authorization. QA state is synthetic; native Health data reads and Android UI were not exercised.
+
+## Profile permission accordion (16 October 2026)
+
+The dedicated iOS fixture simulator verified the single Logs row (`profile-agent-permission-logs`), immediate disable, owner confirmation on enable, and the resulting checked state. The duplicate phone-wide row is removed. The profile deep link still expands Agent permissions; `profile-agent-permissions-toggle` and `profile-agent-permissions-content` retain their accordion contract. These fixture interactions do not publish real logs. Runtime SQLite fixtures cover migration of old phone-wide denials, independent profile approval/revocation, last-profile publication shutdown, restart persistence and new-profile defaults. Real local HTTP/MCP debug tests cover authorization, consent, revision races and stale-phone denial. Android UI and normal-build publication were not exercised in this pass.
+
+## Profile-owned access (16 October 2026)
+
+The dedicated Onboarding Profile QA iOS 26.5 simulator loaded this checkout through Metro 8083. Profile Health access could be revoked and re-enabled with owner confirmation; direct Health permission review updated only synthetic OS state. Settings exposed Agent connection directly. The updated `qa-settings-navigation` passed twice consecutively (37 passing checks per run, Android branch skipped). Each run reported a small-motion idle warning on Settings; destination identity checks, source-row targeting and the camera normal-build boundary still passed. The exploratory tap recorder initially selected an unrelated native field; the real Settings row was found by its native identifier and its selector independently asserted before the saved flow replay. A 29.8-second exploratory screen recording is under ignored `.argent/recordings`. No normal-build OS prompt, account pairing, personal-data query or Android UI was exercised. Original simulator appearance/text size were restored.
+
+Connections and phone-wide source-grant controls are removed. Use Profiles → saved profile → Agent permissions for source consent, and its Data selection section for OS permission review. Location recording controls remain shared phone collection settings reached from a profile's Location section. Settings exposes Agent connection directly. Legacy `settings/connections` URLs redirect to Profiles; non-location `data` URLs do too. The old `connections-*`, `settings-data-sources`, `source-grant-*` and `profile-agent-phone-permissions` selectors are retired. `qa-settings-navigation` now opens Agent connection directly from Settings, checks the camera integration boundary, returns to Settings and resets the fixtures. Its historical results do not verify the new flow.
+
 ## Current bridge-first scope (15 October 2026)
 
 Mobile has only **Profiles / Settings** tabs. Support, Logs/history routes, the diagnostics viewer and all feedback/Gripe UI are removed. Settings retains one **Share debug logs with agents** owner toggle; agent reads retain raw errors and operation/timing/HTTP metadata without record, credential or URL attachments. `get_phone_debug_logs`, `request_phone_debug_access` and `list_phone_logs` remain; consent handoff opens Settings. The debug-content and feedback MCP tools are removed. Dashboard Support/explorer/History/demo and the portable support-chat package are unchanged; Isobot approvals use web dashboard Support.
@@ -65,20 +105,20 @@ Every flow starts its app and establishes synthetic state itself. `qa-reset-popu
 | `qa-profile-edit-persistence` | Open seeded profile → edit name → verify full input → Save → leave → reopen → saved name                                                                                               | Renames synthetic profile; next run resets it |
 | `qa-profile-create-cancel`    | Seeded row → create named profile → verify seeded and new rows → reopen → rename → Cancel → leave/reopen → original name → reset to seeded row                                         | Creates then resets synthetic profile         |
 | `qa-source-selection`         | Assert 0/1 Screen time choice → select applications → synthetic permission allowed → leave/reopen → 1/1 persisted → QA diagnostics report authorized, grants/recording false           | Saves one synthetic choice, then resets       |
-| `qa-settings-navigation`      | Settings → Data sources → private sources/recording off → Connect agent → pairing input → camera action reports normal-build handoff → back to Connections → back to Settings → reset  | Navigation only                               |
+| `qa-settings-navigation`      | Settings → Agent connection → pairing input → camera action reports normal-build handoff → back to Settings → reset                                                                    | Navigation only                               |
 | `qa-fixture-states`           | Empty profile baseline → profile loading → denied permission with selection retained and grants/recording false → failed rename → Cancel → leave/reopen → original stored name → reset | Changes synthetic scenarios and resets        |
 
 Input value checks remain raw `await-ui-element` steps because iOS accessibility exposes a field's value separately from the flow tree's label.
 
-| Navigation                                | Required identity evidence                                                                                  | Readiness |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------- |
-| App launch                                | `qa-open`                                                                                                   | `idle`    |
-| Open/reset fixtures                       | Scenario reset button, then seeded profile or explicit loading copy                                         | `idle`    |
-| Onboarding transitions                    | Destination Continue/Explore control, then seeded profile                                                   | `idle`    |
-| Open profile / creation editor            | `profile-setting-name` / `profile-name-input`                                                               | `idle`    |
-| Save creation / leave / reopen            | Saved name / saved count or seeded row / saved name                                                         | `idle`    |
-| Expand source selection                   | `selection-type-time-native:applications`                                                                   | `idle`    |
-| Open Settings / Connections / Pair / back | `settings-data-sources` / `connections-source-health` / `pair-link-input` / Connections or Settings control | `idle`    |
+| Navigation                     | Required identity evidence                                                                    | Readiness |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | --------- |
+| App launch                     | `qa-open`                                                                                     | `idle`    |
+| Open/reset fixtures            | Scenario reset button, then seeded profile or explicit loading copy                           | `idle`    |
+| Onboarding transitions         | Destination Continue/Explore control, then seeded profile                                     | `idle`    |
+| Open profile / creation editor | `profile-setting-name` / `profile-name-input`                                                 | `idle`    |
+| Save creation / leave / reopen | Saved name / saved count or seeded row / saved name                                           | `idle`    |
+| Expand source selection        | `selection-type-time-native:applications`                                                     | `idle`    |
+| Open Settings / Pair / back    | `settings-qa` / `settings-agent-connection` / `pair-link-input` / `settings-agent-connection` | `idle`    |
 
 Filter and state-change checks also use positive replacement evidence. An idle warning alone cannot pass an acceptance contract. Minor native chrome/transition motion has appeared during replay; screenshots showed no unexpected overlay, and subsequent fixed state/control checks remained required. Intentional loading fixtures are gated on their explicit loading copy. A failed check must stop the run; do not add optional branches or extend fixed delays to hide a product failure.
 

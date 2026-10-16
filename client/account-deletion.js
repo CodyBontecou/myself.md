@@ -78,6 +78,8 @@ export async function deleteLocalAccount(session) {
       ['records', 'owner', device],
       ['settings', 'owner', session.deviceId || 'local-device'],
       ['export_profiles', 'owner', session.deviceId || 'local-device'],
+      ['export_folders', 'owner', session.owner],
+      ['export_folders', 'device', device],
       ['profile_schedules', 'device', session.deviceId || 'local-device'],
       ['activity_history', 'owner', session.owner],
       ['activity_history', 'device', device],
@@ -87,6 +89,8 @@ export async function deleteLocalAccount(session) {
       ['debug_content', 'device', device],
       ['debug_sharing', 'owner', session.owner],
       ['debug_sharing', 'device', device],
+      ['profile_log_consent', 'owner', session.owner],
+      ['profile_log_consent', 'device', device],
     ]) {
       if (
         db.getFirstSync("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table ?? '')

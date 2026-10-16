@@ -36,9 +36,15 @@ db.exec(
   `CREATE TABLE records(owner TEXT); CREATE TABLE settings(owner TEXT); CREATE TABLE export_profiles(owner TEXT); CREATE TABLE profile_schedules(device TEXT); CREATE TABLE activity_history(owner TEXT,device TEXT,value TEXT);`,
 );
 db.exec(
-  'CREATE TABLE debug_content(owner TEXT,device TEXT); CREATE TABLE debug_log(owner TEXT,device TEXT); CREATE TABLE debug_sharing(owner TEXT,device TEXT)',
+  'CREATE TABLE debug_content(owner TEXT,device TEXT); CREATE TABLE debug_log(owner TEXT,device TEXT); CREATE TABLE debug_sharing(owner TEXT,device TEXT); CREATE TABLE profile_log_consent(owner TEXT,device TEXT); CREATE TABLE export_folders(owner TEXT,device TEXT)',
 );
-for (const table of ['debug_log', 'debug_sharing', 'debug_content']) {
+for (const table of [
+  'debug_log',
+  'debug_sharing',
+  'debug_content',
+  'profile_log_consent',
+  'export_folders',
+]) {
   db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('alice', 'phone-a');
   db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('bob', 'phone-b');
 }
@@ -180,7 +186,13 @@ assert.equal(
 assert.equal(db.prepare("SELECT count(*) n FROM records WHERE owner='bob'").get()?.n, 1);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='alice'").get()?.n, 0);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='bob'").get()?.n, 1);
-for (const table of ['debug_log', 'debug_sharing', 'debug_content']) {
+for (const table of [
+  'debug_log',
+  'debug_sharing',
+  'debug_content',
+  'profile_log_consent',
+  'export_folders',
+]) {
   assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='alice'`).get()?.n, 0);
   assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='bob'`).get()?.n, 1);
 }

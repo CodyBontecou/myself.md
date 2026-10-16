@@ -37,6 +37,7 @@ export default function ProfileEditor({ data = false }) {
               window: 'Export window',
               filename: 'Filename',
               folders: 'Folders',
+              writeMode: 'When files exist',
               cadence: 'Cadence',
               time: 'Preferred time',
               refresh: 'Today Refresh',
@@ -83,7 +84,6 @@ export default function ProfileEditor({ data = false }) {
           isTracking={phone.isTracking}
           onRecordingChange={(enabled) => void phone.run(() => phone.changeRecording(enabled))}
           onAuthorize={phone.reviewSourceAccess}
-          onOpenLocation={() => void run(() => save(true))}
           selection={draft.selection}
           onSelection={(selection) => setDraft({ ...draft, selection })}
           disabled={disabled}
@@ -164,6 +164,7 @@ export default function ProfileEditor({ data = false }) {
       )}
       {(!section || section !== 'name') && (
         <ExportSettingsEditor
+          folderContext={phone.session}
           {...(section ? { section } : {})}
           {...(field ? { field } : {})}
           settings={draft.export}

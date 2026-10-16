@@ -3,18 +3,10 @@ import { Screen, Copy } from '../components/ui';
 import { usePhoneData } from '../../client/DataPanel';
 import ProfilePanel from '../../client/ProfilePanel';
 export default function ProfileScreen() {
-  const { id, firstExport } = useLocalSearchParams();
+  const { id, firstExport, section } = useLocalSearchParams();
   const data = usePhoneData();
-  const {
-    session,
-    profiles,
-    types,
-    sourcePermissions,
-    grants,
-    reviewSourceAccess,
-    busy,
-    changeProfiles,
-  } = data;
+  const { session, profiles, types, sourcePermissions, reviewSourceAccess, busy, changeProfiles } =
+    data;
   const profileId = typeof id === 'string' ? id : '';
   const profile = profiles?.profiles.find((p) => p.id === profileId);
   return (
@@ -24,12 +16,12 @@ export default function ProfileScreen() {
         <ProfilePanel
           key={profileId}
           profileId={profileId}
+          openAgentPermissions={section === 'agent-permissions'}
           exportFirst={firstExport === '1'}
           session={session}
           state={profiles}
           types={types}
           permissions={sourcePermissions}
-          grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
           isTracking={data.isTracking}

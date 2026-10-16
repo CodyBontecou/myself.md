@@ -95,7 +95,7 @@ function usePhoneState() {
       try {
         if (url === 'myselfmd://account' || url.startsWith('myselfmd://account?')) {
           router.navigate('/account');
-        } else if (url.startsWith('myselfmd://profile')) {
+        } else if (url.startsWith('myselfmd://profile?')) {
           setIncoming(profileFromLink(url));
           router.navigate('/profiles');
         } else if (url.startsWith('myselfmd://pair?') || /^https?:\/\/[^/]+\/pair#/.test(url)) {

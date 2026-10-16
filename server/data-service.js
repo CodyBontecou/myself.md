@@ -43,7 +43,7 @@ const queryFields = {
     .min(1)
     .max(100)
     .describe(
-      'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+      'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
     ),
   domain: domainSchema.describe(
     'Data domain from get_phone_data_catalog. The chosen profile and phone-wide grant must both permit it.',
@@ -145,6 +145,13 @@ const profileSchema = z.object({
       includeToday: z
         .boolean()
         .describe('Whether the proposed export includes the current incomplete day.'),
+      localFolderId: z
+        .string()
+        .regex(/^[a-zA-Z0-9-]{1,100}$/)
+        .optional()
+        .describe(
+          'Device-local folder handle selected by the owner. Cannot grant file access; imported or foreign handles require the native folder picker.',
+        ),
       folderName: z
         .string()
         .max(64)
@@ -155,6 +162,12 @@ const profileSchema = z.object({
         .string()
         .max(100)
         .describe("Filename template for exported files; use the app's supported template syntax."),
+      writeMode: z
+        .enum(['replace', 'append', 'new_file', 'skip'])
+        .optional()
+        .describe(
+          'Local file conflict behavior: replace (default), append records, create a numbered new file, or skip existing files. Remote destinations ignore this setting. Appending may duplicate records. Requires owner review and save.',
+        ),
       formatFolders: z
         .boolean()
         .describe('Whether to separate JSON and JSONL files into format-specific folders.'),
@@ -181,20 +194,28 @@ const profileSchema = z.object({
     .object({
       frequency: z
         .enum(['daily', 'weekly', 'custom'])
-        .describe('Daily, weekly or custom calendar cadence for the proposed schedule.'),
+        .describe(
+          'Daily, weekly or custom cadence; custom supports minutes, hours, days, weeks and months.',
+        ),
       interval: z
         .number()
         .int()
         .min(1)
         .max(365)
-        .describe('Positive number of calendar units between custom scheduled exports, up to 365.'),
+        .describe(
+          'Positive number of selected units between custom exports, 1–365; minimum one minute.',
+        ),
       unit: z
-        .enum(['day', 'week', 'month'])
-        .describe('Calendar unit used by a custom schedule interval.'),
+        .enum(['minute', 'hour', 'day', 'week', 'month'])
+        .describe(
+          'Minute/hour intervals refresh today while open (background is best effort); day/week/month intervals export completed days.',
+        ),
       anchorDate: z
         .string()
         .nullable()
-        .describe('Custom schedule anchor in YYYY-MM-DD form, or null to use the default anchor.'),
+        .describe(
+          'Calendar schedule anchor in YYYY-MM-DD form. Minute/hour schedules start at opt-in and ignore this date.',
+        ),
       hour: z
         .number()
         .int()
@@ -257,6 +278,15 @@ const catalogSchema = z.object({
     .array(
       profileSchema.extend({
         id: z.string().min(1).max(100),
+        localExportFolder: z
+          .object({
+            status: z.enum(['default', 'selected', 'needs_selection']),
+            name: z.string().max(255),
+            requiresUser: z.literal(true),
+            deepLink: z.string().max(500),
+            instructions: z.string().max(1000),
+          })
+          .optional(),
         agentAccess: z.boolean().default(false),
         agentPermissions: z
           .object({
@@ -282,7 +312,7 @@ const catalogSchema = z.object({
         permission: z.string().max(100).optional(),
         permissionHandoff: z
           .string()
-          .regex(/^myselfmd:\/\/data\/(health|time|location)$/)
+          .regex(/^myselfmd:\/\/(?:data\/(?:health|time|location)|profiles(?:\/[^/?#]+)?)$/)
           .optional(),
         availableTypes: z.array(z.string().max(160)).max(300),
         types: z.array(z.string().max(160)).max(300),
@@ -392,7 +422,7 @@ export function createDataService({
       {
         title: 'Browse phone logs',
         description:
-          'Browse owned-phone app, export and agent logs. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require Settings log-sharing consent, an enabled profile with App logs permission, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of authorized JSON metadata. Use selectedIds to select up to 350 unique IDs from the current page; unavailableIds identifies missing or inaccessible selections without widening grants. JSONL returns the same authorized projection. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Raw error messages may contain sensitive information. Does not consume export allowance.',
+          'Browse owned-phone app, export and agent logs. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require owner-approved Logs access in an enabled profile, a consented phone report, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of authorized JSON metadata. Use selectedIds to select up to 350 unique IDs from the current page; unavailableIds identifies missing or inaccessible selections without widening grants. JSONL returns the same authorized projection. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Raw error messages may contain sensitive information. Does not consume export allowance.',
         inputSchema: z
           .object({
             deviceId: z
@@ -437,7 +467,7 @@ export function createDataService({
               .max(100)
               .optional()
               .describe(
-                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
               ),
             selectedIds: z
               .array(z.string().min(1).max(1000))
@@ -646,7 +676,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Generate an explicit per-type export profile, a native deepLink and an email-compatible HTTPS shareLink. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under domain grants. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
+          'Generate an explicit per-type export profile, a native deepLink and an email-compatible HTTPS shareLink. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under profile permissions. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
         inputSchema: z.object({
           profile: profileSchema.describe(
             'Proposed versioned profile configuration. Preview compatibility first; delivery and deep links still require the phone owner to save it.',
@@ -720,7 +750,7 @@ export function createDataService({
       {
         title: 'Discover approved phone data',
         description:
-          'Discover phone data types, profiles with agentAccess approval and independent agentPermissions, explicit domain grants and collection limits before querying. Select an approved profile and intersect its selections with domain types. Online means a heartbeat within 15 seconds. Keep myself.md open. No tool can grant permissions.',
+          'Discover phone data types, profiles with independent agentPermissions (agentAccess is a compatibility summary), profile-derived source availability and collection limits before querying. Select an approved profile and intersect its selections with domain types. When the user refers to a profile by name, match that name against catalog.profiles[].name and use the corresponding stable id for subsequent tools. Names can change and are not unique: refresh the catalog for each new name reference; if multiple profiles match, ask the user to disambiguate, and if none match, report that instead of guessing an ID. Online means a heartbeat within 15 seconds; offline catalogs may be stale. Keep myself.md open. No tool can grant permissions.',
         inputSchema: z.object({
           deviceId: z
             .string()
@@ -750,12 +780,22 @@ export function createDataService({
                   domains: p.catalog.domains,
                   locationTracking: p.catalog.locationTracking,
                   profiles: p.catalog.profiles.map(
-                    ({ id, name, selection, agentAccess, agentPermissions }) => ({
+                    ({
                       id,
                       name,
                       selection,
                       agentAccess,
                       agentPermissions,
+                      localExportFolder,
+                      export: settings,
+                    }) => ({
+                      id,
+                      name,
+                      selection,
+                      agentAccess,
+                      agentPermissions,
+                      localExportFolder,
+                      export: { writeMode: settings?.writeMode ?? 'replace' },
                     }),
                   ),
                 }
@@ -776,7 +816,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Initiate a user approval handoff for an existing owned phone profile. Open the returned profile link on the phone and have the user set Allow agent access. This tool never changes consent. Verify the saved outcome with get_phone_data_catalog; an offline catalog may be stale.',
+          'Initiate a user approval handoff for an existing owned phone profile. Open the returned profile link on the phone and have the user review individual Agent permissions. There is no master switch; enabled requests at least one permission, disabled requests all permissions off. This tool never changes consent. Verify the saved outcome with get_phone_data_catalog; an offline catalog may be stale.',
         inputSchema: z.object({
           deviceId: z
             .string()
@@ -789,7 +829,7 @@ export function createDataService({
             .min(1)
             .max(100)
             .describe(
-              'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+              'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
             ),
           enabled: z
             .boolean()
@@ -816,8 +856,8 @@ export function createDataService({
             profile.agentAccess === enabled
               ? null
               : {
-                  deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}`,
-                  instruction: `On the phone, ${enabled ? 'enable' : 'disable'} Allow agent access for ${profile.name}${enabled ? ' and confirm Allow' : ''}.`,
+                  deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}?section=agent-permissions`,
+                  instruction: `On the phone, ${enabled ? 'enable the needed individual permissions and confirm each Allow' : 'turn off every individual permission'} in Agent permissions for ${profile.name}.`,
                 },
         });
       },
@@ -834,7 +874,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Request owner review of independent Health, Screen time, Location and App logs permissions for an existing phone profile. Never changes consent. The owner uses Profile → Agent permissions; verify via a fresh get_phone_data_catalog. Export selections, phone-wide grants, OS access and diagnostics consent remain separate.',
+          'Request owner review of independent Health, Screen time, Location and Logs permissions for an existing phone profile. Never changes consent. The owner uses Profile → Agent permissions; verify via a fresh get_phone_data_catalog. Export selections and OS access remain separate; Logs approval includes diagnostics consent.',
         inputSchema: z
           .object({
             deviceId: z
@@ -848,24 +888,24 @@ export function createDataService({
               .min(1)
               .max(100)
               .describe(
-                'Existing profile ID returned by get_phone_data_catalog; query access requires agentAccess and the relevant data permission.',
+                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
               ),
             permissions: z
               .object({
                 health: z
                   .boolean()
                   .describe(
-                    'Requested health agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                    'Requested health agent permission. Owner confirmation, profile selections and OS permissions remain required.',
                   ),
                 time: z
                   .boolean()
                   .describe(
-                    'Requested time agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                    'Requested time agent permission. Owner confirmation, profile selections and OS permissions remain required.',
                   ),
                 location: z
                   .boolean()
                   .describe(
-                    'Requested location agent permission. Owner confirmation, profile selections and phone-wide grants remain required.',
+                    'Requested location agent permission. Owner confirmation, profile selections and OS permissions remain required.',
                   ),
                 logs: z
                   .boolean()
@@ -904,7 +944,7 @@ export function createDataService({
           handoff: completed
             ? null
             : {
-                deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}`,
+                deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}?section=agent-permissions`,
                 instruction:
                   'Review Agent permissions on this profile and confirm each new access. Re-read the catalog to verify the saved state.',
               },
@@ -916,7 +956,7 @@ export function createDataService({
       {
         title: 'Queue approved phone query',
         description:
-          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with agentAccess true. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; ranges are limited to 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
+          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with the relevant individual permission enabled. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; ranges are limited to 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
         inputSchema: querySchema,
         annotations: {
           title: 'Queue approved phone query',
@@ -1003,7 +1043,10 @@ export function createDataService({
               'Choose an approved profile and a data type selected in that profile.',
             );
           if (!domain?.enabled || !domain.types.includes(`${query.source}:${query.type}`))
-            throw new PairingError(403, 'Enable this domain and source permission on the phone.');
+            throw new PairingError(
+              403,
+              'Enable this source in an approved profile and review its system permission on the phone.',
+            );
           if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
             throw new PairingError(429, 'Read or forget existing requests first.');
           await refreshEntitlement(subject);

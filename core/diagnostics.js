@@ -60,7 +60,7 @@ export function exportDiagnostics(event, profile, sources) {
           const source = sources.find((item) => item.domain === domain);
           return {
             label: `Review ${domain} permissions`,
-            deepLink: `myselfmd://data/${domain}`,
+            deepLink: profileLink,
             notes: source?.notes ?? [],
             unavailableTypes: source
               ? event.profile.selection[domain].filter(

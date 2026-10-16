@@ -3,7 +3,7 @@ import { qaEnabled, qaSnapshot, updateQa } from './qa-runtime.js';
 import Storage from 'expo-sqlite/kv-store';
 
 const key = 'agent-bridge-onboarding-v1';
-/** @typedef {'/profiles'|`/profiles/${string}`|'/settings/connections'|'/pair'} Destination */
+/** @typedef {'/profiles'|`/profiles/${string}`|'/pair'} Destination */
 const Context = createContext(
   /** @type {{complete:boolean,destination:Destination,error:string,finish:(destination:Destination)=>void,resetDestination:()=>void}|null} */ (
     null

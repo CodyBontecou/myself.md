@@ -15,10 +15,6 @@ export function loadGrants(owner) {
     ? JSON.parse(/** @type {{value:string}} */ (row).value)
     : { health: false, time: false, location: false };
 }
-/** @param {string} owner @param {Grants} grants */
-export function saveGrants(owner, grants) {
-  db.runSync('INSERT OR REPLACE INTO settings VALUES (?,?)', owner, JSON.stringify(grants));
-}
 /** @param {string} owner @param {import('../core/data.js').DataRecord} row */
 export function saveRecord(owner, row) {
   db.runSync(

@@ -1,0 +1,6 @@
+{
+  "tool": "built-in image_gen",
+  "reference": "assets/icon-variants/bold-point-cloud.png",
+  "file": "spaced-point-cloud.png",
+  "prompt": "Use case: precise-object-edit. Edit target: the supplied bold point-cloud myself.md app icon. Change only the spacing and density of the dots: make the white dots noticeably more spaced out across the entire head, using roughly half as many dots, with clear black gaps between individual dots even in forehead, cheek and nose highlights. Keep dots small, crisp, discrete and round; do not enlarge them to fill gaps, do not merge dots into solid white areas. Preserve the exact classical face, expression, three-quarter pose, silhouette, scale, centered framing and pure black background. Preserve recognizable eyes, nose, lips and sculpted hair using careful point placement. The result should feel airy, sparse and deliberate, while still reading as the same portrait. Monochrome white on black, single square full-bleed icon, no text, border, rounded corners or mockup."
+}

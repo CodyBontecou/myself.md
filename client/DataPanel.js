@@ -1,3 +1,4 @@
+import { exportFolderStatus } from './export-folder.js';
 import { showToast } from '../src/components/Toast.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
@@ -6,11 +7,10 @@ import { createContext, useContext, useCallback, useEffect, useRef, useState } f
 import { AppState, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
-import { Button, Checkbox, Text } from './Terminal.js';
+import { Button, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
-import { loadGrants, saveGrants } from './library.js';
 import { requestSourceAccess } from './source-access.js';
 import { startTracking, stopTracking, locationStatus } from './location-task.js';
 import { cloudAccess } from './destinations.js';
@@ -18,8 +18,13 @@ import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
 import LocationSettings from './LocationSettings.js';
-import { loadProfiles, saveProfiles } from './profiles.js';
-import { parseProfile, parseProfileState, agentProfileAllows } from '../core/profiles.js';
+import { loadAgentProfiles, saveAgentProfiles } from './profile-logs.js';
+import {
+  parseProfile,
+  parseProfileState,
+  agentProfileAllows,
+  parseAgentPermissions,
+} from '../core/profiles.js';
 /** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
 const PhoneDataContext = createContext(
   /** @type {ReturnType<typeof usePhoneDataState>|null} */ (null),
@@ -43,9 +48,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   useEffect(() => {
     recordDebug(session, 'app', 'started');
   }, [session]);
-  const [grants, setGrants] = useState(() => loadGrants(session.deviceId));
-  const allowed = useRef(grants);
-  const [profiles, setProfiles] = useState(() => loadProfiles(session.deviceId));
+  const [profiles, setProfiles] = useState(() => loadAgentProfiles(session));
   const profileState = useRef(profiles);
   const [types, setTypes] = useState(
     /** @type {Record<import('../core/data.js').Domain,string[]>} */ ({
@@ -86,7 +89,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   );
   const [sourceNotes, setSourceNotes] = useState(/** @type {Record<string,string>} */ ({}));
   const phoneCatalog = useCallback(async () => {
-    const raw = await catalog(session.owner, allowed.current);
+    const raw = await catalog(session.owner, { health: true, time: true, location: true });
     setSourcePermissions(Object.fromEntries(raw.domains.map((d) => [d.domain, d.permission])));
     setSourceNotes(Object.fromEntries(raw.domains.map((d) => [d.domain, d.notes.join(' ')])));
     setTypes({
@@ -101,16 +104,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
             ...parseProfile({
               schema: 'myself.md.profile.v1',
               name: 'Default',
-              selection: Object.fromEntries(
-                raw.domains.map((d) => [d.domain, allowed.current[d.domain] ? d.types : []]),
-              ),
+              selection: Object.fromEntries(raw.domains.map((d) => [d.domain, []])),
             }),
             id: 'default',
             agentAccess: false,
+            agentPermissions: { health: false, time: false, location: false, logs: false },
           },
         ],
       };
-      saveProfiles(session.deviceId, initial);
+      saveAgentProfiles(session, initial);
       profileState.current = initial;
       setProfiles(initial);
     }
@@ -123,12 +125,20 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     return {
       ...raw,
       diagnostics,
-      profiles: profileState.current.profiles,
+      profiles: profileState.current.profiles.map((profile) =>
+        Object.assign({}, profile, { localExportFolder: exportFolderStatus(session, profile) }),
+      ),
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
       domains: raw.domains.map((d) =>
         Object.assign({}, d, {
-          enabled: allowed.current[d.domain],
+          enabled:
+            profileState.current?.profiles.some(
+              (p) =>
+                p.agentAccess === true &&
+                parseAgentPermissions(p.agentPermissions)[d.domain] &&
+                p.selection[d.domain].length > 0,
+            ) ?? false,
           availableTypes: d.types,
           types: d.types.filter((key) =>
             profileState.current?.profiles.some((p) =>
@@ -265,13 +275,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         const profile = profileState.current?.profiles.find(
           (p) => p.id === request?.query.profileId,
         );
-        if (
-          request &&
-          active &&
-          profile &&
-          allowed.current[request.query.domain] &&
-          agentProfileAllows(profile, request.query)
-        ) {
+        if (request && active && profile && agentProfileAllows(profile, request.query)) {
           setMessage(`Your chat requested ${request.query.domain} data.`);
           let body;
           recordDebug(session, 'query', 'started');
@@ -286,7 +290,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
               error: errorJSON(error),
             };
           }
-          if (active && current === version.current && allowed.current[request.query.domain]) {
+          if (active && current === version.current && agentProfileAllows(profile, request.query)) {
             await api(session, `/api/phones/${session.deviceId}/result`, {
               method: 'POST',
               body: JSON.stringify(body),
@@ -350,19 +354,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       await publish();
     }
   }
-  /** @param {import('../core/data.js').Domain} domain @param {boolean} enabled */
-  async function changeGrant(domain, enabled) {
-    version.current++;
-    const next = { ...allowed.current, [domain]: enabled };
-    allowed.current = next;
-    saveGrants(session.deviceId, next);
-    setGrants(next);
-    await publish();
-    if (enabled) {
-      if (domain !== 'location') await reviewSourceAccess(domain);
-      await publish();
-    }
-  }
   /** @param {import('../core/profiles.js').ProfileState} next */
   async function changeProfiles(next) {
     next = parseProfileState(next);
@@ -380,7 +371,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       }
     }
     version.current++;
-    saveProfiles(session.deviceId, next);
+    saveAgentProfiles(session, next);
     recordDebug(session, 'profile', 'succeeded');
     profileState.current = next;
     setProfiles(next);
@@ -400,7 +391,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     busy,
     proposal,
     setProposal,
-    grants,
     isTracking,
     locationInfo,
     notes,
@@ -409,7 +399,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     reviewSourceAccess,
     message,
     run,
-    changeGrant,
     changeRecording,
     changeProfiles,
     setMessage,
@@ -433,13 +422,10 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     isTracking,
     proposal,
     setProposal,
-    grants,
-    notes,
     sourceNotes,
     reviewSourceAccess,
     message,
     run,
-    changeGrant,
     changeProfiles,
     setMessage,
   } = data;
@@ -456,7 +442,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           state={profiles}
           types={types}
           permissions={sourcePermissions}
-          grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
           isTracking={isTracking}
@@ -486,20 +471,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
         >
           <Text style={styles.title}>
             {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'}
-          </Text>
-          <View style={styles.row}>
-            <Text style={styles.description}>Agent access</Text>
-            <Checkbox
-              testID={`source-grant-${domain}`}
-              accessibilityLabel={`Allow chat to read ${domain} data`}
-              value={grants[domain]}
-              disabled={busy || !session.server}
-              onValueChange={(value) => void run(() => changeGrant(domain, value))}
-            />
-          </View>
-          <Text style={styles.description}>
-            {grants[domain] ? 'Shared with your paired agent' : 'Private'} ·{' '}
-            {notes[domain] ?? 'Checking data sources…'}
           </Text>
           {domain !== 'location' && (
             <Button
@@ -550,13 +521,6 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    flexWrap: 'wrap',
   },
   title: { fontSize: 19, lineHeight: 27 },
   status: {

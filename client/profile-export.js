@@ -9,6 +9,7 @@ import {
   recordChunk,
   fileFooter,
 } from '../core/export-files.js';
+import { saveInExportFolder } from './export-folder.js';
 import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
@@ -28,7 +29,7 @@ export async function exportProfileDay(
     throw new Error('Select at least one data type.');
   const settings = profile.export;
   const root = new Directory(
-    settings.destination === 'local' ? Paths.document : Paths.cache,
+    Paths.cache,
     settings.folderName,
     encodeURIComponent(session.deviceId),
     encodeURIComponent(profile.id),
@@ -182,7 +183,19 @@ export async function exportProfileDay(
         f.target.delete();
         continue;
       }
-      saved.push(f.target.uri);
+      let appended = false;
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      const localFile = await saveInExportFolder(session, profile, f.target, f.format, {
+        onAppend: () => {
+          appended = true;
+        },
+      });
+      if (!localFile) {
+        progress(`${interval.day}: existing ${f.format.toUpperCase()} file skipped.`);
+        f.target.delete();
+        continue;
+      }
+      saved.push(localFile.uri);
       if (f.format === 'jsonl') {
         const metadata = new File(
           f.target.parentDirectory,
@@ -192,21 +205,28 @@ export async function exportProfileDay(
         stagedMetadata.write(JSON.stringify(manifest));
         // oxlint-disable-next-line eslint/no-await-in-loop
         await stagedMetadata.move(metadata, { overwrite: true });
-        saved.push(metadata.uri);
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        const localMetadata = await saveInExportFolder(session, profile, metadata, f.format, {
+          filename: `${localFile.name}.manifest.json`,
+          writeMode: appended ? 'append' : 'replace',
+        });
+        if (localMetadata) saved.push(localMetadata.uri);
+        metadata.delete();
       }
       onArtifact({
         day: interval.day,
-        name: f.target.name,
+        name: localFile.name,
         format: f.format,
         schema: settings.schema,
         recordCount: count,
-        bytes,
-        uri: f.target.uri,
+        bytes: localFile.size,
+        uri: localFile.uri,
         cloudId: null,
-        checksum: f.target.md5,
+        checksum: localFile.md5,
         partial: failures.length > 0,
         warnings,
       });
+      f.target.delete();
     }
     return {
       count,

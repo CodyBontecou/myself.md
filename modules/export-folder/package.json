@@ -1,0 +1,6 @@
+{
+  "name": "export-folder",
+  "version": "1.0.0",
+  "description": "Persistent owner-selected iOS export folder access",
+  "license": "MIT"
+}

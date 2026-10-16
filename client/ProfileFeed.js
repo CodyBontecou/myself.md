@@ -6,6 +6,7 @@ import { deliveredFormats } from '../core/export-files.js';
 import { Copy, Icon, Screen } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import ProfileExports from './ProfileExports.js';
+import { exportFolderStatus } from './export-folder.js';
 /** @param {{profiles:import('../core/profiles.js').ExportProfile[],session:import('./session.js').Session,disabled:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onNewProfile:()=>void,children?:import('react').ReactNode}} props */
 export default function ProfileFeed({
   profiles,
@@ -182,8 +183,12 @@ export default function ProfileFeed({
                         `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
                       ],
                       ['Schema', profile.export.schema.split('.').at(-1) ?? 'v1'],
-                      ['Folder', profile.export.folderName],
-                      ['Filename', profile.export.filenameTemplate],
+                      ...(profile.export.destination === 'local'
+                        ? [
+                            ['Folder', exportFolderStatus(session, profile).name],
+                            ['Filename', profile.export.filenameTemplate],
+                          ]
+                        : []),
                     ].map(([label, value]) => (
                       <View key={label} style={styles.field}>
                         <Copy variant="caption" muted>

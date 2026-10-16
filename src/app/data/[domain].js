@@ -1,14 +1,13 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { Screen, Copy } from '../../components/ui';
+import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
+import { Screen } from '../../components/ui';
 import DataPanel from '../../../client/DataPanel';
-import { phoneSources } from '../../../client/Overview';
 export default function PhoneDataScreen() {
   const { domain } = useLocalSearchParams();
-  const source = phoneSources.find((item) => item.id === domain);
+  if (domain !== 'location') return <Redirect href="/profiles" />;
   return (
     <Screen>
-      <Stack.Screen options={{ title: source?.name ?? 'Data source' }} />
-      {source ? <DataPanel domain={source.id} /> : <Copy>This data source is unavailable.</Copy>}
+      <Stack.Screen options={{ title: 'Location recording' }} />
+      <DataPanel domain="location" />
     </Screen>
   );
 }

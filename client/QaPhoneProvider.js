@@ -126,7 +126,6 @@ export default function QaPhoneProvider({ children }) {
           busy,
           proposal: null,
           setProposal: () => {},
-          grants: { health: false, time: false, location: false },
           isTracking: fixture.scenario === 'location-tracking',
           locationInfo: `Synthetic data: recording ${fixture.scenario === 'location-tracking' ? 'on' : 'off'}, 0 location points.`,
           notes: {
@@ -143,7 +142,6 @@ export default function QaPhoneProvider({ children }) {
           reviewSourceAccess,
           message,
           run,
-          changeGrant: unavailable,
           changeRecording: unavailable,
           changeProfiles,
           setMessage,

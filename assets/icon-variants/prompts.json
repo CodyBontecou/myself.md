@@ -1,0 +1,18 @@
+{
+  "tool": "built-in image_gen",
+  "reference": "assets/myself-icon.png",
+  "variants": [
+    {
+      "file": "bold-point-cloud.png",
+      "prompt": "Use case: logo-brand. Asset type: square app icon variant for myself.md. Input image: reference image, the current app icon. Create one refined variant of this exact classical sculptural head, preserving its face, pose, crop, monochrome white-on-pure-black identity, and point-cloud concept. Direction: BOLD POINT CLOUD. Use fewer, slightly larger, beautifully spaced white particles, stronger readable facial planes, cleaner dark negative space around the silhouette, slightly smaller bust fitting comfortably inside a square app icon safe area. Optimize facial recognition at small icon sizes. Elegant, high contrast, precise stippling, no text, no borders, no rounded corner mask, no mockup. Output a single full-bleed square icon."
+    },
+    {
+      "file": "soft-marble.png",
+      "prompt": "Use case: logo-brand. Asset type: square app icon variant for myself.md. Input image: reference image, the current app icon. Create one variant of the exact classical sculptural head, preserving recognizable face, three-quarter pose, and black background. Direction: SOFT MARBLE / DATA. Transition the white stippled point-cloud into a softly lit ivory marble face with fine granular points dissolving at its edges; retain visible fine particles and deep shadows. Restrained monochrome, sculptural and quiet, strong facial planes readable at small sizes, centered head with comfortable app icon safe margins. Pure black full-bleed background, no text, no border, no rounded corners or mockup. Output one square icon."
+    },
+    {
+      "file": "contour-scan.png",
+      "prompt": "Use case: logo-brand. Asset type: square app icon variant for myself.md. Input image: reference image, the current app icon. Create one variant of the exact classical sculptural head, preserving recognizable face and three-quarter pose. Direction: CONTOUR SCAN. Reinterpret the point-cloud portrait as delicate white horizontal contour scan lines wrapping around the sculptural facial planes, with occasional small white data points and clean deep black gaps. The eyes nose and mouth must stay legible at small size; coherent beautiful silhouette, centered composition with comfortable safe margins, entirely monochrome white on pure black. No extra objects, no text, no border, no rounded corners, no mockup. Output one full-bleed square icon."
+    }
+  ]
+}

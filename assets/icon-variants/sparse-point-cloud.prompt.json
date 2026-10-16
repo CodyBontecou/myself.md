@@ -1,0 +1,6 @@
+{
+  "tool": "built-in image_gen",
+  "reference": "assets/icon-variants/spaced-point-cloud.png",
+  "file": "sparse-point-cloud.png",
+  "prompt": "Edit the supplied myself.md app icon. User requests EVEN MORE SPACE BETWEEN DOTS. Make a dramatic reduction in point density, removing about 75 percent of the current points. Reconstruct the same classical head with a sparse constellation of isolated small white circular dots on pure black. Aim for only around 700–1000 visible points across the whole head, with black gaps several dot diameters wide. Especially remove the dense clusters on forehead, cheeks, nose, lips and chin: no bright packed patches anywhere. Do not compensate by enlarging dots. Preserve face identity, expression, hair outline, three-quarter pose, head scale, framing and monochrome palette. Use deliberate point placement to suggest eyes nose mouth and hair with much less information. The face should look airy, skeletal and recognizably sculptural, a sparse point scan rather than detailed stippling. No lines, no solid shading, no new objects, no text, no border, no rounded corner mask. One full-bleed square app icon."
+}
