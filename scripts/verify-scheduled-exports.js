@@ -286,3 +286,72 @@ database.close();
 console.log(
   'Cloud due delivery, ownership, retries, checkpoints, disable/disconnect and DST passed.',
 );
+
+// Exercise the mounted phone listener as well as the export business logic above.
+/** @typedef {{notification:{request:{identifier:string,content:{data:Record<string,unknown>}}}}} TapResponse */
+/** @type {{listener?: (response:TapResponse)=>void, cleanup?:()=>void, removed:boolean}} */
+const tapState = { removed: false };
+/** @type {unknown[]} */
+const tapRoutes = [];
+/** @type {unknown[]} */
+const tapExports = [];
+const notificationModule = new SourceTextModule(
+  await readFile(new URL('../client/PhoneNotifications.js', import.meta.url), 'utf8'),
+);
+const notificationMocks = {
+  useEffect: (/** @type {()=>()=>void} */ effect) => {
+    tapState.cleanup = effect();
+  },
+  usePhone: () => ({ session }),
+  qaEnabled: false,
+  setNotificationHandler() {},
+  getLastNotificationResponse: () => null,
+  addNotificationResponseReceivedListener: (/** @type {(response:TapResponse)=>void} */ open) => {
+    tapState.listener = open;
+    return {
+      remove: () => {
+        tapState.removed = true;
+      },
+    };
+  },
+  router: { push: (/** @type {unknown} */ route) => tapRoutes.push(route) },
+  openScheduledExport: async (/** @type {unknown} */ tapPayload) => {
+    tapExports.push(tapPayload);
+    return true;
+  },
+};
+await notificationModule.link(
+  () =>
+    new SyntheticModule(Object.keys(notificationMocks), function () {
+      for (const [key, value] of Object.entries(notificationMocks)) this.setExport(key, value);
+    }),
+);
+await notificationModule.evaluate();
+const notificationComponent = /** @type {{default:()=>null}} */ (
+  /** @type {unknown} */ (notificationModule.namespace)
+);
+notificationComponent.default();
+assert.ok(tapState.listener);
+/** @param {Record<string,unknown>} data @param {string} [identifier] */
+const tap = (data, identifier = 'notice') =>
+  tapState.listener?.({
+    notification: { request: { identifier, content: { data } } },
+  });
+tap({ type: 'cloud-storage' });
+tap({ type: 'cloud-storage' });
+assert.deepEqual(tapRoutes, ['/cloud-storage'], 'Cloud notice replay must not navigate twice');
+tap({ exportSchedule: { deviceId: 'another-phone', profileId: 'a' } });
+assert.equal(tapExports.length, 0, 'A foreign phone notification must not execute');
+tap({ exportSchedule: { deviceId: session.deviceId, profileId: 'a' } });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(tapExports.length, 1);
+assert.deepEqual(tapRoutes[1], { pathname: '/profiles/[id]', params: { id: 'a' } });
+tap({ gripeReportId: 'removed-report', conversationId: 'removed-mobile-support' });
+assert.equal(tapRoutes.length, 2, 'Removed mobile routes must not be opened');
+tapState.cleanup?.();
+assert.equal(tapState.removed, true);
+tap({ type: 'cloud-storage' }, 'after-unmount');
+assert.equal(tapRoutes.length, 2);
+console.log(
+  'Phone notification taps: cloud replay, owned exports, foreign-device denial and cleanup pass.',
+);

@@ -12,7 +12,6 @@ import {
 import { domains, exportPage } from '../core/data.js';
 import { compatibleProfile } from '../core/profile-compatibility.js';
 import { exportDiagnostics } from '../core/diagnostics.js';
-import { createFeedbackService, feedbackSchema } from './feedback-service.js';
 import {
   debugReportSchema,
   latestDebugReport,
@@ -253,7 +252,6 @@ const profileSchema = z.object({
 const catalogSchema = z.object({
   locationTracking: z.boolean().optional(),
   diagnostics: debugReportSchema.optional(),
-  feedback: feedbackSchema.optional(),
   dispatch: z.boolean().default(true),
   profiles: z
     .array(
@@ -315,7 +313,7 @@ function catalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,feedbackOperations?:Map<string,import('./feedback-service.js').FeedbackOperation>}} dependencies */
+/** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>}} dependencies */
 export function createDataService({
   billing,
   refreshEntitlement,
@@ -324,9 +322,7 @@ export function createDataService({
   phones = new Map(),
   jobs = new Map(),
   proposals = new Map(),
-  feedbackOperations = new Map(),
 }) {
-  const feedback = createFeedbackService({ own, phones, operations: feedbackOperations });
   /** Completed capture outcomes survive payload expiry and grant revocation.
    * @param {string} subject @param {string} id */
   function captured(subject, id) {
@@ -334,7 +330,6 @@ export function createDataService({
   }
   // Query payloads are never persisted. A restarted server requires a fresh phone heartbeat.
   function cleanup() {
-    feedback.cleanup();
     for (const [id, p] of proposals) if (p.expires <= Date.now()) proposals.delete(id);
     for (const [id, job] of jobs)
       if (job.expires <= Date.now()) {
@@ -355,7 +350,6 @@ export function createDataService({
   }
   /** @param {string} deviceId @param {string} subject */
   function cancelPhone(deviceId, subject) {
-    feedback.cancel((op) => op.deviceId === deviceId && op.subject === subject);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
@@ -370,7 +364,6 @@ export function createDataService({
   /** Remove all retained account work, including requests for already disconnected phones.
    * @param {string} subject */
   function cancelAccount(subject) {
-    feedback.cancel((op) => op.subject === subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
@@ -382,7 +375,6 @@ export function createDataService({
   /** Blocking an agent also discards its queued and retained live requests.
    * @param {string} subject @param {string} client */
   function cancelAgent(subject, client) {
-    feedback.cancel((op) => op.subject === subject && op.client === client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
         if (!captured(subject, id) && job.state !== 'failed')
@@ -395,13 +387,12 @@ export function createDataService({
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] @param {{chatgpt?:boolean}} [options] */
   function registerDataTools(mcp, subject, client = null, { chatgpt = false } = {}) {
     registerDebugTools(mcp, subject, own, phones);
-    feedback.register(mcp, subject, client);
     mcp.registerTool(
       'list_phone_logs',
       {
         title: 'Browse phone logs',
         description:
-          'Browse owned-phone logs using the same All/App/Exports/Agents categories as the mobile Logs tab. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require phone diagnostics consent, an enabled profile with App logs permission, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of the authorized JSON metadata, matching mobile search; it applies to each loaded page after ownership and consent projection. Use selectedIds to select up to 350 unique IDs from this page; unavailableIds reports missing or inaccessible entries without fetching beyond current grants. Use format=jsonl for copyable raw JSON lines equivalent to the phone’s Raw view. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Structured entries include details; no personal records or local artifact paths.',
+          'Browse owned-phone app, export and agent logs. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require Settings log-sharing consent, an enabled profile with App logs permission, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of authorized JSON metadata. Use selectedIds to select up to 350 unique IDs from the current page; unavailableIds identifies missing or inaccessible selections without widening grants. JSONL returns the same authorized projection. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Raw error messages may contain sensitive information. Does not consume export allowance.',
         inputSchema: z
           .object({
             deviceId: z
@@ -1154,18 +1145,12 @@ export function createDataService({
   });
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
-    const match = path.match(
-      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|feedback|diagnostics)$/,
-    );
+    const match = path.match(/^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics)$/);
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
     if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
-    if (match[2] === 'feedback') {
-      const input = z.object({ id: z.string().uuid() }).parse(body);
-      return feedback.authorize(deviceId, subject, input.id);
-    }
     if (match[2] === 'poll') {
       const catalog = catalogSchema.parse(body);
       catalog.diagnostics = latestDebugReport(
@@ -1222,7 +1207,6 @@ export function createDataService({
             )
           : undefined;
       return {
-        feedback: feedback.poll(deviceId, subject, catalog.feedback, catalog.dispatch),
         request: job ? { id: job.id, query: job.query } : null,
         profile: proposal ? { id: proposal.id, profile: proposal.profile } : null,
         allowance: billing.snapshot(subject),

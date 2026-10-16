@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
-import * as updates from '../client/log-updates.js';
 import * as core from '../core/history.js';
-import * as display from '../core/history-display.js';
 import { parseProfile } from '../core/profiles.js';
 const db = new DatabaseSync(':memory:');
 const sqlite = {
@@ -40,25 +38,26 @@ async function load() {
   );
   await module.link((specifier) => {
     const values =
-      specifier === './log-updates.js'
-        ? updates
-        : specifier === './debug-log.js'
-          ? { recordDebug: () => {} }
-          : specifier === './phone-database.js'
-            ? { phoneDatabase: sqlite.openDatabaseSync }
-            : specifier === './session.js'
-              ? session
-              : specifier === '../core/history-display.js'
-                ? display
-                : core;
+      specifier === './debug-log.js'
+        ? { recordDebug: () => {} }
+        : specifier === './phone-database.js'
+          ? { phoneDatabase: sqlite.openDatabaseSync }
+          : specifier === './session.js'
+            ? session
+            : core;
     return new SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
     });
   });
   await module.evaluate();
-  return /** @type {{beginExport:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,actor:'manual'|'schedule',interval:{start:string,end:string},id?:string)=>string,recordArtifact:(context:{owner:string,deviceId:string},id:string,artifact:import('../core/history.js').HistoryArtifact)=>void,finishExport:(context:{owner:string,deviceId:string},id:string,status:import('../core/history.js').HistoryStatus)=>void,historyEntry:(context:{owner:string,deviceId:string},server:string,id:string)=>import('../core/history.js').HistoryEvent|null,historyPage:(context:{owner:string,deviceId:string},server:string)=>import('../core/history.js').HistoryEvent[],syncHistory:(session:{owner:string,deviceId:string,server:string},offset?:number,publish?:boolean)=>Promise<unknown>}} */ (
+  return /** @type {{beginExport:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,actor:'manual'|'schedule',interval:{start:string,end:string},id?:string)=>string,recordArtifact:(context:{owner:string,deviceId:string},id:string,artifact:import('../core/history.js').HistoryArtifact)=>void,finishExport:(context:{owner:string,deviceId:string},id:string,status:import('../core/history.js').HistoryStatus)=>void,syncHistory:(session:{owner:string,deviceId:string,server:string},offset?:number,publish?:boolean)=>Promise<unknown>}} */ (
     module.namespace
   );
+}
+/** @param {string} id @returns {import('../core/history.js').HistoryEvent|null} */
+function savedEvent(id) {
+  const row = db.prepare('SELECT value FROM activity_history WHERE id=?').get(id);
+  return row ? JSON.parse(String(row.value)) : null;
 }
 let journal = await load();
 const context = { owner: 'alice', deviceId: 'phone' },
@@ -74,13 +73,7 @@ const profile = {
 const stamp = new Date().toISOString(),
   interval = { start: stamp, end: stamp };
 try {
-  let observed = '';
-  const unsubscribe = updates.subscribeLogs(context, () => {
-    observed = journal.historyPage(context, '')[0]?.status ?? '';
-  });
   const id = journal.beginExport(context, profile, 'manual', interval);
-  await Promise.resolve();
-  assert.equal(observed, 'running', 'Persisted export starts notify live viewers');
   journal.recordArtifact(context, id, {
     day: '2026-10-08',
     name: 'sleep.json',
@@ -92,21 +85,19 @@ try {
     checksum: 'checksum',
     partial: true,
   });
-  const beforeInvalid = journal.historyEntry(context, '', id);
+  const beforeInvalid = savedEvent(id);
   const invalidArtifact = JSON.parse(JSON.stringify(beforeInvalid?.artifacts[0]));
   invalidArtifact.bytes = null;
   assert.throws(
     () => journal.recordArtifact(context, id, invalidArtifact),
     /Invalid history count/,
   );
-  assert.deepEqual(journal.historyEntry(context, '', id), beforeInvalid);
+  assert.deepEqual(savedEvent(id), beforeInvalid);
+  journal.finishExport(other, id, 'failed');
+  journal.finishExport({ ...context, deviceId: 'other' }, id, 'failed');
+  assert.deepEqual(savedEvent(id), beforeInvalid, 'Other owners/devices cannot change an export');
   journal.finishExport(context, id, 'complete');
-  assert.equal(journal.historyEntry(context, '', id)?.status, 'partial');
-  await Promise.resolve();
-  assert.equal(observed, 'partial', 'Existing export outcomes update live viewers');
-  unsubscribe();
-  assert.equal(journal.historyPage(other, '').length, 0);
-  assert.equal(journal.historyPage({ ...context, deviceId: 'other' }, '').length, 0);
+  assert.equal(savedEvent(id)?.status, 'partial');
   const pending = journal.beginExport(context, profile, 'manual', interval);
   const scheduled = journal.beginExport(context, profile, 'schedule', interval);
   const malformed = {
@@ -129,16 +120,15 @@ try {
     JSON.stringify(malformed),
   );
   journal = await load();
-  assert.equal(journal.historyEntry(context, '', pending)?.status, 'interrupted');
-  assert.equal(journal.historyEntry(context, '', scheduled)?.status, 'running');
+  assert.equal(savedEvent(pending)?.status, 'interrupted');
+  assert.equal(savedEvent(scheduled)?.status, 'running');
   assert.equal(
     db.prepare('SELECT value FROM activity_history WHERE id=?').get('malformed'),
     undefined,
   );
-  assert.equal(journal.historyEntry(context, '', 'malformed'), null);
   journal.beginExport(context, profile, 'schedule', interval, scheduled);
   assert.equal(
-    journal.historyPage(context, '').filter((event) => event.id === scheduled).length,
+    db.prepare('SELECT COUNT(*) AS count FROM activity_history WHERE id=?').get(scheduled)?.count,
     1,
   );
   remote = [
@@ -168,7 +158,7 @@ try {
     expires: 0,
     account: 'alice',
   };
-  const localEvent = journal.historyEntry(context, '', id);
+  const localEvent = savedEvent(id);
   assert.ok(localEvent);
   remote.push({
     ...localEvent,
@@ -180,17 +170,21 @@ try {
     0,
     'Live polling reads history without republishing local exports',
   );
-  assert.ok(journal.historyEntry(context, paired.server, 'remote'));
+  assert.ok(savedEvent('remote'));
   await journal.syncHistory(paired);
-  assert.ok(published.length > 0);
+  assert.ok(published.some((value) => JSON.stringify(value).includes('sleep.json')));
   assert.ok(!JSON.stringify(published).includes('file:///'));
   assert.equal(
-    journal.historyPage(context, paired.server).filter((event) => event.id === id).length,
+    db.prepare('SELECT COUNT(*) AS count FROM activity_history WHERE id=?').get(id)?.count,
     1,
   );
-  assert.ok(journal.historyEntry(context, paired.server, 'remote'));
-  assert.equal(journal.historyEntry(context, 'https://other.test', 'remote'), null);
-  assert.equal(journal.historyEntry(other, paired.server, 'remote'), null);
+  const remoteRow = db
+    .prepare('SELECT owner,device,origin FROM activity_history WHERE id=?')
+    .get('remote');
+  assert.deepEqual(
+    { ...remoteRow },
+    { owner: context.owner, device: context.deviceId, origin: paired.server },
+  );
   console.log(
     'Local History: partial completion, owner/device/server partitioning, interruption recovery and retry deduplication passed.',
   );

@@ -1,8 +1,6 @@
-import { notifyLogs } from './log-updates.js';
 import { phoneDatabase } from './phone-database.js';
 import { recordDebug } from './debug-log.js';
 import { exportEvent, addArtifact, parseHistoryEvent } from '../core/history.js';
-import { relatedHistoryEvents } from '../core/history-display.js';
 import { api } from './session.js';
 /** @typedef {import('../core/history.js').HistoryEvent} HistoryEvent */
 /** @typedef {import('./export-context.js').ExportContext} Context */
@@ -56,7 +54,6 @@ function save(context, event, origin = 'local') {
     event.startedAt,
     JSON.stringify(validated),
   );
-  notifyLogs(context);
 }
 /** @param {Context} context @param {string} id @returns {HistoryEvent|null} */
 function get(context, id) {
@@ -125,21 +122,6 @@ export function finishExport(context, id, status, error = null) {
 export function saveShareEvent(context, event) {
   save(context, event);
 }
-/** @param {Context} context @param {string} server @param {number} [limit] @param {number} [offset] @returns {HistoryEvent[]} */
-export function historyPage(context, server, limit = 50, offset = 0) {
-  const rows = /** @type {{value:string}[]} */ (
-    db.getAllSync(
-      'SELECT value FROM activity_history WHERE owner=? AND device=? AND (origin=? OR origin=?) ORDER BY started DESC,id DESC LIMIT ? OFFSET ?',
-      context.owner,
-      context.deviceId,
-      'local',
-      server,
-      limit,
-      offset,
-    )
-  );
-  return rows.map((row) => parseHistoryEvent(JSON.parse(row.value)));
-}
 /** Sync metadata in bounded batches; local file paths never leave the phone.
  * @param {import('./session.js').Session} session @param {number} [offset] */
 async function publishHistory(session, offset = 0) {
@@ -182,39 +164,4 @@ export async function syncHistory(session, offset = 0, publish = true) {
     }
   });
   return { count: events.length, hasMore: result.hasMore === true };
-}
-/** @param {Context} context @param {string} server @param {string} id @returns {HistoryEvent|null} */
-export function historyEntry(context, server, id) {
-  const row = /** @type {{value:string}|null} */ (
-    db.getFirstSync(
-      'SELECT value FROM activity_history WHERE owner=? AND device=? AND (origin=? OR origin=?) AND id=?',
-      context.owner,
-      context.deviceId,
-      'local',
-      server,
-      id,
-    )
-  );
-  return row ? parseHistoryEvent(JSON.parse(row.value)) : null;
-}
-/** @param {Context} context @param {string} server @param {HistoryEvent} event */
-export function relatedHistory(context, server, event) {
-  const cloudIds = event.relatedId
-    ? [event.relatedId]
-    : event.artifacts.map((a) => a.cloudId).filter((id) => id !== null);
-  if (!cloudIds.length) return [];
-  const rows = /** @type {{value:string}[]} */ (
-    db.getAllSync(
-      'SELECT value FROM activity_history WHERE owner=? AND device=? AND (origin=? OR origin=?) AND id<>? ORDER BY started DESC,id DESC',
-      context.owner,
-      context.deviceId,
-      'local',
-      server,
-      event.id,
-    )
-  );
-  return relatedHistoryEvents(
-    rows.map((row) => parseHistoryEvent(JSON.parse(row.value))),
-    event,
-  );
 }

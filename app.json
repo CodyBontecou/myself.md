@@ -111,7 +111,6 @@
         }
       ],
       "./plugins/with-phone-data.cjs",
-      "./plugins/with-gripe.cjs",
       "expo-font",
       "expo-background-task",
       "expo-router",

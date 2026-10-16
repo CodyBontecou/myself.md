@@ -53,7 +53,6 @@ export default function QaScreen() {
       <Copy selectable testID="qa-state">
         {JSON.stringify({
           profileCount: fixture.profiles.profiles.length,
-          historyCount: fixture.events.length,
           permissions: fixture.permissions,
           agentGrants: false,
           recording: false,

@@ -83,18 +83,8 @@ export async function clearSession(session) {
         signal: controller.signal,
       });
       await scheduleResponse.body?.cancel();
-      const response = await fetch(`${previous.server}/api/support/v1`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${previous.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'device', id: previous.deviceId, token: null }),
-        signal: controller.signal,
-      });
-      await response.body?.cancel();
     } catch {
-      /* A signed-out session cannot refresh or regain support access. */
+      /* A signed-out session cannot refresh its export schedule. */
     } finally {
       clearTimeout(timeout);
     }
@@ -155,8 +145,6 @@ async function request(url, options, diagnostics) {
       recordDebug(diagnostics.session, diagnostics.operation, 'succeeded', {
         durationMs: Date.now() - started,
         httpStatus: status,
-        url,
-        credentials: requestCredentials(options?.headers),
       });
     return body;
   } catch (error) {
@@ -165,25 +153,9 @@ async function request(url, options, diagnostics) {
         durationMs: Date.now() - started,
         ...(status ? { httpStatus: status } : {}),
         error,
-        url,
-        credentials: requestCredentials(options?.headers),
       });
     throw error;
   }
-}
-/** @param {RequestInit['headers']} headers */
-function requestCredentials(headers) {
-  /** @type {Record<string,string>} */
-  const credentials = {};
-  try {
-    const values = new Headers(headers);
-    for (const [header, value] of values.entries()) {
-      if (/authorization|cookie|api.?key|token|secret/i.test(header)) credentials[header] = value;
-    }
-  } catch {
-    /* Optional diagnostics cannot affect the request. */
-  }
-  return credentials;
 }
 /** @param {string} value */
 function trustedUrl(value) {

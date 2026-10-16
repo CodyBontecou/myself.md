@@ -15,7 +15,7 @@ Before device interaction, read `<repo>/docs/argent-qa.md`. It is the maintained
 
 For navigation and regression QA, use `npm run start:qa` and a dedicated development simulator/emulator connected to its Metro server. Confirm the visible `qa-open` control and QA scenario label before any fixture action. Preserve physical phones, shared simulators and their existing server/data settings. Pass the intended device ID explicitly to Argent.
 
-For real permissions, authentication, purchases, pairing, exports, background recording or screenshot feedback, use a normal build and an authorized test account/device. Report the observed native or server effect. A synthetic permission or a displayed handoff does not prove integration success. Consult `docs/mcp-parity.md` when changing application capabilities.
+For real permissions, authentication, purchases, pairing, exports or background recording, use a normal build and an authorized test account/device. Report the observed native or server effect. A synthetic permission or a displayed handoff does not prove integration success. Consult `docs/mcp-parity.md` when changing application capabilities.
 
 ## Reuse the recorded flows
 
@@ -25,9 +25,8 @@ Read the relevant `.argent/flows/qa-*.yaml` and the guide's contract table befor
 - `qa-profile-edit-persistence`: save an edit, leave and reopen.
 - `qa-profile-create-cancel`: create/count, cancel an edit and reopen.
 - `qa-source-selection`: selection persistence and synthetic permission review.
-- `qa-history`: filters, saved details and failed details.
 - `qa-settings-navigation`: Connections, pairing UI and camera handoff.
-- `qa-fixture-states`: empty, loading, History error, denied permission and failed save.
+- `qa-fixture-states`: empty, loading, denied permission and failed save.
 
 `qa-reset-populated` is the recorded reset helper. Flows establish their own state; keep setup and acceptance checks inside the flow. Use `flow-execute` with the checkout's `project_root`, flow name and explicit device, or the guide's CLI commands.
 
@@ -35,7 +34,7 @@ When verifying a changed flow, recycle only that device's Argent services before
 
 ## Navigate and repair with evidence
 
-Prefer the guide's stable IDs. Read the current native/accessibility tree when a selector is missing; use its observed frames for live taps. Preserve the documented English native-tab labels, platform-specific back controls and History filter scopes. Dynamic fixture rows have stable IDs; newly created profiles need a controlled unique name rather than a timestamp ID.
+Prefer the guide's stable IDs. Read the current native/accessibility tree when a selector is missing; use its observed frames for live taps. Preserve the documented Profiles/Settings native-tab labels and platform-specific back controls. Dynamic fixture rows have stable IDs; newly created profiles need a controlled unique name rather than a timestamp ID.
 
 Require destination identity and readiness after navigation, and verify the resulting state after mutations. Keep full input-value checks, saved counts, leave/reopen persistence and cancellation checks. An idle warning requires inspecting what is moving and gating on the actual ready state. Intentional loading scenarios are identified by their explicit loading copy.
 
