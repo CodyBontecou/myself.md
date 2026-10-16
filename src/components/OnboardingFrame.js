@@ -79,6 +79,7 @@ export function OnboardingButton({
       label={label}
       onPress={onPress}
       secondary={secondary}
+      filled={!secondary}
       disabled={disabled}
       busy={busy}
       {...(testID ? { testID } : {})}
@@ -193,10 +194,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 12,
     paddingBottom: 24,
   },
-  column: { width: '100%', maxWidth: 560, gap: 24 },
+  column: { width: '100%', maxWidth: 560, gap: 16 },
   heading: { gap: 8 },
   title: { fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
   body: { fontSize: 14, lineHeight: 21 },
@@ -204,8 +205,7 @@ const styles = StyleSheet.create({
   actions: {
     width: '100%',
     maxWidth: 560,
-    gap: 12,
-    alignItems: 'flex-end',
-    paddingRight: 12,
+    gap: 8,
+    alignItems: 'stretch',
   },
 });

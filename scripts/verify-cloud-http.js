@@ -620,6 +620,15 @@ try {
       timeClaimUrl: z.string(),
       requiresUser: z.boolean(),
       steps: z.array(z.object({ title: z.string(), body: z.string() })),
+      apps: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          handoffUrl: z.string(),
+          eligibility: z.string(),
+          steps: z.array(z.object({ title: z.string(), body: z.string() })),
+        }),
+      ),
     }),
   });
   const paidAccess = accessSchema.parse(
@@ -649,6 +658,20 @@ try {
   assert.equal(pendingAccess.handoff.requiresUser, true);
   assert.equal(pendingAccess.handoff.accountLink, 'myselfmd://account');
   assert.equal(pendingAccess.handoff.steps.length, 3);
+  assert.deepEqual(
+    pendingAccess.handoff.apps.map((app) => app.id),
+    ['health', 'iso', 'time'],
+  );
+  assert.deepEqual(
+    pendingAccess.handoff.apps.map((app) => app.handoffUrl),
+    ['healthmd://myself/claim', 'isome://myself/claim', 'https://timemd.app/myself-claim.html'],
+  );
+  for (const app of pendingAccess.handoff.apps) {
+    assert.ok(app.steps.length > 0);
+    assert.ok(app.eligibility.length > 0);
+    for (const other of pendingAccess.handoff.apps.filter((item) => item.id !== app.id))
+      assert.ok(!JSON.stringify(app.steps).includes(other.name));
+  }
   assert.equal(
     z.object({ timeClaimUrl: z.string() }).parse(pendingAccess.handoff).timeClaimUrl,
     'https://timemd.app/myself-claim.html',

@@ -3,7 +3,16 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useTheme } from '../src/lib/theme.js';
 import { openPrivacyLink } from '../src/components/PrivacyLinks.js';
-import { Button, Copy, Group, Notice, Row, Screen, SectionHeader } from '../src/components/ui.js';
+import {
+  Button,
+  Copy,
+  Group,
+  Icon,
+  Notice,
+  Row,
+  Screen,
+  SectionHeader,
+} from '../src/components/ui.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { showToast } from '../src/components/Toast.js';
 import { cloudUsageLabel, lifetimeCloudBytes } from '../core/cloud-allowance.js';
@@ -142,17 +151,20 @@ export default function CloudStoragePlans() {
   }
 
   return (
-    <Screen testID="cloud-plans-screen">
-      <Copy variant="title">Choose a cloud storage plan</Copy>
-      <Copy muted>
-        Keep more exports in myself.md cloud storage for your connected agents. Each plan replaces
-        the 100 MB included with Lifetime.
-      </Copy>
+    <Screen compact testID="cloud-plans-screen">
+      <View style={styles.intro}>
+        <Copy variant="heading" style={styles.heading}>
+          Choose cloud storage
+        </Copy>
+        <Copy muted>
+          More room for your exports. Plans replace the 100 MB included with Lifetime.
+        </Copy>
+      </View>
       {value && <CloudStatusNotices value={value} />}
 
-      <SectionHeader title="Current plan" />
-      <Group>
+      <Group compact>
         <Row
+          compact
           testID="cloud-plans-current"
           title={
             !signedIn
@@ -196,6 +208,7 @@ export default function CloudStoragePlans() {
             icon="person-circle-outline"
           />
           <Button
+            filled
             testID="cloud-plans-sign-in"
             label="Sign in to myself.md"
             onPress={() => router.push('/account')}
@@ -214,6 +227,7 @@ export default function CloudStoragePlans() {
             icon="lock-closed-outline"
           />
           <Button
+            filled
             testID="cloud-plans-lifetime"
             label={billing.unlocked ? 'Check lifetime access' : 'Unlock Lifetime'}
             onPress={() => router.push(billing.unlocked ? '/account' : '/unlock')}
@@ -221,67 +235,76 @@ export default function CloudStoragePlans() {
         </View>
       )}
 
-      <SectionHeader title="Plans" />
-      <View style={[styles.segment, { backgroundColor: colors.subtle }]}>
-        {cloudPeriods.map((item) => {
-          const active = item === period;
+      <View style={styles.choices}>
+        <SectionHeader compact title="Choose a plan" />
+        <View style={[styles.segment, { backgroundColor: colors.subtle }]}>
+          {cloudPeriods.map((item) => {
+            const active = item === period;
+            return (
+              <Pressable
+                key={item}
+                testID={`cloud-plan-period-${item}`}
+                accessibilityRole="button"
+                accessibilityLabel={item === 'monthly' ? 'Monthly billing' : 'Yearly billing'}
+                accessibilityState={{ selected: active, disabled: Boolean(busy) }}
+                disabled={Boolean(busy)}
+                onPress={() => setPeriod(item)}
+                style={[styles.segmentItem, active && { backgroundColor: colors.surface }]}
+              >
+                <Copy style={[styles.segmentLabel, !active && { color: colors.secondary }]}>
+                  {item === 'monthly' ? 'Monthly' : 'Yearly'}
+                </Copy>
+              </Pressable>
+            );
+          })}
+        </View>
+        {cloudPlans.map((item) => {
+          const itemOffer = offers.find((o) => o.plan === item.id && o.period === period);
+          const active = item.id === chosen;
+          const currentPlan = Boolean(live && live.plan === item.id && live.period === period);
           return (
             <Pressable
-              key={item}
-              testID={`cloud-plan-period-${item}`}
+              key={item.id}
+              testID={`cloud-plan-${item.id}`}
               accessibilityRole="button"
-              accessibilityLabel={item === 'monthly' ? 'Monthly billing' : 'Yearly billing'}
+              accessibilityLabel={`${item.label} cloud storage, ${itemOffer ? `${itemOffer.displayPrice} per ${unit}` : 'price unavailable'}${currentPlan ? ', current plan' : ''}`}
               accessibilityState={{ selected: active, disabled: Boolean(busy) }}
               disabled={Boolean(busy)}
-              onPress={() => setPeriod(item)}
-              style={[styles.segmentItem, active && { backgroundColor: colors.surface }]}
+              onPress={() => setSelected(item.id)}
+              style={[
+                styles.plan,
+                active ? styles.planSelected : styles.planUnselected,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: active ? colors.accent : colors.border,
+                },
+              ]}
             >
-              <Copy style={[styles.segmentLabel, !active && { color: colors.secondary }]}>
-                {item === 'monthly' ? 'Monthly' : 'Yearly'}
+              <View style={styles.planHeader}>
+                <View style={styles.planName}>
+                  <Icon
+                    name={active ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={active ? colors.accent : colors.secondary}
+                  />
+                  <Copy variant="heading">{item.label}</Copy>
+                </View>
+                {currentPlan && (
+                  <Copy variant="caption" style={styles.badge}>
+                    Current plan
+                  </Copy>
+                )}
+              </View>
+              <Copy style={styles.price}>
+                {itemOffer ? `${itemOffer.displayPrice} / ${unit}` : 'Price unavailable'}
+              </Copy>
+              <Copy variant="caption" muted>
+                {`${item.capacityBytes / lifetimeCloudBytes}× the 100 MB included with Lifetime`}
               </Copy>
             </Pressable>
           );
         })}
       </View>
-      {cloudPlans.map((item) => {
-        const itemOffer = offers.find((o) => o.plan === item.id && o.period === period);
-        const active = item.id === chosen;
-        const currentPlan = Boolean(live && live.plan === item.id && live.period === period);
-        return (
-          <Pressable
-            key={item.id}
-            testID={`cloud-plan-${item.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.label} cloud storage, ${itemOffer ? `${itemOffer.displayPrice} per ${unit}` : 'price unavailable'}${currentPlan ? ', current plan' : ''}`}
-            accessibilityState={{ selected: active, disabled: Boolean(busy) }}
-            disabled={Boolean(busy)}
-            onPress={() => setSelected(item.id)}
-            style={[
-              styles.plan,
-              active ? styles.planSelected : styles.planUnselected,
-              {
-                backgroundColor: colors.surface,
-                borderColor: active ? colors.accent : colors.border,
-              },
-            ]}
-          >
-            <View style={styles.planHeader}>
-              <Copy variant="heading">{item.label}</Copy>
-              {currentPlan && (
-                <Copy variant="caption" style={styles.badge}>
-                  Current plan
-                </Copy>
-              )}
-            </View>
-            <Copy style={styles.price}>
-              {itemOffer ? `${itemOffer.displayPrice} / ${unit}` : 'Price unavailable'}
-            </Copy>
-            <Copy variant="caption" muted>
-              {`${item.capacityBytes / lifetimeCloudBytes}× the 100 MB included with Lifetime`}
-            </Copy>
-          </Pressable>
-        );
-      })}
       {offersError && (
         <Copy testID="cloud-plans-offers-error" muted>
           {offersError}
@@ -294,6 +317,7 @@ export default function CloudStoragePlans() {
         </Copy>
       )}
       <Button
+        filled={signedIn && eligible}
         testID="cloud-plan-subscribe"
         label={
           busy === 'purchase'
@@ -336,14 +360,16 @@ export default function CloudStoragePlans() {
           offer?.displayPrice,
         )}
       </Copy>
-      <Group>
+      <Group compact>
         <Row
+          compact
           testID="cloud-plan-terms"
           title="Terms of Use (EULA)"
           subtitle={cloudTermsUrl}
           onPress={() => void openPrivacyLink(cloudTermsUrl)}
         />
         <Row
+          compact
           testID="cloud-plan-privacy"
           title="Privacy Policy"
           subtitle={cloudPrivacyUrl}
@@ -378,20 +404,31 @@ function disclosure(title, period, price) {
 }
 
 const styles = StyleSheet.create({
+  intro: { gap: 8 },
+  heading: { fontSize: 22, lineHeight: 28, letterSpacing: -0.4 },
+  choices: { gap: 8 },
+  planName: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   gate: { gap: 8 },
-  segment: { flexDirection: 'row', borderRadius: 12, padding: 3 },
+  segment: { flexDirection: 'row', borderRadius: 12, borderCurve: 'continuous', padding: 4 },
   segmentItem: {
     flex: 1,
-    minHeight: 40,
-    borderRadius: 10,
+    minHeight: 44,
+    borderRadius: 8,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentLabel: { fontWeight: '600' },
-  plan: { borderRadius: 16, padding: 16, gap: 4 },
+  plan: { borderRadius: 12, borderCurve: 'continuous', padding: 12, gap: 4 },
   planSelected: { borderWidth: 2 },
-  planUnselected: { borderWidth: StyleSheet.hairlineWidth * 2 },
-  planHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planUnselected: { borderWidth: 2 },
+  planHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   badge: { fontWeight: '600' },
   price: { fontWeight: '600' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16 },

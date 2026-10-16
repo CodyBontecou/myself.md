@@ -119,8 +119,7 @@ export default function OnboardingProfile({ step }) {
     name: 'An export profile remembers your data and file preferences. You can change them anytime.',
     data: 'Choose the data you’d like to include.',
     output: 'Save files on this phone. Choose a format and how many completed days to include.',
-    review:
-      'Review your choices, then save. You’ll land on your profile with Export profile now available.',
+    review: 'Save these choices as a profile. You can export from it when you’re ready.',
   };
   return (
     <OnboardingFrame
@@ -258,10 +257,7 @@ export default function OnboardingProfile({ step }) {
 const styles = StyleSheet.create({
   footerActions: {
     width: '100%',
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 16,
+    gap: 4,
   },
   fields: { gap: 12 },
   input: {

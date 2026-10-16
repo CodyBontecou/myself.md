@@ -44,7 +44,7 @@ steps:
       id: qa-open-cloud-storage
   - await:
       visible:
-        text: Choose a cloud storage plan
+        text: Choose cloud storage
   - await:
       idle: true
   - await:

@@ -15,9 +15,49 @@ export function lifetimePurchaseGuide() {
 }
 /** Shared guidance for mobile and agent purchase-verification handoffs. */
 export function existingCustomerGuide() {
+  const timeClaimUrl = 'https://timemd.app/myself-claim.html';
   return {
     title: 'Already own health.md, iso.me, or time.md?',
     summary: 'Your eligible purchase includes free lifetime access to myself.md.',
+    apps: [
+      ...['health.md', 'iso.me'].map((app) => ({
+        id: app === 'health.md' ? 'health' : 'iso',
+        name: app,
+        handoffUrl: app === 'health.md' ? 'healthmd://myself/claim' : 'isome://myself/claim',
+        steps: [
+          {
+            title: `Open ${app}`,
+            body: 'The button below opens Claim myself.md access. Choose Verify purchase and continue.',
+          },
+          {
+            title: 'Confirm your account',
+            body: 'In the browser, sign in and confirm the account receiving access.',
+          },
+          {
+            title: 'Return to myself.md',
+            body: 'Sign in with the same account, then choose Check lifetime access.',
+          },
+        ],
+        eligibility: `${app === 'health.md' ? 'Paid downloads and lifetime purchases qualify.' : 'Lifetime purchases qualify.'} Individual and Family purchasers can claim for one account. Family-shared recipients do not qualify.`,
+      })),
+      {
+        id: 'time',
+        name: 'time.md',
+        handoffUrl: timeClaimUrl,
+        steps: [
+          {
+            title: 'Have your activation key ready',
+            body: 'Enter it on the purchase verification page.',
+          },
+          {
+            title: 'Confirm your account',
+            body: 'Sign in and confirm the account receiving access. Return here and use that same account.',
+          },
+        ],
+        eligibility:
+          'Paid licenses qualify. Trials, free licenses, refunded and disputed payments do not qualify.',
+      },
+    ],
     steps: [
       {
         title: '1. Verify in your original app',
@@ -36,7 +76,7 @@ export function existingCustomerGuide() {
       'Eligible paid health.md downloads and lifetime purchases in health.md or iso.me qualify. Individual and Family purchasers can claim for one account; family-shared recipients do not qualify.',
     timeOffer:
       'Bought time.md? Open https://timemd.app/myself-claim.html, enter your activation key, and choose Verify purchase and continue. Sign in and confirm the account receiving access. Trials, free licenses, refunded and disputed payments do not qualify.',
-    timeClaimUrl: 'https://timemd.app/myself-claim.html',
+    timeClaimUrl,
     accountLink: 'myselfmd://account',
     requiresUser: true,
   };
