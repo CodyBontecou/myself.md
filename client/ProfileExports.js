@@ -230,9 +230,9 @@ function ProfileExportControls({
       />
       {state.progress.enabled && state.reminderError && (
         <Copy testID="export-reminder-status">
-          Push wakes and reminders are unavailable on this phone. Automatic exports still use
-          best-effort background execution and catch up when you open the app. Check notification
-          settings and connectivity to restore push delivery.
+          Push registration needs attention. A previous registration may still receive wakes;
+          automatic exports also use best-effort background execution and catch up when you open the
+          app. Check notification settings and connectivity.
         </Copy>
       )}
       {!scheduleOnly && (

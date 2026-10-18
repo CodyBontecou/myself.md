@@ -7,13 +7,18 @@ import { createExportSchedules } from '../server/export-schedules.js';
 /** @typedef {{profileId:string,deviceId:string,enabledAt:string,kind:string,fireDate:string}} Hint */
 /** @type {{_contentAvailable?:boolean,priority?:string,title?:string,body?:string,sound?:string,data:{exportSchedules:Hint[]}}[]} */
 const messages = [];
+let unregistered = false;
 const cloud = createExportSchedules(
   new DatabaseSync(':memory:'),
   () => {},
   async () => {},
   async (_url, options) => {
     messages.push(JSON.parse(String(options?.body)));
-    return Response.json({ data: { status: 'ok' } });
+    return Response.json({
+      data: unregistered
+        ? { status: 'error', details: { error: 'DeviceNotRegistered' } }
+        : { status: 'ok' },
+    });
   },
 );
 const registration = {
@@ -43,12 +48,66 @@ assert.equal(wake.data.exportSchedules.length, 3);
 assert.equal(cloud.list('owner-a')[0]?.profiles[0]?.lastCompleted, null);
 await cloud.dispatch('2026-10-18T12:01:00.000Z');
 assert.equal(messages.length, 1, 'Accepted wake checkpoints must prevent duplicate sends');
+await cloud.register('owner-a', {
+  ...registration,
+  token: null,
+  notificationError: 'token-unavailable',
+});
+assert.equal(
+  cloud.list('owner-a')[0]?.profiles[0]?.timing.notificationWake,
+  'best_effort',
+  'A transient token refresh failure must preserve the working registration for the second slot',
+);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'token-refresh-failed');
+assert.match(cloud.list('owner-a')[0]?.lastError ?? '', /previous/);
+assert.deepEqual(cloud.pushTokens('owner-a'), [registration.token]);
 await cloud.dispatch('2026-10-18T12:20:01.000Z');
 assert.equal(messages.length, 2, 'The second daily slot must send a distinct wake');
+/** @type {[string,string][]} */
+const otherRegistrations = [
+  ['owner-b', registration.deviceId],
+  ['owner-a', 'phone-b'],
+];
+await Promise.all(
+  otherRegistrations.map(([subject, deviceId]) =>
+    cloud.register(subject, {
+      ...registration,
+      deviceId,
+      token: null,
+      notificationError: 'token-unavailable',
+    }),
+  ),
+);
+for (const [subject, deviceId] of otherRegistrations) {
+  assert.equal(
+    cloud.list(subject).find((phone) => phone.deviceId === deviceId)?.profiles[0]?.timing
+      .notificationWake,
+    'unavailable',
+    'A different owner or device cannot inherit the cached registration',
+  );
+}
+await cloud.register('owner-a', {
+  ...registration,
+  token: null,
+  notificationError: 'permission-required',
+});
+assert.deepEqual(cloud.pushTokens('owner-a'), [], 'Revoked permission clears the saved token');
+await cloud.register('owner-a', registration);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registered');
+assert.equal(cloud.list('owner-a')[0]?.lastError, null);
 await cloud.register('owner-a', { ...registration, backgroundNotifications: false });
 await cloud.dispatch('2026-10-19T12:00:01.000Z');
 assert.equal(messages.length, 5, 'Legacy phones retain individual tap reminders');
 assert.equal(messages.at(-1)?.sound, 'default');
+unregistered = true;
+await cloud.dispatch('2026-10-20T12:00:01.000Z');
+await cloud.register('owner-a', {
+  ...registration,
+  token: null,
+  notificationError: 'token-unavailable',
+});
+assert.deepEqual(cloud.pushTokens('owner-a'), [], 'Provider-invalidated tokens stay removed');
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registration-failed');
 
 /** @type {Map<string,(event:{data:unknown,error?:unknown})=>Promise<unknown>>} */
 const callbacks = new Map();

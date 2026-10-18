@@ -151,11 +151,15 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
       const profiles = value.profiles.map((p) => ({ ...p, schedule: parseSchedule(p.schedule) }));
       if (new Set(profiles.map((p) => p.profileId)).size !== profiles.length)
         throw new PairingError(400, 'Duplicate profile schedule.');
-      transaction(db, () => {
+      const hasToken = transaction(db, () => {
         const row = db
           .prepare('SELECT value FROM export_schedules WHERE subject=? AND device=?')
           .get(subject, value.deviceId);
         const previous = row ? JSON.parse(String(row.value)) : null;
+        // A transient native refresh failure does not revoke this owned device's last token.
+        const token =
+          value.token ??
+          (value.notificationError === 'token-unavailable' ? (previous?.token ?? null) : null);
         for (const p of profiles) {
           const old = previous?.profiles.find(
             (/** @type {RegisteredProfile} */ saved) =>
@@ -169,25 +173,33 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
           value.deviceId,
           JSON.stringify({
             ...value,
+            token,
             profiles,
             status: !profiles.length
               ? 'disabled'
               : value.token
-                ? previous?.token && previous?.profiles.length
+                ? previous?.token &&
+                  previous?.profiles.length &&
+                  previous.status !== 'token-refresh-failed'
                   ? previous.status
                   : 'registered'
-                : value.notificationError === 'token-unavailable'
-                  ? 'registration-failed'
-                  : 'permission-required',
+                : token
+                  ? 'token-refresh-failed'
+                  : value.notificationError === 'token-unavailable'
+                    ? 'registration-failed'
+                    : 'permission-required',
             lastError:
               value.notificationError === 'token-unavailable'
-                ? 'Push wakes and reminders are unavailable on this phone. Check notification setup and connectivity. Periodic background exports are independent of push delivery.'
+                ? token
+                  ? 'Push registration could not be refreshed. The previous registration is retained for best-effort delivery; check notification setup and connectivity.'
+                  : 'Push wakes and reminders are unavailable on this phone. Check notification setup and connectivity. Periodic background exports are independent of push delivery.'
                 : null,
             updatedAt: new Date().toISOString(),
           }),
         );
+        return Boolean(token);
       });
-      if (profiles.length && value.token) await arm();
+      if (profiles.length && hasToken) await arm();
       return {
         schedules: list(subject),
         requests: requests(subject).filter(

@@ -74,7 +74,8 @@
         "android.permission.health.READ_OXYGEN_SATURATION",
         "android.permission.health.READ_POWER"
       ],
-      "versionCode": 14
+      "versionCode": 14,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/myself-favicon.png",
@@ -117,7 +118,12 @@
       "expo-status-bar",
       "@react-native-vector-icons/ionicons",
       "expo-iap",
-      ["expo-notifications", { "enableBackgroundRemoteNotifications": true }],
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
       "./plugins/with-embedded-debug.cjs"
     ],
     "scheme": "myselfmd",
