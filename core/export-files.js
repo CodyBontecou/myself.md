@@ -77,7 +77,7 @@ export function parseExportSettings(value) {
     formatFolders: s.formatFolders === true,
   };
 }
-/** Cloud stores one JSONL file per day; local and HTTP destinations write every selected format.
+/** Cloud stores JSONL grouped by day; local and HTTP destinations write every selected format.
  * @param {ExportSettings} settings @returns {ExportFormat[]} */
 export function deliveredFormats(settings) {
   return settings.destination === 'cloud' ? ['jsonl'] : settings.formats;
@@ -117,27 +117,33 @@ export function fileFooter(format, manifest) {
     : '';
 }
 
-/** Local file conflict choices shared by profile UI and validated export settings. */
+/** File conflict choices shared by profile UI and validated export settings. */
 export const exportWriteModes = [
   {
     value: 'replace',
     title: 'Replace matching file',
     description: 'Replace the existing file with the latest export.',
+    cloudDescription: 'Replace the latest file for this profile, day and schema.',
   },
   {
     value: 'append',
     title: 'Append to matching file',
     description: 'Add records to the existing file. Repeated exports may duplicate records.',
+    cloudDescription:
+      'Add records to the latest daily file. Repeated exports may duplicate records.',
   },
   {
     value: 'new_file',
     title: 'Create a new file',
-    description: 'Keep existing files and add a numbered suffix to the new filename.',
+    cloudDescription: 'Keep every export as a separate cloud snapshot.',
+    description:
+      'Keep existing files and save each export separately. Local filenames receive a numbered suffix.',
   },
   {
     value: 'skip',
     title: 'Skip existing file',
     description: 'Keep the existing file and export only missing files.',
+    cloudDescription: 'Keep the latest daily file and export only missing days.',
   },
 ];
 /** Append structured exports without producing concatenated invalid JSON documents.

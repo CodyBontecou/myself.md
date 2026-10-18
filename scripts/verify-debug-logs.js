@@ -68,6 +68,7 @@ const phones = new Map();
 /** @type {Map<string,import('../server/data-service.js').Job>} */
 const jobs = new Map();
 const service = createDataService({
+  cloud: { syncAgentPermissions: () => {} },
   billing,
   history,
   phones,
@@ -479,6 +480,19 @@ try {
       'The separately consented full endpoint retains metadata and raw errors',
     );
     assert.ok(JSON.stringify(catalogResult).includes('synthetic-destination-key'));
+    const failureProfile = {
+      ...destinationProfile,
+      id: 'capture-error',
+      agentAccess: true,
+      agentPermissions: { health: true, time: false, location: false, logs: false },
+      selection: { health: ['native:sleep'], time: [], location: [] },
+    };
+    catalog.profiles.push(failureProfile);
+    const failureDomain = catalog.domains.find((domain) => domain.domain === 'health');
+    assert.ok(failureDomain);
+    failureDomain.enabled = true;
+    failureDomain.types = ['native:sleep'];
+    heartbeat(metadataReport);
     const requestId = randomUUID();
     jobs.set(requestId, {
       id: requestId,
@@ -489,9 +503,9 @@ try {
       state: 'failed',
       query: {
         deviceId,
-        profileId: 'private',
+        profileId: failureProfile.id,
         domain: 'health',
-        type: 'fixture',
+        type: 'sleep',
         source: 'native',
         start: '2026-10-12T00:00:00Z',
         end: '2026-10-13T00:00:00Z',
@@ -513,6 +527,24 @@ try {
       arguments: { requestId },
     });
     assert.ok(JSON.stringify(fullFailure).includes('synthetic-capture-secret'));
+    const deniedRequestId = randomUUID();
+    const failedJob = jobs.get(requestId);
+    assert.ok(failedJob);
+    jobs.set(deniedRequestId, {
+      ...failedJob,
+      id: deniedRequestId,
+      query: { ...failedJob.query, profileId: destinationProfile.id },
+    });
+    const deniedFailure = await restricted.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId: deniedRequestId },
+    });
+    assert.equal(
+      deniedFailure.isError,
+      true,
+      'An unapproved profile cannot read retained failures',
+    );
+    assert.ok(!JSON.stringify(deniedFailure).includes('synthetic-capture-secret'));
   } finally {
     await restricted.close();
   }
@@ -657,6 +689,30 @@ try {
   );
   console.log(
     'Debug logs: metadata-only capture, legacy attachment removal, SQLite persistence, bounded retention, partition isolation, real MCP reads, consent, revocation races, stale-phone denial and disconnect pass.',
+  );
+  db.exec(
+    'DELETE FROM debug_log; CREATE TABLE account_cleanup(id INTEGER PRIMARY KEY,owner TEXT,device TEXT)',
+  );
+  db.prepare('INSERT INTO account_cleanup VALUES(1,?,?)').run(context.owner, context.deviceId);
+  logs.recordDebug(context, 'query', 'failed', { error: 'Synthetic late account response' });
+  assert.equal(
+    logs.debugReport(context).entries.length,
+    0,
+    'Deletion must prevent late diagnostics from recreating erased account data',
+  );
+  const otherContext = { owner: 'other-owner', deviceId: 'other-phone' };
+  logs.recordDebug(otherContext, 'query', 'succeeded');
+  assert.equal(
+    logs.debugReport(otherContext).entries.length,
+    1,
+    'An unrelated owner remains writable',
+  );
+  db.exec('DELETE FROM account_cleanup');
+  logs.recordDebug(context, 'query', 'succeeded');
+  assert.equal(
+    logs.debugReport(context).entries.length,
+    1,
+    'A rejected deletion does not permanently disable diagnostics',
   );
 } finally {
   await Promise.all([owner.close(), other.close()]);

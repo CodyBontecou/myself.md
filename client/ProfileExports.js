@@ -1,41 +1,43 @@
+import { router } from 'expo-router';
 import { useToast } from '../src/components/Toast.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { qaEnabled } from './qa-runtime.js';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, View, TextInput, StyleSheet } from 'react-native';
+import { Alert, Pressable, View, TextInput, StyleSheet } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { Checkbox } from './Terminal.js';
-import { Copy, Group, Row, SectionHeader } from '../src/components/ui';
+import { Copy, Group, Icon, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
-import { authorizeCloud, cloudAccess, saveDestinationCredential } from './destinations.js';
-import { shareDomain } from './export.js';
-import { domains } from '../core/data.js';
+import { saveDestinationCredential } from './destinations.js';
 import { nextOccurrence } from '../core/schedules.js';
-import { localCalendar } from './calendar.js';
+import { formatNextExport, localCalendar } from './calendar.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
+import { useProfileEditor } from './ProfileEditorState.js';
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,iconOnly?:boolean,showStatus?:boolean,leadingAction?:import('react').ReactNode,trailingAction?:import('react').ReactNode}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 function ProfileExportControls({
   session,
   profile,
   disabled,
   quick = false,
   roomy = false,
-  iconOnly = false,
+  compact = false,
   showStatus = true,
-  leadingAction,
-  trailingAction,
+  cloudAccessOnly = false,
+  scheduleOnly = false,
+  destinationOnly = false,
+  filesOnly = false,
+  onOpenSchedule,
 }) {
   const { colors } = useTheme();
+  const { start } = useProfileEditor();
   const showToast = useToast();
   const running = useRef(false);
   const [bearer, setBearer] = useState('');
-  const [days, setDays] = useState('7');
-  const [shared, setShared] = useState(false);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [state, setState] = useState(() => scheduleState(session.deviceId, profile));
   const [busy, setBusy] = useState(false),
@@ -56,11 +58,14 @@ function ProfileExportControls({
     };
   }, [session.deviceId, profile]);
   useEffect(() => {
-    if (state.retryAt && state.message)
-      showToast({ message: errorMessage(state.message), kind: 'error' });
-  }, [state.retryAt, state.message, showToast]);
-  /** @param {()=>Promise<void>} action @param {string} [failureToast] */
-  async function run(action, failureToast) {
+    if (!scheduleOnly && !destinationOnly && !filesOnly && state.retryAt && state.message)
+      showToast({
+        message: errorMessage(state.message),
+        kind: 'error',
+      });
+  }, [state.retryAt, state.message, showToast, scheduleOnly, destinationOnly, filesOnly]);
+  /** @param {()=>Promise<void>} action @param {string} [failureToast] @param {(toast:import('../src/components/Toast.js').Toast)=>void} [notify] */
+  async function run(action, failureToast, notify = showToast) {
     if (running.current || disabled) return;
     running.current = true;
     setBusy(true);
@@ -70,7 +75,7 @@ function ProfileExportControls({
       setMessage('');
     } catch (e) {
       setMessage('');
-      showToast({
+      notify({
         message: errorMessage(e) || failureToast || 'Could not complete this request.',
         kind: 'error',
       });
@@ -91,42 +96,190 @@ function ProfileExportControls({
       });
       return;
     }
-    void run(async () => {
-      const result = await exportNow(session, profile, setMessage);
-      showToast({
-        message: result.failedSources
-          ? `${profile.name} exported with ${result.failedSources} source failures. See export details.`
-          : `${profile.name} exported successfully.`,
-        kind: result.failedSources ? 'warning' : 'success',
-      });
-    }, `Could not export ${profile.name}.`);
+    const updateToast = showToast({
+      message: `Exporting ${profile.name}`,
+      detail: 'Preparing export…',
+      kind: 'loading',
+      progress: 0,
+    });
+    void run(
+      async () => {
+        const result = await exportNow(session, profile, (detail, progress) => {
+          updateToast({
+            detail: detail
+              .replace(/HK(?:Quantity|Category|Characteristic|Correlation)TypeIdentifier/g, '')
+              .replace(/([a-z])([A-Z])/g, '$1 $2'),
+            progress,
+          });
+        });
+        updateToast({
+          detail: result.failedSources
+            ? `${result.failedSources} source failures · See export details`
+            : `${result.days} ${result.days === 1 ? 'day' : 'days'} exported`,
+          progress: 100,
+          message: result.failedSources
+            ? `${profile.name} partially exported`
+            : `${profile.name} exported`,
+          kind: result.failedSources ? 'warning' : 'success',
+        });
+      },
+      `Could not export ${profile.name}.`,
+      (toast) => updateToast({ ...toast, detail: undefined, progress: undefined }),
+    );
   }
-  useEffect(() => {
-    if (!quick && !qaEnabled && profile.export.destination === 'cloud')
-      void cloudAccess(session, profile)
-        .then((r) => setShared(r.shared))
-        .catch(() => {});
-  }, [session, profile, quick]);
+  const cloudControls =
+    profile.export.destination === 'cloud' ? (
+      <>
+        <SectionHeader compact title="Cloud access" />
+        <Copy variant="caption" selectable>
+          Connector URL: {session.server}/mcp
+        </Copy>
+        <Copy variant="caption" muted>
+          Add this remote MCP endpoint to your connector and sign in with the same account as this
+          phone.
+        </Copy>
+        <Copy variant="caption" muted>
+          Agent permissions control which selected Health, Screen time and Location data agents can
+          read from this profile’s cloud exports. Changes apply after your phone syncs.
+        </Copy>
+        <Row
+          compact
+          destructive
+          testID="export-delete-this-profile-s-cloud-exports"
+          title="Delete this profile’s cloud exports"
+          disabled={disabled || busy}
+          onPress={() =>
+            Alert.alert('Delete cloud exports?', `Remove all stored exports for ${profile.name}?`, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () =>
+                  void run(async () => {
+                    const { api } = await import('./session.js');
+                    const exports = /** @type {{id:string,profileId:string,deviceId:string}[]} */ (
+                      await api(session, '/api/cloud/exports')
+                    );
+                    for (const item of exports.filter(
+                      (v) => v.profileId === profile.id && v.deviceId === session.deviceId,
+                    )) {
+                      // Delete owner-matched exports sequentially.
+                      // oxlint-disable-next-line eslint/no-await-in-loop
+                      await api(session, `/api/cloud/exports/${item.id}`, { method: 'DELETE' });
+                    }
+                  }),
+              },
+            ])
+          }
+        />
+      </>
+    ) : null;
+  const httpControls =
+    profile.export.destination === 'http' ? (
+      <>
+        <TextInput
+          testID="export-http-credential-input"
+          accessibilityLabel="HTTP bearer token"
+          placeholder="Optional HTTP bearer token"
+          value={bearer}
+          onChangeText={setBearer}
+          secureTextEntry
+          editable={!disabled && !busy}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholderTextColor={colors.secondary}
+          style={[
+            styles.input,
+            { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
+          ]}
+        />
+        <Row
+          compact
+          testID="export-save-http-credential"
+          title="Save HTTP credential"
+          disabled={disabled || busy}
+          onPress={() =>
+            void run(async () => {
+              await saveDestinationCredential(session.deviceId, profile.id, {
+                token: bearer,
+                url: new URL(profile.export.httpUrl ?? '').href,
+              });
+              setBearer('');
+            })
+          }
+        />
+      </>
+    ) : null;
+  const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
+  const scheduleControls = (
+    <>
+      <Row
+        compact
+        testID="export-automatic-exports"
+        title="Automatic exports"
+        trailing={
+          <Checkbox
+            style={styles.trailingControl}
+            testID="export-automatic"
+            accessibilityLabel={`Automatic exports for ${profile.name}`}
+            disabled={disabled || busy}
+            value={state.progress.enabled}
+            onValueChange={(v) => void run(() => setScheduleEnabled(session.deviceId, profile, v))}
+          />
+        }
+      />
+      {!scheduleOnly && (
+        <Row
+          compact
+          testID="export-next-eligible"
+          title="Next eligible"
+          value={next ? new Date(next).toLocaleString() : 'Off'}
+        />
+      )}
+      {state.job && (
+        <Row
+          compact
+          testID="export-pending"
+          title="Pending"
+          value={`${state.job.days.length} days`}
+        />
+      )}
+    </>
+  );
+  const fileControls = state.files.map((uri) => (
+    <Row
+      compact
+      key={uri}
+      title={`Share ${decodeURIComponent(uri.split('/').at(-1) ?? 'file')}`}
+      disabled={disabled || busy}
+      onPress={() =>
+        void run(async () => {
+          if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing unavailable.');
+          await Sharing.shareAsync(uri);
+        })
+      }
+    />
+  ));
+  if (filesOnly) return <Group compact>{fileControls}</Group>;
+  if (destinationOnly)
+    return (
+      <View style={styles.container}>
+        {httpControls}
+        {cloudControls}
+      </View>
+    );
+  if (scheduleOnly) return <Group compact>{scheduleControls}</Group>;
+  if (cloudAccessOnly) return <View style={styles.container}>{cloudControls}</View>;
   if (quick)
     return (
       <View style={styles.container}>
-        <View style={[styles.quickActions, iconOnly && styles.inlineActions]}>
-          {leadingAction}
-          <ProfileQuickAction
-            testID={`profile-export-${profile.id}`}
-            label={busy ? 'Exporting…' : 'Export'}
-            icon="download-outline"
-            disabled={disabled || busy}
-            busy={busy}
-            roomy={roomy}
-            iconOnly={iconOnly}
-            onPress={exportProfile}
-            onDisabledPress={exportProfile}
-          />
-          {trailingAction}
-        </View>
         {showStatus &&
-        (message || (!state.retryAt && state.message && state.message !== 'No exports yet.')) ? (
+        (message ||
+          (!state.retryAt &&
+            state.message &&
+            !['No exports yet.', 'Profile changed; pending exports cancelled.'].includes(
+              state.message,
+            ))) ? (
           <Copy
             testID={`profile-export-status-${profile.id}`}
             accessibilityRole="alert"
@@ -135,9 +288,48 @@ function ProfileExportControls({
             {message || state.message}
           </Copy>
         ) : null}
+        <View style={[styles.quickActions, compact && styles.inlineActions]}>
+          {showStatus && (
+            <Pressable
+              testID={`profile-schedule-${profile.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit schedule for ${profile.name}`}
+              accessibilityHint={next ? formatNextExport(next, now) : 'Not scheduled'}
+              onPress={(event) => {
+                event.stopPropagation();
+                if (onOpenSchedule) onOpenSchedule();
+                else {
+                  start(profile, profile.id);
+                  router.push({ pathname: '/profiles/editor', params: { section: 'schedule' } });
+                }
+              }}
+              style={({ pressed }) => [styles.scheduleSummary, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Icon name="time-outline" size={14} color={colors.secondary} />
+              <Copy
+                testID={`profile-next-export-${profile.id}`}
+                variant="caption"
+                muted
+                style={styles.scheduleLabel}
+              >
+                {next ? formatNextExport(next, now) : 'Not scheduled'}
+              </Copy>
+            </Pressable>
+          )}
+          <ProfileQuickAction
+            testID={`profile-export-${profile.id}`}
+            label={busy ? 'Exporting…' : 'Export'}
+            icon="download-outline"
+            disabled={disabled || busy}
+            busy={busy}
+            roomy={roomy}
+            compact={compact}
+            onPress={exportProfile}
+            onDisabledPress={exportProfile}
+          />
+        </View>
       </View>
     );
-  const next = nextOccurrence(profile.schedule, state.progress, now, localCalendar);
   return (
     <View testID="profile-exports" accessibilityState={{ busy }} style={styles.container}>
       <SectionHeader compact title="Exports" />
@@ -147,37 +339,7 @@ function ProfileExportControls({
         </Copy>
       )}
       <Group compact>
-        <Row
-          compact
-          testID="export-automatic-exports"
-          title="Automatic exports"
-          trailing={
-            <Checkbox
-              style={styles.trailingControl}
-              testID="export-automatic"
-              accessibilityLabel={`Automatic exports for ${profile.name}`}
-              disabled={disabled || busy}
-              value={state.progress.enabled}
-              onValueChange={(v) =>
-                void run(() => setScheduleEnabled(session.deviceId, profile, v))
-              }
-            />
-          }
-        />
-        <Row
-          compact
-          testID="export-next-eligible"
-          title="Next eligible"
-          value={next ? new Date(next).toLocaleString() : 'Off'}
-        />
-        {state.job && (
-          <Row
-            compact
-            testID="export-pending"
-            title="Pending"
-            value={`${state.job.days.length} days`}
-          />
-        )}
+        {scheduleControls}
         <Row
           compact
           testID="export-now"
@@ -186,195 +348,33 @@ function ProfileExportControls({
           onPress={exportProfile}
           onDisabledPress={exportProfile}
         />
-        <Row
-          compact
-          testID="export-days-to-share-1-31"
-          title="Days to share (1–31)"
-          trailing={
-            <TextInput
-              testID="export-share-days-input"
-              accessibilityLabel="Days to share"
-              keyboardType="number-pad"
-              value={days}
-              onChangeText={setDays}
-              editable={!disabled && !busy}
-              style={[
-                styles.input,
-                styles.daysInput,
-                { color: colors.text, borderColor: colors.border },
-              ]}
-            />
-          }
-        />
-        {domains
-          .filter((d) => profile.selection[d].length > 0)
-          .map((domain) => (
-            <Row
-              key={domain}
-              compact
-              title={`Share ${domain === 'time' ? 'screen time' : domain} JSON`}
-              disabled={disabled || busy}
-              onPress={() =>
-                void run(async () => {
-                  const range = Number(days);
-                  if (!Number.isInteger(range) || range < 1 || range > 31)
-                    throw new Error('Choose 1–31 days.');
-                  await shareDomain(
-                    session,
-                    { health: true, time: true, location: true },
-                    domain,
-                    profile,
-                    range,
-                    setMessage,
-                  );
-                })
-              }
-            />
-          ))}
-        {state.files.map((uri) => (
-          <Row
-            compact
-            key={uri}
-            title={`Share ${decodeURIComponent(uri.split('/').at(-1) ?? 'file')}`}
-            disabled={disabled || busy}
-            onPress={() =>
-              void run(async () => {
-                if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing unavailable.');
-                await Sharing.shareAsync(uri);
-              })
-            }
-          />
-        ))}
+        {fileControls}
       </Group>
       {message || (!state.retryAt && state.message && state.message !== 'No exports yet.') ? (
         <Copy testID="export-status" accessibilityRole="alert" variant="caption" selectable>
           {message || state.message}
         </Copy>
       ) : null}
-      {profile.export.destination === 'http' ? (
-        <>
-          <TextInput
-            testID="export-http-credential-input"
-            accessibilityLabel="HTTP bearer token"
-            placeholder="Optional HTTP bearer token"
-            value={bearer}
-            onChangeText={setBearer}
-            secureTextEntry
-            editable={!disabled && !busy}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholderTextColor={colors.secondary}
-            style={[
-              styles.input,
-              { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
-            ]}
-          />
-          <Row
-            compact
-            testID="export-save-http-credential"
-            title="Save HTTP credential"
-            disabled={disabled || busy}
-            onPress={() =>
-              void run(async () => {
-                await saveDestinationCredential(session.deviceId, profile.id, {
-                  token: bearer,
-                  url: new URL(profile.export.httpUrl ?? '').href,
-                });
-                setBearer('');
-              })
-            }
-          />
-        </>
-      ) : null}
-      {profile.export.destination === 'cloud' ? (
-        <>
-          <SectionHeader compact title="Cloud access" />
-          <Row
-            compact
-            testID="export-authorize-cloud-uploads"
-            title="Authorize cloud uploads"
-            disabled={disabled || busy}
-            onPress={() =>
-              void run(async () => {
-                await authorizeCloud(session, profile);
-                setShared(false);
-              })
-            }
-          />
-          <Copy variant="caption" selectable>
-            Connector URL: {session.server}/mcp
-          </Copy>
-          <Copy variant="caption" muted>
-            Add this remote MCP endpoint to your connector and sign in with the same account as this
-            phone.
-          </Copy>
-          <Row
-            compact
-            testID="export-allow-stored-data-in-connectors"
-            title="Allow stored data in connectors"
-            trailing={
-              <Checkbox
-                style={styles.trailingControl}
-                testID="export-cloud-access"
-                accessibilityLabel={`Cloud MCP access for ${profile.name}`}
-                value={shared}
-                disabled={disabled || busy}
-                onValueChange={(v) =>
-                  void run(async () => {
-                    const result = await cloudAccess(session, profile, v);
-                    setShared(result.shared);
-                  })
-                }
-              />
-            }
-          />
-          <Row
-            compact
-            destructive
-            testID="export-delete-this-profile-s-cloud-exports"
-            title="Delete this profile’s cloud exports"
-            disabled={disabled || busy}
-            onPress={() =>
-              Alert.alert(
-                'Delete cloud exports?',
-                `Remove all stored exports for ${profile.name}?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () =>
-                      void run(async () => {
-                        const { api } = await import('./session.js');
-                        const exports =
-                          /** @type {{id:string,profileId:string,deviceId:string}[]} */ (
-                            await api(session, '/api/cloud/exports')
-                          );
-                        for (const item of exports.filter(
-                          (v) => v.profileId === profile.id && v.deviceId === session.deviceId,
-                        )) {
-                          // Delete owner-matched exports sequentially.
-                          // oxlint-disable-next-line eslint/no-await-in-loop
-                          await api(session, `/api/cloud/exports/${item.id}`, { method: 'DELETE' });
-                        }
-                      }),
-                  },
-                ],
-              )
-            }
-          />
-        </>
-      ) : null}
+      {httpControls}
+      {cloudControls}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  inlineActions: { flexWrap: 'nowrap', alignItems: 'center', gap: 0 },
+  inlineActions: { flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end', gap: 12 },
+  scheduleSummary: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scheduleLabel: { flexShrink: 1 },
   container: { gap: 8 },
   trailingControl: { alignItems: 'flex-end' },
-  daysInput: { minWidth: 44, textAlign: 'center' },
   input: {
     minHeight: 44,
     padding: 12,

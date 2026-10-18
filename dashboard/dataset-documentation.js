@@ -150,7 +150,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
   return (
     <div className={`mx-auto max-w-7xl px-5 sm:px-8 ${landing ? 'landing-page' : ''}`}>
       <main className="space-y-10 py-8 sm:py-12">
-        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+        <div className="dataset-grid grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="contents">
             {landing ? (
               <div className="landing-hero-column min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
@@ -227,14 +227,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
               </div>
             ) : (
               <header className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
-                <nav className="flex gap-4 text-sm text-muted-foreground" aria-label="Site">
-                  <a className="underline underline-offset-4" href="/">
-                    myself.md
-                  </a>
-                  <a className="underline underline-offset-4" href="/docs">
-                    Docs
-                  </a>
-                </nav>
+                <SiteHeader />
                 <h1 className="text-4xl font-semibold tracking-tight">Datasets</h1>
                 <p className="max-w-xl text-base leading-relaxed text-muted-foreground">
                   Explore supported data types and see how they appear in an export. Select a type
@@ -244,7 +237,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
             )}
             <section
               id="dataset-types"
-              className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-2"
+              className="dataset-controls min-w-0 space-y-5 lg:col-start-1 lg:row-start-2"
               aria-label="Dataset types"
             >
               <div className="bg-background py-3">

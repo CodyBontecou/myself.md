@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { identityPageStyles } from './identity-page-style.js';
+
 /** Reserved application identity; never reuse or link a person's social identity. */
 export const reviewerUserId = 'myselfmd-directory-reviewer-v1';
 export const reviewerEmail = 'reviewer@myself.invalid';
@@ -23,11 +26,27 @@ export async function reviewerLoginPage(request, auth, enabled) {
     .replaceAll('&', '&amp;')
     .replaceAll('"', '&quot;')
     .replaceAll('<', '&lt;');
-  if (request.method === 'GET')
+  if (request.method === 'GET') {
+    const nonce = randomUUID();
     return new Response(
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reviewer sign-in · myself.md</title><main><h1>Reviewer sign-in</h1><p>This separate account contains fictional directory-review data. It does not use Google, Apple or GitHub.</p><form method="post"><input type="hidden" name="oauth_query" value="${query}"><p><label>Username <input name="username" value="reviewer" autocomplete="username" required></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" minlength="16" maxlength="128" required></label></p><button type="submit">Sign in as reviewer</button></form><p>Credentials are supplied privately by the operator. Public signup and password reset are unavailable.</p><a href="/login">Return to sign-in</a></main></html>`,
-      { headers },
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Reviewer sign-in · myself.md</title><style nonce="${nonce}">${identityPageStyles}
+        .reviewer-label { margin: 0 0 12px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; }
+        .reviewer-form { gap: 20px; }
+        .reviewer-form label { display: grid; gap: 8px; font-size: 13px; font-weight: 600; }
+        .reviewer-form input { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 16px; font-weight: 400; }
+        .reviewer-form input:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
+        .reviewer-notice { margin-top: 24px; padding: 16px; border-radius: 10px; background: var(--inset); border: 1px solid var(--border); }
+        .reviewer-notice strong { font-size: 13px; font-weight: 600; }
+        .reviewer-notice p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+      </style></head><body><header class="brand">myself<span>.md</span></header><main><p class="reviewer-label">Directory review</p><h1>Reviewer sign-in</h1><p class="intro">Access the separate review account with fictional data. Use the credentials supplied privately by the operator.</p><form class="reviewer-form" method="post"><input type="hidden" name="oauth_query" value="${query}"><label for="username">Username<input id="username" name="username" value="reviewer" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" minlength="16" maxlength="128" required></label><button class="primary" type="submit">Sign in as reviewer</button></form><aside class="reviewer-notice"><strong>Fictional data, separate account</strong><p>This account does not use Google, Apple or GitHub. Public signup and password reset are unavailable.</p></aside><nav class="sign-in-footer" aria-label="Other sign-in options"><a href="/login">Return to sign-in</a><a href="/">Back to myself.md</a></nav></main></body></html>`,
+      {
+        headers: {
+          ...headers,
+          'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+        },
+      },
     );
+  }
   if (request.method !== 'POST' || request.headers.get('origin') !== url.origin)
     return Response.json({ error: 'Invalid reviewer sign-in request.' }, { status: 403 });
   const form = await request.formData();

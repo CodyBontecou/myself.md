@@ -5,7 +5,7 @@ import { createDashboardService } from './dashboard-service.js';
 import { refreshEntitlement } from './billing.js';
 import { cloud, history, cloudSubscriptions } from './cloud.js';
 import { devices } from './store.js';
-import { cancelAgent } from './data.js';
+import { cancelAgent, revokeQueries } from './data.js';
 import { assets } from './dashboard-assets.js';
 /** @param {string} path @param {import('node:http').ServerResponse} res @param {string} issuer */
 export function dashboardAsset(path, res, issuer) {
@@ -41,6 +41,7 @@ export const { dashboardApi } = createDashboardService({
   history,
   devices,
   cancelAgent,
+  revokeQueries,
   refreshEntitlement,
   cloudSubscriptions,
 });

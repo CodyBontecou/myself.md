@@ -1,8 +1,9 @@
+import { createAnalytics } from './analytics.js';
 import { chatgptMcpPath } from '../server/chatgpt-tools.js';
 import {
   publicResponse,
   unknownPublicPath,
-  notFoundMarkdown,
+  notFoundResponse,
   publicApiPath,
   createPublicReadLimiter,
 } from '../server/public-site.js';
@@ -18,7 +19,7 @@ import { assets } from '../server/dashboard-assets.js';
 import { readBytes } from './request.js';
 import { migrationRequest } from './import.js';
 import { digest, findTicket, registerTicket } from './tickets.js';
-import { identityRequest, reviewerActive } from './identity.js';
+import { identityRequest, identityJwks, reviewerActive } from './identity.js';
 import { reviewerUserId } from '../server/reviewer.js';
 export { Account as MyselfAccount } from './account.js';
 export { Purchase as MyselfPurchase } from './claims.js';
@@ -69,6 +70,7 @@ const limitPublicRead = createPublicReadLimiter();
 export default {
   /** @param {ScheduledController} _controller @param {Env} env */
   async scheduled(_controller, env) {
+    await createAnalytics(env).cleanup();
     await env.DIRECTORY.prepare('DELETE FROM tickets WHERE expires<?').bind(Date.now()).run();
     if (env.IDENTITY_ENABLED === '1') {
       const now = new Date().toISOString();
@@ -134,6 +136,19 @@ export default {
         if (page && limit) Object.assign(page.headers, limit.headers);
         if (page) return new Response(request.method === 'HEAD' ? null : page.body, page);
       }
+      if (url.pathname === '/api/analytics/anonymous') {
+        if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+        const origin = request.headers.get('origin');
+        if (origin && origin !== new URL(env.PUBLIC_URL).origin && origin !== url.origin)
+          return json({ error: 'Origin denied.' }, 403);
+        if (request.headers.get('sec-fetch-site') === 'cross-site')
+          return json({ error: 'Origin denied.' }, 403);
+        const limited = await env.ANALYTICS_LIMITER.limit({
+          key: request.headers.get('cf-connecting-ip') ?? 'local',
+        });
+        if (!limited.success) return json({ error: 'Retry later.' }, 429);
+        return json(await createAnalytics(env).anonymous(await boundedJson(request, 16384)));
+      }
       if (url.pathname === '/__migration' && request.method === 'POST') {
         if (env.MIGRATION_ENABLED !== '1') return json({ error: 'Not found.' }, 404);
         return json(await migrationRequest(request, env, await boundedJson(request, 1024 * 1024)));
@@ -192,15 +207,13 @@ export default {
         const asset = await publicAsset(request, env);
         if (asset) return asset;
       }
-      if (unknownPublicPath(url.pathname))
-        return new Response(request.method === 'HEAD' ? null : notFoundMarkdown, {
+      if (unknownPublicPath(url.pathname)) {
+        const missing = notFoundResponse(request.headers.get('accept') ?? '');
+        return new Response(request.method === 'HEAD' ? null : missing.body, {
           status: 404,
-          headers: {
-            'Content-Type': 'text/markdown; charset=utf-8',
-            'Cache-Control': 'no-store',
-            Vary: 'Accept',
-          },
+          headers: missing.headers,
         });
+      }
       if (url.pathname === '/pair')
         return new Response(pairingPage, {
           headers: {
@@ -208,7 +221,7 @@ export default {
             'Cache-Control': 'no-store',
             'Referrer-Policy': 'no-referrer',
             'Content-Security-Policy':
-              "default-src 'none'; img-src 'self'; script-src 'unsafe-inline'",
+              "default-src 'none'; img-src 'self'; connect-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
           },
         });
       if (env.MIGRATION_ENABLED === '1')
@@ -251,8 +264,15 @@ export default {
         .get('authorization')
         ?.match(/^Upload ([A-Za-z0-9_-]{43})$/)?.[1];
       const qr = url.pathname.startsWith('/qr/') ? url.pathname.slice(4) : null;
-      if ((upload && url.pathname.startsWith('/api/cloud/uploads')) || qr) {
-        const route = await findTicket(env, upload ?? qr ?? '');
+      const pairingStatus =
+        request.method === 'GET' && url.pathname.startsWith('/api/pairing-status/')
+          ? url.pathname.slice('/api/pairing-status/'.length)
+          : null;
+      if (pairingStatus !== null && !/^[A-Za-z0-9_-]{43}$/.test(pairingStatus))
+        return json({ error: 'Invalid pairing link.' }, 400);
+      if ((upload && url.pathname.startsWith('/api/cloud/uploads')) || qr || pairingStatus) {
+        const route = await findTicket(env, upload ?? qr ?? pairingStatus ?? '');
+        if (typeof route?.subject !== 'string' && pairingStatus) return json({ status: 'expired' });
         if (typeof route?.subject !== 'string')
           return json({ error: 'Credential expired or revoked.' }, 410);
         return await env.ACCOUNTS.getByName(digest(route.subject)).fetch(request);
@@ -265,8 +285,7 @@ export default {
           new URL(`${env.OAUTH_ISSUER}/protocol/openid-connect/certs`),
           env.IDENTITY_ENABLED === '1'
             ? {
-                [customFetch]: (keyUrl, options) =>
-                  identityRequest(new Request(keyUrl, options), env),
+                [customFetch]: () => identityJwks(env),
               }
             : {},
         );
@@ -313,7 +332,7 @@ export default {
       if (error instanceof PairingError) return json({ error: error.message }, error.status);
       if (env.ALLOW_HTTP_DEV === '1') console.error(error);
       console.error('Worker request failed.', {
-        path: new URL(request.url).pathname.startsWith('/qr/')
+        path: /^\/(qr|api\/pairing-status)\//.test(new URL(request.url).pathname)
           ? '/qr/[ticket]'
           : new URL(request.url).pathname,
         errorType: error instanceof Error ? error.name : 'unknown',

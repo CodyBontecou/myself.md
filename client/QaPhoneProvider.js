@@ -76,6 +76,8 @@ export default function QaPhoneProvider({ children }) {
     <PhoneStateProvider
       value={{
         accountRevision: fixture.revision,
+        deletionPending: false,
+        deletionConfirmed: false,
         deletionStatusUrl: '',
         incoming: null,
         dismissIncoming: () => {},
@@ -98,6 +100,7 @@ export default function QaPhoneProvider({ children }) {
         setLink,
         scan: () => setError(errorJSON('Pairing requires a normal build.')),
         confirm: unavailable,
+        reauthenticateDeletion: unavailable,
         refresh: unavailable,
         disconnect: unavailable,
         deleteAccount: unavailable,
@@ -106,7 +109,6 @@ export default function QaPhoneProvider({ children }) {
         changeAccount: () => {},
         switchConnection: unavailable,
         signInAccount: unavailable,
-        syncAccount: unavailable,
         signIn: unavailable,
       }}
     >

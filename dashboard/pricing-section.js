@@ -14,7 +14,11 @@ const qrPath = Array.from(qr.modules.data, (dark, index) =>
 
 export function PricingSection() {
   return (
-    <section id="pricing" aria-labelledby="pricing-title" className="scroll-mt-8 space-y-8">
+    <section
+      id="pricing"
+      aria-labelledby="pricing-title"
+      className="site-pricing scroll-mt-8 space-y-8"
+    >
       <div className="space-y-3">
         <h2 id="pricing-title" className="text-2xl font-medium tracking-tight">
           Pricing
@@ -23,8 +27,8 @@ export function PricingSection() {
           Start free. Unlock once. Keep your files for life.
         </p>
       </div>
-      <div className="grid gap-8 border-y border-border py-8 sm:grid-cols-2 sm:gap-0">
-        <div className="space-y-5 sm:pr-8">
+      <div className="pricing-cards">
+        <div className="pricing-card space-y-5">
           <h3 className="text-lg font-medium">Free</h3>
           <p className="text-4xl font-medium tracking-tight">$0</p>
           <p className="text-base leading-7 text-muted-foreground">
@@ -42,7 +46,7 @@ export function PricingSection() {
             Already installed? Start with no purchase.
           </p>
         </div>
-        <div className="space-y-5 border-t border-border pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
+        <div className="pricing-card pricing-lifetime space-y-5">
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-lg font-medium">Lifetime</h3>
             <span className="text-xs text-muted-foreground">In-app purchase</span>
@@ -91,6 +95,9 @@ export function PricingSection() {
           </details>
         </div>
       </div>
+      <a className="pricing-full-link" href="/pricing">
+        View all plans and purchase details ↗
+      </a>
       <section aria-labelledby="cloud-pricing-title" className="space-y-5">
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">

@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
+import { identityPageStyles } from '../server/identity-page-style.js';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 export async function buildProfileShare() {
   const directory = 'dashboard/dist/profile-share';
   mkdirSync(`${directory}/share/profile`, { recursive: true });
@@ -13,7 +14,13 @@ export async function buildProfileShare() {
     platform: 'browser',
     target: ['es2022'],
   });
-  copyFileSync('dashboard/profile-share.html', `${directory}/share/profile/index.html`);
+  writeFileSync(
+    `${directory}/share/profile/index.html`,
+    readFileSync('dashboard/profile-share.html', 'utf8').replace(
+      '__IDENTITY_STYLES__',
+      identityPageStyles,
+    ),
+  );
   writeFileSync(
     `${directory}/_headers`,
     `/*\n  Cache-Control: no-store\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff\n  X-Robots-Tag: noindex, nofollow\n  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'\n`,

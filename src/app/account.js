@@ -1,5 +1,3 @@
-import { api } from '../../client/session.js';
-import { ErrorToast } from '../components/Toast.js';
 import { Alert, Linking, StyleSheet, View } from 'react-native';
 import { accountDeletionNotice } from '../../core/account-deletion.js';
 import { Redirect, Stack, router } from 'expo-router';
@@ -8,8 +6,7 @@ import AccountAvatar from '../components/AccountAvatar.js';
 import { usePhone } from '../../client/PhoneProvider.js';
 import { useBilling } from '../../client/BillingPaywalls.js';
 export default function AccountScreen() {
-  const { session, busy, error, run, syncAccount, disconnect, deleteAccount, deletionStatusUrl } =
-    usePhone();
+  const { session, busy, run, disconnect, deleteAccount, deletionStatusUrl } = usePhone();
   const current = useBilling();
   if (!session?.owner || session.requiresSignIn) return <Redirect href="/login" />;
   return (
@@ -32,13 +29,6 @@ export default function AccountScreen() {
               : 'No lifetime access linked yet'
           }
         />
-        <Divider />
-        <Row
-          testID="account-check-lifetime-access"
-          title={busy ? 'Checking…' : 'Check lifetime access'}
-          disabled={busy}
-          onPress={() => void run(syncAccount)}
-        />
         {!current.unlocked && (
           <>
             <Divider />
@@ -57,14 +47,7 @@ export default function AccountScreen() {
           title="Connected logins"
           subtitle="Connect Apple, GitHub or Google to this account"
           disabled={busy}
-          onPress={() =>
-            void run(async () => {
-              const result = /** @type {{handoff:{url:string}}} */ (
-                await api(session, '/api/account-logins')
-              );
-              await Linking.openURL(result.handoff.url);
-            })
-          }
+          onPress={() => router.push('/connected-logins')}
         />
       </Group>
       <Group>
@@ -111,7 +94,6 @@ export default function AccountScreen() {
           onPress={() => void Linking.openURL(deletionStatusUrl)}
         />
       )}
-      <ErrorToast error={error} />
     </Screen>
   );
 }

@@ -1,3 +1,4 @@
+import { publicSiteHeaderStyles } from '../core/site-header.js';
 import { publicFAQs } from '../core/public-site.js';
 import { buildProfileShare } from './build-profile-share.js';
 import { buildBlog } from './build-blog.js';
@@ -19,6 +20,15 @@ await build({
   jsx: 'automatic',
   loader: { '.js': 'jsx' },
   define: { 'process.env.NODE_ENV': '"production"' },
+});
+await build({
+  entryPoints: ['dashboard/usage-analytics.js'],
+  outfile: 'dashboard/dist/usage-analytics.js',
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'browser',
+  target: ['es2022'],
 });
 await build({
   entryPoints: ['dashboard/browser-tools.js'],
@@ -90,6 +100,10 @@ const css = spawnSync(
 );
 if (css.status !== 0) throw new Error('Dashboard stylesheet build failed.');
 writeFileSync(
+  'dashboard/dist/style.css',
+  readFileSync('dashboard/dist/style.css', 'utf8') + '\n' + publicSiteHeaderStyles,
+);
+writeFileSync(
   'dashboard/dist/index.html',
   readFileSync('dashboard/index.html', 'utf8').replace(
     '"__PUBLIC_FAQ_SCHEMA__"',
@@ -111,6 +125,7 @@ cpSync('dashboard/brand-icons', 'dashboard/dist/brand-icons', { recursive: true 
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');
 
 for (const asset of [
+  'analytics.css',
   'blog.css',
   'docs.css',
   'geist-regular.ttf',

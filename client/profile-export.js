@@ -172,12 +172,12 @@ export async function exportProfileDay(
           name: f.target.name,
           format: f.format,
           schema: settings.schema,
-          recordCount: count,
-          bytes,
+          recordCount: delivered?.recordCount ?? count,
+          bytes: delivered?.bytes ?? bytes,
           uri: null,
           cloudId: delivered?.id ?? null,
           checksum: null,
-          partial: failures.length > 0,
+          partial: delivered?.partial ?? failures.length > 0,
           warnings,
         });
         f.target.delete();

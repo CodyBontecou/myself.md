@@ -181,3 +181,122 @@ assert.equal(persisted, lastPersisted);
 console.log(
   'PASS phone OAuth return persists authentication independently of billing, secure storage failure and cancellation.',
 );
+
+// An initial identity 401 may rotate tokens, but cannot accept a different account.
+cancelled = false;
+let candidateOwner = 'https://myself.md/auth/realms/myselfmd|synthetic-other-owner';
+let candidateRefreshes = 0;
+let rejectAcceptedOnce = false;
+context.AuthSession.refreshAsync = async () => {
+  candidateRefreshes++;
+  return {
+    accessToken: `synthetic-candidate-rotated-${candidateRefreshes}`,
+    refreshToken: `synthetic-candidate-refresh-${candidateRefreshes}`,
+    issuedAt: Date.now() / 1000,
+    expiresIn: 300,
+  };
+};
+context.fetch = async (/** @type {string} */ url, /** @type {RequestInit} */ options) => {
+  if (url.endsWith('/config'))
+    return Response.json({
+      issuer: 'https://myself.md/auth/realms/myselfmd',
+      resource: 'https://myself.md/mcp',
+      clientId: 'myselfmd-phone',
+    });
+  const authorization = new Headers(options.headers).get('Authorization');
+  if (authorization === 'Bearer signed-in' || rejectAcceptedOnce) {
+    rejectAcceptedOnce = false;
+    return Response.json({ error: 'Synthetic initial identity rejection' }, { status: 401 });
+  }
+  return Response.json({ subject: candidateOwner, account: 'Synthetic account', devices: [] });
+};
+const recoveryHandler = readFileSync('client/PhoneProvider.js', 'utf8').match(
+  /reauthenticateDeletion: async \(provider\) => \{([\s\S]*?)\n    \},\n    run,/,
+);
+assert.ok(recoveryHandler);
+const originalOwner = JSON.parse(persisted).owner;
+const pendingDeletion = { owner: originalOwner, deviceId: 'synthetic-pending-phone' };
+let confirmedRecoveries = 0;
+context.session = visible;
+context.pendingAccountCleanup = () => pendingDeletion;
+context.finishDeletion = async (
+  /** @type {typeof pendingDeletion} */ owner,
+  /** @type {ReturnType<typeof session>} */ accepted,
+) => {
+  assert.equal(owner.owner, accepted.owner);
+  assert.equal(accepted.deviceId, owner.deviceId);
+  confirmedRecoveries++;
+};
+const recover = () =>
+  vm.runInContext(`(async (provider) => {${recoveryHandler[1]}\n})('apple')`, context);
+const provisionalBefore = persisted;
+const originalActive = await context.loadSession();
+await assert.rejects(recover(), /did not match/);
+assert.equal(
+  persisted,
+  provisionalBefore,
+  'A rejected refreshed sign-in cannot replace secure storage.',
+);
+assert.equal(await context.loadSession(), originalActive);
+assert.equal(confirmedRecoveries, 0, 'Wrong-owner sign-in cannot resume deletion.');
+
+candidateOwner = originalOwner;
+await recover();
+assert.equal(confirmedRecoveries, 1);
+assert.equal(JSON.parse(persisted).deviceId, pendingDeletion.deviceId);
+const accepted = await context.loadSession();
+const acceptedToken = accepted.accessToken;
+rejectAcceptedOnce = true;
+await context.api(accepted, '/api/devices');
+assert.notEqual(accepted.accessToken, acceptedToken);
+assert.equal(JSON.parse(persisted).accessToken, accepted.accessToken);
+
+const failedCandidate = await context.signIn('https://myself.md', 'apple');
+const beforeFailedSave = persisted;
+storageFailure = true;
+await assert.rejects(context.saveSession(failedCandidate), /Secure storage unavailable/);
+storageFailure = false;
+rejectAcceptedOnce = true;
+await context.api(failedCandidate, '/api/devices');
+assert.equal(
+  persisted,
+  beforeFailedSave,
+  'A failed explicit save keeps later candidate refreshes provisional.',
+);
+assert.equal(await context.loadSession(), accepted);
+
+const overlapping = await context.signIn('https://myself.md', 'apple');
+const secureWrite = context.SecureStore.setItemAsync;
+/** @type {()=>void} */ let writeStarted = () => assert.fail('Write gate not initialized');
+/** @type {()=>void} */ let releaseWrite = () => assert.fail('Write gate not initialized');
+const started = new Promise((resolve) => {
+  writeStarted = () => resolve(undefined);
+});
+const holdWrite = new Promise((resolve) => {
+  releaseWrite = () => resolve(undefined);
+});
+let firstWrite = true;
+context.SecureStore.setItemAsync = async (
+  /** @type {string} */ key,
+  /** @type {string} */ value,
+) => {
+  if (firstWrite) {
+    firstWrite = false;
+    writeStarted();
+    await holdWrite;
+  }
+  await secureWrite(key, value);
+};
+const committing = context.saveSession(overlapping);
+await started;
+rejectAcceptedOnce = true;
+const rotating = context.api(overlapping, '/api/devices');
+await new Promise((resolve) => setImmediate(resolve));
+releaseWrite();
+await Promise.all([committing, rotating]);
+assert.equal(JSON.parse(persisted).accessToken, overlapping.accessToken);
+assert.equal(JSON.parse(persisted).refreshToken, overlapping.refreshToken);
+assert.equal(await context.loadSession(), overlapping);
+console.log(
+  'PASS provisional OAuth 401 refresh cannot bypass same-owner deletion recovery; accepted, failed and overlapping secure-save token rotations retain their persistence contracts.',
+);

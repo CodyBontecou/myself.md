@@ -1,3 +1,4 @@
+import { AnalyticsConsent } from '../../client/AnalyticsControls.js';
 import CloudStorageUsage from '../../client/CloudStorageUsage.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { useBilling } from '../../client/BillingPaywalls';
@@ -49,6 +50,7 @@ export default function SettingsScreen() {
       </Group>
       <SectionHeader title="Privacy" />
       <Group>
+        <AnalyticsConsent />
         <PrivacyLinks />
       </Group>
     </Screen>

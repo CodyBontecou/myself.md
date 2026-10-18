@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { PairingError } from './errors.js';
 import {
   parseProfile,
+  parseProfileState,
   profileLink,
   profileShareLink,
   agentProfileAllows,
@@ -20,6 +21,7 @@ import {
   publishDebugReport,
 } from './debug-service.js';
 import { logs, logsJson, selectLogs } from '../core/logs.js';
+import { createLocationCaptures, locationCaptureInput } from './location-capture.js';
 const ttl = 300000;
 const domainSchema = z.enum(domains);
 const exportSchema = z.enum(exportSchemas().versions.map((version) => version.id));
@@ -134,7 +136,7 @@ const profileSchema = z.object({
         .min(1)
         .max(2)
         .describe(
-          'Requested file formats for local and HTTPS destinations; choose JSON, JSONL or both. Cloud destinations always store one JSONL file per day.',
+          'Requested file formats for local and HTTPS destinations; choose JSON, JSONL or both. Cloud destinations store JSONL grouped by day, using the selected writeMode.',
         ),
       lookbackDays: z
         .number()
@@ -144,7 +146,9 @@ const profileSchema = z.object({
         .describe('Number of completed days to include in scheduled exports, from 1 to 30.'),
       includeToday: z
         .boolean()
-        .describe('Whether the proposed export includes the current incomplete day.'),
+        .describe(
+          'Whether manual and calendar-scheduled exports include the current incomplete day. Minute/hour intervals always export today.',
+        ),
       localFolderId: z
         .string()
         .regex(/^[a-zA-Z0-9-]{1,100}$/)
@@ -166,7 +170,7 @@ const profileSchema = z.object({
         .enum(['replace', 'append', 'new_file', 'skip'])
         .optional()
         .describe(
-          'Local file conflict behavior: replace (default), append records, create a numbered new file, or skip existing files. Remote destinations ignore this setting. Appending may duplicate records. Requires owner review and save.',
+          'Local and Cloud file behavior: replace (default), append records, create a new file, or skip. Cloud append/replace targets the latest snapshot for the same profile, day and schema; older snapshots remain. HTTPS endpoints control their own storage behavior. Appending may duplicate records. Requires owner review and save.',
         ),
       formatFolders: z
         .boolean()
@@ -238,8 +242,18 @@ const profileSchema = z.object({
         .boolean()
         .describe('Whether to request periodic refresh of the incomplete current day.'),
       refreshHours: z
-        .union([z.literal(3), z.literal(6), z.literal(12)])
-        .describe('Hours between current-day refresh attempts: 3, 6 or 12.'),
+        .number()
+        .int()
+        .min(1)
+        .max(24)
+        .describe('Hours between current-day refresh attempts, from 1 to 24.'),
+      dailyTimes: z
+        .array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/))
+        .max(1440)
+        .optional()
+        .describe(
+          'Daily local times as HH:mm. When nonempty, replaces hour/minute for daily schedules. Duplicate times run once; missed times coalesce to the latest. Include today in export settings to capture current-day data at each run.',
+        ),
     })
     .optional()
     .describe(
@@ -271,7 +285,12 @@ const profileSchema = z.object({
     ),
 });
 const catalogSchema = z.object({
+  profileSync: z.object({ base: z.unknown().nullable() }).optional(),
   locationTracking: z.boolean().optional(),
+  locationCapture: z
+    .object({ version: z.literal(1) })
+    .strict()
+    .optional(),
   diagnostics: debugReportSchema.optional(),
   dispatch: z.boolean().default(true),
   profiles: z
@@ -331,7 +350,7 @@ const content = (value) => ({
 /** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:{schema:import('../core/export-schemas.js').ExportSchema,format:Query['format'],page:import('../core/data.js').DataPage,export:string|null},error?:string}} Job */
 /** @typedef {{id:string,subject:string,deviceId:string,profile:import('../core/profiles.js').ProfileDraft,expires:number,state:'queued'|'delivered'}} Proposal */
 /** @param {z.infer<typeof catalogSchema>|undefined} catalog @param {Query} query */
-function catalogAllows(catalog, query) {
+function phoneCatalogAllows(catalog, query) {
   const profile = catalog?.profiles.find((p) => p.id === query.profileId);
   return agentProfileAllows(
     profile && {
@@ -343,8 +362,9 @@ function catalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>}} dependencies */
+/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,captures?:Map<string,import('./location-capture.js').LocationCapture>}} dependencies */
 export function createDataService({
+  cloud,
   billing,
   refreshEntitlement,
   devices,
@@ -352,11 +372,54 @@ export function createDataService({
   phones = new Map(),
   jobs = new Map(),
   proposals = new Map(),
+  captures = new Map(),
 }) {
+  const locationCaptures = createLocationCaptures({
+    captures,
+    own,
+    phone: (deviceId) => phones.get(deviceId),
+    authorize: (subject, client) => {
+      if (client) cloud.observeAgent?.(subject, client);
+    },
+  });
   /** Completed capture outcomes survive payload expiry and grant revocation.
    * @param {string} subject @param {string} id */
   function captured(subject, id) {
     return ['complete', 'partial'].includes(history.get(subject, id)?.event.status ?? '');
+  }
+  /** @param {z.infer<typeof catalogSchema>|undefined} catalog @param {Query} query */
+  function catalogAllows(catalog, query) {
+    const snapshot = cloud.profileSync?.get(subjectForPhone(query.deviceId), query.deviceId);
+    const profile = snapshot?.state.profiles.find((p) => p.id === query.profileId);
+    return phoneCatalogAllows(catalog, query) && (!snapshot || agentProfileAllows(profile, query));
+  }
+  /** @param {Query} query */
+  function queryAllowed(query) {
+    const catalog = phones.get(query.deviceId)?.catalog;
+    return (
+      catalogAllows(catalog, query) &&
+      catalog?.domains.some(
+        (domain) =>
+          domain.domain === query.domain &&
+          domain.enabled &&
+          domain.types.includes(`${query.source}:${query.type}`),
+      ) === true
+    );
+  }
+  /** Erase denied queued work and retained payloads before a phone acknowledges an owner edit.
+   * @param {string} subject @param {string} deviceId */
+  function revokeQueries(subject, deviceId) {
+    for (const [id, job] of jobs)
+      if (job.subject === subject && job.deviceId === deviceId && !queryAllowed(job.query)) {
+        if (!captured(subject, id) && job.state !== 'failed')
+          history.update(subject, id, { status: 'cancelled', error: 'Phone access was revoked.' });
+        billing.release(subject, id);
+        jobs.delete(id);
+      }
+  }
+  /** @param {string} deviceId */
+  function subjectForPhone(deviceId) {
+    return phones.get(deviceId)?.subject ?? '';
   }
   // Query payloads are never persisted. A restarted server requires a fresh phone heartbeat.
   function cleanup() {
@@ -380,6 +443,7 @@ export function createDataService({
   }
   /** @param {string} deviceId @param {string} subject */
   function cancelPhone(deviceId, subject) {
+    locationCaptures.cancel(subject, deviceId);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
@@ -394,6 +458,7 @@ export function createDataService({
   /** Remove all retained account work, including requests for already disconnected phones.
    * @param {string} subject */
   function cancelAccount(subject) {
+    locationCaptures.cancel(subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
@@ -405,6 +470,7 @@ export function createDataService({
   /** Blocking an agent also discards its queued and retained live requests.
    * @param {string} subject @param {string} client */
   function cancelAgent(subject, client) {
+    locationCaptures.cancel(subject, undefined, client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
         if (!captured(subject, id) && job.state !== 'failed')
@@ -417,6 +483,98 @@ export function createDataService({
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] @param {{chatgpt?:boolean}} [options] */
   function registerDataTools(mcp, subject, client = null, { chatgpt = false } = {}) {
     registerDebugTools(mcp, subject, own, phones);
+    mcp.registerTool(
+      'request_phone_location_capture',
+      {
+        title: 'Request one owner-approved Location point',
+        description:
+          'Request, inspect or cancel one foreground Location capture on an owned online phone supporting locationCapture version 1. The owner must approve Save one point in the real app and any OS Location prompt. Never grants agent read access, starts background recording or exports data. Reuse the caller-chosen requestId for safe retries/status; it never captures a second point. States are accepted, awaiting_user, running, completed, failed, cancelled and expired. Pending requests expire after five minutes; cancellation is available before running. Completion requires a saved-point receipt and returns only timestamp/count, never coordinates. Query recorded points separately under the existing profile grants.',
+        inputSchema: locationCaptureInput,
+        annotations: {
+          title: 'Request one owner-approved Location point',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      (input) => content(locationCaptures.tool(subject, client, input)),
+    );
+    mcp.registerTool(
+      'manage_phone_profiles',
+      {
+        title: 'Read or propose synced profile settings',
+        description:
+          'Read the full synchronized profile configuration and last phone confirmation for an owned device, propose an existing-profile update for explicit owner review, or inspect its outcome. Proposals never change configuration, grant agent access or start exports. The owner reviews and saves the suggestion under Profiles & permissions in the web dashboard; the paired phone must then sync before completion. Saving Cloud as the destination allows uploads, with upload credentials managed automatically on the signed-in phone. OS permissions, local folders, automatic-export opt-in and secure HTTP credentials remain phone handoffs. Reuse requestId when checking status. Stored configuration contains no source records.',
+        inputSchema: z.object({
+          action: z
+            .enum(['list', 'propose', 'status'])
+            .describe(
+              'Read synchronized settings, submit a suggestion for owner review, or check a previous suggestion.',
+            ),
+          deviceId: z.string().uuid().describe('Owned phone ID from list_connected_phones.'),
+          profileId: z
+            .string()
+            .min(1)
+            .max(100)
+            .optional()
+            .describe('Existing profile ID from the list result; required for propose.'),
+          profile: z
+            .unknown()
+            .optional()
+            .describe(
+              'Full versioned profile configuration from list, with explicit agentAccess and agentPermissions; required for propose. This creates only a suggestion.',
+            ),
+          requestId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe('Suggestion request ID returned by propose; required for status.'),
+        }),
+        annotations: {
+          title: 'Read or propose synced profile settings',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ action, deviceId, profileId, profile, requestId }) => {
+        own(deviceId, subject);
+        const store = cloud.profileSync;
+        if (!store) throw new PairingError(409, 'Profile synchronization is unavailable.');
+        const value = store.get(subject, deviceId);
+        if (action === 'list')
+          return content(
+            value
+              ? { ...value, deviceId }
+              : {
+                  deviceId,
+                  status: 'awaiting_phone',
+                  instructions: 'Update and open myself.md on this phone to synchronize profiles.',
+                },
+          );
+        if (action === 'status') {
+          const request = value?.requests.find((r) => r.id === requestId);
+          if (!request) throw new PairingError(404, 'Profile suggestion not found.');
+          return content(request);
+        }
+        if (!profileId || !profile)
+          throw new PairingError(
+            400,
+            'Supply an existing profileId and full profile configuration.',
+          );
+        const request = store.propose(subject, deviceId, profileId, profile);
+        return content({
+          ...request,
+          requiresUser: true,
+          reviewUrl: 'https://myself.md/dashboard?view=profiles',
+          instructions:
+            'The account owner must review this suggestion and save changes in Profiles & permissions. Then open myself.md on the paired phone. A suggestion alone does not change access.',
+        });
+      },
+    );
+
     mcp.registerTool(
       'list_phone_logs',
       {
@@ -676,7 +834,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Generate an explicit per-type export profile, a native deepLink and an email-compatible HTTPS shareLink. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under profile permissions. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Does not grant access. The user reviews and saves on the phone, then separately approves agent access.',
+          'Generate an explicit per-type export profile, a native deepLink and an email-compatible HTTPS shareLink. Optionally send it to an owned connected phone for review (open myself.md within five minutes). Use selectableTypes (or availableTypes on older phones) from get_phone_data_catalog. Selectable types can require a user/OS permission handoff; only selected types in an approved profile are readable under profile permissions. Empty domain lists disable that domain. Optional export settings pin a released schema (discover with list_export_schemas), JSON/JSONL, 1–30 days, safe date-based filename and Documents subfolder. Optional schedule describes daily/weekly/custom cadence and Today Refresh; it never enables scheduling on the phone. Saving Cloud as the destination allows uploads, with upload credentials managed automatically on the signed-in phone. Does not grant agent access. The user reviews and saves on the phone, then separately approves agent access.',
         inputSchema: z.object({
           profile: profileSchema.describe(
             'Proposed versioned profile configuration. Preview compatibility first; delivery and deep links still require the phone owner to save it.',
@@ -990,12 +1148,7 @@ export function createDataService({
                 409,
                 'Idempotency key already used with different query arguments.',
               );
-            if (
-              !phone ||
-              !catalogAllows(phone.catalog, query) ||
-              !domain?.enabled ||
-              !domain.types.includes(`${query.source}:${query.type}`)
-            )
+            if (!queryAllowed(query))
               throw new PairingError(403, 'Current phone data grants do not permit this retry.');
             const existing = jobs.get(id);
             if (!existing || existing.expires <= Date.now())
@@ -1050,6 +1203,13 @@ export function createDataService({
           if ([...jobs.values()].filter((j) => j.subject === subject).length >= 100)
             throw new PairingError(429, 'Read or forget existing requests first.');
           await refreshEntitlement(subject);
+          // Owner edits, disconnects and agent blocking can occur during entitlement I/O.
+          own(query.deviceId, subject);
+          if (client) cloud.observeAgent?.(subject, client);
+          if ((phones.get(query.deviceId)?.seen ?? 0) < Date.now() - 15000)
+            throw new PairingError(409, 'Phone is offline. Open myself.md first.');
+          if (!queryAllowed(query))
+            throw new PairingError(403, 'Current phone data grants do not permit this query.');
           billing.reserve(subject, id, 'agent');
           const expires = Date.now() + ttl;
           jobs.set(id, {
@@ -1077,7 +1237,7 @@ export function createDataService({
       {
         title: 'Read phone query result',
         description:
-          'Retrieve a live phone query/export page. Poll while queued/running; stop on failed or expired. Complete results include source fields, capture warnings, and a nextCursor. Never interpret a partial/permission-limited page as all phone data.',
+          'Retrieve a live phone query/export page under the current profile permissions. Owner revocation discards queued work and retained results, including a dashboard denial before phone acknowledgment; reapproval cannot restore the discarded response. Poll while queued/running; stop on failed or expired. Complete results include source fields, capture warnings, and a nextCursor. Never interpret a partial/permission-limited page as all phone data.',
         inputSchema: z.object({
           requestId: z
             .string()
@@ -1099,6 +1259,10 @@ export function createDataService({
         if (!job || job.subject !== subject || job.expires <= Date.now())
           throw new PairingError(404, 'Request expired or not found.');
         own(job.deviceId, subject);
+        if (!queryAllowed(job.query)) {
+          revokeQueries(subject, job.deviceId);
+          throw new PairingError(404, 'Request expired or not found.');
+        }
         if (job.state === 'complete')
           history.update(subject, requestId, {
             status: job.result?.page.complete === false ? 'partial' : 'complete',
@@ -1188,39 +1352,77 @@ export function createDataService({
   });
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
-    const match = path.match(/^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics)$/);
+    const match = path.match(
+      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture)$/,
+    );
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
+    if (match[2] === 'location-capture') return locationCaptures.report(subject, deviceId, body);
     if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
     if (match[2] === 'poll') {
       const catalog = catalogSchema.parse(body);
+      const phoneState = parseProfileState({
+        profiles: catalog.profiles.map((profile) => ({
+          ...parseProfile(profile),
+          id: profile.id,
+          agentAccess: profile.agentAccess,
+          agentPermissions: profile.agentPermissions,
+        })),
+      });
+      const sync = cloud.profileSync?.poll(
+        subject,
+        deviceId,
+        phoneState,
+        catalog.domains,
+        catalog.profileSync
+          ? {
+              base:
+                catalog.profileSync.base === null
+                  ? null
+                  : parseProfileState(
+                      /** @type {import('../core/profiles.js').ProfileState} */ (
+                        catalog.profileSync.base
+                      ),
+                    ),
+            }
+          : undefined,
+      );
+      const approved = sync?.state ?? phoneState;
+      cloud.syncAgentPermissions(
+        subject,
+        deviceId,
+        phoneState.profiles.map((profile) => {
+          const approvedProfile = approved.profiles.find((p) => p.id === profile.id);
+          const remote = approvedProfile?.agentPermissions;
+          const local = parseAgentPermissions(profile.agentPermissions);
+          return Object.assign({}, profile, {
+            selection: Object.fromEntries(
+              domains.map((domain) => [
+                domain,
+                profile.selection[domain].filter((type) =>
+                  approvedProfile?.selection[domain].includes(type),
+                ),
+              ]),
+            ),
+            agentAccess: true,
+            agentPermissions: {
+              health: local.health && remote?.health === true,
+              time: local.time && remote?.time === true,
+              location: local.location && remote?.location === true,
+              logs: local.logs && remote?.logs === true,
+            },
+          });
+        }),
+      );
       catalog.diagnostics = latestDebugReport(
         phones.get(deviceId)?.catalog.diagnostics,
         catalog.diagnostics,
       );
       phones.set(deviceId, { deviceId, subject, seen: Date.now(), catalog });
       // Recheck consent every heartbeat, deleting retained data on revocation.
-      for (const [id, j] of jobs)
-        if (
-          j.deviceId === deviceId &&
-          (!catalogAllows(catalog, j.query) ||
-            !catalog.domains.some(
-              (d) =>
-                d.domain === j.query.domain &&
-                d.enabled &&
-                d.types.includes(`${j.query.source}:${j.query.type}`),
-            ))
-        ) {
-          if (!captured(subject, id) && j.state !== 'failed')
-            history.update(subject, id, {
-              status: 'cancelled',
-              error: 'Phone access was revoked.',
-            });
-          billing.release(j.subject, id);
-          jobs.delete(id);
-        }
+      revokeQueries(subject, deviceId);
       const job = catalog.dispatch
         ? [...jobs.values()].find(
             (j) =>
@@ -1250,6 +1452,11 @@ export function createDataService({
             )
           : undefined;
       return {
+        profileSync: sync,
+        locationCapture:
+          catalog.dispatch && catalog.locationCapture?.version === 1
+            ? locationCaptures.dispatch(subject, deviceId)
+            : null,
         request: job ? { id: job.id, query: job.query } : null,
         profile: proposal ? { id: proposal.id, profile: proposal.profile } : null,
         allowance: billing.snapshot(subject),
@@ -1271,16 +1478,7 @@ export function createDataService({
       job.state !== 'running'
     )
       throw new PairingError(404, 'Pending request not found.');
-    const allowed = phones
-      .get(deviceId)
-      ?.catalog.domains.some(
-        (d) =>
-          d.domain === job.query.domain &&
-          d.enabled &&
-          d.types.includes(`${job.query.source}:${job.query.type}`),
-      );
-    if (!allowed || !catalogAllows(phones.get(deviceId)?.catalog, job.query))
-      throw new PairingError(403, 'Permission revoked.');
+    if (!queryAllowed(job.query)) throw new PairingError(403, 'Permission revoked.');
     if (input.error) {
       billing.release(subject, input.id);
       job.error = input.error;
@@ -1318,5 +1516,13 @@ export function createDataService({
     return { ok: true };
   }
 
-  return { registerDataTools, phoneApi, cancelPhone, cancelAgent, cancelAccount, cleanup };
+  return {
+    registerDataTools,
+    phoneApi,
+    cancelPhone,
+    cancelAgent,
+    cancelAccount,
+    revokeQueries,
+    cleanup,
+  };
 }

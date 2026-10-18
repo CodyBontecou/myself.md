@@ -40,6 +40,17 @@ async function identity(env) {
   await context.checkSchema?.();
   return auth;
 }
+/** Internal signature verification must not use the public HTTP rate-limit bucket.
+ * The provider API retains the same published-key selection and rotation policy.
+ * @param {Env} env */
+export async function identityJwks(env) {
+  const auth = await identity(env);
+  const api =
+    /** @type {typeof auth.api & {getJwks:(options:{asResponse:true})=>Promise<Response>}} */ (
+      auth.api
+    );
+  return api.getJwks({ asResponse: true });
+}
 /** @param {string} value */
 function escape(value) {
   return value
@@ -150,10 +161,11 @@ export async function identityRequest(request, env) {
         <section class="permissions" aria-labelledby="permissions-title">
           <h2 id="permissions-title">Requested permissions</h2>
           <p class="scope">${escape(url.searchParams.get('scope')?.trim() || 'No additional permissions requested.')}</p>
-          <div class="permission-detail"><h3>Your sharing choices stay in place</h3><p>Your existing device selections and data grants still apply.</p></div>
+          <div class="permission-detail"><h3>Your sharing choices stay in place</h3><p>This application can receive data from profiles you have already approved for agent access, including shared cloud exports. Your existing device selections and data grants still limit what it can read.</p></div>
+          <div class="permission-detail"><h3>AI providers may keep copies</h3><p>Your approved data can reach this application and any AI providers it uses. They use their own privacy and retention policies. Revoking access stops future reads; it cannot recall copies already received.</p></div>
           <div class="permission-detail"><h3>Queries use your export allowance</h3><p>Agent queries count toward your export allowance.</p></div>
         </section>
-        <p class="decision-note">Only allow access if you trust this application.</p>
+        <p class="decision-note">Only allow access if you trust this application and its data policies. <a href="/privacy">Read the myself.md privacy policy</a>.</p>
         <form method="post"><input type="hidden" name="oauth_query" value="${query}"><button class="primary" type="submit" name="accept" value="true">Allow access</button><button class="secondary" type="submit" name="accept" value="false">Cancel</button></form>`,
         callback ? [callback.origin === 'null' ? callback.protocol : callback.origin] : [],
         identityPageStyles,
@@ -300,6 +312,12 @@ export async function identityRequest(request, env) {
   const response = await auth.handler(
     new Request(url, { method: request.method, headers, ...(body ? { body } : {}) }),
   );
+  if (
+    ['/oauth2/end-session', '/oauth2/end-session/confirm'].includes(targetPath) &&
+    response.headers.get('content-type')?.includes('text/html')
+  ) {
+    return logoutPage(response);
+  }
   // Browser clients use both the OAuth endpoint and the legacy native/dashboard alias.
   if (
     targetPath === '/oauth2/authorize' &&
@@ -317,6 +335,104 @@ export async function identityRequest(request, env) {
     }
   }
   return response;
+}
+
+/** Style the provider's browser result while retaining its form, cookies and protocol decisions.
+ * @param {Response} response */
+function logoutPage(response) {
+  const nonce = crypto.randomUUID();
+  const headers = new Headers(response.headers);
+  headers.set(
+    'Content-Security-Policy',
+    `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+  );
+  headers.set('Referrer-Policy', 'same-origin');
+  headers.delete('Content-Length');
+  const footer =
+    '<nav class="sign-in-footer" aria-label="Other options"><a href="/">Back to myself.md</a></nav>';
+  return new HTMLRewriter()
+    .on('html', {
+      element: (element) => {
+        element.setAttribute('lang', 'en');
+      },
+    })
+    .on('title', {
+      element: (element) => {
+        element.setInnerContent('Sign out · myself.md');
+      },
+    })
+    .on('head', {
+      element: (element) => {
+        element.append(
+          `<meta name="viewport" content="width=device-width,initial-scale=1"><style nonce="${nonce}">${identityPageStyles}
+        .logout-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--inset); }
+        .logout-actions .action-link { margin: 0; }
+        .logout-note { margin: 0 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--inset); color: var(--muted); font-size: 13px; line-height: 1.6; }
+        </style>`,
+          { html: true },
+        );
+      },
+    })
+    .on('body', {
+      element: (element) => {
+        element.prepend('<header class="brand">myself<span>.md</span></header>', { html: true });
+      },
+    })
+    .on('main', {
+      element: (element) => {
+        element.prepend(
+          '<div class="logout-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H5v14h4M14 8l4 4-4 4M9 12h9"/></svg></div>',
+          { html: true },
+        );
+        element.append(footer, { html: true });
+      },
+    })
+    .on('h1', {
+      element: (element) => {
+        element.setInnerContent(
+          response.ok ? 'Sign out of myself.md?' : 'Sign-out could not finish',
+        );
+      },
+    })
+    .on('main > p', {
+      element: (element) => {
+        element.setAttribute('class', 'intro');
+      },
+    })
+    .on('form[data-oidc-logout-confirmation]', {
+      element: (element) => {
+        element.setAttribute('class', 'logout-actions');
+        element.before(
+          '<p class="logout-note">Signing out won’t delete your account or saved exports.</p>',
+          { html: true },
+        );
+        element.append('<a class="action-link secondary" href="/dashboard">Cancel</a>', {
+          html: true,
+        });
+      },
+    })
+    .on('form[data-oidc-logout-confirmation] button', {
+      element: (element) => {
+        element.setAttribute('class', 'primary');
+        element.setInnerContent('Sign out');
+      },
+    })
+    .on('[data-oidc-logout-state="logged-out"]', {
+      element: (element) => {
+        element.before('<h1>You’re signed out</h1>', { html: true });
+        element.after('<a class="action-link primary" href="/login">Sign in again</a>', {
+          html: true,
+        });
+      },
+    })
+    .on('[data-oidc-logout-state="error"]', {
+      element: (element) => {
+        element.after('<a class="action-link primary" href="/dashboard">Back to dashboard</a>', {
+          html: true,
+        });
+      },
+    })
+    .transform(new Response(response.body, { status: response.status, headers }));
 }
 
 /** Revoke Apple's stored grant before removing the identity and all cascading OAuth records.
@@ -348,7 +464,26 @@ export async function deleteIdentity(env, subject) {
         hint: account.refreshToken ? 'refresh_token' : 'access_token',
       });
     }, Promise.resolve());
-  await env.IDENTITY.prepare('DELETE FROM "user" WHERE id=?').bind(id).run();
+  await env.IDENTITY.batch([
+    env.IDENTITY.prepare(
+      `DELETE FROM verification WHERE CASE WHEN json_valid(value) THEN
+        (json_extract(value,'$.type')='authorization_code' AND (
+          (json_type(value,'$.userId')='text' AND json_extract(value,'$.userId')=?) OR
+          (json_type(value,'$.sessionId')='text' AND json_extract(value,'$.sessionId') IN
+            (SELECT id FROM session WHERE userId=?))
+        )) OR (
+          json_type(value,'$.oauthState')='text' AND
+          identifier='auth-state:' || json_extract(value,'$.oauthState') AND
+          json_type(value,'$.callbackURL')='text' AND
+          json_type(value,'$.codeVerifier')='text' AND
+          json_type(value,'$.expiresAt') IN ('integer','real') AND
+          json_type(value,'$.link')='object' AND
+          json_type(value,'$.link.email')='text' AND
+          json_type(value,'$.link.userId')='text' AND json_extract(value,'$.link.userId')=?
+        ) ELSE 0 END`,
+    ).bind(id, id, id),
+    env.IDENTITY.prepare('DELETE FROM "user" WHERE id=?').bind(id),
+  ]);
 }
 
 /** @param {Env} env */

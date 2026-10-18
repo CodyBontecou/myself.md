@@ -1,3 +1,7 @@
+import { ProfileEditor } from './profile-editor.js';
+import { AccountError } from './account-error.js';
+import { AnalyticsReport } from './analytics-report.js';
+import { initializeWebAnalytics, trackWebAnalytics } from './analytics.js';
 import { createMyselfClient } from './public-client.js';
 import { registerPublicTools } from './webmcp.js';
 
@@ -167,7 +171,7 @@ const views = [
     id: /** @type {const} */ ('profiles'),
     title: 'Profiles & permissions',
     description:
-      'Profiles define which data you export and share. Try changing a sample profile’s sharing permission to control whether agents can read its stored files.',
+      'Profiles define which data you export and share. Try changing a sample profile’s Agent permissions to control which stored data agents can read.',
     icon: IconListDetails,
   },
   {
@@ -187,6 +191,20 @@ function bytes(value) {
 /** @param {{view:View,onNavigate:(view:View)=>void,workspace:Workspace|null,busy:boolean}} props */
 function AppSidebar({ view, onNavigate, workspace, busy }) {
   const { setOpenMobile } = useSidebar();
+  const [operator, setOperator] = useState(false);
+  useEffect(() => {
+    if (!workspace || isDemo) return;
+    let active = true;
+    void api('/api/analytics/access')
+      .then((result) => {
+        if (active) setOperator(/** @type {{operator:boolean}} */ (result).operator);
+        return undefined;
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [workspace]);
   const profile = workspace?.accountProfile;
   const accountName = profile?.name || profile?.email || 'Your account';
   const accountEmail = profile?.email || 'Personal account';
@@ -318,6 +336,11 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
                       }}
                     >
                       Connected logins
+                    </DropdownMenuItem>
+                  )}
+                  {operator && (
+                    <DropdownMenuItem asChild>
+                      <a href="/operator/analytics">Product analytics</a>
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem asChild>
@@ -835,16 +858,46 @@ function ProfileSelection({ selection }) {
 }
 /** @param {{workspace:Workspace,view:View,busy:boolean,onConfirm:(confirmation:Confirmation)=>void,onReload:()=>Promise<void>}} props */
 function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
+  const [editing, setEditing] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  useEffect(() => {
+    if (view !== 'profiles') return;
+    let active = true;
+    let refreshing = false;
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible' || refreshing) return;
+      refreshing = true;
+      try {
+        await onReload();
+        if (active) setRefreshError('');
+      } catch {
+        if (active)
+          setRefreshError('Could not refresh profile status. Showing the last saved snapshot.');
+      } finally {
+        refreshing = false;
+      }
+    };
+    const timer = setInterval(() => void refresh(), 5000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [view, onReload]);
+  const [suggestion, setSuggestion] = useState(
+    /** @type {import('../server/profile-sync.js').ProfileRequest|undefined} */ (undefined),
+  );
   return (
     <div className="px-4 lg:px-6">
       <Card>
         <CardHeader>
           <CardTitle>
-            {view === 'profiles' ? 'Cloud sharing permissions' : 'Connected agents'}
+            {view === 'profiles' ? 'Profile settings and permissions' : 'Connected agents'}
           </CardTitle>
           <CardDescription>
             {view === 'profiles'
-              ? 'Choose which profiles agents can read from your stored cloud exports.'
+              ? 'Configure profiles and choose what agents can read from your phone and stored cloud exports.'
               : 'Agents appear after their first MCP request. Block access at any time.'}
           </CardDescription>
         </CardHeader>
@@ -857,11 +910,18 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
             <div className="space-y-1">
               <p className="text-sm font-medium">You control what agents can access</p>
               <p className="text-sm text-muted-foreground">
-                Sharing applies to all allowed agents on your account. Selected types describe the
-                export profile; iPhone Health permissions are managed separately on your phone.
+                Health, Screen time and Location Agent permissions on your phone also control this
+                profile’s old cloud exports. After your phone syncs, turning a permission off blocks
+                that data. Turning it back on restores access to those selected data types. Your
+                saved files stay unchanged.
               </p>
             </div>
           </div>
+        )}
+        {refreshError && (
+          <p role="status" className="px-6 pb-4 text-sm text-muted-foreground">
+            {refreshError}
+          </p>
         )}
         <CardContent className="divide-y">
           {view === 'profiles'
@@ -880,7 +940,7 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                           ) : (
                             <IconLock aria-hidden="true" />
                           )}
-                          {profile.shared ? 'Shared with agents' : 'Private'}
+                          {profile.shared ? 'Agents enabled' : 'Agents disabled'}
                         </Badge>
                       </div>
                       <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
@@ -889,40 +949,99 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                       </p>
                       <p className="mt-2 text-sm text-muted-foreground">
                         {profile.shared
-                          ? 'Allowed agents can read this profile’s selected data from stored exports.'
+                          ? 'Agent permissions control these cloud exports. Turning a category off blocks its data; turning it back on restores access to selected data after your phone syncs.'
                           : 'Only you can view these stored exports. Agent access is off.'}
                       </p>
+                      <div
+                        className="mt-3 flex flex-wrap gap-2"
+                        aria-label="Profile agent permission status"
+                      >
+                        {
+                          /** @type {const} */ (['health', 'time', 'location']).map((domain) => (
+                            <Badge
+                              key={domain}
+                              variant={
+                                profile.permissionsSynced && profile.agentPermissions?.[domain]
+                                  ? 'secondary'
+                                  : 'outline'
+                              }
+                            >
+                              {domain === 'health'
+                                ? 'Health'
+                                : domain === 'time'
+                                  ? 'Screen time'
+                                  : 'Location'}
+                              :{' '}
+                              {profile.permissionsSynced
+                                ? profile.agentPermissions?.[domain]
+                                  ? 'On'
+                                  : 'Off'
+                                : 'Unknown — sync phone'}
+                            </Badge>
+                          ))
+                        }
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {profile.lastSeen
+                          ? `Phone last synced ${new Date(profile.lastSeen).toLocaleString()}. `
+                          : ''}
+                        {profile.revision && profile.confirmedRevision !== profile.revision
+                          ? 'Changes saved on web; waiting for this phone to sync.'
+                          : profile.syncSupported
+                            ? 'Profile is synced. Open myself.md on this phone to receive new changes.'
+                            : 'Update and open the phone app to enable profile editing and synchronization.'}
+                      </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        onConfirm({
-                          title: profile.shared ? 'Revoke cloud sharing?' : 'Share this profile?',
-                          description: profile.shared
-                            ? 'Agents will lose access to this profile’s stored exports. You can still view them here.'
-                            : 'All allowed agents on your account will be able to read stored exports within the data selection shown for this profile.',
-                          label: profile.shared ? 'Revoke sharing' : 'Share with agents',
-                          action: async () => {
-                            await api('/api/dashboard/permissions', 'PUT', {
-                              deviceId: profile.deviceId,
-                              profileId: profile.profileId,
-                              shared: !profile.shared,
-                            });
-                            await onReload();
-                          },
-                        })
-                      }
-                    >
-                      {profile.shared ? 'Revoke sharing' : 'Share with agents'}
-                    </Button>
                   </div>
+                  {profile.profile && profile.syncSupported && (
+                    <div className="space-y-3">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setSuggestion(undefined);
+                          setEditing(`${profile.deviceId}/${profile.profileId}`);
+                        }}
+                      >
+                        Edit profile
+                      </Button>
+                      {profile.requests
+                        ?.filter((r) => r.status === 'awaiting_user')
+                        .map((request) => (
+                          <div key={request.id} className="rounded-md border p-3 text-sm">
+                            An agent suggested changes to this profile. Nothing has been applied.{' '}
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setSuggestion(request);
+                                setEditing(`${profile.deviceId}/${profile.profileId}`);
+                              }}
+                            >
+                              Review suggestion
+                            </Button>
+                          </div>
+                        ))}
+                      {editing === `${profile.deviceId}/${profile.profileId}` && (
+                        <ProfileEditor
+                          key={`${editing}/${suggestion?.id ?? ''}`}
+                          entry={profile}
+                          suggestion={suggestion}
+                          onConfirm={onConfirm}
+                          onSaved={onReload}
+                          onCancel={() => setEditing('')}
+                        />
+                      )}
+                    </div>
+                  )}
                   <div>
                     <h3 className="mb-3 text-sm font-medium">Selected export data</h3>
                     <ProfileSelection selection={profile.selection} />
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                    <p>Change selected data and device permissions in myself.md on your phone.</p>
+                    <p>
+                      Edit synced profile settings here or in myself.md. System permissions are
+                      managed on the phone.
+                    </p>
                     <p className="break-all">Profile ID: {profile.profileId}</p>
                   </div>
                 </div>
@@ -953,8 +1072,8 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                       onConfirm({
                         title: agent.blocked ? 'Allow this agent?' : 'Block this agent?',
                         description: agent.blocked
-                          ? 'This OAuth client will regain access to shared cloud profiles and explicitly permitted phone data.'
-                          : 'This OAuth client will lose all MCP access for your account. Its pending live requests and retained responses will be discarded.',
+                          ? 'This agent will regain access to already-shared cloud profiles and explicitly permitted phone data. The agent and its AI providers use their own privacy and retention policies and may keep copies. Blocking it later stops future access; it cannot recall copies already received.'
+                          : 'This agent will lose all MCP access for your account. Its pending live requests and responses retained by myself.md will be discarded. Blocking it cannot recall copies already received by the agent or its AI providers.',
                         label: agent.blocked ? 'Allow agent' : 'Block agent',
                         action: async () => {
                           await api('/api/dashboard/agents', 'PUT', {
@@ -973,14 +1092,14 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
           {!(view === 'profiles' ? workspace.profiles.length : workspace.agents.length) && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {view === 'profiles'
-                ? 'Authorize cloud uploads for a profile in the app to manage sharing here.'
+                ? 'Open myself.md on a connected phone to sync its profiles here.'
                 : 'Connect an agent to your cloud MCP server with this account to see it here.'}
             </p>
           )}
         </CardContent>
         <CardFooter className="border-t text-xs leading-relaxed text-muted-foreground">
           {view === 'profiles'
-            ? 'Data selection, upload authorization, and live phone permissions are managed in the app.'
+            ? 'Profiles sync between web and phone. System permissions, destination authorization and automatic-export opt-in are managed on the phone.'
             : 'Agent names are OAuth client IDs. Blocks apply across the account; allowed agents can read shared profiles.'}
         </CardFooter>
       </Card>
@@ -1024,12 +1143,11 @@ function LoginCard({ ready, notice = '' }) {
           </CardHeader>
           <CardContent className="space-y-4 px-5 sm:space-y-6 sm:px-8">
             {(error || notice) && (
-              <pre
-                role="alert"
-                className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
-              >
-                {errorJSON(error || notice)}
-              </pre>
+              <AccountError
+                error={error || notice}
+                actionHref="/login"
+                actionLabel="Start sign-in again"
+              />
             )}
             <div className="space-y-2.5">
               {
@@ -1092,6 +1210,10 @@ function App() {
           : query.get('view') === 'agents'
             ? 'agents'
             : 'exports';
+  const viewingWorkspace = Boolean(workspace);
+  useEffect(() => {
+    if (viewingWorkspace && !isDemo) trackWebAnalytics('dashboard_viewed', view);
+  }, [view, viewingWorkspace]);
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
   const [confirmation, setConfirmation] = useState(/** @type {Confirmation|null} */ (null));
@@ -1203,11 +1325,8 @@ function App() {
                 </header>
               )}
               {notice && (
-                <div
-                  role="status"
-                  className="mx-4 whitespace-pre-wrap break-words rounded-lg border bg-muted p-4 text-sm lg:mx-6"
-                >
-                  {notice}
+                <div className="mx-4 lg:mx-6">
+                  <AccountError error={notice} />
                 </div>
               )}
               {workspace ? (
@@ -1243,7 +1362,11 @@ function App() {
                         <>
                           {workspace.cloudStorage && !isDemo && (
                             <div className="px-4 lg:px-6">
-                              <CloudStorageCard storage={workspace.cloudStorage} />
+                              <CloudStorageCard
+                                key={workspace.account}
+                                account={workspace.account}
+                                storage={workspace.cloudStorage}
+                              />
                             </div>
                           )}
                           <div className="px-4 lg:px-6">
@@ -1349,7 +1472,9 @@ function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
   const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return pathname === '/delete-account' ||
+  return pathname === '/operator/analytics' ? (
+    <AnalyticsReport />
+  ) : pathname === '/delete-account' ||
     (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
     <AccountDeletion />
   ) : pathname === '/claim' ||
@@ -1363,6 +1488,7 @@ function Page() {
   );
 }
 createRoot(root).render(<Page />);
+initializeWebAnalytics();
 
 const browserContext =
   /** @type {Document & {modelContext?:import('./webmcp.js').ModelContext}} */ (document)

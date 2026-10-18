@@ -1,7 +1,7 @@
 import { Marked } from 'marked';
 import { z } from 'zod';
 import { blogPosts } from './blog-content.js';
-import { publicNavigation } from '../core/public-site.js';
+import { publicSiteHeader } from '../core/site-header.js';
 import { sorted } from '../core/collections.js';
 
 const origin = 'https://myself.md';
@@ -290,16 +290,8 @@ export function blogResponse(path, accept) {
       ...headers,
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy':
-        "default-src 'none'; script-src https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' https:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        "default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' https:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
     },
-    body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="is-agentic-site-type" content="content"><title>${escape(title)} · myself.md</title><meta name="description" content="${escape(description)}">${missing ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${canonical}">`}<meta property="og:type" content="${post ? 'article' : 'website'}"><meta property="og:title" content="${escape(title)} · myself.md"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${canonical}"><meta property="og:site_name" content="myself.md"><meta property="og:image" content="${origin}/dashboard/favicon.png"><meta name="twitter:card" content="summary">${post ? `<meta property="article:published_time" content="${post.date}"><meta property="article:modified_time" content="${post.updated}"><meta name="author" content="${escape(post.author)}">` : ''}<link rel="icon" href="/dashboard/favicon.png"><link rel="alternate" type="application/rss+xml" title="myself.md blog" href="/blog/feed.xml"><link rel="alternate" type="text/markdown" href="${post ? `/blog/${post.slug}.md` : '/blog'}"><link rel="stylesheet" href="/dashboard/style.css"><link rel="stylesheet" href="/dashboard/docs.css"><link rel="stylesheet" href="/dashboard/blog.css">${missing ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replaceAll('<', '\\u003c')}</script>`}</head><body><div class="blog-page"><a class="blog-skip" href="#content">Skip to content</a><div class="blog-shell"><div class="hero-portrait blog-portrait" aria-hidden="true"><div class="hero-portrait-sculpture"></div></div><header class="blog-header"><a href="/" class="blog-brand">myself.md</a><nav aria-label="Site">${publicNavigation
-      .filter(({ label }) => ['Blog', 'Docs', 'Pricing', 'Contact', 'Privacy'].includes(label))
-      .map(
-        ({ label, href }) =>
-          `<a href="${href}"${label === 'Blog' ? ' aria-current="page"' : ''}>${label}</a>`,
-      )
-      .join(
-        '',
-      )}</nav></header><main id="content">${content}</main><footer class="blog-footer"><span>${authorHtml('Writing by', 'Cody Bontecou')}</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
+    body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="is-agentic-site-type" content="content"><title>${escape(title)} · myself.md</title><meta name="description" content="${escape(description)}">${missing ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${canonical}">`}<meta property="og:type" content="${post ? 'article' : 'website'}"><meta property="og:title" content="${escape(title)} · myself.md"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${canonical}"><meta property="og:site_name" content="myself.md"><meta property="og:image" content="${origin}/dashboard/favicon.png"><meta name="twitter:card" content="summary">${post ? `<meta property="article:published_time" content="${post.date}"><meta property="article:modified_time" content="${post.updated}"><meta name="author" content="${escape(post.author)}">` : ''}<link rel="icon" href="/dashboard/favicon.png"><link rel="alternate" type="application/rss+xml" title="myself.md blog" href="/blog/feed.xml"><link rel="alternate" type="text/markdown" href="${post ? `/blog/${post.slug}.md` : '/blog'}"><link rel="stylesheet" href="/dashboard/style.css"><link rel="stylesheet" href="/dashboard/docs.css"><link rel="stylesheet" href="/dashboard/blog.css">${missing ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replaceAll('<', '\\u003c')}</script>`}</head><body><div class="blog-page"><a class="blog-skip" href="#content">Skip to content</a><div class="blog-shell"><div class="hero-portrait blog-portrait" aria-hidden="true"><div class="hero-portrait-sculpture"></div></div>${publicSiteHeader(path)}<main id="content">${content}</main><footer class="blog-footer"><span>${authorHtml('Writing by', 'Cody Bontecou')}</span><a href="/blog/feed.xml">RSS</a></footer></div></div></body></html>`,
   };
 }

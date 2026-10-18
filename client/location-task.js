@@ -9,6 +9,28 @@ const locationTask = 'myselfmd-location';
 const legacyLocationTask = 'qr-connect-location';
 const db = phoneDatabase();
 let pendingDisclosureOwner = /** @type {string|null} */ (null);
+let collectionGeneration = 0;
+let trackingOperation = Promise.resolve();
+/** @param {()=>Promise<void>} action */
+function changeTracking(action) {
+  const next = trackingOperation.then(action);
+  trackingOperation = next.catch(() => {});
+  return next;
+}
+/** A durable deletion intent also blocks work resumed after a runtime restart.
+ * @param {string} owner */
+function deletingAccount(owner) {
+  return Boolean(
+    db.getFirstSync(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='account_cleanup'",
+    ) && db.getFirstSync('SELECT 1 FROM account_cleanup WHERE id=1 AND owner=?', owner),
+  );
+}
+/** @param {string} owner @param {number} generation */
+function currentCollection(owner, generation) {
+  if (generation !== collectionGeneration || deletingAccount(owner))
+    throw new Error('Location collection was stopped or account deletion is pending.');
+}
 const recordingDisclosure =
   'myself.md collects precise location data to build your personal location history, even when the app is closed or not in use. Points are stored on this phone. Your export profiles and separate sharing approvals control whether points are sent to your chosen cloud, HTTPS destination or agent. Recording uses battery. You can stop it here or revoke location access in Android Settings. Notifications must be allowed so the recording notice stays visible.';
 
@@ -52,6 +74,43 @@ async function requireRecordingNotifications() {
     );
 }
 db.execSync('CREATE TABLE IF NOT EXISTS tracking (id INTEGER PRIMARY KEY, owner TEXT)');
+db.execSync(
+  'CREATE TABLE IF NOT EXISTS location_capture_receipts (owner TEXT,device TEXT,request TEXT,state TEXT,captured TEXT,acknowledged INTEGER DEFAULT 0,PRIMARY KEY(owner,device,request))',
+);
+const activeCaptures = new Set();
+/** @typedef {{requestId:string,deviceId:string,valid:()=>boolean|Promise<boolean>}} CaptureOperation */
+/** @typedef {{request:string,state:'running'|'completed'|'failed'|'cancelled',captured:string|null}} CaptureReceipt */
+/** Receipts contain only operation state and time, never native coordinates.
+ * @param {{owner:string,deviceId:string}} session */
+export function pendingLocationCaptureReceipts(session) {
+  return /** @type {CaptureReceipt[]} */ (
+    db.getAllSync(
+      'SELECT request,state,captured FROM location_capture_receipts WHERE owner=? AND device=? AND acknowledged=0',
+      session.owner,
+      session.deviceId,
+    )
+  ).filter((receipt) => !activeCaptures.has(receipt.request));
+}
+/** @param {{owner:string,deviceId:string}} session @param {string} requestId */
+export function acknowledgeLocationCapture(session, requestId) {
+  db.runSync(
+    'UPDATE location_capture_receipts SET acknowledged=1 WHERE owner=? AND device=? AND request=?',
+    session.owner,
+    session.deviceId,
+    requestId,
+  );
+}
+/** Persist a declined owner review so a temporary connection failure can be retried safely.
+ * @param {{owner:string,deviceId:string}} session @param {string} requestId */
+export function declineLocationCapture(session, requestId) {
+  db.runSync(
+    'INSERT OR IGNORE INTO location_capture_receipts(owner,device,request,state) VALUES(?,?,?,?)',
+    session.owner,
+    session.deviceId,
+    requestId,
+    'cancelled',
+  );
+}
 /** @param {string|null} owner */
 function setTrackingOwner(owner) {
   db.runSync('INSERT OR REPLACE INTO tracking VALUES (1,?)', owner);
@@ -60,13 +119,17 @@ TaskManager.defineTask(locationTask, async ({ data, error }) => {
   if (error || !data) return;
   const owner = db.getFirstSync('SELECT owner FROM tracking WHERE id=1');
   const id = /** @type {{owner:string|null}|null} */ (owner)?.owner;
-  if (!id) return;
+  if (!id || deletingAccount(id)) return;
   const points = /** @type {{locations:Location.LocationObject[]}} */ (data).locations;
   for (const point of points) saveRecord(id, record('location', 'points', 'expo-location', point));
 });
 export async function stopTracking() {
+  collectionGeneration++;
   pendingDisclosureOwner = null;
   setTrackingOwner(null);
+  await changeTracking(stopUpdates);
+}
+async function stopUpdates() {
   await Promise.all(
     [locationTask, legacyLocationTask].map(async (task) => {
       if (await Location.hasStartedLocationUpdatesAsync(task))
@@ -77,29 +140,42 @@ export async function stopTracking() {
 /** Returns null on cancelled disclosure, false while awaiting background permission.
  * @param {string} owner @returns {Promise<boolean|null>} */
 export async function startTracking(owner) {
+  const generation = collectionGeneration;
+  currentCollection(owner, generation);
   if (Platform.OS === 'android' && pendingDisclosureOwner !== owner) {
     if (!(await confirmRecording())) return null;
+    currentCollection(owner, generation);
     pendingDisclosureOwner = owner;
   }
   try {
     await requireRecordingNotifications();
+    currentCollection(owner, generation);
     const foreground = await Location.requestForegroundPermissionsAsync();
+    currentCollection(owner, generation);
     if (!foreground.granted) throw new Error('Location permission was not granted.');
     let background = await Location.getBackgroundPermissionsAsync();
+    currentCollection(owner, generation);
     if (!background.granted) background = await Location.requestBackgroundPermissionsAsync();
+    currentCollection(owner, generation);
     // iOS Allow Once and denied Always access require a trip to Settings.
     if (!background.granted) return false;
-    setTrackingOwner(owner);
-    try {
-      await startUpdates();
-      pendingDisclosureOwner = null;
-      return true;
-    } catch (error) {
-      setTrackingOwner(null);
-      throw error;
-    }
-  } catch (error) {
+    await changeTracking(async () => {
+      currentCollection(owner, generation);
+      setTrackingOwner(owner);
+      try {
+        await startUpdates();
+        currentCollection(owner, generation);
+      } catch (error) {
+        if (generation === collectionGeneration) setTrackingOwner(null);
+        if (generation !== collectionGeneration || deletingAccount(owner)) await stopUpdates();
+        throw error;
+      }
+    });
+    currentCollection(owner, generation);
     pendingDisclosureOwner = null;
+    return true;
+  } catch (error) {
+    if (generation === collectionGeneration) pendingDisclosureOwner = null;
     throw error;
   }
 }
@@ -111,12 +187,76 @@ async function tracking(owner) {
     (await Location.hasStartedLocationUpdatesAsync(locationTask))
   );
 }
-/** @param {string} owner */
-export async function captureLocation(owner) {
-  if (!(await Location.requestForegroundPermissionsAsync()).granted)
-    throw new Error('Location permission was not granted.');
-  const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-  saveRecord(owner, record('location', 'points', 'expo-location', point));
+/** Save through the same native path for direct UI and owner-approved agent requests.
+ * @param {string} owner @param {CaptureOperation} [operation] */
+export async function captureLocation(owner, operation) {
+  const generation = collectionGeneration;
+  currentCollection(owner, generation);
+  if (operation) {
+    const prior = /** @type {CaptureReceipt|null} */ (
+      db.getFirstSync(
+        'SELECT request,state,captured FROM location_capture_receipts WHERE owner=? AND device=? AND request=?',
+        owner,
+        operation.deviceId,
+        operation.requestId,
+      )
+    );
+    if (prior?.state === 'completed' && prior.captured)
+      return { capturedAt: prior.captured, recordCount: /** @type {const} */ (1) };
+    if (prior)
+      throw new Error(
+        'A previous capture attempt was interrupted. Check the phone before approving another request.',
+      );
+    db.runSync(
+      'INSERT INTO location_capture_receipts(owner,device,request,state) VALUES(?,?,?,?)',
+      owner,
+      operation.deviceId,
+      operation.requestId,
+      'running',
+    );
+    activeCaptures.add(operation.requestId);
+  }
+  try {
+    if (operation && !(await operation.valid()))
+      throw new Error('The Location capture account, request or connection changed.');
+    currentCollection(owner, generation);
+    if (!(await Location.requestForegroundPermissionsAsync()).granted)
+      throw new Error('Location permission was not granted.');
+    if (operation && !(await operation.valid()))
+      throw new Error('The Location capture account, request or connection changed.');
+    currentCollection(owner, generation);
+    const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    if (operation && !(await operation.valid()))
+      throw new Error('The Location capture account, request or connection changed.');
+    currentCollection(owner, generation);
+    const saved = record('location', 'points', 'expo-location', point);
+    const capturedAt = saved.start ?? new Date(point.timestamp).toISOString();
+    db.withTransactionSync(() => {
+      saveRecord(owner, saved);
+      if (operation)
+        db.runSync(
+          'UPDATE location_capture_receipts SET state=?,captured=? WHERE owner=? AND device=? AND request=?',
+          'completed',
+          capturedAt,
+          owner,
+          operation.deviceId,
+          operation.requestId,
+        );
+    });
+    return { capturedAt, recordCount: /** @type {const} */ (1) };
+  } catch (error) {
+    if (operation)
+      db.runSync(
+        'UPDATE location_capture_receipts SET state=? WHERE owner=? AND device=? AND request=?',
+        'failed',
+        owner,
+        operation.deviceId,
+        operation.requestId,
+      );
+    throw error;
+  } finally {
+    if (operation) activeCaptures.delete(operation.requestId);
+  }
 }
 
 /** @param {string} owner */
@@ -170,11 +310,19 @@ async function startUpdates() {
 }
 /** Move an already-authorized recording to the renamed native task on foreground upgrade. */
 export async function migrateLocationTask() {
-  if (!(await Location.hasStartedLocationUpdatesAsync(legacyLocationTask))) return;
-  const row = /** @type {{owner:string|null}|null} */ (
-    db.getFirstSync('SELECT owner FROM tracking WHERE id=1')
-  );
-  await Location.stopLocationUpdatesAsync(legacyLocationTask);
-  if (!row?.owner) return;
-  if (!(await Location.hasStartedLocationUpdatesAsync(locationTask))) await startUpdates();
+  const generation = collectionGeneration;
+  await changeTracking(async () => {
+    if (generation !== collectionGeneration) return;
+    if (!(await Location.hasStartedLocationUpdatesAsync(legacyLocationTask))) return;
+    const row = /** @type {{owner:string|null}|null} */ (
+      db.getFirstSync('SELECT owner FROM tracking WHERE id=1')
+    );
+    await Location.stopLocationUpdatesAsync(legacyLocationTask);
+    if (!row?.owner || generation !== collectionGeneration || deletingAccount(row.owner)) return;
+    if (!(await Location.hasStartedLocationUpdatesAsync(locationTask))) {
+      if (generation !== collectionGeneration || deletingAccount(row.owner)) return;
+      await startUpdates();
+      if (generation !== collectionGeneration || deletingAccount(row.owner)) await stopUpdates();
+    }
+  });
 }

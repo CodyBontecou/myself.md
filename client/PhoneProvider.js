@@ -1,11 +1,7 @@
 import { showToast, ErrorToast } from '../src/components/Toast.js';
-import { errorMessage } from '../packages/support-chat/errors.js';
-import {
-  deleteLocalAccount,
-  queueAccountCleanup,
-  pendingAccountCleanup,
-  completeAccountCleanup,
-} from './account-deletion.js';
+import { errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
+import { finishAccountDeletion, pendingAccountCleanup } from './account-deletion.js';
+import { Screen, Copy, Button } from '../src/components/ui.js';
 import { syncBilling, clearAccountAllowance } from './billing.js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Keyboard, Linking, Platform } from 'react-native';
@@ -21,6 +17,7 @@ import {
 } from './export-task.js';
 import { stopTracking, migrateLocationTask } from './location-task.js';
 import { saveExportContext } from './export-context.js';
+import { prepareProfilePairing, completeProfilePairing } from './profiles.js';
 import { renewCloudAuthorizations } from './destinations.js';
 import { profileFromLink } from '../core/profiles.js';
 import { parsePairingQr } from '../core/index.js';
@@ -61,14 +58,55 @@ export default function PhoneProvider({ children }) {
   return (
     <PhoneContext.Provider value={value}>
       <ErrorToast error={value.error} />
-      <PhoneDataProvider
-        key={`${dataSession.deviceId}:${value.accountRevision}`}
-        session={dataSession}
-        incoming={value.incoming}
-        onDismiss={value.dismissIncoming}
-      >
-        {children}
-      </PhoneDataProvider>
+      {value.deletionPending ? (
+        <Screen compact testID="account-deletion-recovery">
+          <Copy variant="heading">
+            {value.deletionConfirmed ? 'Finish phone cleanup' : 'Finish account deletion'}
+          </Copy>
+          <Copy>
+            {value.deletionConfirmed
+              ? 'Account deletion has started. Retry to finish removing this account’s data from this phone. Cloud cleanup may still be running.'
+              : 'Your deletion request may have reached the server, but its outcome is not confirmed. Your phone data stays here until the server confirms deletion has started.'}
+          </Copy>
+          <Copy>
+            Normal app activity is blocked. Before sending a deletion request, we stop recording and
+            exports. If stopping or the request failed, retry below.
+          </Copy>
+          <Button
+            testID="account-deletion-retry"
+            label={value.busy ? 'Checking…' : 'Retry deletion'}
+            disabled={value.busy}
+            onPress={() => void value.run(value.deleteAccount)}
+          />
+          {!value.deletionConfirmed && (
+            <Copy>
+              If your session expired, sign in to the same account to retry. If the account was
+              already deleted and its status receipt was lost, sign-in cannot recover that receipt.
+              Deletion remains unconfirmed on this phone.
+            </Copy>
+          )}
+          {!value.deletionConfirmed &&
+            /** @type {const} */ (['apple', 'github', 'google']).map((provider) => (
+              <Button
+                key={provider}
+                testID={`account-deletion-sign-in-${provider}`}
+                label={`Sign in with ${provider === 'apple' ? 'Apple' : provider === 'github' ? 'GitHub' : 'Google'} to retry`}
+                secondary
+                disabled={value.busy}
+                onPress={() => void value.run(() => value.reauthenticateDeletion(provider))}
+              />
+            ))}
+        </Screen>
+      ) : (
+        <PhoneDataProvider
+          key={`${dataSession.deviceId}:${value.accountRevision}`}
+          session={dataSession}
+          incoming={value.incoming}
+          onDismiss={value.dismissIncoming}
+        >
+          {children}
+        </PhoneDataProvider>
+      )}
     </PhoneContext.Provider>
   );
 }
@@ -83,6 +121,7 @@ function usePhoneState() {
   const [error, setError] = useState('');
   const [accountRevision, setAccountRevision] = useState(0);
   const [deletionStatusUrl, setDeletionStatusUrl] = useState('');
+  const [deletionPending, setDeletionPending] = useState(Boolean(pendingAccountCleanup()));
   const [link, setLink] = useState('');
   const locked = useRef(false);
   const [incoming, setIncoming] = useState(
@@ -119,16 +158,10 @@ function usePhoneState() {
       .then(async (loaded) => {
         const pending = pendingAccountCleanup();
         if (pending) {
-          saveExportContext(null);
-          await stopAccountExports();
-          await stopTracking();
-          await deleteLocalAccount(pending);
-          await clearSession(loaded ?? undefined);
-          clearAccountAllowance();
-          completeAccountCleanup();
-          setSession(null);
-          setAccountRevision((value) => value + 1);
+          setSession(loaded);
+          await finishDeletion(pending, loaded);
         } else {
+          if (loaded?.deviceId && !loaded.requiresSignIn) completeProfilePairing(loaded);
           setSession(loaded);
           await migrateLocationTask();
         }
@@ -138,7 +171,7 @@ function usePhoneState() {
       .finally(() => setReady(true));
   }, []);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || deletionPending) return;
     saveExportContext(session?.deviceId ? session : localSession);
     void reconcileExports().catch((e) => setError(errorMessage(e)));
     const tick = () => {
@@ -159,13 +192,15 @@ function usePhoneState() {
       clearInterval(timer);
       active.remove();
     };
-  }, [session, ready]);
+  }, [session, ready, deletionPending]);
   useEffect(() => {
-    if (!session) return;
+    if (!session || deletionPending) return;
+    let observing = true;
     const active = () => {
       if (AppState.currentState !== 'active') return;
       void resumeSession(session)
         .then((valid) => {
+          if (!observing) return undefined;
           if (!valid) {
             cancelExports();
             clearAccountAllowance();
@@ -178,16 +213,19 @@ function usePhoneState() {
           }
           return valid ? renewCloudAuthorizations(session) : undefined;
         })
-        .catch((e) => setError(errorMessage(e)));
+        .catch((e) => {
+          if (observing) setError(errorMessage(e));
+        });
     };
     active();
     const listener = AppState.addEventListener('change', active);
     const timer = setInterval(active, 60000);
     return () => {
+      observing = false;
       listener.remove();
       clearInterval(timer);
     };
-  }, [session]);
+  }, [session, deletionPending]);
   /** @param {string} value */
   function scan(value) {
     if (locked.current) return;
@@ -227,11 +265,13 @@ function usePhoneState() {
       }),
     });
     const connected = { ...session, deviceId: /** @type {{id:string}} */ (device).id };
-    await syncBilling(connected);
-    await saveSession(connected);
+    prepareProfilePairing(connected);
+    await saveSession(connected, session);
+    completeProfilePairing(connected);
     setSession(connected);
     reset();
     router.dismissTo('/');
+    await syncBilling(connected);
   }
   async function refresh() {
     if (!session) return;
@@ -264,9 +304,61 @@ function usePhoneState() {
       return undefined;
     });
   }
+  /** @param {{owner:string,deviceId:string}} owner @param {import('./session.js').Session|null} current */
+  async function finishDeletion(owner, current) {
+    setDeletionPending(true);
+    try {
+      const result = await finishAccountDeletion(owner, {
+        stop: async () => {
+          saveExportContext(null);
+          const stopped = await Promise.allSettled([stopAccountExports(), stopTracking()]);
+          for (const outcome of stopped) if (outcome.status === 'rejected') throw outcome.reason;
+        },
+        request: async (method) => {
+          if (!current || current.owner !== owner.owner || current.deviceId !== owner.deviceId)
+            throw new Error('Sign in to the same account to retry the pending deletion.');
+          if (method === 'DELETE')
+            return api(current, '/api/account', {
+              method,
+              body: JSON.stringify({ confirmation: 'DELETE', subject: owner.owner }),
+            });
+          // A deleted identity cannot refresh. Its still-valid access token may
+          // read deletion status without attempting to rotate revoked credentials.
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          try {
+            return /** @type {import('../core/account-deletion.js').DeletionStatus} */ (
+              await readJSONResponse(
+                await fetch(`${current.server}/api/account`, {
+                  headers: { Authorization: `Bearer ${current.accessToken}` },
+                  signal: controller.signal,
+                }),
+              )
+            );
+          } finally {
+            clearTimeout(timeout);
+          }
+        },
+        clear: async () => {
+          if (current?.owner === owner.owner && current.deviceId === owner.deviceId)
+            await clearSession(current);
+        },
+      });
+      setDeletionStatusUrl(result?.statusUrl ?? '');
+      setSession(null);
+      setAccountRevision((value) => value + 1);
+      clearAccountAllowance();
+      reset();
+      return result;
+    } finally {
+      setDeletionPending(Boolean(pendingAccountCleanup()));
+    }
+  }
   const connected = Boolean(session?.deviceId && !session.requiresSignIn);
   return {
     accountRevision,
+    deletionPending,
+    deletionConfirmed: pendingAccountCleanup()?.phase === 'confirmed',
     deletionStatusUrl,
     incoming,
     dismissIncoming: () => setIncoming(null),
@@ -275,7 +367,7 @@ function usePhoneState() {
     permission,
     requestPermission,
     pairing,
-    busy,
+    busy: busy || (deletionPending && !ready),
     error,
     link,
     setLink,
@@ -284,35 +376,64 @@ function usePhoneState() {
     refresh,
     disconnect,
     deleteAccount: async () => {
-      if (!session?.owner) throw new Error('Sign in to delete your account.');
-      const result = /** @type {import('../core/account-deletion.js').DeletionStatus} */ (
-        await api(session, '/api/account', {
-          method: 'DELETE',
-          body: JSON.stringify({ confirmation: 'DELETE', subject: session.owner }),
-        })
-      );
-      if (result.state === 'unavailable' || result.state === 'active')
-        throw new Error(result.error ?? 'Deletion could not start.');
-      setDeletionStatusUrl(result.statusUrl ?? '');
-      queueAccountCleanup(session);
-      saveExportContext(null);
-      await stopAccountExports();
-      await stopTracking();
-      await deleteLocalAccount(session);
-      await clearSession(session);
-      completeAccountCleanup();
-      setSession(null);
-      setAccountRevision((value) => value + 1);
-      clearAccountAllowance();
-      reset();
+      const pending = pendingAccountCleanup();
+      const owner = pending ?? session;
+      if (!owner?.owner) throw new Error('Sign in to delete your account.');
+      const result = await finishDeletion(owner, session);
+      const statusUrl = result?.statusUrl;
       Alert.alert(
-        result.state === 'completed' ? 'Account deleted' : 'Account deletion started',
-        result.state === 'completed'
-          ? 'Your account and cloud data were deleted.'
-          : result.error
-            ? errorMessage(result.error)
-            : 'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.',
+        !result
+          ? 'Phone cleanup complete'
+          : result.state === 'completed'
+            ? 'Account deleted'
+            : 'Account deletion started',
+        !result
+          ? 'This account’s data was removed from this phone. Its previously confirmed cloud deletion may still be running.'
+          : result.state === 'completed'
+            ? 'Your account and cloud data were deleted.'
+            : result?.error
+              ? errorMessage(result.error)
+              : 'Access is revoked. Cloud cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.',
+        [
+          { text: 'Done', style: 'cancel' },
+          ...(statusUrl
+            ? [
+                {
+                  text: 'Check deletion status',
+                  onPress: () =>
+                    void run(async () => {
+                      const url = new URL(statusUrl);
+                      if (
+                        !session ||
+                        url.origin !== new URL(session.server).origin ||
+                        url.pathname !== '/delete-account' ||
+                        url.username ||
+                        url.password ||
+                        !/^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get('receipt') ?? '')
+                      )
+                        throw new Error('The account deletion status link is invalid.');
+                      await Linking.openURL(statusUrl);
+                    }),
+                },
+              ]
+            : []),
+        ],
       );
+    },
+    /** @param {'apple'|'github'|'google'} provider */
+    reauthenticateDeletion: async (provider) => {
+      const pending = pendingAccountCleanup();
+      if (!pending) return;
+      const next = await signIn(
+        session?.server ?? process.env.EXPO_PUBLIC_ACCOUNT_SERVER ?? 'https://myself.md',
+        provider,
+      );
+      if (next.owner !== pending.owner)
+        throw new Error('That sign-in did not match the account awaiting deletion.');
+      next.deviceId = pending.deviceId;
+      await saveSession(next);
+      setSession(next);
+      await finishDeletion(pending, next);
     },
     run,
     reset,
@@ -334,10 +455,11 @@ function usePhoneState() {
       setSession(next);
       await syncBilling(next);
     },
-    syncAccount: async () => {
-      if (session) await syncBilling(session);
-    },
     /** @param {'apple'|'github'|'google'} provider */
-    signIn: async (provider) => setSession(await signIn(pairing?.server ?? '', provider)),
+    signIn: async (provider) => {
+      const next = await signIn(pairing?.server ?? '', provider);
+      await saveSession(next);
+      setSession(next);
+    },
   };
 }

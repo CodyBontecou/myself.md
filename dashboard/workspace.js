@@ -1,5 +1,5 @@
 /** @typedef {{id:string,profileId:string,profileName:string,deviceId:string,day:string,format:string,schema?:string,bytes:number,created:number,shared:boolean}} StoredExport */
-/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>}} Profile */
+/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>,agentPermissions?:import('../core/profiles.js').AgentPermissions,permissionsSynced?:boolean,cloudConfigured?:boolean,profile?:import('../core/profiles.js').ExportProfile,revision?:number,confirmedRevision?:number,lastSeen?:number,syncSupported?:boolean,domains?:import('../server/profile-sync.js').ProfileDomain[],requests?:import('../server/profile-sync.js').ProfileRequest[]}} Profile */
 /** @typedef {{client:string,blocked:boolean,lastSeen:number}} Agent */
 /** Phone-app handoff for buying or managing storage; the dashboard never purchases.
  * @typedef {{appLink:string,requiresUser:boolean,instructions:string,manageUrls:{ios:string,android:string}}} CloudHandoff */

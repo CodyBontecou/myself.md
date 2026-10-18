@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { notFoundPage } from './not-found-page.js';
+import { pricingPage } from './pricing-page.js';
 import { docsHTML } from './docs-page.js';
 import { blogResponse, blogAgentIndex, blogSitemap } from './blog.js';
 import { datasets } from '../dashboard/dataset-catalog.js';
@@ -15,7 +18,13 @@ export function publicResponse(
   const normalized = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
   const path = publicApiPath(normalized) ?? normalized;
   const blog = blogResponse(path, accept);
-  if (blog) return blog;
+  if (blog)
+    return {
+      ...blog,
+      body: blog.headers['Content-Type']?.startsWith('text/html')
+        ? analyticsHTML(blog.body)
+        : blog.body,
+    };
   const headers = {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -114,7 +123,7 @@ export function publicResponse(
   let type = 'text/plain';
   if (path === '/robots.txt')
     body =
-      'User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /api/\nDisallow: /auth/\nSitemap: https://myself.md/sitemap.xml\n';
+      'User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /operator/\nDisallow: /api/\nDisallow: /auth/\nSitemap: https://myself.md/sitemap.xml\n';
   else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex + blogAgentIndex;
   else if (path === '/sitemap.xml') {
     type = 'application/xml';
@@ -125,17 +134,13 @@ export function publicResponse(
     if (accept.includes('text/markdown')) {
       type = 'text/markdown';
       body = markdown;
+    } else if (path === '/pricing') {
+      type = 'text/html';
+      body = pricingPage();
     } else if (
-      [
-        '/docs',
-        '/docs/reference',
-        '/about',
-        '/contact',
-        '/privacy',
-        '/terms',
-        '/faq',
-        '/pricing',
-      ].includes(path)
+      ['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(
+        path,
+      )
     ) {
       type = 'text/html';
       body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
@@ -155,7 +160,11 @@ export function publicResponse(
       )}</script><title>${(markdown.split('\n')[0] ?? '# myself.md').slice(2)} · myself.md</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
     } else return null;
   }
-  return { status: 200, headers: { ...headers, 'Content-Type': `${type}; charset=utf-8` }, body };
+  return {
+    status: 200,
+    headers: { ...headers, 'Content-Type': `${type}; charset=utf-8` },
+    body: type === 'text/html' ? analyticsHTML(body) : body,
+  };
 }
 const privatePaths = new Set(['/mcp', '/mcp/chatgpt', '/pair', '/config', '/health']);
 /** Unknown public paths must not masquerade as private resources. @param {string} pathname */
@@ -167,8 +176,29 @@ export function unknownPublicPath(pathname) {
     )
   );
 }
-export const notFoundMarkdown =
+const notFoundMarkdown =
   '# Page not found\n\nThis URL does not exist. Start at https://myself.md/llms.txt for agent instructions, https://myself.md/docs for MCP documentation, or https://myself.md/sitemap.xml for public pages.\n';
+
+/** Match public content negotiation: explicit Markdown stays machine-readable. @param {string} accept */
+export function notFoundResponse(accept) {
+  const html = accept.includes('text/html') && !accept.includes('text/markdown');
+  const nonce = html ? randomUUID() : '';
+  return {
+    body: html ? notFoundPage(nonce) : notFoundMarkdown,
+    headers: {
+      'Content-Type': `${html ? 'text/html' : 'text/markdown'}; charset=utf-8`,
+      'Cache-Control': 'no-store',
+      Vary: 'Accept',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      ...(html
+        ? {
+            'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+          }
+        : {}),
+    },
+  };
+}
 
 const apiPaths = new Set([
   '/dataset-catalog',
@@ -214,4 +244,17 @@ export function createPublicReadLimiter() {
     };
     return { allowed: window.count <= 120, headers };
   };
+}
+
+/** Public documents share collection controls; profile shares and identity forms never pass here.
+ * @param {string} body */
+function analyticsHTML(body) {
+  const script =
+    body.includes('/dashboard/public-tools.js') || body.includes('/dashboard/app.js')
+      ? ''
+      : '<script type="module" src="/dashboard/usage-analytics.js"></script>';
+  return body.replace(
+    '</head>',
+    `<link rel="stylesheet" href="/dashboard/analytics.css">${script}</head>`,
+  );
 }

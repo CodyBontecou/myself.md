@@ -10,8 +10,46 @@ assert.equal(parsed.error.cause.code, 'ECONNRESET');
 assert.equal(errorJSON(errorJSON(failure)), errorJSON(failure));
 assert.equal(errorMessage(failure), 'Upload failed');
 assert.equal(errorMessage(errorJSON(failure)), 'Upload failed');
+const lostConnection = new Error(
+  'fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)',
+);
+for (const value of [lostConnection, lostConnection.message, errorJSON(lostConnection)]) {
+  assert.equal(
+    errorMessage(value),
+    'We couldn’t connect. Check your internet connection and try again.',
+    'Native connection failures must give actionable feedback instead of Swift implementation details.',
+  );
+}
+assert.equal(JSON.parse(errorJSON(lostConnection)).error.message, lostConnection.message);
+for (const message of [
+  'Failed to fetch',
+  'fetch failed',
+  'Network request failed',
+  'Load failed',
+  'TypeError: Network request failed',
+  'The Internet connection appears to be offline.',
+]) {
+  assert.equal(
+    errorMessage(new Error(message)),
+    'We couldn’t connect. Check your internet connection and try again.',
+  );
+}
+assert.equal(errorMessage(new Error('Network permission denied')), 'Network permission denied');
+assert.equal(
+  errorMessage(new Error('Purchase verification failed')),
+  'Purchase verification failed',
+);
 assert.equal(errorMessage('Validation failed'), 'Validation failed');
 assert.equal(errorMessage(''), '');
+for (const message of ['', '   ']) {
+  const native = Object.assign(new Error(message), { code: 'E_UNKNOWN' });
+  assert.equal(
+    errorMessage(errorJSON(native)),
+    'Something went wrong. Please try again. (E_UNKNOWN)',
+  );
+  assert.equal(errorMessage(native), errorMessage(errorJSON(native)));
+}
+assert.equal(errorMessage(new Error('')), 'Something went wrong. Please try again.');
 assert.equal(errorMessage('{"error":"Server unavailable"}'), 'Server unavailable');
 assert.ok(!errorMessage(new Error('Bearer fixture-secret')).includes('fixture-secret'));
 assert.equal(
@@ -41,6 +79,10 @@ assert.equal(
   ).error.cause.message,
   'Broken error getter',
 );
+await assert.rejects(readJSONResponse(Response.json({ error: '' }, { status: 400 })), (error) => {
+  assert.equal(errorMessage(errorJSON(error)), 'HTTP 400');
+  return true;
+});
 await assert.rejects(
   readJSONResponse(
     Response.json(

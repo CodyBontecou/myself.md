@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { PairingError } from './errors.js';
 import { createExplorer } from './explorer-service.js';
-/** @param {{cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,cancelAgent:(subject:string,client:string)=>void,refreshEntitlement?:(subject:string)=>Promise<void>,cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>}} dependencies */
+/** @param {{cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,cancelAgent:(subject:string,client:string)=>void,revokeQueries:(subject:string,device:string)=>void,refreshEntitlement?:(subject:string)=>Promise<void>,cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>}} dependencies */
 export function createDashboardService({
   cloud,
   history,
   devices,
   cancelAgent,
+  revokeQueries,
   refreshEntitlement = async () => {},
   cloudSubscriptions,
 }) {
@@ -57,6 +58,33 @@ export function createDashboardService({
         cloud.cleanup();
         return cloud.page(subject, id, offset, 50);
       }
+    }
+    if (path === '/api/dashboard/profiles' && method === 'PUT') {
+      const input = z
+        .object({
+          deviceId: z.string().uuid(),
+          profileId: z.string().min(1).max(100),
+          revision: z.number().int().min(1),
+          profile: z.unknown(),
+          requestId: z.string().uuid().optional(),
+        })
+        .strict()
+        .parse(body);
+      if (
+        !devices(subject).some((d) => d.id === input.deviceId) &&
+        !cloud.profileSync.get(subject, input.deviceId)
+      )
+        throw new PairingError(404, 'Connected phone not found.');
+      const result = cloud.profileSync.update(
+        subject,
+        input.deviceId,
+        input.profileId,
+        input.revision,
+        input.profile,
+        input.requestId,
+      );
+      revokeQueries(subject, input.deviceId);
+      return result;
     }
     if (path === '/api/dashboard/permissions' && method === 'PUT') {
       const input = z

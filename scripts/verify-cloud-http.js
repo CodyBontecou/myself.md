@@ -5,6 +5,9 @@ import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
 import { exportSchemas } from '../core/export-schemas.js';
 import { r2Fixture } from './r2-fixture.js';
+import { r2Store } from '../server/r2-store.js';
+import { CloudStore } from '../server/cloud-store.js';
+import { PairingStore } from '../server/pairing-store.js';
 import { BillingStore } from '../server/billing-store.js';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
@@ -17,11 +20,29 @@ import { once } from 'node:events';
 import { generateKeyPair, exportJWK, SignJWT, decodeJwt } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
-import { parseProfile } from '../core/profiles.js';
+import { parseProfile, parseProfileState } from '../core/profiles.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { chromium } from 'playwright';
+// Verify the shared status contract without exposing account or device fields.
+const statusStore = new PairingStore(':memory:');
+try {
+  const pairing = statusStore.createPairing('owner');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'pending' });
+  assert.throws(() => statusStore.claim(pairing.ticket, 'other', 'Wrong owner'));
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'pending' });
+  const device = statusStore.claim(pairing.ticket, 'owner', 'Test phone');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'connected' });
+  assert.throws(() => statusStore.claim(pairing.ticket, 'owner', 'Replay'));
+  statusStore.disconnect(device.id, 'owner');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'disconnected' });
+  statusStore.db.prepare('UPDATE pairings SET expires = 0 WHERE id = ?').run(pairing.id);
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'expired' });
+} finally {
+  statusStore.db.close();
+}
 const queryId = (/** @type {unknown} */ value) =>
   z.object({ requestId: z.string() }).parse(value).requestId;
+const noop = () => {};
 const r2 = process.argv.includes('--r2') ? await r2Fixture() : null;
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -473,6 +494,9 @@ try {
   assert.equal((await fetch(`${origin}/v1/mcp`)).status, 404);
   const tools = await client.listTools();
   const reviewTools = reviewToolMetadata(tools.tools);
+  console.log(
+    'MCP_REVIEW_METADATA ' + JSON.stringify({ runtime: 'node-fixture', tools: reviewTools }),
+  );
   const reviewReport = await runCli([], '', 'scripts/review-mcp.js');
   assert.deepEqual(reviewReport.tools, reviewTools);
   assert.equal(reviewReport.endpoint, `${origin}/mcp`);
@@ -709,11 +733,48 @@ try {
   assert.equal(claimedAccess.handoff.requiresUser, false);
   const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
   const pairingUrl = /** @type {{pairingUrl:string}} */ (pairing.structuredContent).pairingUrl;
-  const claimed = await request('/api/claim', phoneToken, 'POST', {
-    ticket: new URL(pairingUrl).hash.slice(1),
-    name: 'Synthetic phone',
+  const pairingTicket = new URL(pairingUrl).hash.slice(1);
+  const statusPath = '/api/pairing-status/' + pairingTicket;
+  assert.deepEqual((await request(statusPath, null)).value, { status: 'pending' });
+  assert.equal((await request('/api/pairing-status/invalid', null)).status, 400);
+  assert.deepEqual((await request('/api/pairing-status/' + 'x'.repeat(43), null)).value, {
+    status: 'expired',
   });
-  assert.equal(claimed.status, 200);
+  assert.equal(
+    (await request('/api/claim', bobToken, 'POST', { ticket: pairingTicket, name: 'Wrong owner' }))
+      .status,
+    403,
+  );
+  assert.deepEqual((await request(statusPath, null)).value, { status: 'pending' });
+  const pairingBrowser = await chromium.launch({ headless: true });
+  let claimed;
+  try {
+    const page = await pairingBrowser.newPage({ colorScheme: 'dark' });
+    const errors = /** @type {string[]} */ ([]);
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(origin + '/pair#' + pairingTicket);
+    await page.getByText('Scan to connect', { exact: true }).waitFor();
+    claimed = await request('/api/claim', phoneToken, 'POST', {
+      ticket: pairingTicket,
+      name: 'Synthetic phone',
+    });
+    assert.equal(claimed.status, 200);
+    assert.deepEqual((await request(statusPath, null)).value, { status: 'connected' });
+    await page.getByRole('heading', { name: 'Your phone is connected.', exact: true }).waitFor();
+    assert.equal(await page.locator('#qr').isVisible(), false);
+    assert.equal(await page.locator('#steps').isVisible(), false);
+    assert.equal(await page.locator('#app-action').isVisible(), false);
+    await page.screenshot({ path: '/tmp/myself-pairing-connected.png', fullPage: true });
+    await page.reload();
+    await page.getByText('Phone connected', { exact: true }).waitFor();
+    await page.goto(origin + '/pair#' + 'x'.repeat(43));
+    await page.reload();
+    await page.getByText('This pairing link has expired', { exact: true }).waitFor();
+    assert.equal(await page.locator('#app-action').isVisible(), false);
+    assert.deepEqual(errors, []);
+  } finally {
+    await pairingBrowser.close();
+  }
   const deviceId = z.object({ id: z.string() }).parse(claimed.value).id;
   const profile = {
     ...parseProfile({
@@ -1032,12 +1093,35 @@ try {
   assert.equal(lastPage.records.length, 5);
   assert.equal(lastPage.nextCursor, null);
   await request(`/api/dashboard/exports/${multipleId}`, dashboardToken, 'DELETE');
+  const catalog = {
+    locationTracking: true,
+    profiles: [{ ...profile, agentAccess: true }],
+    domains: ['health', 'time', 'location'].map((domain) => ({
+      domain,
+      enabled: domain === 'health',
+      selectableTypes:
+        domain === 'health'
+          ? ['native:sleep', 'native:HKQuantityTypeIdentifierStepCount']
+          : domain === 'time'
+            ? ['native:applications', 'native:websites']
+            : ['native:points'],
+      permission: domain === 'health' ? 'system-managed' : 'required',
+      permissionHandoff: 'myselfmd://profiles',
+      availableTypes: domain === 'health' ? ['native:sleep'] : [],
+      types: domain === 'health' ? ['native:sleep'] : [],
+      notes: [],
+    })),
+  };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
+    200,
+  );
   const denied = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
-  assert.equal(denied.isError, true);
+  assert.ok(!denied.isError);
   assert.equal(
     (await request('/api/cloud/access', phoneToken, 'PUT', { deviceId, profile, shared: true }))
       .status,
-    200,
+    410,
   );
   if (r2) {
     const bill = new BillingStore(join(directory, 'billing.sqlite'));
@@ -1072,29 +1156,137 @@ try {
     ),
   );
   assert.ok(!JSON.stringify(cloudHistory.value).includes('"native":'));
-  const catalog = {
-    locationTracking: true,
-    profiles: [{ ...profile, agentAccess: true }],
-    domains: ['health', 'time', 'location'].map((domain) => ({
-      domain,
-      enabled: domain === 'health',
-      selectableTypes:
-        domain === 'health'
-          ? ['native:sleep', 'native:HKQuantityTypeIdentifierStepCount']
-          : domain === 'time'
-            ? ['native:applications', 'native:websites']
-            : ['native:points'],
-      permission: domain === 'health' ? 'system-managed' : 'required',
-      permissionHandoff: 'myselfmd://profiles',
-      availableTypes: domain === 'health' ? ['native:sleep'] : [],
-      types: domain === 'health' ? ['native:sleep'] : [],
-      notes: [],
-    })),
+  const sourceDeniedCatalog = {
+    ...catalog,
+    profiles: [
+      {
+        ...profile,
+        agentAccess: true,
+        agentPermissions: { health: false, time: true, location: false, logs: false },
+      },
+    ],
   };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, bobToken, 'POST', sourceDeniedCatalog)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', sourceDeniedCatalog)).status,
+    200,
+  );
+  const filteredCloud = await client.callTool({
+    name: 'read_cloud_export',
+    arguments: { exportId: id },
+  });
+  assert.ok(!filteredCloud.isError);
+  assert.equal(
+    pageSchema.parse(
+      JSON.parse(filteredCloud.content.find((item) => item.type === 'text')?.text ?? '{}'),
+    ).records.length,
+    0,
+    'Phone Health denial filters the existing cloud file',
+  );
+  const allOffCatalog = {
+    ...sourceDeniedCatalog,
+    profiles: sourceDeniedCatalog.profiles.map((item) =>
+      Object.assign({}, item, { agentAccess: false }),
+    ),
+  };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', allOffCatalog)).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
+        deviceId,
+        profileId: profile.id,
+        shared: true,
+      })
+    ).status,
+    410,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+    'Retired sharing route cannot override phone source denial',
+  );
+  assert.equal(
+    pageSchema.parse((await request(`/api/dashboard/exports/${id}`, dashboardToken)).value).records
+      .length,
+    1,
+    'Owner can still read the original file',
+  );
   assert.equal(
     (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
     200,
   );
+  assert.ok(
+    !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    'Fresh phone source approval restores cloud reads',
+  );
+  if (r2) {
+    /** @param {()=>Promise<unknown>} change @param {boolean} deny */
+    const changeDuringCloudRead = async (change, deny) => {
+      /** @type {()=>void} */ let entered = noop;
+      /** @type {()=>void} */ let release = noop;
+      const started = new Promise((resolve) => {
+        entered = () => resolve(undefined);
+      });
+      const pending = new Promise((resolve) => {
+        release = () => resolve(undefined);
+      });
+      r2.state.beforeGet = async () => {
+        entered();
+        await pending;
+      };
+      const reading = client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
+      try {
+        await started;
+        await change();
+      } finally {
+        r2.state.beforeGet = null;
+        release();
+      }
+      const response = await reading;
+      if (deny) assert.equal(response.isError, true);
+      else {
+        assert.ok(!response.isError);
+        assert.equal(
+          pageSchema.parse(
+            JSON.parse(response.content.find((item) => item.type === 'text')?.text ?? '{}'),
+          ).records.length,
+          0,
+        );
+      }
+    };
+    await changeDuringCloudRead(
+      () => request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', sourceDeniedCatalog),
+      false,
+    );
+    await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+    await changeDuringCloudRead(
+      () => request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', allOffCatalog),
+      true,
+    );
+    await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+    await changeDuringCloudRead(
+      () =>
+        request('/api/dashboard/agents', dashboardToken, 'PUT', {
+          client: 'fixture-chat',
+          blocked: true,
+        }),
+      true,
+    );
+    await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+      client: 'fixture-chat',
+      blocked: false,
+    });
+  }
   const importPreview = await client.callTool({
     name: 'preview_phone_profile_import',
     arguments: {
@@ -1930,6 +2122,322 @@ try {
     ).status,
     'partial',
   );
+  // A web denial must erase retained live results without waiting for the phone to acknowledge it.
+  const privacyPairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
+  const privacyUrl = z.object({ pairingUrl: z.string() }).parse(privacyPairing.structuredContent);
+  const privacyDevice = z.object({ id: z.string() }).parse(
+    (
+      await request('/api/claim', phoneToken, 'POST', {
+        ticket: new URL(privacyUrl.pairingUrl).hash.slice(1),
+        name: 'Revocation fixture phone',
+      })
+    ).value,
+  ).id;
+  const privacyProfile = {
+    ...profile,
+    id: 'privacy-revoked',
+    agentAccess: true,
+    agentPermissions: { health: true, time: false, location: false, logs: false },
+  };
+  const privacyCatalog = {
+    ...catalog,
+    profiles: [privacyProfile, { ...privacyProfile, id: 'privacy-unaffected' }],
+    dispatch: true,
+    profileSync: { base: null },
+  };
+  const privacyPoll = () =>
+    request(`/api/phones/${privacyDevice}/poll`, phoneToken, 'POST', privacyCatalog);
+  assert.equal((await privacyPoll()).status, 200);
+  const privacyInput = { ...restInput, deviceId: privacyDevice, profileId: privacyProfile.id };
+  /** @param {string} key @param {string} [profileId] */
+  const privacyQuery = async (key, profileId = privacyProfile.id) => {
+    const response = await client.callTool({
+      name: 'query_phone_data',
+      arguments: { ...privacyInput, profileId, requestKey: key },
+    });
+    assert.ok(!response.isError);
+    return queryId(response.structuredContent);
+  };
+  const privacyComplete = await privacyQuery('privacy-complete');
+  assert.equal((await privacyPoll()).status, 200);
+  assert.equal(
+    (
+      await request(`/api/phones/${privacyDevice}/result`, phoneToken, 'POST', {
+        id: privacyComplete,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    200,
+  );
+  const privacyRunning = await privacyQuery('privacy-running');
+  await privacyPoll();
+  const privacyQueued = await privacyQuery('privacy-queued');
+  const privacyUnaffected = await privacyQuery('privacy-unaffected', 'privacy-unaffected');
+  const privacyStateResult = await client.callTool({
+    name: 'manage_phone_profiles',
+    arguments: { action: 'list', deviceId: privacyDevice },
+  });
+  const privacyState = z
+    .object({ revision: z.number(), state: z.object({ profiles: z.array(z.unknown()) }) })
+    .parse(privacyStateResult.structuredContent);
+  const deniedPrivacyProfile = {
+    ...privacyProfile,
+    agentPermissions: { health: false, time: false, location: false, logs: false },
+  };
+  /** @param {number} revision @param {unknown} updatedProfile */
+  const privacyUpdate = (revision, updatedProfile) =>
+    request('/api/dashboard/profiles', dashboardToken, 'PUT', {
+      deviceId: privacyDevice,
+      profileId: privacyProfile.id,
+      revision,
+      profile: updatedProfile,
+    });
+  assert.equal((await privacyUpdate(privacyState.revision, deniedPrivacyProfile)).status, 200);
+  // Do not poll the phone between the owner denial and these subsequent read attempts.
+  const privacyDeniedResults = await Promise.all(
+    [privacyComplete, privacyRunning, privacyQueued].map((privacyRequestId) =>
+      client.callTool({ name: 'get_phone_request', arguments: { requestId: privacyRequestId } }),
+    ),
+  );
+  for (const response of privacyDeniedResults)
+    assert.equal(
+      response.isError,
+      true,
+      'Dashboard denial immediately erases completed, running and queued responses',
+    );
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-complete'), /422/);
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-fresh-after-denial'), /422/);
+  assert.equal(
+    (
+      await request(`/api/phones/${privacyDevice}/result`, phoneToken, 'POST', {
+        id: privacyRunning,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    404,
+    'A late response cannot restore work revoked through the dashboard',
+  );
+  assert.ok(
+    !(
+      await client.callTool({
+        name: 'get_phone_request',
+        arguments: { requestId: privacyUnaffected },
+      })
+    ).isError,
+    'Dashboard revocation preserves another approved profile',
+  );
+  assert.equal((await privacyUpdate(privacyState.revision + 1, privacyProfile)).status, 200);
+  await assert.rejects(() => sdk.request(privacyComplete), /422/);
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-complete'), /422/);
+  assert.ok(
+    !(
+      await client.callTool({
+        name: 'get_phone_request',
+        arguments: { requestId: privacyUnaffected },
+      })
+    ).isError,
+    'Regranting without a phone acknowledgment cannot resurrect revoked results',
+  );
+  assert.equal((await request(`/api/devices/${privacyDevice}`, phoneToken, 'DELETE')).status, 200);
+  const syncCatalog = { ...catalog, profileSync: { base: null } };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', syncCatalog)).status,
+    200,
+  );
+  const readSynced = async () => {
+    const syncedResult = await client.callTool({
+      name: 'manage_phone_profiles',
+      arguments: { action: 'list', deviceId },
+    });
+    assert.ok(!syncedResult.isError);
+    return /** @type {import('../server/profile-sync.js').SyncedProfiles} */ (
+      JSON.parse(
+        /** @type {string} */ (syncedResult.content?.find((item) => item.type === 'text')?.text),
+      )
+    );
+  };
+  const syncedProfiles = await readSynced();
+  const originalSynced = structuredClone(syncedProfiles.state);
+  const editedProfile = structuredClone(syncedProfiles.state.profiles[0]);
+  assert.ok(editedProfile);
+  editedProfile.name = 'Edited on web';
+  editedProfile.agentPermissions = {
+    health: false,
+    time: false,
+    location: false,
+    logs: editedProfile.agentPermissions?.logs === true,
+  };
+  editedProfile.agentAccess = true;
+  const proposedResult = await client.callTool({
+    name: 'manage_phone_profiles',
+    arguments: { action: 'propose', deviceId, profileId: editedProfile.id, profile: editedProfile },
+  });
+  assert.ok(!proposedResult.isError);
+  const proposed = /** @type {import('../server/profile-sync.js').ProfileRequest} */ (
+    JSON.parse(
+      /** @type {string} */ (proposedResult.content?.find((item) => item.type === 'text')?.text),
+    )
+  );
+  assert.equal(
+    (await readSynced()).state.profiles[0]?.name,
+    originalSynced.profiles[0]?.name,
+    'Agent cannot apply its own suggestion',
+  );
+  const payload = {
+    deviceId,
+    profileId: editedProfile.id,
+    revision: syncedProfiles.revision,
+    profile: editedProfile,
+    requestId: proposed.id,
+  };
+  assert.equal(
+    (await request('/api/dashboard/profiles', bobDashboardToken, 'PUT', payload)).status,
+    404,
+  );
+  assert.equal((await request('/api/dashboard/profiles', chatToken, 'PUT', payload)).status, 403);
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', payload)).status,
+    200,
+  );
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', payload)).status,
+    409,
+    'Stale revisions rejected',
+  );
+  const delivered = await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+    ...catalog,
+    profileSync: { base: originalSynced },
+  });
+  const updatedState =
+    /** @type {{profileSync:{state:import('../core/profiles.js').ProfileState}}} */ (
+      delivered.value
+    ).profileSync.state;
+  assert.equal(updatedState.profiles[0]?.name, 'Edited on web');
+  assert.equal((await readSynced()).requests.find((r) => r.id === proposed.id)?.status, 'accepted');
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+        ...catalog,
+        profiles: updatedState.profiles,
+        profileSync: { base: updatedState },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await readSynced()).requests.find((r) => r.id === proposed.id)?.status,
+    'completed',
+    'Completion requires real phone acknowledgment',
+  );
+  // Restore synthetic profile state before the existing cloud and agent tests continue.
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+        ...catalog,
+        profiles: originalSynced.profiles,
+        profileSync: { base: updatedState },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request('/api/cloud/access', phoneToken, 'PUT', { deviceId, profile, shared: true }))
+      .status,
+    410,
+  );
+  // Exercise owner-reviewed file policy through the actual upload and MCP boundaries.
+  const cloudModeDay = '2026-10-17';
+  const uploadAuthorization = `Upload ${z.object({ token: z.string() }).parse(credential.value).token}`;
+  /** @param {string} operation @param {'new_file'|'append'|'replace'} mode */
+  async function uploadMode(operation, mode) {
+    assert.equal(
+      (
+        await request('/api/billing', phoneToken, 'POST', {
+          action: 'reserve',
+          id: operation,
+          scope: { profileId: profile.id, days: [cloudModeDay], formats: ['jsonl'] },
+        })
+      ).status,
+      200,
+    );
+    const body = {
+      profile: { ...profile, export: { ...profile.export, writeMode: mode } },
+      day: cloudModeDay,
+      format: 'jsonl',
+      manifest: { profileId: profile.id, recordCount: 1, billingOperationId: operation },
+    };
+    const beginResponse = await fetch(`${origin}/api/cloud/uploads`, {
+      method: 'POST',
+      headers: { Authorization: uploadAuthorization, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    assert.equal(beginResponse.status, 200);
+    const started = z
+      .object({ id: z.string(), completed: z.boolean() })
+      .parse(await beginResponse.json());
+    if (!started.completed) {
+      const response = await fetch(`${origin}/api/cloud/uploads/${started.id}`, {
+        method: 'PUT',
+        headers: { Authorization: uploadAuthorization },
+        body: JSON.stringify({ ...record, native: { operation } }) + '\n',
+      });
+      assert.equal(response.status, 200);
+    }
+    return { ...started, body };
+  }
+  const cloudSnapshot = await uploadMode('cloud-mode-first', 'new_file');
+  await uploadMode('cloud-mode-second', 'new_file');
+  const cloudAppend = await uploadMode('cloud-mode-append', 'append');
+  const appendedRecords = z
+    .object({ records: z.array(z.unknown()) })
+    .parse(
+      (await request(`/api/dashboard/exports/${cloudAppend.id}`, dashboardToken)).value,
+    ).records;
+  assert.equal(appendedRecords.length, 2);
+  const retryMode = await uploadMode('cloud-mode-append', 'append');
+  assert.equal(retryMode.completed, true);
+  assert.equal(retryMode.id, cloudAppend.id);
+  assert.ok(
+    !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: cloudAppend.id } }))
+      .isError,
+  );
+  const cloudReplace = await uploadMode('cloud-mode-replace', 'replace');
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudAppend.id}`, dashboardToken)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudSnapshot.id}`, dashboardToken)).status,
+    200,
+  );
+  assert.equal(
+    z
+      .object({ records: z.array(z.unknown()) })
+      .parse((await request(`/api/dashboard/exports/${cloudReplace.id}`, dashboardToken)).value)
+      .records.length,
+    1,
+  );
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudReplace.id}`, bobDashboardToken)).status,
+    404,
+  );
+  const modeListing = await request('/api/cloud/exports', phoneToken);
+  const modeFiles = z
+    .array(z.object({ id: z.string(), day: z.string(), writeMode: z.string() }))
+    .parse(modeListing.value)
+    .filter((file) => file.day === cloudModeDay);
+  assert.equal(modeFiles.length, 2);
+  await Promise.all(
+    modeFiles.map(async (file) => {
+      assert.equal(
+        (await request(`/api/dashboard/exports/${file.id}`, dashboardToken, 'DELETE')).status,
+        200,
+      );
+    }),
+  );
+  console.log(
+    'HTTP/MCP cloud file modes: snapshots, append counts, replacement, retry receipts, retained reads and tenant isolation passed.',
+  );
   assert.equal((await request(`/api/devices/${deviceId}`, phoneToken, 'DELETE')).status, 200);
   assert.equal((await request(entryPath, dashboardToken)).status, 200);
   const revoked = await fetch(`${origin}/api/cloud/uploads`, {
@@ -1940,7 +2448,7 @@ try {
     body: '{}',
   });
   assert.equal(revoked.status, 404);
-  // Cloud permissions remain manageable after disconnect and preserve the phone selection.
+  // Legacy sharing writes cannot change confirmed permission, even after disconnect.
   assert.equal(
     (
       await request('/api/dashboard/permissions', bobDashboardToken, 'PUT', {
@@ -1959,20 +2467,7 @@ try {
         shared: false,
       })
     ).status,
-    200,
-  );
-  assert.equal(
-    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
-    true,
-  );
-  const restored = await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
-    deviceId,
-    profileId: profile.id,
-    shared: true,
-  });
-  assert.deepEqual(
-    z.object({ selection: z.unknown() }).parse(restored.value).selection,
-    profile.selection,
+    410,
   );
   assert.ok(
     !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
@@ -2019,6 +2514,70 @@ try {
     200,
   );
   assert.ok(!(await client.callTool({ name: 'list_cloud_exports', arguments: {} })).isError);
+  const disconnectedSchema = z.object({
+    profiles: z.array(
+      z.object({
+        profileId: z.string(),
+        revision: z.number().optional(),
+        profile: z.unknown().optional(),
+      }),
+    ),
+  });
+  const readDisconnected = async () => {
+    const disconnectedResult = disconnectedSchema.parse(
+      (await request('/api/dashboard', dashboardToken)).value,
+    );
+    const entry = disconnectedResult.profiles.find((p) => p.profileId === profile.id);
+    assert.ok(entry?.revision);
+    return { ...entry, revision: entry.revision };
+  };
+  const disconnected = await readDisconnected();
+  const disconnectedProfile = parseProfileState({
+    profiles: [/** @type {import('../core/profiles.js').ExportProfile} */ (disconnected.profile)],
+  }).profiles[0];
+  assert.ok(disconnectedProfile);
+  const revokePayload = {
+    deviceId,
+    profileId: profile.id,
+    revision: disconnected.revision,
+    profile: {
+      ...disconnectedProfile,
+      agentPermissions: {
+        health: false,
+        time: false,
+        location: false,
+        logs: disconnectedProfile.agentPermissions?.logs === true,
+      },
+    },
+  };
+  assert.equal(
+    (await request('/api/dashboard/profiles', bobDashboardToken, 'PUT', revokePayload)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', revokePayload)).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+  );
+  const revokedSnapshot = await readDisconnected();
+  assert.equal(
+    (
+      await request('/api/dashboard/profiles', dashboardToken, 'PUT', {
+        ...revokePayload,
+        revision: revokedSnapshot.revision,
+        profile: { ...disconnectedProfile, agentAccess: true },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+    'Disconnected owner grant waits for phone confirmation',
+  );
   if (r2) {
     r2.state.failDelete = true;
     assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 503);
@@ -2027,7 +2586,19 @@ try {
   }
   assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 200);
   assert.equal((await request(recordsPath, dashboardToken)).status, 404);
-  if (r2) assert.equal(r2.files.size, 0);
+  if (r2) {
+    const garbageStore = new CloudStore(
+      join(directory, 'cloud.sqlite'),
+      Buffer.from('a'.repeat(64), 'hex'),
+      r2Store(r2.env),
+    );
+    try {
+      await garbageStore.sweepObjects();
+      assert.equal(r2.files.size, 0, 'Replaced objects are collected by the durable garbage queue');
+    } finally {
+      garbageStore.db.close();
+    }
+  }
   assert.equal(
     dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
     0,

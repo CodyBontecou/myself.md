@@ -591,7 +591,7 @@ async function collectCloudflare(now) {
     // Verified against the live CF GraphQL schema on 2026-10-16:
     // AccountRumPageloadEventsAdaptiveGroups: count, sum.visits, avg.sampleInterval;
     // dimensions.requestPath/refererHost; Filter_InputObject datetime_geq/lt, siteTag/requestHost.
-    const filter = `{siteTag:"${CF_SITE}",requestHost:"myself.md",datetime_geq:"${start.toISOString()}",datetime_lt:"${end.toISOString()}"}`;
+    const filter = `{siteTag:"${CF_SITE}",requestHost:"myself.md",bot:0,datetime_geq:"${start.toISOString()}",datetime_lt:"${end.toISOString()}"}`;
     const query = `{viewer{accounts(filter:{accountTag:"${CF_ACCOUNT}"}){totals:rumPageloadEventsAdaptiveGroups(limit:1,filter:${filter}){count sum{visits} avg{sampleInterval}} pages:rumPageloadEventsAdaptiveGroups(limit:5,filter:${filter},orderBy:[count_DESC]){count sum{visits} dimensions{requestPath}} referrers:rumPageloadEventsAdaptiveGroups(limit:5,filter:${filter},orderBy:[count_DESC]){count dimensions{refererHost}}}}}`;
     const response = await request(
       'https://api.cloudflare.com/client/v4/graphql',
@@ -634,12 +634,13 @@ async function collectCloudflare(now) {
       window: { start: start.toISOString(), endExclusive: end.toISOString() },
       pageviews: total.count,
       visits: total.visits,
+      audience: 'Non-bot website activity; not verified customers',
       sampling: { averageInterval: total.sampleInterval, adaptive: true },
       measurementStart: '2026-10-16',
-      comparableBaseline: start >= new Date('2026-10-17T00:00:00Z'),
+      comparableBaseline: start >= new Date('2026-10-18T00:00:00Z'),
       assessment:
-        start < new Date('2026-10-17T00:00:00Z')
-          ? 'Window crosses beacon activation on 2026-10-16; incomplete baseline, report only.'
+        start < new Date('2026-10-18T00:00:00Z')
+          ? 'Window crosses beacon activation on 2026-10-16 or internal-traffic exclusions on 2026-10-17; incomplete baseline, report only.'
           : total.count < 100
             ? 'Insufficient volume for traffic or conversion conclusions.'
             : 'Descriptive counts only; no causal or ranking inference.',
@@ -660,7 +661,7 @@ async function collectCloudflare(now) {
           pageviews: row.count,
         })),
       limitations:
-        'Beacon was blocked by CSP until 2026-10-16. Enabled Cloudflare lite mode excludes EU visitors; absent EU traffic is not a decline. Blocked beacons and adaptive sampling further limit coverage. Visits are Cloudflare visits, not unique users. Top groups are truncated.',
+        'Flagged bots are excluded. Internal-browser and QA exclusions apply to future collection only; unmarked internal visits may remain. Historical anonymous owner traffic cannot be reliably identified. Beacon was blocked by CSP until 2026-10-16. Enabled Cloudflare lite mode excludes EU visitors; absent EU traffic is not a decline. Blocked beacons and adaptive sampling further limit coverage. Visits are Cloudflare visits, not unique users. Top groups are truncated.',
     };
   } catch {
     return {

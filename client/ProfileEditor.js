@@ -38,6 +38,7 @@ export default function ProfileEditor({ data = false }) {
               filename: 'Filename',
               folders: 'Folders',
               writeMode: 'When files exist',
+              schedule: 'Schedule',
               cadence: 'Cadence',
               time: 'Preferred time',
               refresh: 'Today Refresh',

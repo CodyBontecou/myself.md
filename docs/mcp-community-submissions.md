@@ -1,6 +1,14 @@
 # Community MCP directory submissions
 
-Checked October 14, 2026.
+Updated October 17, 2026.
+
+## Cursor — submitted October 16, 2026
+
+The owner signed into the official [publisher portal](https://cursor.com/marketplace/publish) and explicitly approved publishing the proposed MIT connector package and submitting under Cursor's publisher terms. Submitted as Isotech / `isotech`, contact `cody@isolated.tech`, under the selected individual Cursor account. The portal confirms **Thanks for applying** and **We've received your submission**, with review follow-up promised. Receipt screenshot: private `.local/cursor/submitted.jpg`. No application ID was displayed. Awaiting review; no approval or marketplace listing is claimed. The Grok Bot application is separate.
+
+Published the five-file package from `distribution/cursor/myself-md/` to [CodyBontecou/myself-md-cursor-plugin](https://github.com/CodyBontecou/myself-md-cursor-plugin), commit `38ba2e1f1bd8cbb27269d6863ef2b7e425e992c0`. GitHub's reported main commit matches the exact local package commit. It contains `.cursor-plugin/plugin.json`, root `mcp.json`, MIT LICENSE, the existing icon and setup README. It points to `https://myself.md/mcp`, contains no credentials, executable components or application source, and discloses that Cursor-specific testing is unverified. JSON parsing and referenced-file checks pass. The [official reference](https://cursor.com/docs/reference/plugins) requires a public repository, valid manifest, setup README and local testing for the standard publisher flow.
+
+The existing GitHub app repository is public but its root license is AGPL-3.0. The publisher terms exclude copyleft components; the separate package includes no app source. Its owner-approved MIT license covers only the new configuration/documentation, retaining branding rights and leaving hosted application licensing unaffected. The submitted form and public README explicitly disclose successful Grok web tests and no verified Cursor-specific installation or tool execution. Hosted-service allowances and paid entitlements are disclosed. No Cursor client test was performed for this submission.
 
 ## Grok Bot — submitted October 16, 2026
 
@@ -16,7 +24,11 @@ At the owner's request, downloaded the Apple silicon DMG from the official x.ai 
 
 ## MCPServers.org
 
-Free submission received October 14, 2026 at https://mcpservers.org/submit. After the owner explicitly authorized sharing the public listing details and cody@isolated.tech, the WebMCP submission succeeded. The portal confirms **Submission Successful!** and says myself.md will be listed after review within two weeks, with an email notification on approval. Status: submitted, awaiting review; not yet confirmed published. No paid plan or purchase was selected. Receipt text and screenshot are retained under ignored .local/community-directories/.
+**Published — verified October 17, 2026.** The public directory search for `myself` returns one exact myself.md entry: [myself.md](https://mcpservers.org/servers/myself-md-docs). Its detail page matches the submitted description and Productivity category, shows Hosted MCP Server `https://myself.md/mcp`, and links Documentation to `https://myself.md/docs`. Publication is confirmed; no separate approval email was found in the verified `cody@isolated.tech` mailbox, including spam/trash (`in:anywhere`). No reviewer request or required action was found. This is the first reported publication confirmation; avoid notifying again for this same listing/status. Read-only evidence: `.local/community-directories/mcpservers-published-2026-10-17.txt` and `.png`. No resubmission, update request or purchase was made.
+
+Historical submission receipt:
+
+Free submission received October 14, 2026 at https://mcpservers.org/submit. After the owner explicitly authorized sharing the public listing details and cody@isolated.tech, the WebMCP submission succeeded. The portal confirms **Submission Successful!** and says myself.md will be listed after review within two weeks, with an email notification on approval. Status at submission: submitted, awaiting review; publication was not yet confirmed. No paid plan or purchase was selected. Receipt text and screenshot are retained under ignored .local/community-directories/.
 
 Submitted fields:
 
@@ -36,4 +48,8 @@ The site's search at https://mcp.directory/servers?q=myself returned **No server
 
 Its https://mcp.directory/submit page says it auto-discovers entries from the official Registry and asks owners to email hello@mcp.directory for verified-badge/edit-access claims. The manual submission form requires a GitHub repository; no repository was supplied or made public for this task.
 
-An import/ownership inquiry is prepared in [mcp-directory-inquiry.txt](../distribution/community/mcp-directory-inquiry.txt). It has not been sent. No email-sending connector is available in this session. Ownership remains unclaimed; do not report a badge or successful import until the directory confirms it.
+The [import/ownership inquiry](../distribution/community/mcp-directory-inquiry.txt) was sent October 16, 2026 from **cody@isolated.tech** to **hello@mcp.directory**, subject **Import and ownership claim for myself.md (md.myself/mcp)**. Gmail first returned no sent messages for this recipient, then confirmed **Message sent**. The message is verified in Sent Mail; its expanded details confirm the exact sender, recipient and mailed-by isolated.tech. [Private sent-message receipt](https://mail.google.com/mail/u/0/#sent/KtbxLrjjBcjBghnXwHBZvcjkTcnFfqFlxq). Evidence text and screenshot are retained under ignored .local/community-directories/. Status: **inquiry sent, awaiting directory response**. Sending is confirmed; recipient delivery/read status, import and ownership approval are not confirmed. Ownership remains unclaimed until the directory confirms its process.
+
+## October 16 upstream reconciliation
+
+The full endpoint now exposes 37 tools; current Node, workerd and authenticated production metadata agree. The restricted ChatGPT endpoint retains 13. Existing generic approved-data/phone/cloud listing copy remains accurate. [Current inventory and platform follow-ups](mcp-tool-reconciliation.md). This does not establish fresh Cursor, Grok Bot or Vercel client execution, publication, or an ownership claim. Zapier remains paused. No submitted answers or review state were changed.

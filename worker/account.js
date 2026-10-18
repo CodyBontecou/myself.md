@@ -1,10 +1,11 @@
+import { createAnalytics } from './analytics.js';
 import { createExportSchedules } from '../server/export-schedules.js';
 import { createRemoteSupport } from '../server/support-remote.js';
 import { deleteLegacySupport } from '../server/support-cleanup.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { accountDeletionNotice } from '../core/account-deletion.js';
-import { deleteIdentity, identityRequest, identityLogins } from './identity.js';
+import { deleteIdentity, identityJwks, identityLogins } from './identity.js';
 import { DurableObject } from 'cloudflare:workers';
 import { handleAsNodeRequest } from 'cloudflare:node';
 import { createServer } from 'node:http';
@@ -152,9 +153,25 @@ export class Account extends DurableObject {
       (/** @type {import('../server/data-service.js').Proposal} */ proposal) => proposal,
       (/** @type {import('../server/data-service.js').Proposal} */ proposal) => proposal,
     );
+    const captures = new DurableMap(
+      this.db,
+      this.cloud,
+      'location-captures',
+      (/** @type {import('../server/location-capture.js').LocationCapture} */ request) =>
+        request.status === 'running'
+          ? {
+              ...request,
+              status: /** @type {const} */ ('failed'),
+              error: /** @type {const} */ ('interrupted'),
+            }
+          : request,
+      (/** @type {import('../server/location-capture.js').LocationCapture} */ request) => request,
+    );
     this.data = createDataService({
+      cloud: this.cloud,
       jobs,
       proposals,
+      captures,
       billing: this.billing,
       history: this.history,
       refreshEntitlement: billingService.refreshEntitlement,
@@ -172,6 +189,7 @@ export class Account extends DurableObject {
       history: this.history,
       devices: this.pairing.devices.bind(this.pairing),
       cancelAgent: this.data.cancelAgent,
+      revokeQueries: this.data.revokeQueries,
       refreshEntitlement: billingService.refreshEntitlement,
       cloudSubscriptions: this.cloudSubscriptions,
     });
@@ -186,6 +204,8 @@ export class Account extends DurableObject {
         ALLOW_HTTP_DEV: this.env.ALLOW_HTTP_DEV,
       },
       {
+        analytics: createAnalytics(this.env),
+        analyticsMilestone: createAnalytics(this.env).milestone,
         accountApi: (subject, action) =>
           action === 'status'
             ? Promise.resolve(this.deletionStatus(subject))
@@ -207,6 +227,7 @@ export class Account extends DurableObject {
         devices: this.pairing.devices.bind(this.pairing),
         disconnect: this.pairing.disconnect.bind(this.pairing),
         pending: this.pairing.pending.bind(this.pairing),
+        ticketStatus: this.pairing.ticketStatus.bind(this.pairing),
         status: this.pairing.status.bind(this.pairing),
         ownCloudDevice: (subject, id) => {
           if (!this.pairing.devices(subject).some((d) => d.id === id))
@@ -230,9 +251,7 @@ export class Account extends DurableObject {
         proxyAuth,
         dashboardAsset: () => false,
       },
-      this.env.IDENTITY_ENABLED === '1'
-        ? { jwksFetch: (url, options) => identityRequest(new Request(url, options), this.env) }
-        : {},
+      this.env.IDENTITY_ENABLED === '1' ? { jwksFetch: () => identityJwks(this.env) } : {},
     );
   }
   /** Keep the earliest scheduled subscription, cleanup or export-schedule work.
@@ -331,6 +350,7 @@ export class Account extends DurableObject {
       const receiptExpires = Date.now() + 7 * 86400000;
       this.ctx.storage.kv.put('deletionReceiptExpires', receiptExpires);
       await registerTicket(this.env, String(receipt), subject, null, receiptExpires);
+      await createAnalytics(this.env).erase(subject);
       await deleteIdentity(this.env, subject);
       const purchases = this.db
         .prepare('SELECT store,id FROM billing_purchases WHERE subject=?')
@@ -363,6 +383,8 @@ export class Account extends DurableObject {
       }
       for (const table of [
         'cloud_access',
+        'cloud_writes',
+        'profile_sync',
         'agents',
         'activity',
         'billing_uses',
@@ -458,6 +480,8 @@ export class Account extends DurableObject {
       'devices',
       'exports',
       'cloud_access',
+      'cloud_writes',
+      'profile_sync',
       'agents',
       'upload_keys',
       'activity',
@@ -516,6 +540,8 @@ export class Account extends DurableObject {
         'devices',
         'exports',
         'cloud_access',
+        'cloud_writes',
+        'profile_sync',
         'agents',
         'upload_keys',
         'activity',

@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "myself-md",
   "main": "worker/index.js",
+  "alias": { "node-fetch": "./worker/node-fetch.js" },
   "account_id": "e4265f322e6380ee832b83ad45e3e8c0",
   "compatibility_date": "2026-10-09",
   "compatibility_flags": ["nodejs_compat"],
@@ -27,7 +28,20 @@
       "bucket_name": "myself-md-exports",
     },
   ],
+  "ratelimits": [
+    {
+      "name": "ANALYTICS_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
   "d1_databases": [
+    {
+      "binding": "ANALYTICS",
+      "database_name": "myself-md-analytics",
+      "database_id": "b22e3984-3ac1-400d-9526-398ac712145d",
+      "migrations_dir": "worker/analytics-migrations",
+    },
     {
       "binding": "IDENTITY",
       "database_name": "myself-md-identity",
@@ -72,6 +86,11 @@
     },
   ],
   "vars": {
+    "ANALYTICS_OPERATORS": "",
+    "ANALYTICS_OPERATOR_GITHUB_ID": "20440899",
+    "ANALYTICS_INTERNAL_SUBJECTS": "",
+    "ANALYTICS_INTERNAL_KEYS": "",
+    "ANALYTICS_INTERNAL_ANONYMOUS_IDS": "",
     "PUBLIC_URL": "https://myself.md",
     "PUBLIC_URL_ALIASES": "",
     "OAUTH_ISSUER": "https://myself.md/auth/realms/myselfmd",

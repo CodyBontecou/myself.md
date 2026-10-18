@@ -4,6 +4,22 @@ import { PairingError } from './errors.js';
 export const appBundleId = () => process.env.APPLE_IAP_BUNDLE_ID ?? 'com.myself.md';
 export const playPackage = () => process.env.GOOGLE_PLAY_PACKAGE ?? 'com.myself.md';
 export const lifetimeProduct = () => process.env.LIFETIME_PRODUCT_ID ?? lifetimeProductId;
+/** Translate Apple's message-less verification exceptions without accepting invalid proof.
+ * @param {Awaited<ReturnType<typeof appleVerifier>>} apple @param {string} proof */
+export async function decodeApplePurchase(apple, proof) {
+  try {
+    return await apple.verifier.verifyAndDecodeTransaction(proof);
+  } catch (error) {
+    if (!(error instanceof apple.library.VerificationException)) throw error;
+    const reason = apple.library.VerificationStatus[error.status] ?? 'VERIFICATION_FAILURE';
+    throw new PairingError(
+      error.status === apple.library.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE ? 503 : 403,
+      error.status === apple.library.VerificationStatus.INVALID_ENVIRONMENT
+        ? 'This Apple purchase belongs to a different store environment. Sandbox purchases cannot unlock production access.'
+        : `Apple could not verify this purchase (${reason}). Please try restoring purchases again.`,
+    );
+  }
+}
 /** Apple's certificate-chain verifier for this server's environment (IAP_SANDBOX). */
 export async function appleVerifier() {
   const library = await import('@apple/app-store-server-library');
@@ -59,14 +75,12 @@ export async function verifyStorePurchase(purchase) {
   const productId = lifetimeProduct();
   if (purchase.store === 'ios') {
     const apple = await appleVerifier();
-    const supplied = await apple.verifier.verifyAndDecodeTransaction(purchase.proof);
+    const supplied = await decodeApplePurchase(apple, purchase.proof);
     if (!supplied.transactionId) throw new PairingError(403, 'Apple transaction ID is missing.');
     const response = await appleClient(apple).getTransactionInfo(supplied.transactionId);
     if (!response.signedTransactionInfo)
       throw new PairingError(403, 'Apple transaction could not be verified.');
-    const transaction = await apple.verifier.verifyAndDecodeTransaction(
-      response.signedTransactionInfo,
-    );
+    const transaction = await decodeApplePurchase(apple, response.signedTransactionInfo);
     if (
       transaction.productId !== productId ||
       transaction.type !== apple.library.Type.NON_CONSUMABLE ||

@@ -1,3 +1,4 @@
+import { registerAnalyticsTools } from './analytics-tools.js';
 import { chatgptMcpPath, restrictChatgptTools } from './chatgpt-tools.js';
 import { readAccountProfile } from './account-profile.js';
 import { registerBlogTool } from './blog.js';
@@ -6,7 +7,7 @@ import { reviewerUserId } from './reviewer.js';
 import {
   publicResponse,
   unknownPublicPath,
-  notFoundMarkdown,
+  notFoundResponse,
   publicApiPath,
   createPublicReadLimiter,
 } from './public-site.js';
@@ -41,7 +42,7 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{analytics?:import('../core/analytics.js').AnalyticsService,analyticsMilestone?:(subject:string,name:'phone_connected',operation:string)=>Promise<void>,exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,supportV1Api?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['supportV1Api'],registerSupportV1Tools?:ReturnType<typeof import('./support-remote.js').createRemoteSupport>['registerSupportV1Tools'],accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],ticketStatus:import('./pairing-store.js').PairingStore['ticketStatus'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices & {cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>,storeNotification?:(source:'apple'|'google',bytes:Uint8Array,authorization:string|undefined,audience:string)=>Promise<unknown>}} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
@@ -49,6 +50,8 @@ async function bodyBytes(req, limit) {
 export function createApplication(
   config,
   {
+    analytics,
+    analyticsMilestone,
     exportSchedules,
     cloudSubscriptions,
     storeNotification,
@@ -79,6 +82,7 @@ export function createApplication(
     devices,
     disconnect,
     pending,
+    ticketStatus,
     status,
   },
   options = {},
@@ -576,6 +580,16 @@ export function createApplication(
         return { content: [{ type: 'text', text: 'Disconnected.' }] };
       },
     );
+    if (
+      !chatgpt &&
+      analytics &&
+      ['active', 'unavailable'].includes((await deletionStatus(subject)).state)
+    )
+      await registerAnalyticsTools(mcp, analytics, subject, async () => {
+        if (!['active', 'unavailable'].includes((await deletionStatus(subject)).state))
+          throw new PairingError(410, 'This account is being deleted or has been deleted.');
+        if (client) cloud.observeAgent(subject, client);
+      });
     registerDataTools(mcp, subject, client, { chatgpt });
     registerCloudTools(mcp, subject, client);
     if (!chatgpt) exportSchedules?.registerTools(mcp, subject);
@@ -693,12 +707,9 @@ export function createApplication(
       )
         return;
       if (unknownPublicPath(url.pathname)) {
-        res.writeHead(404, {
-          'Content-Type': 'text/markdown; charset=utf-8',
-          'Cache-Control': 'no-store',
-          Vary: 'Accept',
-        });
-        res.end(req.method === 'HEAD' ? undefined : notFoundMarkdown);
+        const missing = notFoundResponse(req.headers.accept ?? '');
+        res.writeHead(404, missing.headers);
+        res.end(req.method === 'HEAD' ? undefined : missing.body);
         return;
       }
       if (url.pathname === '/dashboard/config') {
@@ -723,9 +734,18 @@ export function createApplication(
           'Cache-Control': 'no-store',
           'Referrer-Policy': 'no-referrer',
           'Content-Security-Policy':
-            "default-src 'none'; img-src 'self'; script-src 'unsafe-inline'",
+            "default-src 'none'; img-src 'self'; connect-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         });
         res.end(pairingPage);
+        return;
+      }
+      if (url.pathname.startsWith('/api/pairing-status/') && req.method === 'GET') {
+        const ticket = url.pathname.slice('/api/pairing-status/'.length);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) {
+          json(res, 400, { error: 'Invalid pairing link.' });
+          return;
+        }
+        json(res, 200, ticketStatus(ticket));
         return;
       }
       if (url.pathname.startsWith('/qr/')) {
@@ -865,6 +885,37 @@ export function createApplication(
         !['active', 'unavailable'].includes((await deletionStatus(subject)).state)
       )
         throw new PairingError(410, 'This account is being deleted or has been deleted.');
+
+      if (url.pathname.startsWith('/api/analytics/')) {
+        if (!analytics)
+          throw new PairingError(503, 'Analytics requires the hosted Cloudflare service.');
+        if (!['myselfmd-phone', 'myselfmd-dashboard'].includes(String(payload.azp)))
+          throw new PairingError(403, 'Use analytics MCP tools with an agent client.');
+        const input =
+          req.method === 'POST' || req.method === 'PUT'
+            ? JSON.parse((await bodyBytes(req, 16384)).toString())
+            : undefined;
+        if (
+          url.pathname === '/api/analytics/preferences' &&
+          ['GET', 'PUT'].includes(req.method ?? '')
+        ) {
+          json(res, 200, await analytics.preferences(subject, input));
+          return;
+        }
+        if (url.pathname === '/api/analytics/events' && req.method === 'POST') {
+          json(res, 200, await analytics.ingest(subject, input));
+          return;
+        }
+        if (url.pathname === '/api/analytics/access' && req.method === 'GET') {
+          json(res, 200, { operator: await analytics.canRead(subject) });
+          return;
+        }
+        if (url.pathname === '/api/analytics/report' && req.method === 'GET') {
+          json(res, 200, await analytics.report(subject, Object.fromEntries(url.searchParams)));
+          return;
+        }
+        throw new PairingError(405, 'Unsupported analytics operation.');
+      }
 
       if (url.pathname === '/api/account-logins' && req.method === 'GET') {
         if (!accountLoginsApi)
@@ -1012,7 +1063,11 @@ export function createApplication(
           throw new PairingError(403, 'Dashboard OAuth client required.');
         const body =
           req.method === 'PUT' || req.method === 'POST'
-            ? JSON.parse((await bodyBytes(req, 16384)).toString())
+            ? JSON.parse(
+                (
+                  await bodyBytes(req, url.pathname === '/api/dashboard/profiles' ? 200000 : 16384)
+                ).toString(),
+              )
             : null;
         const result = await dashboardApi(
           subject,
@@ -1148,7 +1203,7 @@ export function createApplication(
           await registerTicket(uploadCredential, subject, Date.now() + 86400000 * 31);
           json(res, 200, { token: uploadCredential });
         } else if (url.pathname === '/api/cloud/access' && req.method === 'PUT')
-          json(res, 200, cloud.access(subject, input.deviceId, profile, input.shared ?? false));
+          json(res, 200, cloud.setSharing(subject, input.deviceId, id, input.shared ?? false));
         else if (url.pathname === '/api/cloud/access' && req.method === 'POST')
           json(res, 200, cloud.permission(subject, input.deviceId, id));
         else json(res, 404, { error: 'Not found.' });
@@ -1236,7 +1291,11 @@ export function createApplication(
             name: z.string().min(1).max(80),
           })
           .parse(JSON.parse(body));
-        json(res, 200, claim(input.ticket, subject, input.name));
+        const claimed = claim(input.ticket, subject, input.name);
+        await analyticsMilestone?.(subject, 'phone_connected', input.ticket).catch(() =>
+          console.warn('Analytics milestone could not be stored.'),
+        );
+        json(res, 200, claimed);
         return;
       }
       json(res, 404, { error: 'Not found.' });

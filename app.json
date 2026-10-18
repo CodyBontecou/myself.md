@@ -24,7 +24,7 @@
         "com.apple.developer.applesignin": ["Default"]
       },
       "appleTeamId": "67KC823C9A",
-      "buildNumber": "8"
+      "buildNumber": "15"
     },
     "android": {
       "adaptiveIcon": {
@@ -74,7 +74,7 @@
         "android.permission.health.READ_OXYGEN_SATURATION",
         "android.permission.health.READ_POWER"
       ],
-      "versionCode": 8
+      "versionCode": 14
     },
     "web": {
       "favicon": "./assets/myself-favicon.png",

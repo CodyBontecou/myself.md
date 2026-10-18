@@ -187,10 +187,73 @@ const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(se
 const logoutSession = await context.internalAdapter.createSession('original-user-id');
 assert.ok(logoutSession);
 const logoutCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(logoutSession.token + '.' + createHmac('sha256', secret).update(logoutSession.token).digest('base64'))}`;
+/** @param {string} id @param {{userId:string,email:string}} [link] */
+function providerState(id, link) {
+  return {
+    callbackURL: `${origin}/dashboard`,
+    codeVerifier: 'synthetic-verifier',
+    expiresAt: Date.now() + 900000,
+    oauthState: id,
+    ...(link ? { link } : {}),
+  };
+}
+const retainedVerificationFixtures = [
+  [
+    'deletion-code-other-user',
+    JSON.stringify({
+      type: 'authorization_code',
+      userId: reviewerUserId,
+      sessionId: 'other-session',
+    }),
+  ],
+  ['deletion-state-other-user', JSON.stringify(providerState('deletion-state-other-user'))],
+  [
+    'deletion-link-other-user',
+    JSON.stringify(
+      providerState('deletion-link-other-user', { userId: reviewerUserId, email: reviewerEmail }),
+    ),
+  ],
+  ['deletion-invalid-json', '{not-json'],
+  [
+    'deletion-invalid-code-types',
+    JSON.stringify({ type: 'authorization_code', userId: 42, sessionId: [] }),
+  ],
+];
+for (const [id, value] of [
+  ...retainedVerificationFixtures,
+  [
+    'deletion-code-owned-user',
+    JSON.stringify({ type: 'authorization_code', userId: 'original-user-id' }),
+  ],
+  [
+    'deletion-code-owned-session',
+    JSON.stringify({ type: 'authorization_code', sessionId: session.id }),
+  ],
+  [
+    'deletion-link-owned-user',
+    JSON.stringify(
+      providerState('deletion-link-owned-user', {
+        userId: 'original-user-id',
+        email: 'fixture@example.test',
+      }),
+    ),
+  ],
+])
+  db.prepare('INSERT INTO verification VALUES (?,?,?,?,?,?)').run(
+    id ?? '',
+    id?.startsWith('deletion-link-') || id?.startsWith('deletion-state-')
+      ? `auth-state:${id}`
+      : (id ?? ''),
+    value ?? '',
+    new Date(Date.now() + 3600000).toISOString(),
+    new Date().toISOString(),
+    new Date().toISOString(),
+  );
 const seed = [
   'user',
   'account',
   'session',
+  'verification',
   'oauthResource',
   'oauthClient',
   'oauthClientResource',
@@ -218,6 +281,7 @@ const seedPath = join(directory, 'seed.sql');
 writeFileSync(seedPath, seed.join('\n'), { mode: 0o600 });
 const config = JSON.parse(readFileSync('wrangler.jsonc', 'utf8').replace(/,\s*([}\]])/g, '$1'));
 config.main = resolve('worker/index.js');
+config.alias['node-fetch'] = resolve('worker/node-fetch.js');
 config.assets.directory = resolve('dashboard/dist');
 config.routes = [];
 Object.assign(config.vars, {
@@ -359,6 +423,18 @@ try {
   await cli([
     'd1',
     'execute',
+    'myself-md-analytics',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--file',
+    resolve('worker/analytics-migrations/0001_events.sql'),
+  ]);
+  await cli([
+    'd1',
+    'execute',
     'myself-md-identity',
     '--local',
     '--config',
@@ -453,6 +529,22 @@ try {
         id: 'identity-lifetime-fixture',
         subject: fixtureSubject,
         tables: [
+          {
+            name: 'cloud_writes',
+            columns: ['subject', 'device', 'profile', 'request', 'id', 'configuration', 'result'],
+            rows: [
+              [
+                fixtureSubject,
+                'fixture-phone',
+                'fixture-profile',
+                'fixture-request',
+                'fixture-upload',
+                'fixture-config',
+                JSON.stringify({ id: 'fixture-upload', recordCount: 0, bytes: 0, partial: false }),
+              ],
+            ],
+          },
+
           {
             name: 'billing_grants',
             columns: ['source', 'reference', 'subject', 'created'],
@@ -631,6 +723,19 @@ try {
   const logoutPage = await browserRequest('/protocol/openid-connect/logout', logoutCookie);
   assert.equal(logoutPage.status, 200, logoutPage.text);
   assert.match(logoutPage.text, /oauth2\/end-session\/confirm/);
+  assert.match(logoutPage.text, /Sign out of myself.md\?/);
+  assert.match(
+    logoutPage.text,
+    /class="primary"[^>]*name="action"|name="action"[^>]*class="primary"/,
+  );
+  assert.match(logoutPage.text, /href="\/dashboard">Cancel/);
+  assert.match(String(logoutPage.headers['content-security-policy'] ?? ''), /style-src 'nonce-/);
+  assert.ok(
+    await fetch(`${issuer}/get-session`, { headers: { Cookie: logoutCookie } }).then((response) =>
+      response.json(),
+    ),
+    'Showing the confirmation must retain the session',
+  );
   const confirmationCookie = (logoutPage.headers['set-cookie'] ?? [])
     .map((value) => value.split(';')[0])
     .join('; ');
@@ -648,10 +753,20 @@ try {
   );
   assert.equal(logoutResult.status, 200, logoutResult.text);
   assert.match(logoutResult.text, /Logged out/);
+  assert.match(logoutResult.text, /You’re signed out/);
+  assert.match(logoutResult.text, /href="\/login">Sign in again/);
   const loggedOutSession = await fetch(`${issuer}/get-session`, {
     headers: { Cookie: logoutCookie },
   });
   assert.equal(await loggedOutSession.json(), null);
+  const expiredLogout = await browserRequest(
+    '/oauth2/end-session/confirm',
+    logoutCookie,
+    'action=confirm',
+  );
+  assert.equal(expiredLogout.status, 400, expiredLogout.text);
+  assert.match(expiredLogout.text, /Sign-out could not finish/);
+  assert.match(expiredLogout.text, /invalid or expired/);
   const login = await authorize('myselfmd-phone', false);
   await Promise.all(
     [
@@ -1114,10 +1229,30 @@ try {
   });
   assert.equal(profileResponse.status, 200, await profileResponse.clone().text());
   assert.deepEqual(await profileResponse.json(), expectedProfile);
+  await cli([
+    'd1',
+    'execute',
+    'myself-md-identity',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--command',
+    `INSERT INTO rateLimit(id,key,count,lastRequest) VALUES ('internal-jwks-limit','no-trusted-ip|/jwks',60,${Date.now()}),('public-jwks-limit','203.0.113.79|/jwks',60,${Date.now()}) ON CONFLICT(key) DO UPDATE SET count=60,lastRequest=excluded.lastRequest;`,
+  ]);
+  const limitedJwks = await fetch(`${issuer}/protocol/openid-connect/certs`, {
+    headers: { 'cf-connecting-ip': '203.0.113.79' },
+  });
+  assert.equal(limitedJwks.status, 429, 'The public JWKS endpoint must retain its rate limit');
   const devices = await fetch(`${origin}/api/devices`, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
-  assert.equal(devices.status, 200, await devices.clone().text());
+  assert.equal(
+    devices.status,
+    200,
+    `Internal JWT verification must not consume the public JWKS rate limit: ${await devices.clone().text()}`,
+  );
   assert.equal(
     z.object({ subject: z.string() }).parse(await devices.json()).subject,
     'https://old.example/realm|original-user-id',
@@ -1136,6 +1271,15 @@ try {
     resource: `${origin}/mcp`,
   });
   assert.equal(refresh.status, 200, await refresh.clone().text());
+  const refreshedPhone = tokenSchema.parse(await refresh.clone().json());
+  const refreshedDevices = await fetch(`${origin}/api/devices`, {
+    headers: { Authorization: `Bearer ${refreshedPhone.access_token}` },
+  });
+  assert.equal(
+    refreshedDevices.status,
+    200,
+    `A refreshed phone token must authenticate phone APIs: ${await refreshedDevices.text()}`,
+  );
   const retryRefresh = await post('/protocol/openid-connect/token', {
     grant_type: 'refresh_token',
     client_id: 'myselfmd-phone',
@@ -1821,6 +1965,11 @@ try {
     arguments: { subject: 'other-account', confirmation: 'DELETE' },
   });
   assert.equal(wrongAccountDelete.isError, true);
+  const pendingAuthorization = await authorize('myselfmd-phone', true);
+  const pendingAuthorizationCode = new URL(
+    pendingAuthorization.response.headers.get('location') ?? '',
+  ).searchParams.get('code');
+  assert.ok(pendingAuthorizationCode);
   const [removed, concurrentRemoval, agentRemoval] = await Promise.all([
     ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
     ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
@@ -1838,6 +1987,13 @@ try {
     .object({ state: z.literal('completed'), statusUrl: z.string() })
     .parse(await removed.json());
   assert.equal((await ownerRequest('/api/devices')).status, 410);
+  assert.equal((await ownerRequest('/api/analytics/preferences')).status, 410);
+  await assert.rejects(() =>
+    client.callTool({
+      name: 'set_usage_analytics_preference',
+      arguments: { enabled: true, confirmation: 'ALLOW_USAGE_ANALYTICS' },
+    }),
+  );
   assert.equal(
     (await ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' })).status,
     200,
@@ -1892,6 +2048,8 @@ try {
   // Inspect the stopped real workerd SQLite stores, not a second cleanup implementation.
   let tombstoneFound = false;
   let billingPartitions = 0;
+  let cloudWritePartitions = 0;
+  let identityPartitions = 0;
   const ownerKey = accountTokenKey(deletionPurchaseAccount.appAccountToken);
   for (const entry of readdirSync(join(directory, 'state'), {
     recursive: true,
@@ -1900,6 +2058,32 @@ try {
     if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
     const persisted = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
     try {
+      if (
+        persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='verification'")
+          .get()
+      ) {
+        identityPartitions++;
+        assert.equal(
+          persisted
+            .prepare(
+              `SELECT COUNT(*) AS count FROM verification WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.userId')=? OR json_extract(value,'$.link.userId')=? ELSE 0 END`,
+            )
+            .get('original-user-id', 'original-user-id')?.count,
+          0,
+          'Deletion removes unconsumed codes and owned account-link state before any attempted exchange.',
+        );
+        assert.deepEqual(
+          new Set(
+            persisted
+              .prepare("SELECT id FROM verification WHERE id LIKE 'deletion-%'")
+              .all()
+              .map((row) => row.id),
+          ),
+          new Set(retainedVerificationFixtures.map(([id]) => id)),
+          'Deletion removes owned codes while preserving other accounts, sign-in state and invalid values.',
+        );
+      }
       if (
         !persisted
           .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_subscriptions'")
@@ -1921,6 +2105,19 @@ try {
           0,
           `Account deletion clears ${table} in every partition`,
         );
+      if (
+        persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_writes'")
+          .get()
+      ) {
+        cloudWritePartitions++;
+        assert.equal(
+          persisted.prepare('SELECT COUNT(*) count FROM cloud_writes WHERE subject=?').get(subject)
+            ?.count,
+          0,
+          'Account deletion clears cloud export retry receipts',
+        );
+      }
       const owner = persisted.prepare('SELECT subject FROM cloud_owners WHERE key=?').get(ownerKey);
       if (owner) {
         assert.equal(
@@ -1935,6 +2132,8 @@ try {
     }
   }
   assert.ok(billingPartitions > 0);
+  assert.ok(cloudWritePartitions > 0);
+  assert.ok(identityPartitions > 0);
   assert.ok(tombstoneFound, 'Account deletion preserves its Purchase ownership tombstone');
   const tombstone = new BillingStore(':memory:');
   try {
@@ -1967,6 +2166,20 @@ try {
   await ready(200);
   assert.equal(
     (
+      await post('/protocol/openid-connect/token', {
+        grant_type: 'authorization_code',
+        client_id: 'myselfmd-phone',
+        code: pendingAuthorizationCode,
+        code_verifier: pendingAuthorization.verifier,
+        redirect_uri: pendingAuthorization.redirect,
+        resource: `${origin}/mcp`,
+      })
+    ).status,
+    400,
+    'A code issued before deletion cannot be redeemed after identity cleanup and restart.',
+  );
+  assert.equal(
+    (
       await fetch(`${origin}/api/account-profile`, {
         headers: { Authorization: `Bearer ${reviewerTokens.access_token}` },
       })
@@ -1995,9 +2208,10 @@ try {
 } finally {
   await client.close();
   await new Promise((done) => callbackServer.close(done));
-  if (child) {
+  if (child && child.exitCode === null && child.signalCode === null) {
+    const stopped = once(child, 'exit');
     child.kill('SIGTERM');
-    await once(child, 'exit');
+    await stopped;
   }
   closeSync(output);
   db.close();

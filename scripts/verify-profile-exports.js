@@ -85,6 +85,53 @@ assert.equal(
 );
 for (const interval of [0, -1, 0.5, 366])
   assert.throws(() => parseSchedule({ frequency: 'custom', unit: 'minute', interval }));
+// Multiple daily runs share the same catch-up/checkpoint policy as single-time schedules.
+const multiple = parseSchedule({ dailyTimes: ['18:45', '00:00', '08:15', '08:15'] });
+assert.deepEqual(multiple.dailyTimes, ['00:00', '08:15', '18:45']);
+assert.equal(
+  parseSchedule({}).dailyTimes,
+  undefined,
+  'Legacy schedules keep their persisted fingerprint',
+);
+for (const dailyTimes of [['24:00'], ['8:00'], ['08:60'], [null], '08:00'])
+  assert.throws(() => parseSchedule({ dailyTimes }));
+for (const refreshHours of [0, 25, 1.5]) assert.throws(() => parseSchedule({ refreshHours }));
+assert.equal(parseSchedule({ refreshHours: 1 }).refreshHours, 1);
+assert.equal(parseSchedule({ refreshHours: 24 }).refreshHours, 24);
+const morning = '2026-03-09T08:15:00.000Z';
+assert.equal(nextOccurrence(multiple, progress, '2026-03-09T08:00:00.000Z', calendar), morning);
+assert.deepEqual(dueOccurrences(multiple, progress, morning, calendar), [
+  { kind: 'completed-day', fireDate: morning },
+]);
+assert.deepEqual(
+  dueOccurrences(multiple, { ...progress, lastCompleted: morning }, morning, calendar),
+  [],
+);
+assert.equal(
+  nextOccurrence(multiple, progress, '2026-03-09T19:00:00.000Z', calendar),
+  '2026-03-10T00:00:00.000Z',
+);
+assert.equal(
+  dueOccurrences(multiple, progress, '2026-03-09T19:00:00.000Z', calendar)[0]?.fireDate,
+  '2026-03-09T18:45:00.000Z',
+);
+assert.deepEqual(
+  dueOccurrences(multiple, { ...progress, enabledAt: morning }, morning, calendar),
+  [],
+);
+assert.deepEqual(
+  occurrenceDays({ kind: 'completed-day', fireDate: morning }, 2, calendar, true).map(
+    (day) => day.day,
+  ),
+  ['2026-03-07', '2026-03-08', '2026-03-09'],
+);
+assert.equal(
+  occurrenceDays({ kind: 'today-refresh', fireDate: morning }, 7, calendar, true).length,
+  1,
+);
+console.log(
+  'Multiple daily times: validation, ordering, deduplication, midnight, catch-up, checkpoints and scheduled Include today passed.',
+);
 const monthly = parseSchedule({ frequency: 'custom', unit: 'month', anchorDate: '2026-01-31' });
 assert.equal(
   dueOccurrences(monthly, progress, '2026-02-28T09:00:00.000Z', calendar)[0]?.fireDate,

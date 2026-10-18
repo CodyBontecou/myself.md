@@ -12,6 +12,42 @@ import {
   googleNotificationEvent,
 } from '../server/store-subscriptions.js';
 import { generateKeyPair, SignJWT } from 'jose';
+import * as appleLibrary from '@apple/app-store-server-library';
+import { decodeApplePurchase } from '../server/store-purchases.js';
+const verifier = new appleLibrary.SignedDataVerifier(
+  [],
+  false,
+  appleLibrary.Environment.SANDBOX,
+  'com.myself.md',
+);
+for (const status of [
+  appleLibrary.VerificationStatus.INVALID_ENVIRONMENT,
+  appleLibrary.VerificationStatus.INVALID_CERTIFICATE,
+  appleLibrary.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE,
+]) {
+  const failure = new appleLibrary.VerificationException(status);
+  assert.equal(failure.message, '');
+  verifier.verifyAndDecodeTransaction = async () => {
+    throw failure;
+  };
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await assert.rejects(
+    decodeApplePurchase(
+      { library: appleLibrary, environment: appleLibrary.Environment.SANDBOX, verifier },
+      'invalid-fixture-proof',
+    ),
+    (error) => {
+      assert.ok(error instanceof Error && error.message.trim());
+      assert.equal(
+        /** @type {import('../server/errors.js').PairingError} */ (error).status,
+        status === appleLibrary.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE ? 503 : 403,
+      );
+      if (status === appleLibrary.VerificationStatus.INVALID_ENVIRONMENT)
+        assert.match(error.message, /different store environment/);
+      return true;
+    },
+  );
+}
 const notification = (/** @type {unknown} */ value) => ({
   message: {
     data: Buffer.from(

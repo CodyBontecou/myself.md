@@ -86,6 +86,57 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
   assert.ok(allowanceCleared, `${failure} must clear account access on sign-out`);
   if (failure === 'account') assert.equal(revocations, 0);
 }
+const confirm = app.match(/  async function confirm\(\) \{[\s\S]*?\n  \}/)?.[0];
+assert.ok(confirm);
+for (const failure of ['billing', 'none', 'claim']) {
+  /** @type {string[]} */
+  const effects = [];
+  const context = vm.createContext({
+    session: { owner: 'fixture-owner', deviceId: '' },
+    pairing: { ticket },
+    Platform: { OS: 'ios' },
+    api: async () => {
+      if (failure === 'claim') throw new Error('Claim rejected');
+      return { id: 'paired-phone' };
+    },
+    prepareProfilePairing: () => effects.push('prepared-profiles'),
+    completeProfilePairing: () => effects.push('completed-profiles'),
+    /** @param {{deviceId:string}} session */
+    saveSession: async (session) => {
+      effects.push(`saved:${session.deviceId}`);
+    },
+    /** @param {{deviceId:string}} session */
+    setSession: (session) => {
+      effects.push(`active:${session.deviceId}`);
+    },
+    reset: () => effects.push('reset'),
+    router: { dismissTo: () => effects.push('dismissed') },
+    syncBilling: async () => {
+      effects.push('billing');
+      if (failure === 'billing') throw new Error('Billing unavailable');
+    },
+  });
+  const result = vm.runInContext(confirm + '\nconfirm()', context);
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await (failure === 'none'
+    ? result
+    : assert.rejects(result, failure === 'claim' ? /Claim rejected/ : /Billing unavailable/));
+  assert.deepEqual(
+    effects,
+    failure === 'claim'
+      ? []
+      : [
+          'prepared-profiles',
+          'saved:paired-phone',
+          'completed-profiles',
+          'active:paired-phone',
+          'reset',
+          'dismissed',
+          'billing',
+        ],
+    'A successful claim must persist and activate pairing even when billing sync fails',
+  );
+}
 const source = readFileSync('client/session.js', 'utf8')
   .replace(/^import .*;\n/gm, '')
   .replace(/^export /gm, '');

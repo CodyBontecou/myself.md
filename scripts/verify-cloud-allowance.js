@@ -691,7 +691,7 @@ try {
       );
     }
     subscriptionCloud.authorize(subject, 'device', profile);
-    subscriptionCloud.setSharing(subject, 'device', profile.id, true);
+    subscriptionCloud.syncAgentPermissions(subject, 'device', [{ ...profile, agentAccess: true }]);
     /** @param {number} index */
     const stage = (index) =>
       subscriptionCloud.begin(subject, 'device', profile.id, {
@@ -710,7 +710,13 @@ try {
     if (count > 130) {
       // Seed valid staged rows in one transaction; calling begin 128,000 times
       // would repeatedly scan the growing table rather than test the boundary.
-      const template = subscriptionCloud.row(subject, stage(129).id);
+      const staged = subscriptionCloud.db
+        .prepare(
+          'SELECT id FROM exports WHERE subject=? AND content IS NULL AND object_key IS NULL LIMIT 1',
+        )
+        .get(subject);
+      assert.ok(staged);
+      const template = subscriptionCloud.row(subject, String(staged.id));
       const metadata = JSON.parse(
         subscriptionCloud.open(template.metadata, `${subject}|${template.id}|metadata`).toString(),
       );

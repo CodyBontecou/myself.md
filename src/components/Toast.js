@@ -1,12 +1,12 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme.js';
 import { Copy, Icon } from './ui.js';
 import { errorMessage } from '../../packages/support-chat/errors.js';
 
 /** @typedef {{label:string,onPress:()=>void,primary?:boolean}} ToastAction */
-/** @typedef {{message:string,kind:'success'|'error'|'warning',icon?:import('./ui.js').IconName,actions?:readonly [ToastAction]|readonly [ToastAction,ToastAction]}} Toast */
+/** @typedef {{message:string,kind:'success'|'error'|'warning'|'loading',detail?:string|undefined,progress?:number|undefined,icon?:import('./ui.js').IconName,onPress?:()=>void,accessibilityLabel?:string,actions?:readonly [ToastAction]|readonly [ToastAction,ToastAction]}} Toast */
 /** @type {Toast|null} */
 let notification = null;
 /** @type {Set<()=>void>} */
@@ -18,7 +18,15 @@ function setToast(toast) {
 }
 /** @param {Toast} toast */
 export function showToast(toast) {
-  setToast({ ...toast, message: errorMessage(toast.message) });
+  let current = { ...toast, message: errorMessage(toast.message) };
+  setToast(current);
+  // An old operation must never replace a newer or dismissed notification.
+  /** @param {Partial<Toast>} update */
+  return (update) => {
+    if (notification !== current) return;
+    current = { ...current, ...update };
+    setToast(current);
+  };
 }
 /** @param {()=>void} listener */
 function subscribe(listener) {
@@ -36,13 +44,19 @@ export function ToastProvider({ children }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const announcement = toast?.message;
   useEffect(() => {
-    if (!toast) return;
-    AccessibilityInfo.announceForAccessibility(toast.message);
-    if (toast.actions?.length) return;
+    if (announcement) AccessibilityInfo.announceForAccessibility(announcement);
+  }, [announcement]);
+  useEffect(() => {
+    if (!toast || toast.kind === 'loading' || toast.actions?.length || toast.onPress) return;
     const timer = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
+  const percentage =
+    toast?.progress === undefined
+      ? undefined
+      : Math.max(0, Math.min(100, Math.floor(toast.progress)));
   return (
     <View style={styles.root}>
       {children}
@@ -52,19 +66,68 @@ export function ToastProvider({ children }) {
             testID="action-toast"
             style={[styles.toast, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
-            <View style={styles.content}>
-              <Icon
-                name={
-                  toast.icon ??
-                  (toast.kind === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline')
-                }
-                size={18}
-                color={toast.kind === 'error' ? colors.danger : colors.text}
-              />
-              <Copy testID="action-toast-message" accessibilityRole="alert" style={styles.message}>
-                {toast.message}
-              </Copy>
-            </View>
+            <Pressable
+              testID="action-toast-content"
+              accessible={Boolean(toast.onPress)}
+              accessibilityRole={toast.onPress ? 'button' : undefined}
+              accessibilityLabel={toast.accessibilityLabel}
+              disabled={!toast.onPress}
+              onPress={() => {
+                setToast(null);
+                toast.onPress?.();
+              }}
+              style={styles.content}
+            >
+              {toast.kind === 'loading' ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <Icon
+                  name={
+                    toast.icon ??
+                    (toast.kind === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline')
+                  }
+                  size={18}
+                  color={toast.kind === 'error' ? colors.danger : colors.text}
+                />
+              )}
+              <View style={styles.message}>
+                <View style={styles.heading}>
+                  <Copy
+                    testID="action-toast-message"
+                    accessibilityRole="alert"
+                    style={styles.title}
+                  >
+                    {toast.message}
+                  </Copy>
+                  {percentage !== undefined && (
+                    <Copy testID="action-toast-percentage" style={styles.percentage}>
+                      {percentage}%
+                    </Copy>
+                  )}
+                </View>
+                {toast.detail ? (
+                  <Copy testID="action-toast-detail" variant="caption" muted style={styles.detail}>
+                    {toast.detail}
+                  </Copy>
+                ) : null}
+                {percentage !== undefined && (
+                  <View
+                    testID="action-toast-progress"
+                    accessibilityRole="progressbar"
+                    accessibilityLabel="Export progress"
+                    accessibilityValue={{ min: 0, max: 100, now: percentage }}
+                    style={[styles.track, { backgroundColor: colors.subtle }]}
+                  >
+                    <View
+                      style={[
+                        styles.fill,
+                        { backgroundColor: colors.accent, width: `${percentage}%` },
+                      ]}
+                    />
+                  </View>
+                )}
+              </View>
+            </Pressable>
             {Boolean(toast.actions?.length) && (
               <View style={styles.actions}>
                 {toast.actions?.map((action, index) => (
@@ -163,7 +226,13 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 6,
   },
-  message: { flex: 1, fontSize: 14, lineHeight: 20 },
+  message: { flex: 1, gap: 4 },
+  heading: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  title: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  percentage: { fontSize: 13, lineHeight: 20, fontVariant: ['tabular-nums'] },
+  detail: { fontSize: 12, lineHeight: 18 },
+  track: { height: 3, borderRadius: 4, overflow: 'hidden', marginTop: 4 },
+  fill: { height: '100%', borderRadius: 4 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1 },
   action: {
     minWidth: 44,

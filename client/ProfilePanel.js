@@ -34,7 +34,7 @@ import {
   uniqueProfileName,
   parseAgentPermissions,
 } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,inline?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
@@ -50,8 +50,10 @@ export default function ProfilePanel({
   onDismiss,
   profileId,
   openAgentPermissions = false,
+  inline = false,
 }) {
   const { colors } = useTheme();
+  const [expandedSection, setExpandedSection] = useState('');
   const [permissionsExpanded, setPermissionsExpanded] = useState(openAgentPermissions);
   useFocusEffect(
     useCallback(() => {
@@ -94,6 +96,46 @@ export default function ProfilePanel({
       { text: 'Keep editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: action },
     ]);
+  }
+  /** @param {string} key @param {boolean} [forceOpen] */
+  function toggleSection(key, forceOpen = false) {
+    if (forceOpen && expandedSection === key) return;
+    leaveForm(() => {
+      setEditing(null);
+      setExpandedSection((current) => (!forceOpen && current === key ? '' : key));
+    });
+  }
+  /** @param {string} key @param {string} title @param {string} summary @param {import('../src/components/ui.js').IconName} icon @param {import('react').ReactNode} children */
+  function disclosure(key, title, summary, icon, children) {
+    if (!inline) return children;
+    const open = expandedSection === key;
+    return (
+      <View style={[styles.disclosure, { borderColor: colors.border }]}>
+        <Pressable
+          testID={`profile-section-${key}-${profileId}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}, ${summary}`}
+          accessibilityState={{ expanded: open, disabled }}
+          disabled={disabled}
+          onPress={() => toggleSection(key)}
+          style={({ pressed }) => [styles.disclosureHeader, { opacity: pressed ? 0.5 : 1 }]}
+        >
+          <Icon name={icon} size={20} color={colors.secondary} />
+          <View style={styles.settingTitle}>
+            <Copy>{title}</Copy>
+            <Copy variant="caption" muted>
+              {summary}
+            </Copy>
+          </View>
+          <Icon
+            name={open ? 'chevron-down' : 'chevron-forward'}
+            size={16}
+            color={colors.secondary}
+          />
+        </Pressable>
+        {open && <View style={styles.disclosureBody}>{children}</View>}
+      </View>
+    );
   }
   /** @param {string} title @param {string} value @param {string} section @param {string} [field] */
   function setting(title, value, section, field = '') {
@@ -248,8 +290,104 @@ export default function ProfilePanel({
       setWorking(false);
     }
   }
+  const permissionControls = profile && (
+    <View
+      testID="profile-agent-permissions-content"
+      collapsable={false}
+      style={styles.permissionsBody}
+    >
+      <Copy variant="caption" muted>
+        Health, Screen time and Location permissions control what agents can read from your phone
+        and this profile’s old cloud exports.
+      </Copy>
+      <Copy variant="caption" muted>
+        After your phone syncs, turning a permission off blocks that data in old exports. Turning it
+        back on restores access to those selected data types. Your saved files and export selections
+        stay unchanged.
+      </Copy>
+      <Group compact>
+        {
+          /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
+            'health',
+            'time',
+            'location',
+            'logs',
+          ]).map((key) => {
+            const label =
+              key === 'health'
+                ? 'Health'
+                : key === 'time'
+                  ? 'Screen time'
+                  : key === 'location'
+                    ? 'Location'
+                    : 'Logs';
+            return (
+              <Row
+                compact
+                key={key}
+                title={label}
+                subtitle={
+                  key === 'logs'
+                    ? 'Share app errors and diagnostic metadata through this profile.'
+                    : `${profile.selection[key].length} selected · system: ${permissions[key] ?? 'checking'}`
+                }
+                trailing={
+                  <Checkbox
+                    testID={`profile-agent-permission-${key}`}
+                    accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
+                    value={parseAgentPermissions(profile.agentPermissions)[key]}
+                    disabled={disabled}
+                    onValueChange={(enabled) => {
+                      const save = () =>
+                        void run(() =>
+                          onChange({
+                            ...state,
+                            profiles: state.profiles.map((p) =>
+                              p.id === profile.id
+                                ? {
+                                    ...p,
+                                    agentAccess: true,
+                                    agentPermissions: {
+                                      ...parseAgentPermissions(p.agentPermissions),
+                                      [key]: enabled,
+                                    },
+                                  }
+                                : p,
+                            ),
+                          }),
+                        );
+                      if (!enabled) return save();
+                      Alert.alert(
+                        `Allow ${label} access?`,
+                        key === 'logs'
+                          ? `All agents you allow for this account can use ${profile.name} to read phone-wide app errors and event metadata while the app is open. Errors may contain sensitive information. Agents and their AI providers use their own privacy and retention policies and may keep copies. Turning Logs off stops future reads; it cannot recall copies already received.`
+                          : `All agents you allow for this account can read only ${profile.name}’s selected ${label} data when phone permissions allow it. After sync, this includes eligible old cloud exports. Approved data can reach the agents’ AI providers, which use their own privacy and retention policies and may keep copies. Turning access off stops future reads after sync; it cannot recall copies already received.`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Allow', onPress: save },
+                        ],
+                      );
+                    }}
+                  />
+                }
+              />
+            );
+          })
+        }
+      </Group>
+    </View>
+  );
   const content = (
-    <View testID={profile ? 'profile-content' : 'profiles-list'} style={styles.container}>
+    <View
+      testID={inline ? `profile-card-${profileId}` : profile ? 'profile-content' : 'profiles-list'}
+      style={[
+        styles.container,
+        inline && [
+          styles.profileCard,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ],
+      ]}
+    >
       {profileId && !profile && (
         <Text testID="profile-unavailable">This profile no longer exists.</Text>
       )}
@@ -263,296 +401,340 @@ export default function ProfilePanel({
               disabled={disabled}
             />
           )}
-          <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
-          <Group compact>
-            <Pressable
-              testID="profile-agent-permissions-toggle"
-              accessibilityRole="button"
-              accessibilityLabel="Agent permissions"
-              accessibilityState={{ expanded: permissionsExpanded }}
-              onPress={() => setPermissionsExpanded((expanded) => !expanded)}
-              style={({ pressed }) => [styles.permissionsHeader, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Icon
-                name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
-                size={18}
-                color={colors.secondary}
-              />
-              <Copy>Agent permissions</Copy>
-              <Copy variant="caption" muted style={styles.permissionsSummary}>
-                {profile.agentAccess ? 'Enabled' : 'Private'}
-              </Copy>
-            </Pressable>
-          </Group>
-          {permissionsExpanded && (
-            <View
-              testID="profile-agent-permissions-content"
-              collapsable={false}
-              style={styles.permissionsBody}
-            >
-              <Copy variant="caption" muted>
-                Choose what agents can read through this profile. Export selections stay unchanged.
-              </Copy>
-              <Group compact>
-                {
-                  /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
-                    'health',
-                    'time',
-                    'location',
-                    'logs',
-                  ]).map((key) => {
-                    const label =
-                      key === 'health'
-                        ? 'Health'
-                        : key === 'time'
-                          ? 'Screen time'
-                          : key === 'location'
-                            ? 'Location'
-                            : 'Logs';
-                    return (
-                      <Row
-                        compact
-                        key={key}
-                        title={label}
-                        subtitle={
-                          key === 'logs'
-                            ? 'Share app errors and diagnostic metadata through this profile.'
-                            : `${profile.selection[key].length} selected · system: ${permissions[key] ?? 'checking'}`
-                        }
-                        trailing={
-                          <Checkbox
-                            testID={`profile-agent-permission-${key}`}
-                            accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
-                            value={parseAgentPermissions(profile.agentPermissions)[key]}
-                            disabled={disabled}
-                            onValueChange={(enabled) => {
-                              const save = () =>
-                                void run(() =>
-                                  onChange({
-                                    ...state,
-                                    profiles: state.profiles.map((p) =>
-                                      p.id === profile.id
-                                        ? {
-                                            ...p,
-                                            agentAccess: true,
-                                            agentPermissions: {
-                                              ...parseAgentPermissions(p.agentPermissions),
-                                              [key]: enabled,
-                                            },
-                                          }
-                                        : p,
-                                    ),
-                                  }),
-                                );
-                              if (!enabled) return save();
-                              Alert.alert(
-                                `Allow ${label} access?`,
-                                key === 'logs'
-                                  ? `Agents using ${profile.name} can read phone-wide app errors and event metadata while the app is open. Errors may contain sensitive information. Agents may retain copies after you turn Logs off.`
-                                  : `Agents using ${profile.name} can read selected ${label} data when system permissions allow it.`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  { text: 'Allow', onPress: save },
-                                ],
-                              );
-                            }}
-                          />
-                        }
-                      />
-                    );
-                  })
-                }
-              </Group>
-            </View>
+          {inline ? (
+            <>
+              <View style={styles.cardHeader}>
+                <Pressable
+                  testID={`profile-row-${profile.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${profile.name}, open profile`}
+                  onPress={() =>
+                    router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
+                  }
+                  style={styles.profileIdentity}
+                >
+                  <Copy variant="heading">{profile.name}</Copy>
+                  <Copy variant="caption" muted>
+                    {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
+                  </Copy>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`More settings for ${profile.name}`}
+                  onPress={() => toggleSection('more')}
+                  style={styles.moreButton}
+                >
+                  <Icon name="ellipsis-horizontal" size={22} color={colors.secondary} />
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
           )}
-          <SectionHeader compact title="Data selection" />
-          <Group compact>
-            <ProfileDataEditor
-              key={profile.id}
-              inline
-              types={types}
-              permissions={permissions}
-              isTracking={isTracking}
-              onRecordingChange={onRecordingChange}
-              onAuthorize={onAuthorize}
-              selection={profile.selection}
-              onSelection={async (selection) => {
-                if (actionRunning.current)
-                  throw new Error('Wait for the current profile action to finish.');
-                actionRunning.current = true;
-                setWorking(true);
-                try {
-                  const updated = parseProfile({ ...profile, selection });
-                  await onChange({
-                    ...state,
-                    profiles: state.profiles.map((p) =>
-                      p.id === profile.id
-                        ? {
-                            ...updated,
-                            id: profile.id,
-                            agentAccess: profile.agentAccess === true,
-                            agentPermissions: profile.agentPermissions,
-                          }
-                        : p,
-                    ),
-                  });
-                } finally {
-                  actionRunning.current = false;
-                  setWorking(false);
-                }
-              }}
-              disabled={disabled}
-            />
-          </Group>
-          <SectionHeader compact title="Destination" />
-          <Group compact>
-            {setting(
-              profile.export.destination === 'local'
-                ? 'On this phone'
-                : profile.export.destination === 'http'
-                  ? 'HTTPS endpoint'
-                  : 'Cloud service',
-              profile.export.destination === 'local'
-                ? ''
-                : profile.export.destination === 'http'
-                  ? (profile.export.httpUrl ?? '')
-                  : session.server || 'Connect an agent to use cloud exports',
-              'destination',
-            )}
-          </Group>
-          <SectionHeader compact title="Output" />
-          <Group compact>
-            {setting(
-              'Schema version',
-              profile.export.schema.split('.').at(-1) ?? 'v1',
-              'output',
-              'schema',
-            )}
-            {profile.export.destination === 'cloud' ? (
-              <Row compact testID="export-format-cloud" title="Format" value="JSONL" />
-            ) : (
-              setting(
-                'Formats',
-                deliveredFormats(profile.export).join(' + ').toUpperCase(),
-                'output',
-                'formats',
-              )
-            )}
-            {setting(
-              'Export window',
-              `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
-              'output',
-              'window',
-            )}
-            {profile.export.destination === 'local' && (
-              <>
-                {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+          {inline ? (
+            disclosure(
+              'permissions',
+              'Agent permissions',
+              profile.agentAccess ? 'Enabled' : 'Agents disabled',
+              'people-outline',
+              permissionControls,
+            )
+          ) : (
+            <>
+              <Group compact>
+                <Pressable
+                  testID="profile-agent-permissions-toggle"
+                  accessibilityRole="button"
+                  accessibilityLabel="Agent permissions"
+                  accessibilityState={{ expanded: permissionsExpanded }}
+                  onPress={() => setPermissionsExpanded((expanded) => !expanded)}
+                  style={({ pressed }) => [
+                    styles.permissionsHeader,
+                    { opacity: pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <Icon
+                    name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
+                    size={18}
+                    color={colors.secondary}
+                  />
+                  <Copy>Agent permissions</Copy>
+                  <Copy variant="caption" muted style={styles.permissionsSummary}>
+                    {profile.agentAccess ? 'Enabled' : 'Agents disabled'}
+                  </Copy>
+                </Pressable>
+              </Group>
+              {permissionsExpanded && permissionControls}
+            </>
+          )}
+          {disclosure(
+            'data',
+            'Data selection',
+            `${domains.reduce((total, domain) => total + profile.selection[domain].length, 0)}/${domains.reduce((total, domain) => total + new Set([...types[domain], ...profile.selection[domain]]).size, 0)}`,
+            'layers-outline',
+            <>
+              {!inline && <SectionHeader compact title="Data selection" />}
+              <Group compact>
+                <ProfileDataEditor
+                  key={profile.id}
+                  inline
+                  types={types}
+                  permissions={permissions}
+                  isTracking={isTracking}
+                  onRecordingChange={onRecordingChange}
+                  onAuthorize={onAuthorize}
+                  onOpenLocation={() => router.push('/data/location')}
+                  selection={profile.selection}
+                  onSelection={async (selection) => {
+                    if (actionRunning.current)
+                      throw new Error('Wait for the current profile action to finish.');
+                    actionRunning.current = true;
+                    setWorking(true);
+                    try {
+                      const updated = parseProfile({ ...profile, selection });
+                      await onChange({
+                        ...state,
+                        profiles: state.profiles.map((p) =>
+                          p.id === profile.id
+                            ? {
+                                ...updated,
+                                id: profile.id,
+                                agentAccess: profile.agentAccess === true,
+                                agentPermissions: profile.agentPermissions,
+                              }
+                            : p,
+                        ),
+                      });
+                    } finally {
+                      actionRunning.current = false;
+                      setWorking(false);
+                    }
+                  }}
+                  disabled={disabled}
+                />
+              </Group>
+            </>,
+          )}
+          {disclosure(
+            'output',
+            'Destination & output',
+            `${profile.export.destination === 'local' ? 'On this phone' : profile.export.destination === 'http' ? 'HTTPS endpoint' : 'Cloud'} · ${deliveredFormats(profile.export).join(' + ').toUpperCase()} · ${profile.export.lookbackDays} days`,
+            'cloud-outline',
+            <>
+              <SectionHeader compact title="Destination" />
+              <Group compact>
                 {setting(
-                  'Folders',
-                  `${exportFolderStatus(session, profile).name}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
+                  profile.export.destination === 'local'
+                    ? 'On this phone'
+                    : profile.export.destination === 'http'
+                      ? 'HTTPS endpoint'
+                      : 'Cloud service',
+                  profile.export.destination === 'local'
+                    ? ''
+                    : profile.export.destination === 'http'
+                      ? (profile.export.httpUrl ?? '')
+                      : session.server || 'Connect an agent to use cloud exports',
+                  'destination',
+                )}
+              </Group>
+              <SectionHeader compact title="Output" />
+              <Group compact>
+                {setting(
+                  'Schema version',
+                  profile.export.schema.split('.').at(-1) ?? 'v1',
                   'output',
-                  'folders',
+                  'schema',
+                )}
+                {profile.export.destination === 'cloud' ? (
+                  <Row compact testID="export-format-cloud" title="Format" value="JSONL" />
+                ) : (
+                  setting(
+                    'Formats',
+                    deliveredFormats(profile.export).join(' + ').toUpperCase(),
+                    'output',
+                    'formats',
+                  )
                 )}
                 {setting(
-                  'When files exist',
-                  exportWriteModes.find(
-                    (mode) => mode.value === (profile.export.writeMode ?? 'replace'),
-                  )?.title ?? 'Replace matching file',
+                  'Export window',
+                  `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
                   'output',
-                  'writeMode',
+                  'window',
                 )}
-              </>
-            )}
-          </Group>
-          <SectionHeader compact title="Schedule" />
-          <Group compact>
-            {setting(
-              'Cadence',
-              profile.schedule.frequency === 'custom'
-                ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${scheduleIntervalMs(profile.schedule) ? '' : profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
-                : profile.schedule.frequency === 'weekly'
-                  ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
-                  : 'Daily',
-              'schedule',
-              'cadence',
-            )}
-            {!scheduleIntervalMs(profile.schedule) &&
-              setting(
-                'Preferred time',
-                `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
-                'schedule',
-                'time',
+                {profile.export.destination === 'local' && (
+                  <>
+                    {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+                    {setting(
+                      'Folders',
+                      `${exportFolderStatus(session, profile).name}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
+                      'output',
+                      'folders',
+                    )}
+                  </>
+                )}
+                {profile.export.destination !== 'http' && (
+                  <>
+                    {setting(
+                      'When files exist',
+                      exportWriteModes.find(
+                        (mode) => mode.value === (profile.export.writeMode ?? 'replace'),
+                      )?.title ?? 'Replace matching file',
+                      'output',
+                      'writeMode',
+                    )}
+                  </>
+                )}
+              </Group>
+              {inline && (
+                <ProfileExports
+                  session={session}
+                  profile={profile}
+                  disabled={disabled}
+                  destinationOnly
+                />
               )}
-            {!scheduleIntervalMs(profile.schedule) &&
-              setting(
-                'Today Refresh',
-                profile.schedule.todayRefresh
-                  ? `Every ${profile.schedule.refreshHours} hours`
-                  : 'Off',
-                'schedule',
-                'refresh',
+            </>,
+          )}
+          {disclosure(
+            'schedule',
+            'Schedule',
+            profile.schedule.frequency === 'custom'
+              ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}`
+              : profile.schedule.frequency === 'weekly'
+                ? 'Weekly'
+                : `Daily · ${profile.schedule.dailyTimes?.length ? profile.schedule.dailyTimes.join(', ') : `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')}`}`,
+            'time-outline',
+            <>
+              {!inline && <SectionHeader compact title="Schedule" />}
+              {inline && (
+                <ProfileExports
+                  session={session}
+                  profile={profile}
+                  disabled={disabled}
+                  scheduleOnly
+                />
               )}
-          </Group>
-          {!exportFirst && (
+              <Group compact>
+                {setting(
+                  'Cadence',
+                  profile.schedule.frequency === 'custom'
+                    ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${scheduleIntervalMs(profile.schedule) ? '' : profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
+                    : profile.schedule.frequency === 'weekly'
+                      ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
+                      : 'Daily',
+                  'schedule',
+                  'cadence',
+                )}
+                {!scheduleIntervalMs(profile.schedule) &&
+                  setting(
+                    'Preferred time',
+                    profile.schedule.frequency === 'daily' && profile.schedule.dailyTimes?.length
+                      ? `${profile.schedule.dailyTimes.join(', ')} local time`
+                      : `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
+                    'schedule',
+                    'time',
+                  )}
+                {!scheduleIntervalMs(profile.schedule) &&
+                  setting(
+                    'Today Refresh',
+                    profile.schedule.todayRefresh
+                      ? `Every ${profile.schedule.refreshHours} hours`
+                      : 'Off',
+                    'schedule',
+                    'refresh',
+                  )}
+              </Group>
+              {!exportFirst && !inline && (
+                <ProfileExports
+                  key={profile.id}
+                  session={session}
+                  profile={profile}
+                  disabled={disabled}
+                />
+              )}
+            </>,
+          )}
+          {disclosure(
+            'more',
+            'More settings',
+            `Schema ${profile.export.schema.split('.').at(-1) ?? 'v1'} · Manage profile`,
+            'settings-outline',
+            <>
+              {inline && (
+                <>
+                  <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
+                  <ProfileExports
+                    session={session}
+                    profile={profile}
+                    disabled={disabled}
+                    filesOnly
+                  />
+                </>
+              )}
+              {!inline && <SectionHeader compact title="Manage profile" />}
+              <Group compact>
+                <Row
+                  compact
+                  testID="profile-duplicate-profile"
+                  title="Duplicate profile"
+                  disabled={disabled}
+                  onPress={() =>
+                    edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
+                  }
+                />
+                <Row
+                  compact
+                  testID="profile-share-profile-link"
+                  title="Share profile link"
+                  disabled={disabled || qaEnabled}
+                  onPress={() =>
+                    void run(async () => {
+                      const link = profileShareLink(profile);
+                      setShareLink(link);
+                      await Share.share({ message: link, title: profile.name });
+                    })
+                  }
+                />
+                <Row
+                  compact
+                  destructive
+                  testID="profile-delete-profile"
+                  title="Delete profile"
+                  disabled={disabled || state.profiles.length === 1}
+                  onPress={() =>
+                    Alert.alert(
+                      'Delete profile?',
+                      `Remove ${profile.name} and its schedule configuration?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: () =>
+                            void run(async () => {
+                              setDeletingProfile(profile);
+                              const profiles = state.profiles.filter((p) => p.id !== profile.id);
+                              await onChange({ profiles });
+                              if (!inline) router.back();
+                            }),
+                        },
+                      ],
+                    )
+                  }
+                />
+              </Group>
+            </>,
+          )}
+          {inline && (
             <ProfileExports
-              key={profile.id}
               session={session}
               profile={profile}
               disabled={disabled}
+              quick
+              compact
+              onOpenSchedule={() => toggleSection('schedule', true)}
             />
           )}
-          <SectionHeader compact title="Manage profile" />
-          <Group compact>
-            <Row
-              compact
-              testID="profile-duplicate-profile"
-              title="Duplicate profile"
-              disabled={disabled}
-              onPress={() =>
-                edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
-              }
-            />
-            <Row
-              compact
-              testID="profile-share-profile-link"
-              title="Share profile link"
-              disabled={disabled || qaEnabled}
-              onPress={() =>
-                void run(async () => {
-                  const link = profileShareLink(profile);
-                  setShareLink(link);
-                  await Share.share({ message: link, title: profile.name });
-                })
-              }
-            />
-            <Row
-              compact
-              destructive
-              testID="profile-delete-profile"
-              title="Delete profile"
-              disabled={disabled || state.profiles.length === 1}
-              onPress={() =>
-                Alert.alert(
-                  'Delete profile?',
-                  `Remove ${profile.name} and its schedule configuration?`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () =>
-                        void run(async () => {
-                          setDeletingProfile(profile);
-                          const profiles = state.profiles.filter((p) => p.id !== profile.id);
-                          await onChange({ profiles });
-                          router.back();
-                        }),
-                    },
-                  ],
-                )
-              }
-            />
-          </Group>
         </>
       )}
       {draft ? (
@@ -611,10 +793,24 @@ export default function ProfilePanel({
       ) : (
         <ProfileFeed
           profiles={state.profiles}
-          session={session}
           disabled={disabled}
-          isTracking={isTracking}
-          onRecordingChange={onRecordingChange}
+          renderProfile={(item) => (
+            <ProfilePanel
+              inline
+              profileId={item.id}
+              session={session}
+              state={state}
+              types={types}
+              permissions={permissions}
+              onAuthorize={onAuthorize}
+              busy={disabled}
+              isTracking={isTracking}
+              onRecordingChange={onRecordingChange}
+              onChange={onChange}
+              draft={null}
+              onDismiss={onDismiss}
+            />
+          )}
           onNewProfile={() =>
             edit({
               schema: 'myself.md.profile.v1',
@@ -645,6 +841,24 @@ function changedFields(before, after) {
   );
 }
 const styles = StyleSheet.create({
+  profileCard: { padding: 12, borderWidth: 1, borderRadius: 12, borderCurve: 'continuous', gap: 8 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  profileIdentity: { flex: 1, minHeight: 52, justifyContent: 'center', gap: 4, padding: 4 },
+  moreButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  disclosure: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+  },
+  disclosureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 64,
+    padding: 12,
+  },
+  disclosureBody: { padding: 8, gap: 12 },
   reviewActions: { gap: 4 },
   settingRow: {
     flexDirection: 'row',

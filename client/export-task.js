@@ -16,6 +16,7 @@ import { loadProfiles } from './profiles.js';
 import { localCalendar } from './calendar.js';
 import { beginExport, recordArtifact, finishExport } from './history.js';
 import { exportProfileDay } from './profile-export.js';
+import { requireCloudAuthorization } from './destinations.js';
 const task = 'profile-file-exports';
 const db = phoneDatabase();
 db.execSync(
@@ -80,6 +81,7 @@ export async function setScheduleEnabled(device, profile, enabled) {
     const session = await loadSession();
     if (!session?.server || session.deviceId !== device)
       throw new Error('Connect this phone to enable cloud export notifications.');
+    await requireCloudAuthorization(session, profile);
     if (Platform.OS === 'android')
       await Notifications.setNotificationChannelAsync('exports', {
         name: 'Scheduled exports',
@@ -274,7 +276,7 @@ export async function stopAccountExports() {
   }
   throw new Error('An export is still stopping. Retry account cleanup shortly.');
 }
-/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string)=>void} progress */
+/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress */
 export async function exportNow(session, profile, progress) {
   if (running) throw new Error('An export is already running.');
   running = true;
@@ -295,10 +297,13 @@ export async function exportNow(session, profile, progress) {
   let historyId = '';
   let produced = false;
   try {
+    await requireCloudAuthorization(session, profile);
+    if (!valid()) throw new Error('Export cancelled: profile changed.');
     historyId = beginExport(session, profile, 'manual', {
       start: localCalendar.instant(dates[0] ?? day, 0, 0),
       end: profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0),
     });
+    progress('Preparing export…', 0);
     await reserveExport(session, historyId, {
       profileId: profile.id,
       days: dates,
@@ -318,7 +323,7 @@ export async function exportNow(session, profile, progress) {
           end: d === day ? stamp : localCalendar.instant(addDays(d, 1), 0, 0),
         },
         valid,
-        progress,
+        (message) => progress(message, Math.floor((dates.indexOf(d) / dates.length) * 100)),
         (artifact) => {
           produced = true;
           recordArtifact(session, historyId, artifact);
@@ -327,6 +332,10 @@ export async function exportNow(session, profile, progress) {
       );
       state.files.push(...result.files);
       failedSources += result.failedSources;
+      progress(
+        `Saved ${d}`,
+        Math.min(99, Math.floor(((dates.indexOf(d) + 1) / dates.length) * 100)),
+      );
     }
     state.message = `Exported ${dates.length} days.${failedSources ? ` Partial export: ${failedSources} source failures across these days. See file metadata for details.` : ''}`;
     if (!valid()) throw new Error('Export cancelled: profile changed.');
@@ -334,6 +343,7 @@ export async function exportNow(session, profile, progress) {
     latest.files = state.files;
     latest.message = state.message;
     store(session.deviceId, profile.id, latest);
+    progress('Finishing export…', 99);
     await settleExport(session, historyId, true);
     finishExport(session, historyId, 'complete');
     return { days: dates.length, failedSources };
@@ -383,10 +393,11 @@ export async function runScheduledExports(profileId, requested) {
             scheduleIntervalMs(profile.schedule) ? { ...occurrence, fireDate: now } : occurrence,
             profile.export.lookbackDays,
             localCalendar,
+            profile.export.includeToday,
           ).map((d) => ({
             day: d.day,
             start: d.start,
-            end: occurrence.kind === 'today-refresh' ? now : d.end,
+            end: d.day === localCalendar.day(now) ? now : d.end,
           })),
         };
         store(session.deviceId, profile.id, state);
@@ -413,6 +424,8 @@ export async function runScheduledExports(profileId, requested) {
       };
       let produced = false;
       try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Check approval before each scheduled profile.
+        await requireCloudAuthorization(session, job.profile);
         // Reuse the occurrence ID across OS restarts and retries.
         // oxlint-disable-next-line eslint/no-await-in-loop
         await reserveExport(session, historyId, {
@@ -431,7 +444,7 @@ export async function runScheduledExports(profileId, requested) {
         while (job.days.length && Date.now() < deadline) {
           const day = job.days[0];
           if (!day) break;
-          // Checkpoint each completed daily replacement. A interrupted day is safely rebuilt.
+          // Checkpoint each completed day after delivery.
           // oxlint-disable-next-line eslint/no-await-in-loop
           const result = await exportProfileDay(
             session,
@@ -533,8 +546,9 @@ export async function openScheduledExport(input) {
         scheduleIntervalMs(profile.schedule) ? { ...occurrence, fireDate: now } : occurrence,
         profile.export.lookbackDays,
         localCalendar,
+        profile.export.includeToday,
       ).map((day) =>
-        Object.assign(day, { end: occurrence.kind === 'today-refresh' ? now : day.end }),
+        Object.assign(day, { end: day.day === localCalendar.day(now) ? now : day.end }),
       ),
     };
   }

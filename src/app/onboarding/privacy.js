@@ -8,7 +8,7 @@ export default function Privacy() {
     <OnboardingFrame
       testID="onboarding-privacy-screen"
       title="You choose what to share."
-      body="You decide what to export and who gets access. Nothing is shared during setup."
+      body="You decide what to export and who gets access. Your source data stays private during setup."
       footer={
         <OnboardingButton
           testID="onboarding-privacy-continue"

@@ -1,4 +1,4 @@
-/** @typedef {{frequency:'daily'|'weekly'|'custom',interval:number,unit:'minute'|'hour'|'day'|'week'|'month',anchorDate:string|null,hour:number,minute:number,weekday:number,todayRefresh:boolean,refreshHours:3|6|12}} ScheduleConfig */
+/** @typedef {{frequency:'daily'|'weekly'|'custom',interval:number,unit:'minute'|'hour'|'day'|'week'|'month',anchorDate:string|null,hour:number,minute:number,weekday:number,todayRefresh:boolean,refreshHours:number,dailyTimes?:string[]}} ScheduleConfig */
 /** @typedef {{enabled:boolean,enabledAt:string|null,lastCompleted:string|null,lastRefresh:string|null}} ScheduleProgress */
 /** @typedef {{day:(instant:string)=>string,instant:(day:string,hour:number,minute:number)=>string}} Calendar */
 /** @typedef {{kind:'completed-day'|'today-refresh',fireDate:string}} Occurrence */
@@ -22,8 +22,23 @@ export function parseSchedule(value) {
       throw new Error(`Invalid schedule ${key}.`);
     return n;
   };
-  const refreshHours = integer('refreshHours', 3, 3, 12);
-  if (![3, 6, 12].includes(refreshHours)) throw new Error('Refresh every 3, 6 or 12 hours.');
+  const refreshHours = integer('refreshHours', 3, 1, 24);
+  const dailyTimes = s.dailyTimes ?? [];
+  if (
+    !Array.isArray(dailyTimes) ||
+    dailyTimes.length > 1440 ||
+    dailyTimes.some((time) => typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
+  )
+    throw new Error('Enter daily times as HH:mm, from 00:00 to 23:59.');
+  const selectedTimes = new Set(/** @type {string[]} */ (dailyTimes));
+  // Enumerating minute slots gives canonical order without newer runtime APIs.
+  const orderedTimes = selectedTimes.size
+    ? Array.from(
+        { length: 1440 },
+        (_, slot) =>
+          `${String(Math.floor(slot / 60)).padStart(2, '0')}:${String(slot % 60).padStart(2, '0')}`,
+      ).filter((time) => selectedTimes.has(time))
+    : [];
   if (s.todayRefresh !== undefined && typeof s.todayRefresh !== 'boolean')
     throw new Error('Invalid Today Refresh setting.');
   return {
@@ -35,7 +50,8 @@ export function parseSchedule(value) {
     minute: integer('minute', 0, 0, 59),
     weekday: integer('weekday', 1, 1, 7),
     todayRefresh: s.todayRefresh === true,
-    refreshHours: /** @type {3|6|12} */ (refreshHours),
+    refreshHours,
+    ...(orderedTimes.length ? { dailyTimes: orderedTimes } : {}),
   };
 }
 /** Elapsed-time cadences refresh today's file; calendar cadences export completed days.
@@ -113,7 +129,14 @@ function candidates(s, progress, now, calendar) {
   return [-step, 0, step]
     .map((n) => addDays(day, n))
     .filter((d) => s.frequency !== 'custom' || d >= anchor)
-    .map((d) => calendar.instant(d, s.hour, s.minute));
+    .flatMap((d) =>
+      s.frequency === 'daily' && s.dailyTimes?.length
+        ? s.dailyTimes.map((time) => {
+            const [hour = 0, minute = 0] = time.split(':').map(Number);
+            return calendar.instant(d, hour, minute);
+          })
+        : [calendar.instant(d, s.hour, s.minute)],
+    );
 }
 /** Only the latest unsatisfied slot runs; pre-opt-in occurrences never become due.
  * @param {ScheduleConfig} config @param {ScheduleProgress} progress @param {string} now @param {Calendar} calendar @returns {Occurrence[]} */
@@ -167,13 +190,15 @@ export function nextOccurrence(config, progress, now, calendar) {
   return dates.reduce((first, day) => (!first || day < first ? day : first), '') || null;
 }
 /** Freeze each day to an exact UTC interval at the client boundary, including DST.
- * @param {Occurrence} occurrence @param {number} lookbackDays @param {Calendar} calendar */
-export function occurrenceDays(occurrence, lookbackDays, calendar) {
+ * @param {Occurrence} occurrence @param {number} lookbackDays @param {Calendar} calendar @param {boolean} [includeToday] */
+export function occurrenceDays(occurrence, lookbackDays, calendar, includeToday = false) {
   const fireDay = calendar.day(occurrence.fireDate);
   return (
     occurrence.kind === 'today-refresh'
       ? [fireDay]
-      : Array.from({ length: lookbackDays }, (_, i) => addDays(fireDay, i - lookbackDays))
+      : Array.from({ length: lookbackDays + (includeToday ? 1 : 0) }, (_, i) =>
+          addDays(fireDay, i - lookbackDays),
+        )
   ).map((day) => ({
     day,
     start: calendar.instant(day, 0, 0),

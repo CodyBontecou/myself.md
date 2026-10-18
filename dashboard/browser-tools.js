@@ -1,3 +1,4 @@
+import { initializeWebAnalytics } from './analytics.js';
 import { createMyselfClient } from './public-client.js';
 import { registerPublicTools } from './webmcp.js';
 const context =
@@ -8,3 +9,5 @@ const context =
 void registerPublicTools(context, createMyselfClient({ origin: location.origin })).catch(() => {
   console.warn('Public browser tools could not be registered. Use /mcp or /docs.');
 });
+
+initializeWebAnalytics();

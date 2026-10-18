@@ -1,10 +1,13 @@
+import { profileSyncBase, saveProfileSyncBase, commitSyncedProfiles } from './profile-sync.js';
+import { mergeProfileStates, sameProfileValue } from '../core/profile-sync.js';
+import { trackAnalytics } from './analytics.js';
 import { exportFolderStatus } from './export-folder.js';
 import { showToast } from '../src/components/Toast.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
 import { Button, Text } from './Terminal.js';
@@ -13,7 +16,7 @@ import { api } from './session.js';
 import { catalog, readPage } from './data.js';
 import { requestSourceAccess } from './source-access.js';
 import { startTracking, stopTracking, locationStatus } from './location-task.js';
-import { cloudAccess } from './destinations.js';
+import { reviewLocationCapture } from './location-capture.js';
 import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
@@ -61,6 +64,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     /** @type {{id:string,profile:import('../core/profiles.js').ProfileDraft}|null} */ (null),
   );
   const reviewing = useRef(false);
+  const resolvingSync = useRef(false);
   const receivedProfileId = useRef('');
   useEffect(() => {
     if (!session.server) return;
@@ -124,10 +128,12 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     return {
       ...raw,
+      locationCapture: { version: 1 },
       diagnostics,
       profiles: profileState.current.profiles.map((profile) =>
         Object.assign({}, profile, { localExportFolder: exportFolderStatus(session, profile) }),
       ),
+      profileSync: { base: profileSyncBase(session) },
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
       domains: raw.domains.map((d) =>
@@ -205,6 +211,48 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       clearInterval(timer);
     };
   }, [refreshLocation, session.owner]);
+  const acceptProfileSync = useCallback(
+    /** @param {{state:import('../core/profiles.js').ProfileState,conflicts:string[]}|undefined} remote @param {import('../core/profiles.js').ProfileState} sent */
+    (remote, sent) => {
+      if (!remote || !profileState.current || resolvingSync.current) return;
+      const merged = mergeProfileStates(sent, profileState.current, remote.state);
+      /** @param {import('../core/profiles.js').ProfileState} next */
+      const apply = (next) => {
+        if (!sameProfileValue(profileState.current, next)) {
+          version.current++;
+          commitSyncedProfiles(session, next, remote.state);
+          profileState.current = next;
+          setProfiles(next);
+          void reconcileExports().catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));
+        } else saveProfileSyncBase(session, remote.state);
+      };
+      if (remote.conflicts.length || merged.conflicts.length) {
+        resolvingSync.current = true;
+        Alert.alert(
+          'Profiles changed in both clients',
+          'Web and phone edits overlap. Choose which profiles to keep. Your phone edits have not been replaced.',
+          [
+            {
+              text: 'Use web profiles',
+              onPress: () => {
+                apply(remote.state);
+                resolvingSync.current = false;
+              },
+            },
+            {
+              text: 'Keep phone profiles',
+              onPress: () => {
+                saveProfileSyncBase(session, remote.state);
+                resolvingSync.current = false;
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      } else apply(merged.state);
+    },
+    [session],
+  );
   const publish = useCallback(async () => {
     const info = await phoneCatalog();
     setNotes(
@@ -216,11 +264,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       ),
     );
     if (!session.server) return;
-    await api(session, `/api/phones/${session.deviceId}/poll`, {
-      method: 'POST',
-      body: JSON.stringify({ ...info, dispatch: false }),
-    });
-  }, [session, phoneCatalog]);
+    const response =
+      /** @type {{profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]}}} */ (
+        await api(session, `/api/phones/${session.deviceId}/poll`, {
+          method: 'POST',
+          body: JSON.stringify({ ...info, dispatch: false }),
+        })
+      );
+    acceptProfileSync(response.profileSync, { profiles: info.profiles });
+  }, [session, phoneCatalog, acceptProfileSync]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active')
@@ -249,7 +301,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
@@ -257,6 +309,16 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           );
         if (active) {
           acceptAllowance(response.allowance);
+          acceptProfileSync(response.profileSync, { profiles: info.profiles });
+          await reviewLocationCapture(
+            session,
+            response.locationCapture,
+            async () => {
+              await refreshLocation();
+              setMessage('Recorded one owner-approved Location point on this phone.');
+            },
+            () => active,
+          );
           setNotes(
             Object.fromEntries(
               info.domains.map((d) => [
@@ -311,7 +373,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [session, phoneCatalog, publish]);
+  }, [session, phoneCatalog, publish, acceptProfileSync, refreshLocation]);
   /** @param {()=>Promise<void>} action */
   async function run(action) {
     setBusy(true);
@@ -357,22 +419,10 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   /** @param {import('../core/profiles.js').ProfileState} next */
   async function changeProfiles(next) {
     next = parseProfileState(next);
-    for (const previous of profiles?.profiles ?? []) {
-      const changed = next.profiles.find((p) => p.id === previous.id);
-      if (
-        session.server &&
-        previous.export.destination === 'cloud' &&
-        (!changed ||
-          JSON.stringify(parseProfile(changed)) !== JSON.stringify(parseProfile(previous)))
-      ) {
-        // Revoke stored-data sharing before accepting changed profile permissions.
-        // oxlint-disable-next-line eslint/no-await-in-loop
-        await cloudAccess(session, previous, false);
-      }
-    }
     version.current++;
     saveAgentProfiles(session, next);
     recordDebug(session, 'profile', 'succeeded');
+    trackAnalytics('profile_saved');
     profileState.current = next;
     setProfiles(next);
     void reconcileExports().catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));

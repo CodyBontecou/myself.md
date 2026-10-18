@@ -1,6 +1,7 @@
 import { exportWriteModes } from '../core/export-files.js';
 import { scheduleIntervalMs } from '../core/schedules.js';
 import LocalExportFolder from './LocalExportFolder.js';
+import SchemaViewer from './SchemaViewer.js';
 import { useState } from 'react';
 import { exportSchemas } from '../core/export-schemas.js';
 import { useTheme } from '../src/lib/theme';
@@ -13,12 +14,14 @@ const fieldIds = {
   JSON: 'export-format-json',
   JSONL: 'export-format-jsonl',
   'Completed days (1–30)': 'export-lookback-input',
-  'Include today in manual exports': 'export-include-today',
+  'Include today in exports': 'export-include-today',
   'Separate folders for JSON and JSONL': 'export-format-folders',
   'Daily filename template': 'export-filename-input',
   'Local hour (0–23)': 'schedule-hour-input',
   'Minute (0–59)': 'schedule-minute-input',
   'Today Refresh': 'schedule-today-refresh',
+  'Daily times (HH:mm, separated by commas)': 'schedule-daily-times-input',
+  'Refresh every (1–24 hours)': 'schedule-refresh-hours-input',
   'HTTPS endpoint': 'export-http-url-input',
   'Weekday (1 Monday – 7 Sunday)': 'schedule-weekday-input',
   'Every (1–365)': 'schedule-interval-input',
@@ -49,12 +52,14 @@ export default function ExportSettingsEditor({
         JSON: 'formats',
         JSONL: 'formats',
         'Completed days (1–30)': 'window',
-        'Include today in manual exports': 'window',
+        'Include today in exports': 'window',
         'Separate folders for JSON and JSONL': 'folders',
         'Daily filename template': 'filename',
         'Local hour (0–23)': 'time',
         'Minute (0–59)': 'time',
         'Today Refresh': 'refresh',
+        'Daily times (HH:mm, separated by commas)': 'time',
+        'Refresh every (1–24 hours)': 'refresh',
       }[label] ?? 'cadence';
     return field === group;
   }
@@ -179,17 +184,7 @@ export default function ExportSettingsEditor({
                     <View key={version.id} style={styles.field}>
                       <Copy variant="caption">{version.description}</Copy>
                       <Copy variant="caption">{version.changes.join('\n')}</Copy>
-                      <Copy variant="caption" selectable>
-                        {JSON.stringify(
-                          {
-                            definition: version.definition,
-                            jsonlRecordDefinition: version.jsonlRecordDefinition,
-                            example: version.example,
-                          },
-                          null,
-                          2,
-                        )}
-                      </Copy>
+                      <SchemaViewer version={version} />
                     </View>
                   ))}
             </>
@@ -197,7 +192,8 @@ export default function ExportSettingsEditor({
           {settings.destination === 'cloud'
             ? visible('JSON') && (
                 <Copy variant="caption" muted testID="export-format-cloud">
-                  Cloud stores one JSONL file per day.
+                  Cloud stores JSONL files grouped by day. Your file choice controls repeated
+                  exports.
                 </Copy>
               )
             : ['json', 'jsonl'].map((format) =>
@@ -224,10 +220,10 @@ export default function ExportSettingsEditor({
             (v) => onSettings({ ...settings, lookbackDays: Number(v) }),
             true,
           )}
-          {toggle('Include today in manual exports', settings.includeToday, (v) =>
+          {toggle('Include today in exports', settings.includeToday, (v) =>
             onSettings({ ...settings, includeToday: v }),
           )}
-          {settings.destination === 'local' && (
+          {settings.destination !== 'http' && (
             <>
               {(!field || field === 'writeMode') && (
                 <Group compact>
@@ -236,7 +232,9 @@ export default function ExportSettingsEditor({
                       key={mode.value}
                       testID={`export-write-mode-${mode.value}`}
                       title={mode.title}
-                      subtitle={mode.description}
+                      subtitle={
+                        settings.destination === 'cloud' ? mode.cloudDescription : mode.description
+                      }
                       selected={(settings.writeMode ?? 'replace') === mode.value}
                       disabled={disabled}
                       onPress={() =>
@@ -252,7 +250,18 @@ export default function ExportSettingsEditor({
                   ))}
                 </Group>
               )}
-
+            </>
+          )}
+          {settings.destination === 'cloud' && (!field || field === 'writeMode') && (
+            <Copy variant="caption" muted>
+              Append or replace the latest file for the same profile, day and schema. New file keeps
+              each run as a separate snapshot. Older snapshots stay available. Appending full-day
+              exports may duplicate records; a combined file is limited to 16 MiB and 50,000
+              records.
+            </Copy>
+          )}
+          {settings.destination === 'local' && (
+            <>
               {(!field || field === 'folders') && folderContext && (
                 <LocalExportFolder
                   context={folderContext}
@@ -280,6 +289,13 @@ export default function ExportSettingsEditor({
       {(!section || section === 'schedule') && (
         <>
           {!section && <SectionHeader compact title="Schedule" />}
+          {!field && (
+            <Copy variant="caption" muted>
+              {settings.destination !== 'http'
+                ? `Each automatic export uses your Output setting: ${exportWriteModes.find((mode) => mode.value === (settings.writeMode ?? 'replace'))?.title}.`
+                : 'Each run uploads a complete export. Your HTTPS endpoint controls whether files are appended, replaced or kept separately.'}
+            </Copy>
+          )}
           {(!field || field === 'cadence') && (
             <Group compact>
               {['daily', 'weekly', 'custom'].map((frequency) => (
@@ -308,18 +324,40 @@ export default function ExportSettingsEditor({
               ))}
             </Group>
           )}
-          {input(
-            'Local hour (0–23)',
-            String(schedule.hour),
-            (v) => onSchedule({ ...schedule, hour: Number(v) }),
-            true,
+          {schedule.frequency === 'daily' && (
+            <>
+              {input(
+                'Daily times (HH:mm, separated by commas)',
+                (schedule.dailyTimes ?? []).join(', '),
+                (value) =>
+                  onSchedule({
+                    ...schedule,
+                    dailyTimes: value ? value.split(',').map((time) => time.trim()) : [],
+                  }),
+              )}
+              {(!field || field === 'time') && (
+                <Copy variant="caption" muted>
+                  Add as many different times as you need, for example 08:00, 12:30, 18:00. Leave
+                  blank to use the time below. Include today in Output to capture today’s data at
+                  each run.
+                </Copy>
+              )}
+            </>
           )}
-          {input(
-            'Minute (0–59)',
-            String(schedule.minute),
-            (v) => onSchedule({ ...schedule, minute: Number(v) }),
-            true,
-          )}
+          {!(schedule.frequency === 'daily' && schedule.dailyTimes?.length) &&
+            input(
+              'Local hour (0–23)',
+              String(schedule.hour),
+              (v) => onSchedule({ ...schedule, hour: Number(v) }),
+              true,
+            )}
+          {!(schedule.frequency === 'daily' && schedule.dailyTimes?.length) &&
+            input(
+              'Minute (0–59)',
+              String(schedule.minute),
+              (v) => onSchedule({ ...schedule, minute: Number(v) }),
+              true,
+            )}
           {schedule.frequency === 'weekly'
             ? input(
                 'Weekday (1 Monday – 7 Sunday)',
@@ -374,20 +412,14 @@ export default function ExportSettingsEditor({
           {toggle('Today Refresh', schedule.todayRefresh, (v) =>
             onSchedule({ ...schedule, todayRefresh: v }),
           )}
-          {!elapsed && schedule.todayRefresh && (!field || field === 'refresh')
-            ? [3, 6, 12].map((hours) => (
-                <Choice
-                  key={hours}
-                  testID={`schedule-refresh-${hours}`}
-                  selected={schedule.refreshHours === hours}
-                  title={`Every ${hours} hours`}
-                  disabled={disabled}
-                  onPress={() =>
-                    onSchedule({ ...schedule, refreshHours: /** @type {3|6|12} */ (hours) })
-                  }
-                />
-              ))
-            : null}
+          {!elapsed &&
+            schedule.todayRefresh &&
+            input(
+              'Refresh every (1–24 hours)',
+              String(schedule.refreshHours),
+              (value) => onSchedule({ ...schedule, refreshHours: Number(value) }),
+              true,
+            )}
           {elapsed && (
             <Copy variant="caption" muted testID="schedule-interval-timing">
               Refreshes today&apos;s file at this interval while the app is open, starting when
@@ -397,8 +429,11 @@ export default function ExportSettingsEditor({
           )}
           {!elapsed && (!field || field === 'refresh') && (
             <Copy variant="caption" muted>
-              Today Refresh rewrites the current day independently of completed-day runs. Save, then
-              enable automatic exports on this profile.
+              Today Refresh exports the current day in addition to scheduled runs. For more frequent
+              exports, choose a custom minute or hour interval. Local exports use your Output file
+              choice; appending repeated full-day snapshots may duplicate records. Background runs
+              depend on your phone; missed times combine into one export. Save, then enable
+              automatic exports on this profile.
             </Copy>
           )}
         </>

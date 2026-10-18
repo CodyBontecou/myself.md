@@ -14,13 +14,14 @@ import { categories } from './health-types.js';
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
 /** @typedef {{kind:'location-controls',key:string}} LocationControlsRow */
 /** @typedef {{kind:'domain',domain:import('../core/data.js').Domain,key:string,expanded:boolean}} DomainRow */
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,onOpenLocation?:()=>void,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
 export default function ProfileDataEditor({
   types,
   permissions,
   isTracking,
   onRecordingChange,
   onAuthorize,
+  onOpenLocation,
   selection,
   onSelection,
   disabled,
@@ -160,6 +161,15 @@ export default function ProfileDataEditor({
             onPress={() => void authorize('location')}
             disabled={locked}
           />
+          {onOpenLocation && (
+            <Row
+              compact
+              testID="selection-location-capture"
+              title="Save location point"
+              onPress={onOpenLocation}
+              disabled={locked}
+            />
+          )}
         </View>
       );
     }

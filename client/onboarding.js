@@ -1,3 +1,4 @@
+import { trackAnalytics } from './analytics.js';
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { qaEnabled, qaSnapshot, updateQa } from './qa-runtime.js';
 import Storage from 'expo-sqlite/kv-store';
@@ -30,6 +31,7 @@ export function OnboardingProvider({ children }) {
     try {
       if (qaEnabled) updateQa({ onboarding: true });
       else Storage.setItemSync(key, 'complete');
+      trackAnalytics('onboarding_completed');
       setDestination(target);
       setStatus({ complete: true, error: '' });
     } catch {

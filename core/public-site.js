@@ -1,3 +1,4 @@
+import { exportSchemas } from './export-schemas.js';
 import { serviceTerms } from './terms.js';
 import { freeExports, lifetimePurchaseGuide } from './billing.js';
 import { privacyPolicy } from './privacy.js';
@@ -12,7 +13,7 @@ export const publicNavigation = [
   { label: 'Home', href: '/' },
   { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: '/docs' },
-  { label: 'Pricing', href: '/#pricing' },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'FAQ', href: '/faq' },
   { label: 'About', href: '/about' },
   { label: 'Contact', href: '/contact' },
@@ -293,6 +294,35 @@ Public discovery reads use \`/v1\`, such as \`/v1/health\` and \`/v1/config\`. U
 Deprecations are announced here at least 90 days before removal. Affected routes return \`Deprecation\` and \`Sunset\` headers. No v1 route is currently deprecated. MCP negotiates its protocol version separately and uses the live \`tools/list\` schemas.
 
 The [OpenAPI specification](/openapi.json) covers public discovery and REST phone queries. The [agent catalog](/.well-known/ard.json) links to the [MCP server card](/mcp/server-card) for connection metadata. These documents expose no private records; discover current private operations through authenticated \`tools/list\`.
+
+${exportSchemas()
+  .versions.map(
+    (version) => `## Export schema ${version.version}
+
+${version.description}
+
+${version.changes.join(' ')} Saved profiles keep their selected version. JSON exports contain a schema identifier and records array; JSONL exports contain one record per line. Empty objects in these definitions allow any JSON value. The example uses fictional data.
+
+JSON export definition:
+
+\`\`\`json
+${JSON.stringify(version.definition, null, 2)}
+\`\`\`
+
+JSONL record definition:
+
+\`\`\`json
+${JSON.stringify(version.jsonlRecordDefinition, null, 2)}
+\`\`\`
+
+Example JSON export:
+
+\`\`\`json
+${JSON.stringify(version.example, null, 2)}
+\`\`\`
+`,
+  )
+  .join('\n')}
 
 ## Privacy and help
 

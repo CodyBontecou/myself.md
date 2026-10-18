@@ -1,3 +1,4 @@
+import { AnalyticsObserver } from '../../client/AnalyticsControls.js';
 import PhoneNotifications from '../../client/PhoneNotifications.js';
 import { ToastProvider } from '../components/Toast.js';
 import { useSyncExternalStore } from 'react';
@@ -42,6 +43,7 @@ function RootStack() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <ToastProvider>
           <Provider>
+            {!qaEnabled && <AnalyticsObserver />}
             {!qaEnabled && <BillingPaywalls />}
             {!qaEnabled && <PhoneNotifications />}
             <Stack
@@ -71,6 +73,7 @@ function RootStack() {
               <Stack.Screen name="cloud-storage" options={{ title: 'Cloud storage' }} />
               <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
               <Stack.Screen name="account" options={{ title: 'Account' }} />
+              <Stack.Screen name="connected-logins" options={{ title: 'Connected logins' }} />
               <Stack.Screen name="login" options={{ title: 'Sign in' }} />
               <Stack.Screen name="claim-access" options={{ title: 'Existing purchases' }} />
               <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />

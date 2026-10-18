@@ -41,7 +41,7 @@ export function createCloudService({
       {
         title: 'List shared cloud exports',
         description:
-          'List your stored exports explicitly shared with MCP. Works while your phone is offline.',
+          'List stored exports shared with MCP under the phone profile’s last confirmed Health, Screen time and Location Agent permissions. Includes those permissions; all-off or unsynced profiles are hidden. Agent permissions are the sole profile access gate; no separate cloud-sharing switch is required. Works while your phone is offline after permission synchronization.',
         inputSchema: z.object({}),
         annotations: {
           title: 'List shared cloud exports',
@@ -58,7 +58,7 @@ export function createCloudService({
       {
         title: 'Read shared cloud export',
         description:
-          'Read a bounded page of your explicitly shared stored JSON/JSONL records. Records remain unchanged, but each successful call consumes an export/query allowance and records agent access in activity history. Repeated calls can consume additional allowance. Cloud profile data selections and grants still apply; exportId and cursor come from cloud tools.',
+          'Read a bounded page of shared stored JSON/JSONL records, filtered by current cloud type selections and the phone profile’s last confirmed per-source Agent permissions. Turning a source off blocks its records in existing files and subsequent pages; the same permission gate controls both phone reads and stored exports. Unsynced and all-off profiles deny reads. Records remain unchanged, but each successful call consumes an export/query allowance and records agent access in activity history. Repeated calls can consume additional allowance. exportId and cursor come from cloud tools.',
         inputSchema: z.object({
           exportId: z
             .string()

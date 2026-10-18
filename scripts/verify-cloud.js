@@ -1,5 +1,7 @@
+import { verifyCloudWrites } from './cloud-write-fixture.js';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +12,11 @@ process.env.DATA_DIR = directory;
 const { CloudStore } = await import('../server/cloud-store.js');
 const path = join(directory, 'exports.sqlite'),
   key = randomBytes(32);
+const legacy = new DatabaseSync(path);
+legacy.exec(
+  'CREATE TABLE cloud_access(subject TEXT,device TEXT,profile TEXT,shared INTEGER,selection TEXT,PRIMARY KEY(subject,device,profile))',
+);
+legacy.close();
 let store = new CloudStore(path, key);
 const profile = {
   ...parseProfile({
@@ -68,8 +75,28 @@ try {
     'A stale background deadline cannot shorten foreground renewal',
   );
   assert.equal(store.credential(token).subject, 'alice');
-  assert.equal(store.permission('alice', 'device', profile.id).shared, true);
+  assert.equal(
+    store.permission('alice', 'device', profile.id).shared,
+    false,
+    'Legacy sharing cannot create a grant',
+  );
   store.access('alice', 'device', profile, false);
+  store.access('alice', 'device', profile, true);
+  store.syncAgentPermissions('alice', 'device', [{ ...profile, agentAccess: true }]);
+  store.authorize('alice', 'device', profile);
+  assert.equal(
+    store.permission('alice', 'device', profile.id).shared,
+    true,
+    'Upload credential creation preserves confirmed Agent permissions',
+  );
+  store.access('alice', 'device', profile, false);
+  store.authorize('alice', 'device', profile);
+  assert.equal(
+    store.permission('alice', 'device', profile.id).shared,
+    true,
+    'A legacy sharing-off value cannot block confirmed Agent permissions',
+  );
+  store.syncAgentPermissions('alice', 'device', [{ ...profile, agentAccess: false }]);
   const revoked = store.authorize('alice', 'device', { ...profile, id: 'rotated' });
   store.authorize('alice', 'device', { ...profile, id: 'rotated' });
   assert.throws(
@@ -119,8 +146,143 @@ try {
   assert.equal(store.list('alice', true).length, 0);
   await assert.rejects(async () => await store.page('alice', id, 0, 50, true));
   store.access('alice', 'device', profile, true);
+  assert.equal(
+    store.list('alice', true).length,
+    0,
+    'Legacy cloud sharing alone cannot authorize records',
+  );
+  await assert.rejects(() => store.page('alice', id, 0, 50, true), /not found/);
+  const approved = {
+    ...profile,
+    agentAccess: true,
+    agentPermissions: { health: true, time: false, location: false, logs: false },
+  };
+  store.syncAgentPermissions('alice', 'device', [approved]);
   assert.equal(store.list('alice', true).length, 1);
   assert.deepEqual((await store.page('alice', id, 0, 50, true)).records, records);
+  const mixed = {
+    ...profile,
+    id: 'mixed',
+    name: 'Mixed source export',
+    selection: {
+      health: ['native:sleep'],
+      time: ['native:applications'],
+      location: ['native:points'],
+    },
+  };
+  const mixedRecords = /** @type {const} */ (['health', 'time', 'location']).map((domain) =>
+    Object.assign({}, records[0], { domain, type: (mixed.selection[domain][0] ?? '').slice(7) }),
+  );
+  store.access('alice', 'device', mixed, true);
+  const mixedId = store.begin('alice', 'device', mixed.id, {
+    ...metadata,
+    profile: mixed,
+    manifest: { profileId: mixed.id, recordCount: 3 },
+  }).id;
+  await store.commit(
+    'alice',
+    'device',
+    mixed.id,
+    mixedId,
+    Buffer.from(mixedRecords.map((record) => JSON.stringify(record)).join('\n') + '\n'),
+  );
+  const mixedBytes = await store.bytes(store.row('alice', mixedId));
+  const mixedApproved = {
+    ...mixed,
+    agentAccess: true,
+    agentPermissions: { health: true, time: true, location: true, logs: false },
+  };
+  store.syncAgentPermissions('alice', 'device', [approved, mixedApproved]);
+  const cursorPage = await store.page('alice', mixedId, 0, 1, true);
+  assert.equal(cursorPage.nextCursor, '1');
+  await ['health', 'time', 'location'].reduce(async (previous, domain) => {
+    await previous;
+    store.syncAgentPermissions('alice', 'device', [
+      approved,
+      {
+        ...mixedApproved,
+        agentPermissions: { ...mixedApproved.agentPermissions, [domain]: false },
+      },
+    ]);
+    const page = await store.page('alice', mixedId, 0, 50, true);
+    assert.equal(page.records.length, 2);
+    assert.ok(
+      page.records.every((record) => record.domain !== domain),
+      `${domain} revocation filters an already stored mixed file`,
+    );
+    assert.equal(
+      (await store.page('alice', id, 0, 50, true)).records.length,
+      1,
+      'Other profiles remain authorized',
+    );
+    assert.equal(
+      (await store.page('alice', mixedId, 0, 50)).records.length,
+      3,
+      'Owner access is preserved',
+    );
+    assert.deepEqual(
+      await store.bytes(store.row('alice', mixedId)),
+      mixedBytes,
+      'Stored bytes do not change',
+    );
+  }, Promise.resolve());
+  store.syncAgentPermissions('alice', 'device', [
+    approved,
+    { ...mixedApproved, agentAccess: false },
+  ]);
+  await assert.rejects(
+    () => store.page('alice', mixedId, Number(cursorPage.nextCursor), 1, true),
+    /not found/,
+  );
+  assert.ok(
+    !store.list('alice', true).some((file) => file.id === mixedId),
+    'All-off profile hidden from agents',
+  );
+  assert.throws(() => store.setSharing('alice', 'device', mixed.id, true), /Use Agent permissions/);
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Retired sharing controls cannot override source denials',
+  );
+  store.db.close();
+  store = new CloudStore(path, key);
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Source revocation survives a server restart',
+  );
+  store.syncAgentPermissions('bob', 'device', [mixedApproved]);
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Another account cannot change permissions',
+  );
+  store.syncAgentPermissions('alice', 'other-device', [mixedApproved]);
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Another device cannot change permissions',
+  );
+  store.syncAgentPermissions('alice', 'device', [approved, mixedApproved]);
+  const readBytes = store.bytes.bind(store);
+  store.bytes = async (row) => {
+    const readContent = await readBytes(row);
+    store.syncAgentPermissions('alice', 'device', [approved]);
+    return readContent;
+  };
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Revocation during object I/O is rechecked',
+  );
+  store.bytes = readBytes;
+  store.access('alice', 'device', mixed, true);
+  await assert.rejects(
+    () => store.page('alice', mixedId, 0, 1, true),
+    /not found/,
+    'Changing cloud selection does not reset denial',
+  );
+  await store.delete('alice', mixedId);
   const encrypted = store.row('alice', id).content;
   assert.ok(encrypted);
   assert.ok(!Buffer.from(encrypted).includes('synthetic-private-value'));
@@ -138,14 +300,17 @@ try {
   assert.deepEqual((await store.page('alice', id, 0, 50, true)).records, records);
   await assert.rejects(async () => await store.page('bob', id, 0, 50, true));
   await assert.rejects(async () => await store.delete('bob', id));
-  store.access(
-    'alice',
-    'device',
-    { ...profile, selection: { health: [], time: [], location: [] } },
-    true,
-  );
+  store.syncAgentPermissions('alice', 'device', [
+    { ...approved, selection: { health: [], time: [], location: [] } },
+  ]);
   assert.equal((await store.page('alice', id, 0, 50, true)).records.length, 0);
-  store.access('alice', 'device', profile, false);
+  store.access('alice', 'device', profile, true);
+  assert.equal(
+    (await store.page('alice', id, 0, 50, true)).records.length,
+    0,
+    'Legacy upload payload cannot widen confirmed selection',
+  );
+  store.syncAgentPermissions('alice', 'device', [{ ...profile, agentAccess: false }]);
   await assert.rejects(async () => await store.page('alice', id, 0, 50, true));
   const denied = store.begin('alice', 'device', profile.id, {
     ...metadata,
@@ -235,6 +400,21 @@ try {
   assert.deepEqual(await store.bytes(store.row('alice', id)), bytes);
   await store.delete('alice', id);
   assert.throws(() => store.row('alice', id));
+  await verifyCloudWrites(store);
+  const storedReceipt = store.db
+    .prepare('SELECT * FROM cloud_writes WHERE subject=? AND result IS NOT NULL LIMIT 1')
+    .get('cloud-write-modes');
+  assert.ok(storedReceipt);
+  store.db.close();
+  store = new CloudStore(path, key);
+  assert.deepEqual(
+    store.db
+      .prepare('SELECT * FROM cloud_writes WHERE subject=? AND request=?')
+      .get('cloud-write-modes', storedReceipt.request ?? ''),
+    storedReceipt,
+    'Delivery receipts survive a server restart',
+  );
+
   console.log(
     'Cloud: account isolation, encryption, restart persistence, incomplete uploads, explicit sharing, selection revocation, bounds and retention passed.',
   );

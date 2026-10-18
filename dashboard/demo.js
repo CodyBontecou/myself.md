@@ -1,3 +1,5 @@
+import { domains } from '../core/data.js';
+import { parseProfile, parseProfileState, parseAgentPermissions } from '../core/profiles.js';
 import {
   createBucketKey,
   normalizeRecord,
@@ -62,6 +64,34 @@ export function resetDemo() {
     ],
     exports: [],
   };
+  for (const entry of workspace.profiles) {
+    entry.profile = {
+      ...parseProfile({
+        schema: 'myself.md.profile.v1',
+        name: entry.name,
+        selection: entry.selection,
+      }),
+      id: entry.profileId,
+      agentAccess: entry.shared,
+      agentPermissions: {
+        health: entry.shared && (entry.selection.health?.length ?? 0) > 0,
+        time: entry.shared && (entry.selection.time?.length ?? 0) > 0,
+        location: false,
+        logs: false,
+      },
+    };
+    entry.agentPermissions = parseAgentPermissions(entry.profile.agentPermissions);
+    entry.permissionsSynced = true;
+    entry.syncSupported = true;
+    entry.cloudConfigured = true;
+    entry.revision = 1;
+    entry.confirmedRevision = 1;
+    entry.lastSeen = Date.now();
+    entry.domains = /** @type {const} */ (['health', 'time', 'location']).map((domain) => ({
+      domain,
+      availableTypes: selection[domain],
+    }));
+  }
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   for (let offset = 0; offset < 30; offset++) {
@@ -290,18 +320,36 @@ export function demoApi(path, method, body) {
     records.delete(exportId);
     return { deleted: true };
   }
-  if (url.pathname === '/api/dashboard/permissions' && method === 'PUT') {
-    const input = /** @type {{deviceId:string,profileId:string,shared:boolean}} */ (body);
-    const profile = workspace.profiles.find(
-      (item) => item.deviceId === input.deviceId && item.profileId === input.profileId,
+  if (url.pathname === '/api/dashboard/profiles' && method === 'PUT') {
+    const input =
+      /** @type {{deviceId:string,profileId:string,revision:number,profile:import('../core/profiles.js').ExportProfile}} */ (
+        body
+      );
+    const entry = workspace.profiles.find(
+      (p) => p.deviceId === input.deviceId && p.profileId === input.profileId,
     );
-    if (!profile) throw new Error('Demo profile not found.');
-    profile.shared = input.shared;
+    if (!entry || entry.revision !== input.revision)
+      throw new Error('Profile changed. Reload before saving.');
+    const profile = parseProfileState({ profiles: [input.profile] }).profiles[0];
+    if (!profile) throw new Error('Invalid profile.');
+    entry.profile = profile;
+    entry.name = profile.name;
+    entry.selection = profile.selection;
+    entry.agentPermissions = parseAgentPermissions(profile.agentPermissions);
+    entry.shared = domains.some((domain) => entry.agentPermissions?.[domain]);
     for (const item of workspace.exports)
-      if (item.deviceId === input.deviceId && item.profileId === input.profileId)
-        item.shared = input.shared;
-    return { shared: input.shared };
+      if (item.deviceId === entry.deviceId && item.profileId === entry.profileId)
+        item.shared = entry.shared;
+    for (const p of workspace.profiles) {
+      p.revision = input.revision + 1;
+      p.confirmedRevision = p.revision;
+    }
+    return { revision: entry.revision, status: 'completed', demo: true };
   }
+  if (url.pathname === '/api/dashboard/permissions' && method === 'PUT')
+    throw new Error(
+      'Use Agent permissions on the profile to change agent access to cloud exports.',
+    );
   if (url.pathname === '/api/dashboard/agents' && method === 'PUT') {
     const input = /** @type {{client:string,blocked:boolean}} */ (body);
     const agent = workspace.agents.find((item) => item.client === input.client);

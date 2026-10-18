@@ -14,7 +14,15 @@ import {
 } from './cloud.js';
 import { dashboardAsset, dashboardApi } from './dashboard.js';
 import { proxyAuth } from './auth-proxy.js';
-import { claim, createPairing, devices, disconnect, pending, status } from './store.js';
+import {
+  claim,
+  createPairing,
+  devices,
+  disconnect,
+  pending,
+  status,
+  ticketStatus,
+} from './store.js';
 import QRCode from 'qrcode';
 import { createApplication } from './application.js';
 createServer(
@@ -58,6 +66,7 @@ createServer(
     devices,
     disconnect,
     pending,
+    ticketStatus,
     status,
   }),
 ).listen(

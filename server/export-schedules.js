@@ -342,7 +342,7 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         {
           title: 'Read automatic export schedules',
           description:
-            'Read cloud-registered scheduled export notification delivery for owned phones. accepted-by-expo means Expo accepted a notification, not that it reached the phone or exported. Phone Export History verifies completion. Enable scheduling on the phone. Minute/hour cadences refresh today while open, with OS-controlled background timing and no per-slot cloud reminders; timing metadata reports this policy. Calendar cadences use notification permission for reminders.',
+            'Read cloud-registered scheduled export notification delivery for owned phones. accepted-by-expo means Expo accepted a notification, not that it reached the phone or exported. Phone Export History verifies completion. Enable scheduling on the phone. Minute/hour cadences refresh today while open, with OS-controlled background timing and no per-slot cloud reminders; timing metadata reports this policy. Daily schedules may contain multiple local dailyTimes; missed times coalesce to the latest. Calendar cadences use notification permission for reminders.',
           inputSchema: z.object({}),
           annotations: {
             title: 'Read automatic export schedules',

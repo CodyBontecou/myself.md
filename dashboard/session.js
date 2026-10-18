@@ -1,3 +1,4 @@
+import { connectWebAnalytics, resetWebAnalytics, trackWebAnalytics } from './analytics.js';
 import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { demoApi } from './demo.js';
 export const isDemo = /^\/demo\/?$/.test(location.pathname);
@@ -7,6 +8,7 @@ export const isDemo = /^\/demo\/?$/.test(location.pathname);
 let expires = 0;
 /** @type {Promise<void>|null} */ let refreshing = null;
 function reset() {
+  resetWebAnalytics();
   tokens = null;
 }
 export function hasSession() {
@@ -102,6 +104,7 @@ async function authorizationUrl() {
 }
 /** @param {'apple'|'github'|'google'|'reviewer'} provider */
 export async function signIn(provider) {
+  trackWebAnalytics('sign_in_started', provider === 'reviewer' ? 'other' : provider);
   if (!config) throw new Error('Sign-in is not ready.');
   const query = new URLSearchParams(location.search);
   if (['/login', '/login/'].includes(location.pathname) && query.has('client_id')) {
@@ -173,11 +176,14 @@ export async function initializeSession() {
   const destination = new URL(login.returnTo ?? '/dashboard', location.origin);
   if (
     destination.origin === location.origin &&
-    ['/dashboard', '/claim', '/delete-account'].includes(destination.pathname)
+    ['/dashboard', '/claim', '/delete-account', '/operator/analytics'].includes(
+      destination.pathname,
+    )
   ) {
     history.replaceState(null, '', `${destination.pathname}${destination.search}`);
     window.dispatchEvent(new Event('popstate'));
   }
+  await connectWebAnalytics(api).catch(() => {});
   return true;
 }
 export function signOut() {

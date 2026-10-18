@@ -20,8 +20,11 @@ const profiles = ['a', 'b'].map((id) =>
 const rows = new Map();
 /** @type {{profiles:{profileId:string,enabledAt:string}[]}[]} */
 const registrations = [];
-/** @type {{profile:string,day:string}[]} */
+/** @type {{profile:string,day:string,writeMode:import('../core/export-files.js').ExportWriteMode|undefined}[]} */
 const exported = [];
+let authorizationFailure = '';
+let reservations = 0;
+let historyStarts = 0;
 const mocks = {
   phoneDatabase: () => ({
     execSync() {},
@@ -54,9 +57,17 @@ const mocks = {
   registerTaskAsync: async () => {},
   unregisterTaskAsync: async () => {},
   defineTask() {},
-  reserveExport: async () => {},
+  requireCloudAuthorization: async () => {
+    if (authorizationFailure) throw new Error(authorizationFailure);
+  },
+  reserveExport: async () => {
+    reservations++;
+  },
   settleExport: async () => {},
-  beginExport: () => 'history',
+  beginExport: () => {
+    historyStarts++;
+    return 'history';
+  },
   recordArtifact() {},
   finishExport() {},
   errorJSON: String,
@@ -64,7 +75,7 @@ const mocks = {
   deliveredFormats,
   /** @param {unknown} _session @param {import("../core/profiles.js").ExportProfile} profile @param {{day:string}} day */
   exportProfileDay: async (_session, profile, day) => {
-    exported.push({ profile: profile.id, day: day.day });
+    exported.push({ profile: profile.id, day: day.day, writeMode: profile.export.writeMode });
     return { files: [], count: 0, failedSources: 0 };
   },
 };
@@ -84,7 +95,7 @@ await module.link((specifier) => {
 });
 await module.evaluate();
 const task =
-  /** @type {{setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>}} */ (
+  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void)=>Promise<unknown>,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>}} */ (
     /** @type {unknown} */ (module.namespace)
   );
 const first = profiles[0];
@@ -145,6 +156,207 @@ assert.equal(
 await task.runScheduledExports(second.id);
 assert.equal(exported.length, beforeElapsed + 1, 'Checkpoint prevents a duplicate interval export');
 await task.setScheduleEnabled(session.deviceId, second, false);
+// Calendar schedules include today when requested and retain the saved local file policy.
+const beforeMultiple = exported.length;
+const oldExport = second.export;
+second.schedule = schedules.parseSchedule({ dailyTimes: ['00:00', '12:00', '23:59'] });
+second.export = {
+  ...second.export,
+  includeToday: true,
+  lookbackDays: 1,
+  writeMode: /** @type {const} */ ('append'),
+};
+await task.setScheduleEnabled(session.deviceId, second, true);
+const multipleState = task.scheduleState(session.deviceId, second);
+multipleState.progress.enabledAt = new Date(Date.now() - 172800000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(multipleState));
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeMultiple + 2);
+assert.equal(exported.at(-1)?.day, localCalendar.day(new Date().toISOString()));
+assert.equal(exported.at(-1)?.writeMode, 'append');
+await task.runScheduledExports(second.id);
+assert.equal(
+  exported.length,
+  beforeMultiple + 2,
+  'Repeated scheduler wake does not re-append a completed occurrence',
+);
+await task.setScheduleEnabled(session.deviceId, second, false);
+second.export = oldExport;
+console.log(
+  'Multi-time scheduled execution includes today, preserves file policy and checkpoints completion.',
+);
+// Missing/rejected cloud approval must stop before source processing or usage reservations.
+authorizationFailure = 'Cloud credential unavailable.';
+const beforeDenied = { exported: exported.length, reservations, historyStarts };
+const originalDestination = second.export.destination;
+second.export.destination = 'cloud';
+await assert.rejects(
+  task.exportNow(session, second, () => {}),
+  /Cloud credential unavailable/,
+);
+assert.equal(exported.length, beforeDenied.exported);
+assert.equal(reservations, beforeDenied.reservations);
+assert.equal(historyStarts, beforeDenied.historyStarts, 'Manual denial creates no export history');
+await assert.rejects(
+  task.setScheduleEnabled(session.deviceId, second, true),
+  /Cloud credential unavailable/,
+);
+assert.equal(task.scheduleState(session.deviceId, second).progress.enabled, false);
+authorizationFailure = '';
+await task.setScheduleEnabled(session.deviceId, second, true);
+const deniedState = task.scheduleState(session.deviceId, second);
+deniedState.progress.enabledAt = new Date(Date.now() - (365 + 24) * 3600000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(deniedState));
+authorizationFailure = 'Cloud credential unavailable.';
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeDenied.exported);
+assert.equal(reservations, beforeDenied.reservations);
+authorizationFailure = '';
+await task.setScheduleEnabled(session.deviceId, second, false);
+/** @type {{message:string,percentage:number|undefined}[]} */
+const manualProgress = [];
+const beforeManual = exported.length;
+await task.exportNow(session, second, (message, percentage) => {
+  manualProgress.push({ message, percentage });
+  if (message.startsWith('Saved ')) {
+    const total = second.export.lookbackDays + Number(second.export.includeToday);
+    assert.equal(
+      percentage,
+      Math.min(99, Math.floor(((exported.length - beforeManual) / total) * 100)),
+    );
+  }
+});
+assert.deepEqual(manualProgress[0], { message: 'Preparing export…', percentage: 0 });
+assert.deepEqual(manualProgress.at(-1), { message: 'Finishing export…', percentage: 99 });
+assert.ok(
+  manualProgress.every(
+    (entry, index) =>
+      typeof entry.percentage === 'number' &&
+      entry.percentage < 100 &&
+      entry.percentage >= (manualProgress[index - 1]?.percentage ?? 0),
+  ),
+  'Progress is monotonic and never claims completion before settlement',
+);
+assert.equal(
+  manualProgress.filter((entry) => entry.message.startsWith('Saved ')).length,
+  exported.length - beforeManual,
+);
+assert.ok(exported.length > beforeDenied.exported, 'An authorized retry can export');
+console.log(
+  'Authorization preflight blocks manual/scheduled source reads, billing and schedule opt-in; retry passes.',
+);
+
+second.export.destination = originalDestination;
+
+// Exercise the real credential service: saved destination consent, coalesced creation and renewal.
+let storedCredential = '';
+let renewalFails = false;
+let creationFails = false;
+let renewals = 0;
+let creations = 0;
+const cloudProfile = {
+  ...second,
+  export: { ...second.export, destination: /** @type {const} */ ('cloud') },
+};
+/** @type {import('../core/profiles.js').ExportProfile} */
+let savedProfile = cloudProfile;
+const destinationModule = new SourceTextModule(
+  await readFile(new URL('../client/destinations.js', import.meta.url), 'utf8'),
+);
+const credentialMocks = {
+  ...mocks,
+  recordDebug() {},
+  canonicalServiceOrigin: (/** @type {string} */ value) => new URL(value).origin,
+  loadProfiles: () => ({ profiles: [savedProfile] }),
+  getItemAsync: async () => storedCredential || null,
+  setItemAsync: async (/** @type {string} */ _key, /** @type {string} */ value) => {
+    storedCredential = value;
+  },
+  deleteItemAsync: async () => {},
+  fetch: async () => Response.json({}),
+  api: async (/** @type {unknown} */ _session, /** @type {string} */ path) => {
+    if (path === '/api/cloud/credential') {
+      creations++;
+      if (creationFails) throw new Error('Credential creation unavailable');
+      return { token: 'synthetic-upload-token' };
+    }
+    assert.equal(path, '/api/cloud/credential/renew');
+    renewals++;
+    if (renewalFails) throw new Error('Approval revoked');
+    return {};
+  },
+};
+await destinationModule.link(
+  () =>
+    new SyntheticModule(Object.keys(credentialMocks), function () {
+      for (const [key, value] of Object.entries(credentialMocks)) this.setExport(key, value);
+    }),
+);
+await destinationModule.evaluate();
+const credentials =
+  /** @type {{requireCloudAuthorization:(context:typeof session,profile:import('../core/profiles.js').ExportProfile)=>Promise<unknown>}} */ (
+    /** @type {unknown} */ (destinationModule.namespace)
+  );
+await credentials.requireCloudAuthorization(session, second);
+await credentials.requireCloudAuthorization(session, {
+  ...second,
+  export: { ...second.export, destination: 'http' },
+});
+assert.equal(creations + renewals, 0, 'Local/HTTP exports need no cloud credential');
+await assert.rejects(
+  credentials.requireCloudAuthorization({ ...session, owner: 'other' }, cloudProfile),
+  /Sign in again/,
+);
+await assert.rejects(
+  credentials.requireCloudAuthorization({ ...session, deviceId: 'other' }, cloudProfile),
+  /Sign in again/,
+);
+assert.equal(creations, 0, 'Wrong account/device cannot create upload credentials');
+savedProfile = second;
+await assert.rejects(credentials.requireCloudAuthorization(session, cloudProfile), /Save Cloud/);
+assert.equal(creations, 0, 'An unsaved Cloud selection does not authorize uploads');
+savedProfile = cloudProfile;
+creationFails = true;
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /Credential creation unavailable/,
+);
+assert.equal(storedCredential, '', 'Failed creation leaves no credential');
+creationFails = false;
+const beforeCreation = creations;
+await Promise.all([
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  credentials.requireCloudAuthorization(session, cloudProfile),
+]);
+assert.equal(creations, beforeCreation + 1, 'Concurrent first exports share one credential');
+assert.equal(JSON.parse(storedCredential).token, 'synthetic-upload-token');
+await credentials.requireCloudAuthorization(session, cloudProfile);
+assert.equal(creations, beforeCreation + 1, 'Subsequent exports reuse the credential');
+storedCredential = JSON.stringify({ server: session.server, token: '' });
+await credentials.requireCloudAuthorization(session, cloudProfile);
+assert.equal(creations, beforeCreation + 2, 'Empty credentials are replaced automatically');
+storedCredential = JSON.stringify({
+  server: 'https://other.example',
+  token: 'synthetic-upload-token',
+});
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /another server/,
+);
+storedCredential = JSON.stringify({ server: session.server, token: 'synthetic-upload-token' });
+renewalFails = true;
+const beforeRevocation = creations;
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /Approval revoked/,
+);
+assert.equal(creations, beforeRevocation, 'Revoked credentials are not silently rotated');
+renewalFails = false;
+await credentials.requireCloudAuthorization(session, cloudProfile);
+console.log(
+  'Cloud destination consent: first-use/retry/concurrent creation, credential reuse, local/HTTP exemption and owner/device/server/revocation boundaries passed.',
+);
+
 const { DatabaseSync } = await import('node:sqlite');
 const { createExportSchedules } = await import('../server/export-schedules.js');
 const { scheduleCalendar } = await import('../server/schedule-calendar.js');
@@ -296,6 +508,33 @@ assert.equal(
   scheduleCalendar('Europe/Berlin').instant('2026-10-25', 2, 30),
   '2026-10-25T00:30:00.000Z',
 );
+const beforeDailyPushes = pushes;
+await cloud.register('owner-a', {
+  ...registration,
+  profiles: [
+    {
+      ...registration.profiles[0],
+      schedule: schedules.parseSchedule({ dailyTimes: ['08:00', '12:30', '18:00'] }),
+    },
+  ],
+});
+assert.deepEqual(cloud.list('owner-a')[0]?.profiles[0]?.schedule.dailyTimes, [
+  '08:00',
+  '12:30',
+  '18:00',
+]);
+await cloud.dispatch('2026-10-17T06:01:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 1);
+await cloud.dispatch('2026-10-17T10:31:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 2, 'A second local daily time sends a reminder');
+await cloud.dispatch('2026-10-17T10:32:00.000Z');
+assert.equal(
+  pushes,
+  beforeDailyPushes + 2,
+  'Completed reminder checkpoints prevent duplicate delivery',
+);
+await cloud.dispatch('2026-10-17T16:01:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 3);
 const beforeFrequentPushes = pushes;
 await cloud.register('owner-a', {
   ...registration,

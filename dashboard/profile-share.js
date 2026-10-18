@@ -6,15 +6,24 @@ const summary = document.getElementById('profile-summary');
 const open = document.getElementById('profile-open');
 const copy = document.getElementById('profile-copy');
 const status = document.getElementById('profile-status');
+const description = document.getElementById('profile-description');
+const actions = document.getElementById('profile-actions');
+const note = document.getElementById('profile-note');
 function reviewProfile() {
   if (
     !(open instanceof HTMLAnchorElement) ||
     !(copy instanceof HTMLButtonElement) ||
     !name ||
     !summary ||
-    !status
+    !status ||
+    !description ||
+    !actions ||
+    !note
   )
     throw new Error('Profile review controls are missing.');
+  description.hidden = true;
+  actions.hidden = true;
+  note.hidden = true;
   open.hidden = true;
   open.removeAttribute('href');
   copy.hidden = true;
@@ -25,12 +34,16 @@ function reviewProfile() {
     name.textContent = profile.name;
     summary.textContent = `${domains.reduce((count, domain) => count + profile.selection[domain].length, 0)} selected data types · ${profile.export.formats.join(' + ').toUpperCase()}`;
     open.href = profileLink(profile);
+    description.hidden = false;
+    actions.hidden = false;
+    note.hidden = false;
     open.hidden = false;
     copy.hidden = false;
   } catch {
     name.textContent = 'This profile link is invalid';
     summary.textContent = 'Ask the person helping you to share the profile again.';
-    status.textContent = 'Use the complete shared link, including its profile settings.';
+    status.textContent =
+      'Ask for a new link, or open the complete shared link including everything after the #. You can return home or open Help below.';
   }
 }
 reviewProfile();

@@ -133,7 +133,7 @@ export async function connectedAccountsPage(request, auth, config) {
       })
       .join('')}</ul></form>
     <aside class="account-note"><h2>One account, more ways to sign in</h2><p>Your lifetime access, cloud storage, devices and history stay with this account. Existing accounts cannot be merged here. Matching email addresses never connect accounts automatically.</p></aside>
-    <nav class="return-links" aria-label="Return to myself.md"><a href="/dashboard">Return to dashboard</a><a href="myselfmd://account">Return to app <span aria-hidden="true">↗</span></a></nav>`;
+    <nav class="return-links" aria-label="Return to myself.md"><a href="/dashboard">Return to dashboard</a><a href="myselfmd://connected-logins">Return to app <span aria-hidden="true">↗</span></a></nav>`;
   const nonce = randomBytes(16).toString('base64');
   return new Response(
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected logins · myself.md</title><style nonce="${nonce}">${identityPageStyles}${connectedLoginStyles}</style></head><body><header class="brand">myself<span>.md</span></header><main><h1>Connected logins</h1>${content}</main></body></html>`,

@@ -1,7 +1,7 @@
 {
   "name": "myself.md",
   "oneLiner": "Connect Claude to the health, screen time and recorded location data you choose to share.",
-  "description": "Use myself.md to discover your connected phones and the export profiles you have approved, query selected phone records, and read cloud exports you explicitly share. Explore health and screen-time patterns or summarize location points you chose to record. Data types differ between iOS and Android.\n\nPrivate access requires signing in to myself.md, pairing your phone, and approving the relevant profile and data grants. Phone queries may require the app to remain open and OS permissions enabled. Queries create jobs and use the same export allowance as the app; accepted requests are not completed results. The connector can propose profiles for your review, inspect retained activity metadata, read debug errors/metadata with separate consent in phone Settings, and perform explicitly requested account or Isobot support actions. Support owner approvals use web dashboard Support; mobile has only Profiles and Settings.\n\nHealth records are provided for personal analysis, not medical advice. Cloud content is encrypted at rest and retained until owner deletion or replacement. Revocation stops future reads but cannot recall data already delivered to Claude. Debug logs may contain sensitive raw errors; record, credential and URL attachments are not captured. Review the privacy policy before connecting.",
+  "description": "Use myself.md to discover your connected phones and the export profiles you have approved, query selected phone records, and read cloud exports you explicitly share. Explore health and screen-time patterns or summarize location points you chose to record. Data types differ between iOS and Android.\n\nPrivate access requires signing in to myself.md, pairing your phone, and approving the relevant profile and data grants. Phone queries may require the app to remain open and OS permissions enabled. Queries create jobs and use the same export allowance as the app; accepted requests are not completed results. The connector can propose profiles for your review, inspect retained activity metadata, read debug errors/metadata with separate consent in phone Settings, request owner-reviewed automatic-export schedule changes, and perform explicitly requested account or Isobot support actions. Support owner approvals use web dashboard Support; mobile has only Profiles and Settings.\n\nHealth records are provided for personal analysis, not medical advice. Cloud content is encrypted at rest and retained until owner deletion or replacement. Revocation stops future reads but cannot recall data already delivered to Claude. Debug logs may contain sensitive raw errors; record, credential and URL attachments are not captured. Review the privacy policy before connecting.",
   "proposedSlug": "myself-md",
   "categorySuggestion": "Productivity",
   "websiteURL": "https://myself.md",
@@ -24,7 +24,7 @@
     "Query a selected screen-time or health type and poll for a completed page.",
     "Read an explicitly shared stored export while the phone is offline.",
     "Propose a profile for owner review without enabling data grants.",
-    "Inspect consented diagnostics, revoke access or request support when the user asks."
+    "Read consented debug error metadata, request owner-reviewed schedule changes, or open dashboard Support approvals."
   ],
   "prerequisites": [
     "A myself.md account signed in through a configured social provider.",
@@ -37,7 +37,7 @@
     "handlesPersonalHealthData": true,
     "handlesRecordedLocationData": true,
     "sponsoredContent": false,
-    "apiOwnership": "myself.md account, phone and cloud APIs are first-party. Optional support legitimately proxies the operator\u2019s Isobot service and Discord.",
+    "apiOwnership": "myself.md account, phone and cloud APIs are first-party. Optional owner-approved support uses the operator\u2019s Isobot service through web dashboard Support.",
     "readsAndWrites": "Both. Mutating or allowance-consuming tools require confirmation hints. User approval and server-side ownership checks remain enforced."
   },
   "reviewContact": {
@@ -56,7 +56,7 @@
   },
   "verification": {
     "date": "2026-10-14",
-    "scope": "Historical October 14 deployment/submission evidence, not current source tool inventory or verification of the October 15 bridge-first cut. Discover the deployed tools before reviewing; no replacement live scan is claimed.",
+    "scope": "Historical October 14 tool invocation and Claude client evidence. Current metadata-only reconciliation is recorded separately in currentToolScan; removed tools are not current capabilities.",
     "claudeConnection": "passed",
     "toolDiscovery": {
       "readOnly": 28,
@@ -93,6 +93,53 @@
     "published": false,
     "policiesAcknowledged": 7,
     "contactEmail": "cody@isolated.tech",
-    "toolCount": 43
+    "toolCount": 40,
+    "originalToolCount": 43,
+    "lastRevisionDate": "2026-10-17"
+  },
+  "currentToolScan": {
+    "date": "2026-10-17",
+    "endpoint": "https://myself.md/mcp",
+    "total": 40,
+    "readOnly": 28,
+    "modifying": 12,
+    "sourceNodeWorkerMetadataMatch": false,
+    "report": "../mcp/tool-inventory.json",
+    "added": [
+      "get_phone_export_schedules",
+      "get_usage_analytics_preference",
+      "manage_phone_profiles",
+      "read_public_blog",
+      "set_phone_export_schedule_enabled",
+      "set_usage_analytics_preference"
+    ],
+    "removed": [
+      "get_phone_feedback",
+      "get_phone_feedback_operation",
+      "get_support_conversation",
+      "request_phone_debug_content",
+      "request_phone_feedback",
+      "request_phone_feedback_notifications",
+      "request_phone_feedback_settings",
+      "revoke_support_agent_access",
+      "send_support_message"
+    ],
+    "allCurrentToolsInvokedLive": false,
+    "portalScan": "Sync from server captured 40 tools and refreshed annotations. Saved in existing submission; overview confirms Tools 40 and In review.",
+    "metadataComparisonNote": "Earlier 37-tool Node/workerd/production snapshots matched exactly. Later production and Claude discovery confirm 40 tools after analytics preferences and manage_phone_profiles were deployed; that earlier three-way comparison does not cover these additions."
+  },
+  "portalRevision": {
+    "date": "2026-10-17",
+    "tools": 40,
+    "statusAfterSave": "In review",
+    "descriptionUpdated": false,
+    "reviewerInstructionsUpdated": true,
+    "prerequisitesUpdated": false,
+    "additionalNotesUpdated": true,
+    "resubmitted": false,
+    "newPolicyAcknowledgmentsAccepted": false,
+    "previousToolCount": 37,
+    "requestedCount": 39,
+    "countDifference": "manage_phone_profiles was deployed after the 39-tool snapshot; both reviewer-authenticated production and Claude discovery returned 40."
   }
 }

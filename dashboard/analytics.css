@@ -1,0 +1,27 @@
+.analytics-consent {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 40;
+  max-width: min(25rem, calc(100vw - 2rem));
+  border: 1px solid var(--border, var(--line, #ccc));
+  border-radius: 0.75rem;
+  background: var(--background, var(--bg, #fff));
+  color: var(--foreground, var(--text, #171717));
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  box-shadow: 0 4px 20px #0002;
+}
+.analytics-consent button {
+  min-height: 44px;
+  padding: 0.5rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.analytics-consent button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.analytics-consent [hidden] {
+  display: none;
+}

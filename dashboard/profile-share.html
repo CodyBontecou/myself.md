@@ -7,81 +7,97 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>Import a profile · myself.md</title>
     <style nonce="__STYLE_NONCE__">
-      :root {
-        color-scheme: light dark;
-        font-family: system-ui, sans-serif;
+      __IDENTITY_STYLES__ .profile-eyebrow {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
       }
-      body {
+      .profile-summary {
+        display: inline-block;
+        margin: 16px 0 0;
+        padding: 7px 10px;
+        border-radius: 6px;
+        background: var(--inset);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .profile-actions {
+        display: grid;
+        gap: 12px;
+      }
+      .profile-actions .action-link {
         margin: 0;
-        padding: 24px;
-        background: light-dark(#f6f6f8, #151515);
-        color: light-dark(#171717, #fafafa);
       }
-      main {
-        max-width: 460px;
-        margin: 8vh auto;
-        padding: 28px;
-        border-radius: 20px;
-        background: light-dark(#fff, #252525);
+      .profile-actions button {
+        min-height: 48px;
+      }
+      .profile-note {
+        margin-top: 24px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--inset);
+      }
+      .profile-note strong {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .profile-note p,
+      #profile-status {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .profile-note p {
+        margin: 6px 0 0;
+      }
+      #profile-status {
+        margin: 16px 0 0;
       }
       h1 {
-        font-size: 26px;
         overflow-wrap: anywhere;
       }
-      p {
-        line-height: 1.5;
-      }
-      a,
-      button {
-        display: block;
-        box-sizing: border-box;
-        width: 100%;
-        min-height: 48px;
-        margin-top: 16px;
-        padding: 14px;
-        border: 0;
-        border-radius: 12px;
-        font: inherit;
-        text-align: center;
-        text-decoration: none;
-        cursor: pointer;
-      }
-      a {
-        background: light-dark(#171717, #fafafa);
-        color: light-dark(#fff, #171717);
-      }
-      button {
-        background: light-dark(#eee, #393939);
-        color: inherit;
-      }
       [hidden] {
-        display: none;
+        display: none !important;
       }
     </style>
     <script type="module" src="/share/profile/app.js"></script>
   </head>
   <body>
+    <header class="brand">myself<span>.md</span></header>
     <main>
-      <p>myself.md</p>
+      <p class="profile-eyebrow">Shared profile</p>
       <h1 id="profile-name">Import a shared profile</h1>
-      <p id="profile-summary">Loading profile settings…</p>
-      <p>
-        Open the app to review this profile. Equivalent data types will be matched for your phone,
-        and anything unsupported will be listed before you save.
+      <p id="profile-summary" class="profile-summary">Loading profile settings…</p>
+      <p id="profile-description" class="intro">
+        Review this profile in the app before you save it. Equivalent data types will be matched for
+        your phone, and anything unsupported will be listed.
       </p>
-      <a id="profile-open" hidden>Open in myself.md</a>
-      <button id="profile-copy" type="button" hidden>Copy profile link</button>
+      <div id="profile-actions" class="profile-actions">
+        <a id="profile-open" class="action-link primary" hidden>Open in myself.md</a>
+        <button id="profile-copy" class="secondary" type="button" hidden>Copy profile link</button>
+      </div>
       <p id="profile-status" role="status">
-        If the app does not open, use Copy profile link and paste it into New profile in myself.md.
+        If the app does not open, copy this link and paste it into New profile in myself.md.
       </p>
-      <p>
-        This shares settings only. It does not grant data access or enable automatic exports.
-        Install myself.md before opening the profile.
-      </p>
+      <aside id="profile-note" class="profile-note">
+        <strong>Settings only. Your data stays yours.</strong>
+        <p>
+          Importing this profile does not grant data access or enable automatic exports. Install
+          myself.md before opening the profile.
+        </p>
+      </aside>
       <noscript
         >Enable JavaScript to review this profile, or copy this page’s address and paste it into New
         profile in myself.md.</noscript
       >
+      <nav class="sign-in-footer" aria-label="Help and navigation">
+        <a href="/">Back to myself.md</a><a href="/docs">Help</a>
+      </nav>
     </main>
   </body>
 </html>

@@ -9,7 +9,7 @@ export function exportFailureMessage(error) {
     'No selected sources could be read. Review permissions or edit the profile.',
     'Use an HTTPS endpoint without credentials or fragments.',
     'Save the HTTP credential for this endpoint before exporting.',
-    'Authorize cloud uploads on this profile first.',
+    'Save Cloud as this profile’s export destination first.',
     'Cloud daily files are limited to 16 MiB. Reduce selected types.',
     'Sign in to check your shared export allowance.',
     'Reconnect your account to use its shared free exports.',

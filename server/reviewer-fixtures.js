@@ -54,6 +54,8 @@ export async function seedReviewerFixtures(
       shared: false,
     },
   ];
+  /** @type {import('../core/profiles.js').ExportProfile[]} */
+  const fixtureProfiles = [];
   for (const spec of specs) {
     const profile = {
       ...parseProfile({
@@ -71,6 +73,16 @@ export async function seedReviewerFixtures(
     };
     if (!cloud.profiles(subject).some((value) => value.profileId === profile.id))
       cloud.access(subject, deviceId, profile, spec.shared);
+    fixtureProfiles.push({
+      ...profile,
+      agentAccess: true,
+      agentPermissions: {
+        health: spec.shared && spec.domain === 'health',
+        time: spec.shared && spec.domain === 'time',
+        location: spec.shared && spec.domain === 'location',
+        logs: false,
+      },
+    });
     for (let dayOffset = 1; dayOffset <= 2; dayOffset++) {
       const day = new Date(Date.parse(anchorDay) - dayOffset * 86400000).toISOString().slice(0, 10);
       const records = Array.from({ length: spec.count }, (_, index) => {
@@ -161,6 +173,7 @@ export async function seedReviewerFixtures(
       });
     }
   }
+  cloud.syncAgentPermissions(subject, deviceId, fixtureProfiles);
   return {
     fictional: true,
     deviceId,

@@ -18,6 +18,10 @@ const sqlite = {
 };
 /** @type {{owner:string,deviceId:string}|null} */
 let signedInAccount = null;
+let rejectStoredProof = false;
+let accountGranted = true;
+/** @type {string[]} */
+const billingActions = [];
 const mocks = {
   './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
   'expo-secure-store': {
@@ -33,8 +37,16 @@ const mocks = {
   '../core/billing.js': policy,
   './session.js': {
     loadSession: async () => signedInAccount,
-    api: async () => {
+    api: async (
+      /** @type {unknown} */ _session,
+      /** @type {string} */ _path,
+      /** @type {RequestInit} */ options,
+    ) => {
       if (!signedInAccount) throw new Error('Unexpected network call for a local export.');
+      const action = JSON.parse(String(options.body)).action;
+      billingActions.push(action);
+      if (rejectStoredProof && action === 'purchase') throw new Error('Sandbox purchase rejected');
+      if (!accountGranted) return policy.exportAllowance(5, 0, false);
       return { used: 5, reserved: 0, remaining: 0, unlocked: true, complimentary: true };
     },
   },
@@ -92,6 +104,32 @@ try {
     true,
     'Account-only sign-in retrieves a grant without agent pairing.',
   );
+  secure.set(
+    'lifetime-purchase-proof',
+    JSON.stringify({ store: 'ios', proof: 'rejected-sandbox-proof' }),
+  );
+  rejectStoredProof = true;
+  billingActions.length = 0;
+  await billing.syncBilling(signedInAccount);
+  assert.equal(billing.allowance().unlocked, true);
+  assert.deepEqual(
+    billingActions,
+    ['sync'],
+    'An account grant must load without retrying rejected local proof.',
+  );
+  accountGranted = false;
+  billingActions.length = 0;
+  await assert.rejects(billing.syncBilling(signedInAccount), /Sandbox purchase rejected/);
+  assert.deepEqual(billingActions, ['sync', 'purchase']);
+  assert.equal(
+    billing.allowance().unlocked,
+    false,
+    'Rejected proof cannot unlock an ungranted account.',
+  );
+  accountGranted = true;
+  await billing.syncBilling(signedInAccount);
+  rejectStoredProof = false;
+  await billing.clearNativePurchase();
   await billing.reserveExport(context, 'account-grant-local');
   await billing.settleExport(context, 'account-grant-local', true);
   signedInAccount = null;

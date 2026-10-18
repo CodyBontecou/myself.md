@@ -29,6 +29,17 @@ if (db.getFirstSync("SELECT name FROM sqlite_master WHERE type='table' AND name=
  * @param {{durationMs?:number,httpStatus?:number,error?:unknown}} [details] */
 export function recordDebug(context, operation, outcome, details = {}) {
   try {
+    if (
+      db.getFirstSync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='account_cleanup'",
+      ) &&
+      db.getFirstSync(
+        'SELECT 1 FROM account_cleanup WHERE owner=? OR device=?',
+        context.owner,
+        context.deviceId,
+      )
+    )
+      return;
     const message =
       details.error === undefined
         ? undefined

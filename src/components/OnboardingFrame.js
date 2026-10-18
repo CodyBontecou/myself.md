@@ -133,7 +133,7 @@ export default function OnboardingFrame({
         />
       </View>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={keyboardOffset}
         testID={testID}
         collapsable={false}
@@ -149,8 +149,11 @@ export default function OnboardingFrame({
               navigation.getState()?.index
                 ? [{ type: 'custom', element: renderBackButton(), hidesSharedBackground: true }]
                 : [],
-            headerTransparent: true,
-            headerStyle: { backgroundColor: 'transparent' },
+            // Android ScrollView does not add automatic insets for an overlaid header.
+            headerTransparent: Platform.OS !== 'android',
+            headerStyle: {
+              backgroundColor: Platform.OS === 'android' ? colors.background : 'transparent',
+            },
           }}
         />
         <ScrollView

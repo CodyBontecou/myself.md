@@ -21,6 +21,7 @@ module.exports = defineConfig([
   expoConfig,
   {
     files: ['worker/**/*.js'],
+    languageOptions: { globals: { HTMLRewriter: 'readonly' } },
     settings: { 'import/core-modules': ['cloudflare:workers', 'cloudflare:node'] },
   },
   {

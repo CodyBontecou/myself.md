@@ -13,7 +13,14 @@ mkdirSync(destination, { recursive: true, mode: 0o700 });
 const tables = {
   'pairing.sqlite': ['pairings', 'devices'],
   'billing.sqlite': ['billing_uses', 'billing_purchases', 'billing_grants', 'billing_claims'],
-  'cloud.sqlite': ['exports', 'cloud_access', 'agents', 'upload_keys'],
+  'cloud.sqlite': [
+    'exports',
+    'cloud_access',
+    'cloud_writes',
+    'profile_sync',
+    'agents',
+    'upload_keys',
+  ],
   'history.sqlite': ['activity'],
 };
 /** @type {Array<{name:string,columns:string[],rows:import('node:sqlite').SQLOutputValue[][]}>} */

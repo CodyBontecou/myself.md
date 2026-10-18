@@ -110,14 +110,16 @@ export async function syncBilling(session) {
   const sync = async () => {
     const storedProof = await SecureStore.getItemAsync('lifetime-purchase-proof');
     if (controller.signal.aborted) throw new Error(checkTimeoutMessage);
-    await send(
-      session,
-      storedProof ? 'purchase' : 'sync',
-      undefined,
-      storedProof ? JSON.parse(storedProof) : undefined,
-      undefined,
-      controller.signal,
-    );
+    const account = await send(session, 'sync', undefined, undefined, undefined, controller.signal);
+    if (storedProof && !account.unlocked)
+      await send(
+        session,
+        'purchase',
+        undefined,
+        JSON.parse(storedProof),
+        undefined,
+        controller.signal,
+      );
   };
   try {
     // Bound keychain, token refresh, request and response-body waits together.

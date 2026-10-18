@@ -10,3 +10,4 @@ export const claim = store.claim.bind(store);
 export const devices = store.devices.bind(store);
 export const disconnect = store.disconnect.bind(store);
 export const status = store.status.bind(store);
+export const ticketStatus = store.ticketStatus.bind(store);
