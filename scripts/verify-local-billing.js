@@ -193,3 +193,5 @@ try {
 }
 
 await import('./verify-billing-timeout.js');
+
+await import('./verify-store-connection.js');

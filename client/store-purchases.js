@@ -15,8 +15,13 @@ import {
 import { qaEnabled } from './qa-runtime.js';
 /** @type {Promise<boolean>|null} */
 let connection = null;
-/** Purchase and error listeners are attached; subscription outcomes can be observed. */
-let listening = false;
+/** Native listeners belong to the shared connection, not one screen. @type {null|(()=>void)} */
+let removeStoreListeners = null;
+let storeGeneration = 0;
+/** @type {Set<(message:string)=>void>} */
+const storeErrors = new Set();
+/** Await an earlier shutdown before opening another native connection. @type {Promise<unknown>} */
+let closingStore = Promise.resolve();
 /** @type {null|{verify:(purchase:import('expo-iap').Purchase)=>Promise<void>,completed:()=>void}} */
 let debugDelivery = null;
 /** Scope real sandbox delivery to the isolated Debug route, without retaining normal purchase proof.
@@ -64,50 +69,85 @@ async function deliver(purchase) {
   debug?.completed();
   return true;
 }
+/** One retryable initialization for offers, checkout, restore and the root listener owner. */
+async function connectedStore() {
+  const iap = await store();
+  if (!connection) {
+    /** @type {(()=>void)|undefined} */
+    let remove;
+    const generation = storeGeneration;
+    const attempt = closingStore.then(async () => {
+      if (generation !== storeGeneration)
+        throw new Error('The store connection closed. Please try again.');
+      const updates = iap.purchaseUpdatedListener((purchase) => {
+        const delivery = cloudProductIds.has(purchase.productId)
+          ? deliverCloudOnce(purchase)
+          : deliver(purchase);
+        void delivery.catch((error) => {
+          if (!settleCloud({ kind: 'error', error }, purchase.productId))
+            for (const onError of storeErrors) onError(errorJSON(error));
+        });
+      });
+      try {
+        const errors = iap.purchaseErrorListener((error) => {
+          if (cloudOutcome && (!error.productId || error.productId === cloudOutcome.productId)) {
+            settleCloud(cloudFailure(error), error.productId);
+            return;
+          }
+          if (error.code !== 'user-cancelled')
+            for (const onError of storeErrors) onError(errorJSON(error));
+        });
+        remove = () => {
+          updates.remove();
+          errors.remove();
+        };
+      } catch (error) {
+        updates.remove();
+        throw error;
+      }
+      if (!(await iap.initConnection()))
+        throw new Error('The store connection could not be opened. Please try again.');
+      if (generation !== storeGeneration)
+        throw new Error('The store connection closed. Please try again.');
+      removeStoreListeners = remove;
+      return true;
+    });
+    const ready = attempt.catch((error) => {
+      remove?.();
+      if (connection === ready) connection = null;
+      throw error;
+    });
+    connection = ready;
+  }
+  await connection;
+  return iap;
+}
 /** @param {(message:string)=>void} onError */
 export async function connectStore(onError) {
-  const iap = await store();
-  const updates = iap.purchaseUpdatedListener((purchase) => {
-    if (cloudProductIds.has(purchase.productId)) {
-      void deliverCloudOnce(purchase).catch((error) => {
-        if (!settleCloud({ kind: 'error', error }, purchase.productId)) onError(errorJSON(error));
-      });
-      return;
-    }
-    void deliver(purchase).catch((error) => onError(errorJSON(error)));
-  });
-  const errors = iap.purchaseErrorListener((error) => {
-    if (cloudOutcome && (!error.productId || error.productId === cloudOutcome.productId)) {
-      settleCloud(cloudFailure(error), error.productId);
-      return;
-    }
-    if (error.code !== 'user-cancelled') onError(errorJSON(error));
-  });
-  try {
-    connection ??= iap.initConnection();
-    await connection;
-  } catch (error) {
-    updates.remove();
-    errors.remove();
-    throw error;
-  }
-  listening = true;
+  storeErrors.add(onError);
+  // Keep the root owner registered after a temporary failure. The next store operation retries.
+  await connectedStore().catch(() => {});
   return () => {
-    listening = false;
+    if (!storeErrors.delete(onError) || storeErrors.size) return;
+    storeGeneration++;
     settleCloud({
       kind: 'error',
       error: new Error('The store connection closed. Please try again.'),
     });
-    updates.remove();
-    errors.remove();
+    removeStoreListeners?.();
+    removeStoreListeners = null;
+    const pending = connection;
     connection = null;
-    void iap.endConnection();
+    closingStore = Promise.allSettled([closingStore, pending]).then(async () => {
+      const iap = await store();
+      return iap.endConnection();
+    });
+    // Cleanup errors must not become unhandled rejections or poison the next attempt.
+    closingStore = closingStore.catch(() => {});
   };
 }
 export async function lifetimeProduct() {
-  const iap = await store();
-  connection ??= iap.initConnection();
-  await connection;
+  const iap = await connectedStore();
   const products = await iap.fetchProducts({ skus: [productId], type: 'in-app' });
   const product = products?.find((item) => item.id === productId);
   if (
@@ -143,10 +183,8 @@ export async function buyLifetime() {
 }
 /** @param {boolean} [explicit] */
 export async function restoreLifetime(explicit = false) {
-  const iap = await store();
+  const iap = await connectedStore();
   if (explicit && Platform.OS === 'ios') await iap.syncIOS();
-  connection ??= iap.initConnection();
-  await connection;
   const purchases = await iap.getAvailablePurchases();
   const purchase = purchases.find(
     (item) => item.productId === productId && item.purchaseState === 'purchased',
@@ -257,9 +295,7 @@ function deliverCloudOnce(purchase) {
 /** Localized store offers for every tier and period available to this store account.
  * @returns {Promise<import('./cloud-storage.js').CloudOffer[]>} */
 export async function cloudOffers() {
-  const iap = await store();
-  connection ??= iap.initConnection();
-  await connection;
+  const iap = await connectedStore();
   const ios = Platform.OS === 'ios';
   const products =
     (await iap.fetchProducts({
@@ -321,7 +357,6 @@ export async function cloudOffers() {
  * payment, after the server verified it. The transaction is finished only after verification.
  * @param {import('./cloud-storage.js').CloudOffer} offer @returns {Promise<CloudPurchaseEvent>} */
 export async function buyCloudPlan(offer) {
-  if (!listening) throw new Error('The store is not connected yet. Please try again in a moment.');
   if (cloudOutcome) throw new Error('A cloud storage purchase is already in progress.');
   const session = await signedInSession();
   if (!session) throw new Error('Sign in to myself.md before subscribing to cloud storage.');
@@ -334,7 +369,7 @@ export async function buyCloudPlan(offer) {
     throw new Error('Cloud storage checkout is unavailable right now. Please try again later.');
   if (Platform.OS === 'android' && !offer.offerToken)
     throw new Error('This plan is not available in Google Play yet. Please try again later.');
-  const iap = await store();
+  const iap = await connectedStore();
   if (cloudOutcome) throw new Error('A cloud storage purchase is already in progress.');
   /** @type {Promise<CloudPurchaseEvent>} */
   const outcome = new Promise((resolve) => {
@@ -410,9 +445,7 @@ export async function buyCloudPlan(offer) {
 export async function restoreCloudPlan() {
   const session = await signedInSession();
   if (!session) throw new Error('Sign in to myself.md before restoring a cloud storage plan.');
-  const iap = await store();
-  connection ??= iap.initConnection();
-  await connection;
+  const iap = await connectedStore();
   if (Platform.OS === 'ios') await iap.syncIOS();
   const purchase = sorted(
     (await iap.getAvailablePurchases()).filter(
