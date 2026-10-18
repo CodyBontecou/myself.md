@@ -106,11 +106,25 @@ export async function identityRequest(request, env) {
   }
   const auth = await identity(env);
   if (path === '/reviewer-login') {
+    const client = await env.IDENTITY.prepare(
+      'SELECT redirectUris FROM oauthClient WHERE clientId=?',
+    )
+      .bind(url.searchParams.get('client_id') ?? '')
+      .first();
+    const redirect = url.searchParams.get('redirect_uri');
+    const registered = z.array(z.string()).parse(JSON.parse(String(client?.redirectUris ?? '[]')));
+    // Chromium checks redirects after form POSTs too; query text alone grants no destination.
+    const callback = redirect && registered.includes(redirect) ? new URL(redirect) : null;
     const bounded =
       request.method === 'POST'
         ? new Request(request, { method: 'POST', body: await readBytes(request, 16384) })
         : request;
-    return reviewerLoginPage(bounded, auth, await reviewerActive(env));
+    return reviewerLoginPage(
+      bounded,
+      auth,
+      await reviewerActive(env),
+      callback ? [callback.origin === 'null' ? callback.protocol : callback.origin] : [],
+    );
   }
   if (path === '/connected-accounts') {
     const ownershipIndex = await env.IDENTITY.prepare(

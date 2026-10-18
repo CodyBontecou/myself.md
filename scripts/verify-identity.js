@@ -768,6 +768,31 @@ try {
   assert.match(expiredLogout.text, /Sign-out could not finish/);
   assert.match(expiredLogout.text, /invalid or expired/);
   const login = await authorize('myselfmd-phone', false);
+  const nativeReviewerQuery = new URLSearchParams({
+    client_id: 'myselfmd-phone',
+    redirect_uri: 'myselfmd://oauth',
+  });
+  const nativeReviewerForm = await fetch(`${issuer}/reviewer-login?${nativeReviewerQuery}`);
+  assert.match(
+    nativeReviewerForm.headers.get('content-security-policy') ?? '',
+    /form-action 'self' myselfmd:/,
+    'Reviewer form must permit its registered native callback after a successful POST',
+  );
+  await Promise.all(
+    [
+      { client_id: 'myselfmd-phone', redirect_uri: 'https://attacker.example/callback' },
+      { client_id: 'unknown-client', redirect_uri: 'myselfmd://oauth' },
+      { client_id: 'myselfmd-phone', redirect_uri: 'otherapp://oauth' },
+    ].map(async (query) => {
+      const form = await fetch(`${issuer}/reviewer-login?${new URLSearchParams(query)}`);
+      assert.match(
+        form.headers.get('content-security-policy') ?? '',
+        /form-action 'self';/,
+        'Unregistered query text must not expand form destinations',
+      );
+    }),
+  );
+
   await Promise.all(
     [
       { error: 'account_not_linked', title: 'Connect your sign-in method' },
@@ -1384,6 +1409,35 @@ try {
         ),
       );
       await reviewerBrowser.close();
+      const nativeReviewerBrowser = await browser.newContext();
+      const nativeReviewerTab = await nativeReviewerBrowser.newPage();
+      const nativeReviewerStart = await authorize('myselfmd-phone', false);
+      const nativeReviewerSearch = new URL(
+        nativeReviewerStart.response.headers.get('location') ?? '',
+      ).search;
+      let nativeReviewerCspBlocked = false;
+      nativeReviewerTab.on('console', (message) => {
+        if (/form-action/i.test(message.text())) nativeReviewerCspBlocked = true;
+      });
+      await nativeReviewerTab.goto(`${issuer}/reviewer-login${nativeReviewerSearch}`);
+      await nativeReviewerTab.getByLabel('Username').fill('reviewer');
+      await nativeReviewerTab.getByLabel('Password').fill(reviewerPassword);
+      const nativeReviewerPost = nativeReviewerTab.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/reviewer-login') &&
+          response.request().method() === 'POST',
+      );
+      await nativeReviewerTab
+        .getByRole('button', { name: 'Sign in as reviewer', exact: true })
+        .click({ noWaitAfter: true });
+      const nativeReviewerResponse = await nativeReviewerPost;
+      assert.equal(nativeReviewerResponse.status(), 302);
+      assert.equal(new URL(nativeReviewerResponse.headers().location ?? '').protocol, 'myselfmd:');
+      assert.equal(nativeReviewerCspBlocked, false);
+      await nativeReviewerBrowser.close();
+      console.log(
+        'Browser reviewer sign-in reaches the registered native callback without a CSP block.',
+      );
       const browserContext = await browser.newContext();
       const [cookieName, ...cookieValue] = cookie.split('=');
       assert.ok(cookieName);

@@ -7,8 +7,8 @@ export const reviewerEmail = 'reviewer@myself.invalid';
 
 /** Password entry is an owner/reviewer browser handoff, not an MCP credential input.
  * @param {Request} request @param {ReturnType<import('./identity.js').createIdentity>} auth
- * @param {boolean} enabled */
-export async function reviewerLoginPage(request, auth, enabled) {
+ * @param {boolean} enabled @param {string[]} [formDestinations] Server-validated OAuth callback sources. */
+export async function reviewerLoginPage(request, auth, enabled, formDestinations = []) {
   if (!enabled) return Response.json({ error: 'Reviewer access is unavailable.' }, { status: 404 });
   const url = new URL(request.url);
   const base = url.pathname.replace(/\/reviewer-login$/, '');
@@ -42,7 +42,7 @@ export async function reviewerLoginPage(request, auth, enabled) {
       {
         headers: {
           ...headers,
-          'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+          'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'${formDestinations.length ? ` ${formDestinations.join(' ')}` : ''}; base-uri 'none'; frame-ancestors 'none'`,
         },
       },
     );
