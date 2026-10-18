@@ -58,6 +58,8 @@ The publisher preserves the deployed application code, static assets, bindings, 
 
 When migrating from the former vault workflow, first install these secrets and this website workflow, run a successful manual publication, and confirm a scheduled run skips unchanged content. Only then remove `.github/workflows/publish-blog.yml` and `CLOUDFLARE_API_TOKEN` from the vault repository. To stop automatic publication later, disable **Publish blog** in the myself.md Actions tab; remove its secrets and the vault deploy key when retiring the integration.
 
+Migration completed on 18 October 2026: [manual publication](https://github.com/CodyBontecou/myself.md/actions/runs/39127741067) published and verified all five posts; [the scheduled check path](https://github.com/CodyBontecou/myself.md/actions/runs/39127855658), invoked manually without forcing publication, skipped deployment for unchanged content. The live Worker matched the exact blog-only patch and retained its application source and settings. The former vault publisher, temporary encrypted credential-transfer workflow and vault deployment secret were removed after both runs succeeded. The 15-minute schedule and manual action now live solely in myself.md.
+
 ## Discovery and SEO
 
 Each post has a canonical URL, unique title/description, publication/modification dates, author, Open Graph/Twitter metadata and `BlogPosting` JSON-LD. The archive has `Blog` structured data. Posts appear in `/sitemap.xml`, `/llms.txt`, `/llms-full.txt`, RSS and ordinary HTML navigation. Robots policy allows public blog crawling. Missing posts return HTTP 404 with a link back to the archive; HTML errors carry `noindex`.
