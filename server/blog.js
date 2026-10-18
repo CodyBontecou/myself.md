@@ -1,6 +1,6 @@
 import { Marked } from 'marked';
 import { z } from 'zod';
-import { blogPosts } from './blog-content.js';
+import { blogContentHash, blogPosts } from './blog-content.js';
 import { publicSiteHeader } from '../core/site-header.js';
 import { sorted } from '../core/collections.js';
 
@@ -216,6 +216,7 @@ export function blogResponse(path, accept) {
   if (path !== '/blog' && !path.startsWith('/blog/')) return null;
   const headers = {
     'Cache-Control': 'public, max-age=0, must-revalidate',
+    'X-Blog-Content-SHA256': blogContentHash,
     Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
   };

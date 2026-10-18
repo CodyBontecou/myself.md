@@ -1,0 +1,67 @@
+name: Publish blog
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myself-md-production-blog
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'CodyBontecou/myself.md' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out latest website main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out latest vault with publication history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: CodyBontecou/myself.md-vault
+          ref: main
+          path: .local/blog-vault
+          fetch-depth: 0
+          ssh-key: ${{ secrets.BLOG_VAULT_SSH_KEY }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build current public vault snapshot
+        run: npm run blog:build
+      - name: Check whether publication is needed
+        id: publication
+        env:
+          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/check-blog-publication.js
+      - name: Validate publication logic and generated content
+        if: steps.publication.outputs.changed == 'true'
+        run: |
+          npm run check
+          npm run verify:blog
+      - name: Publish blog content while preserving the live application
+        if: steps.publication.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/publish-blog.js
+      - name: Verify published content
+        if: steps.publication.outputs.changed == 'true'
+        run: npm run blog:verify-live
+      - name: Record publication result
+        env:
+          CHANGED: ${{ steps.publication.outputs.changed }}
+        run: |
+          site_revision=$(git rev-parse HEAD)
+          vault_revision=$(git -C .local/blog-vault rev-parse HEAD)
+          printf '### Blog publication\n\n- Website: `%s`\n- Vault: `%s`\n- Deployed and verified: `%s`\n- Site: https://myself.md/blog\n' "$site_revision" "$vault_revision" "$CHANGED" >> "$GITHUB_STEP_SUMMARY"

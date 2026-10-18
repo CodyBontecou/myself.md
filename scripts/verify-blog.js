@@ -3,15 +3,20 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { z } from 'zod';
 import { buildBlog } from './build-blog.js';
-import { blogPosts } from '../server/blog-content.js';
+import { blogContentHash, blogPosts } from '../server/blog-content.js';
+import { needsBlogPublication } from './check-blog-publication.js';
+import { patchBlogContent } from './blog-worker-content.js';
 import { publicResponse } from '../server/public-site.js';
 
 /** Verify actual Node/workerd HTTP behavior. @param {string} origin */
 export async function verifyBlogHTTP(origin) {
   const indexResponse = await fetch(`${origin}/blog`);
   assert.equal(indexResponse.status, 200);
+  assert.equal(indexResponse.headers.get('X-Blog-Content-SHA256'), blogContentHash);
   const html = await indexResponse.text();
   if (blogPosts.length) {
     assert.match(html, /id="latest"/);
@@ -105,6 +110,52 @@ export async function verifyBlogMCP(client) {
 }
 
 if (process.argv[1]?.endsWith('/verify-blog.js')) {
+  const bundle =
+    'const applicationRelease = "preserve-me";\nvar blogPosts = [];\nfunction blogResponse() { const headers = { Vary: "Accept" }; return { headers, posts: blogPosts, applicationRelease }; }\nexport { blogResponse };';
+  const candidate = patchBlogContent(bundle, [{ title: 'New post' }], 'new-hash');
+  const loaded = await import(`data:text/javascript,${encodeURIComponent(candidate)}`);
+  assert.deepEqual(loaded.blogResponse(), {
+    headers: { Vary: 'Accept', 'X-Blog-Content-SHA256': 'new-hash' },
+    posts: [{ title: 'New post' }],
+    applicationRelease: 'preserve-me',
+  });
+  assert.equal(patchBlogContent(candidate, [{ title: 'New post' }], 'new-hash'), candidate);
+  const updated = patchBlogContent(candidate, [], 'second-hash');
+  assert.equal(
+    (await import(`data:text/javascript,${encodeURIComponent(updated)}`)).blogResponse().headers[
+      'X-Blog-Content-SHA256'
+    ],
+    'second-hash',
+  );
+  assert.throws(() => patchBlogContent('const unknown = [];', [], 'hash'), /blog data declaration/);
+  const index = publicResponse('/blog', '', 'https://myself.md/auth');
+  assert.ok(index);
+  assert.ok('X-Blog-Content-SHA256' in index.headers);
+  let publishedHash = index.headers['X-Blog-Content-SHA256'];
+  assert.equal(publishedHash, blogContentHash);
+  let status = 200;
+  const server = createServer((_request, response) => {
+    if (publishedHash) response.setHeader('X-Blog-Content-SHA256', publishedHash);
+    response.writeHead(status);
+    response.end();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const origin = `http://127.0.0.1:${address.port}`;
+    assert.equal(await needsBlogPublication(origin), false);
+    publishedHash = 'older-content';
+    assert.equal(await needsBlogPublication(origin), true);
+    publishedHash = '';
+    assert.equal(await needsBlogPublication(origin), true);
+    status = 503;
+    await assert.rejects(needsBlogPublication(origin), /HTTP 503/);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
   const directory = mkdtempSync(join(tmpdir(), 'blog-fixture-'));
   const cwd = process.cwd();
   try {
@@ -124,6 +175,8 @@ if (process.argv[1]?.endsWith('/verify-blog.js')) {
     note('empty', '');
     await buildBlog(true);
     const snapshot = readFileSync('server/blog-content.js', 'utf8');
+    await buildBlog(true);
+    assert.equal(readFileSync('server/blog-content.js', 'utf8'), snapshot);
     assert.match(snapshot, /Public note/);
     assert.doesNotMatch(
       snapshot,
@@ -131,6 +184,35 @@ if (process.argv[1]?.endsWith('/verify-blog.js')) {
     );
     note('duplicate', '---\ndate: 2026-10-13\nslug: public\n---\nDuplicate');
     await assert.rejects(buildBlog(true), /Duplicate blog slugs/);
+    // A later app release must refuse an older vault even when that vault is clean.
+    const git = (/** @type {string[]} */ args) =>
+      execFileSync('git', ['-C', join(directory, 'content/blog'), ...args], {
+        encoding: 'utf8',
+      }).trim();
+    git(['config', 'user.name', 'Blog fixture']);
+    git(['config', 'user.email', 'blog@example.test']);
+    git(['add', '.']);
+    git(['commit', '-qm', 'Initial notes']);
+    git(['branch', '-M', 'main']);
+    const initial = git(['rev-parse', 'HEAD']);
+    execFileSync('git', ['init', '--bare', '-q', 'remote.git']);
+    git(['remote', 'add', 'origin', join(directory, 'remote.git')]);
+    git(['push', '-q', 'origin', 'main']);
+    const checkSource = () =>
+      execFileSync(process.execPath, [join(cwd, 'scripts/check-blog-source.js')], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+    assert.match(checkSource(), /matches published main/);
+    note('new-post', 'A newer published post.');
+    assert.throws(checkSource, /unpublished changes/);
+    git(['add', '.']);
+    git(['commit', '-qm', 'New post']);
+    git(['push', '-q', 'origin', 'main']);
+    git(['checkout', '-q', '--detach', initial]);
+    assert.throws(checkSource, /Blog vault is stale/);
+    git(['checkout', '-q', 'main']);
+    assert.match(checkSource(), /matches published main/);
   } finally {
     process.chdir(cwd);
     rmSync(directory, { recursive: true, force: true });
