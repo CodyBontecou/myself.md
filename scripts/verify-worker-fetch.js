@@ -31,6 +31,27 @@ export default {async fetch() {
     if (bytes.toString('hex') !== '0001ff' || response.status !== 200)
       throw new Error('Binary response changed');
     checks.push('CommonJS default, headers, binary OCSP response');
+    const ocspHeaders = new adapter.Headers({'Content-Type':'application/ocsp-request','Content-Length':'3','Accept':'application/ocsp-response'});
+    globalThis.fetch = async (input, init) => {
+      if (String(input) !== 'http://ocsp.apple.com/responder/%2B%2F8%3D' || init.method !== 'GET' || init.body !== null)
+        throw new Error('Small Apple OCSP request was not encoded as GET');
+      if (init.headers.has('Content-Type') || init.headers.has('Content-Length') || init.headers.get('Accept') !== 'application/ocsp-response')
+        throw new Error('OCSP GET headers are incorrect');
+      return new Response(new Uint8Array([0, 1, 255]), {status:200});
+    };
+    const ocsp = await adapter.default('http://ocsp.apple.com/responder', {
+      method:'POST',headers:ocspHeaders,body:new Uint8Array([251,255]),
+    });
+    if ((await ocsp.buffer()).toString('hex') !== '0001ff' || !ocspHeaders.has('Content-Type'))
+      throw new Error('OCSP response or caller headers changed');
+    const large = new Uint8Array(300);
+    globalThis.fetch = async (input, init) => {
+      if (String(input) !== 'http://ocsp.apple.com/responder' || init.method !== 'POST' || init.body !== large)
+        throw new Error('Oversized OCSP request changed');
+      return new Response('kept POST');
+    };
+    await adapter.default('http://ocsp.apple.com/responder', {method:'POST',headers:ocspHeaders,body:large});
+    checks.push('Bounded Apple OCSP GET, binary integrity, caller headers and oversized POST');
     globalThis.fetch = async () => new Response('not JSON', {status:503});
     const rejected = await adapter.default('https://fixture.invalid/failure');
     if (rejected.ok || rejected.status !== 503 || await rejected.text() !== 'not JSON')
@@ -90,7 +111,7 @@ try {
   assert.ok(response, readFileSync(log, 'utf8'));
   const result = /** @type {{checks:string[]}} */ (await response.json());
   assert.equal(response.status, 200, JSON.stringify(result));
-  assert.equal(result.checks.length, 3);
+  assert.equal(result.checks.length, 4);
   console.log('PASS Worker fetch: ' + result.checks.join('; ') + '.');
 } finally {
   if (child.exitCode === null && child.signalCode === null) {

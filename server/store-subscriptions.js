@@ -8,6 +8,7 @@ import { sorted } from '../core/collections.js';
 import { PairingError } from './errors.js';
 import {
   appBundleId,
+  decodeAppleNotification,
   appleClient,
   appleVerifier,
   googleApplicationUrl,
@@ -230,18 +231,8 @@ export const needsAcknowledgement = (subscription) =>
 async function appleNotificationEvent(body) {
   const input = z.object({ signedPayload: z.string().min(1).max(200000) }).parse(body);
   const apple = await appleVerifier();
-  let payload;
-  try {
-    payload = await apple.verifier.verifyAndDecodeNotification(input.signedPayload);
-  } catch (error) {
-    // Sandbox notifications may reach a production server through a shared URL.
-    if (
-      error instanceof apple.library.VerificationException &&
-      error.status === apple.library.VerificationStatus.INVALID_ENVIRONMENT
-    )
-      return { kind: 'ignored', reason: 'environment' };
-    throw new PairingError(401, 'App Store notification signature is invalid.');
-  }
+  const payload = await decodeAppleNotification(apple, input.signedPayload);
+  if (!payload) return { kind: 'ignored', reason: 'environment' };
   if (payload.notificationType === 'TEST' || !payload.data?.signedTransactionInfo)
     return { kind: 'ignored', reason: 'no transaction' };
   const transaction = await apple.verifier.verifyAndDecodeTransaction(

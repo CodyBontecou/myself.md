@@ -13,7 +13,7 @@ import {
 } from '../server/store-subscriptions.js';
 import { generateKeyPair, SignJWT } from 'jose';
 import * as appleLibrary from '@apple/app-store-server-library';
-import { decodeApplePurchase } from '../server/store-purchases.js';
+import { decodeAppleNotification, decodeApplePurchase } from '../server/store-purchases.js';
 const verifier = new appleLibrary.SignedDataVerifier(
   [],
   false,
@@ -48,6 +48,74 @@ for (const status of [
     },
   );
 }
+const notificationVerifier = new appleLibrary.SignedDataVerifier(
+  [],
+  false,
+  appleLibrary.Environment.PRODUCTION,
+  'com.myself.md',
+  6821601165,
+);
+let alternateChecks = 0;
+const notificationApple = {
+  library: {
+    ...appleLibrary,
+    SignedDataVerifier: class extends appleLibrary.SignedDataVerifier {
+      async verifyAndDecodeNotification(/** @type {string} */ proof) {
+        alternateChecks++;
+        if (proof === 'retry-other-environment')
+          throw new appleLibrary.VerificationException(
+            appleLibrary.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE,
+          );
+        if (proof !== 'valid-other-environment')
+          throw new appleLibrary.VerificationException(
+            appleLibrary.VerificationStatus.INVALID_APP_IDENTIFIER,
+          );
+        return { notificationType: appleLibrary.NotificationTypeV2.TEST };
+      }
+    },
+  },
+  environment: appleLibrary.Environment.PRODUCTION,
+  verifier: notificationVerifier,
+};
+/** @param {import('@apple/app-store-server-library').VerificationStatus} status */
+async function verifyOtherNotificationEnvironment(status) {
+  notificationVerifier.verifyAndDecodeNotification = async () => {
+    throw new appleLibrary.VerificationException(status);
+  };
+  assert.equal(await decodeAppleNotification(notificationApple, 'valid-other-environment'), null);
+  await assert.rejects(decodeAppleNotification(notificationApple, 'foreign-app'), {
+    status: 401,
+  });
+}
+await verifyOtherNotificationEnvironment(appleLibrary.VerificationStatus.INVALID_APP_IDENTIFIER);
+await verifyOtherNotificationEnvironment(appleLibrary.VerificationStatus.INVALID_ENVIRONMENT);
+await assert.rejects(decodeAppleNotification(notificationApple, 'retry-other-environment'), {
+  status: 503,
+});
+const checksBeforeInvalidSignature = alternateChecks;
+notificationVerifier.verifyAndDecodeNotification = async () => {
+  throw new appleLibrary.VerificationException(appleLibrary.VerificationStatus.INVALID_CERTIFICATE);
+};
+await assert.rejects(decodeAppleNotification(notificationApple, 'forged-signature'), {
+  status: 401,
+});
+assert.equal(alternateChecks, checksBeforeInvalidSignature);
+notificationVerifier.verifyAndDecodeNotification = async () => {
+  throw new appleLibrary.VerificationException(
+    appleLibrary.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE,
+  );
+};
+await assert.rejects(decodeAppleNotification(notificationApple, 'ocsp-unavailable'), {
+  status: 503,
+});
+assert.equal(alternateChecks, checksBeforeInvalidSignature);
+notificationVerifier.verifyAndDecodeNotification = async () => ({
+  notificationType: appleLibrary.NotificationTypeV2.TEST,
+});
+assert.deepEqual(await decodeAppleNotification(notificationApple, 'current-environment'), {
+  notificationType: appleLibrary.NotificationTypeV2.TEST,
+});
+assert.equal(alternateChecks, checksBeforeInvalidSignature);
 const notification = (/** @type {unknown} */ value) => ({
   message: {
     data: Buffer.from(

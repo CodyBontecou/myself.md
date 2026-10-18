@@ -20,6 +20,57 @@ export async function decodeApplePurchase(apple, proof) {
     );
   }
 }
+/** Authenticate notifications before ignoring the other store environment. Apple's verifier
+ * checks appAppleId before environment, and sandbox notifications can omit the production ID.
+ * @param {Awaited<ReturnType<typeof appleVerifier>>} apple @param {string} proof */
+export async function decodeAppleNotification(apple, proof) {
+  try {
+    return await apple.verifier.verifyAndDecodeNotification(proof);
+  } catch (error) {
+    if (
+      error instanceof apple.library.VerificationException &&
+      error.status === apple.library.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE
+    )
+      throw new PairingError(
+        503,
+        'Apple notification verification is temporarily unavailable. Retry later.',
+      );
+    if (
+      error instanceof apple.library.VerificationException &&
+      [
+        apple.library.VerificationStatus.INVALID_ENVIRONMENT,
+        apple.library.VerificationStatus.INVALID_APP_IDENTIFIER,
+      ].includes(error.status)
+    ) {
+      const environment =
+        apple.environment === apple.library.Environment.PRODUCTION
+          ? apple.library.Environment.SANDBOX
+          : apple.library.Environment.PRODUCTION;
+      const other = new apple.library.SignedDataVerifier(
+        appleRoots(),
+        true,
+        environment,
+        appBundleId(),
+        Number(process.env.APPLE_IAP_APP_ID),
+      );
+      try {
+        await other.verifyAndDecodeNotification(proof);
+        return null;
+      } catch (otherError) {
+        if (
+          otherError instanceof apple.library.VerificationException &&
+          otherError.status === apple.library.VerificationStatus.RETRYABLE_VERIFICATION_FAILURE
+        )
+          throw new PairingError(
+            503,
+            'Apple notification verification is temporarily unavailable. Retry later.',
+          );
+        // A foreign app or invalid signature must not be acknowledged as trusted.
+      }
+    }
+    throw new PairingError(401, 'App Store notification signature is invalid.');
+  }
+}
 /** Apple's certificate-chain verifier for this server's environment (IAP_SANDBOX). */
 export async function appleVerifier() {
   const library = await import('@apple/app-store-server-library');
