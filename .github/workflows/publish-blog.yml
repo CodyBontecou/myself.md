@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even when the blog is already current
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -43,7 +48,7 @@ jobs:
       - name: Check whether publication is needed
         id: publication
         env:
-          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
         run: node scripts/check-blog-publication.js
       - name: Validate publication logic and generated content
         if: steps.publication.outputs.changed == 'true'
