@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { appendFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { sorted } from '../core/collections.js';
 import { blogContentHash, blogPosts } from '../server/blog-content.js';
@@ -27,6 +28,7 @@ async function read(path, schema, options = {}) {
 const bindingSchema = z.object({ name: z.string() }).passthrough();
 const versionSchema = z.object({
   resources: z.object({ bindings: z.array(bindingSchema), script_runtime: z.unknown() }),
+  annotations: z.object({ 'workers/message': z.string().optional() }).optional(),
 });
 const deploymentsSchema = z.object({
   deployments: z.array(
@@ -41,6 +43,18 @@ const settingsSchema = z
     observability: z.unknown(),
   })
   .passthrough();
+/** Compare without logging configuration values or source in assertion diagnostics.
+ * @param {unknown} actual @param {unknown} expected @param {string} message */
+function requireSame(actual, expected, message) {
+  assert.ok(isDeepStrictEqual(actual, expected), message);
+}
+/** Upload annotations change when staging a version; configuration must stay identical.
+ * @param {z.infer<typeof settingsSchema>} settings */
+function configuration(settings) {
+  const result = { ...settings };
+  delete result.annotations;
+  return result;
+}
 async function content() {
   const parts = await (await request('/content/v2')).formData();
   const modules = [];
@@ -69,11 +83,31 @@ const versions = await read(
   '/versions',
   z.object({ items: z.array(z.object({ id: z.string() })) }),
 );
-assert.equal(
-  versions.items[0]?.id,
-  active[0].version_id,
-  'An undeployed Worker version exists; review it before publishing.',
-);
+/** @param {{resources: {bindings: Array<{name: string}>}}} version */
+const bindings = (version) =>
+  sorted(version.resources.bindings, (a, b) => a.name.localeCompare(b.name));
+const latest = versions.items[0];
+assert.ok(latest, 'No uploaded Worker version.');
+if (latest.id !== active[0].version_id) {
+  const staged = await read(`/versions/${latest.id}`, versionSchema);
+  assert.ok(
+    /^Publish blog [a-f0-9]{12}; preserve deployed application$/.test(
+      staged.annotations?.['workers/message'] ?? '',
+    ),
+    'An unrelated undeployed Worker version exists; review it before publishing.',
+  );
+  requireSame(
+    bindings(staged),
+    bindings(currentVersion),
+    'Staged blog upload changed bindings; review it before retrying.',
+  );
+  requireSame(
+    staged.resources.script_runtime,
+    currentVersion.resources.script_runtime,
+    'Staged blog upload changed runtime; review it before retrying.',
+  );
+  console.log('Retrying a previous blog-only upload with unchanged bindings and runtime.');
+}
 const candidate = patchBlogContent(before.source, blogPosts, blogContentHash);
 const metadata = {
   main_module: before.name,
@@ -101,27 +135,31 @@ const upload = await read('/versions?bindings_inherit=strict', z.object({ id: z.
   body: form,
 });
 const id = upload.id;
+console.log(`Staged blog Worker version ${id}.`);
 const nextVersion = await read(`/versions/${id}`, versionSchema);
-/** @param {{resources: {bindings: Array<{name: string}>}}} version */
-const bindings = (version) =>
-  sorted(version.resources.bindings, (a, b) => a.name.localeCompare(b.name));
-assert.deepEqual(bindings(nextVersion), bindings(currentVersion), 'Inherited bindings differ.');
-assert.deepEqual(
+requireSame(bindings(nextVersion), bindings(currentVersion), 'Inherited bindings differ.');
+requireSame(
   nextVersion.resources.script_runtime,
   currentVersion.resources.script_runtime,
   'Worker runtime differs.',
 );
-assert.deepEqual(
-  await read('/settings', settingsSchema),
-  settings,
+requireSame(
+  configuration(await read('/settings', settingsSchema)),
+  configuration(settings),
   'Worker settings changed during publication.',
 );
-assert.deepEqual(
+requireSame(
   (await read('/deployments', deploymentsSchema)).deployments[0]?.versions,
   active,
   'Another deployment completed during publication.',
 );
-assert.deepEqual(await content(), before, 'Worker code changed during publication.');
+requireSame(await content(), before, 'Worker code changed during publication.');
+requireSame(
+  (await read('/versions', z.object({ items: z.array(z.object({ id: z.string() })) }))).items[0]
+    ?.id,
+  id,
+  'Another Worker version was uploaded during publication.',
+);
 await read('/deployments', z.unknown(), {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
