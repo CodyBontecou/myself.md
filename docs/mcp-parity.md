@@ -8,6 +8,18 @@ Runtime verification covers saved versus unsaved destinations, first-use/retry/c
 
 # UI and MCP parity
 
+## Health.md Android existing-customer claim implementation (18 October 2026)
+
+Health.md's Play source now implements the existing `healthmd://myself/claim` handoff exposed by `get_lifetime_access` and the mobile existing-customer guide. Opening the link or Settings entry only presents disclosure. The purchaser must explicitly request fresh Google Play proof verification, then sign in and confirm the receiving account in the browser. Browser launch is awaiting-user, never completed entitlement. The existing semantic purchase verifier, canonical purchase ownership, same-account retries, account confirmation and owner-scoped `get_lifetime_access` observation remain shared across platforms. No new grant, credential access or agent confirmation authority is introduced. F-Droid has no claim UI, link registration or Play purchase source. Source implementation requires an updated Android binary; successful production purchase verification and redemption still need a consenting purchaser.
+
+## Other existing-customer claim paths (18 October 2026)
+
+Health.md Apple claims require `HEALTH_MD_APPLE_APP_ID` for both lifetime IAP and original paid-download evidence. Adding that required deployment binding preserves the existing purchase disclosure, browser account confirmation, one-account ownership and `get_lifetime_access` guidance/observation handoffs. No entitlement is issued by a configuration or invalid-proof check. Health.md's current native source has the iOS/iPadOS claim view but describes Android claim routing and disclosure as planned; the migration guide now records this gap instead of presenting a backend verifier as a complete Android workflow. time.md retains its activation-key/browser handoff and the same account confirmation. These checks add no agent grant or new operation. Successful production redemption still requires a consenting purchaser for each store path.
+
+## iso.me claim verification configuration (18 October 2026)
+
+The hosted Worker requires the legacy iso.me App Store ID in addition to the shared Apple verification credentials. This deployment configuration repair restores the existing original-app purchase-proof entry point; it adds no UI or MCP operation and changes no eligibility, account confirmation or ownership rule. Agents continue to use `get_lifetime_access` for claim guidance and entitlement observation. The purchaser supplies proof in iso.me and completes browser sign-in and account confirmation. An invalid-proof production probe verifies that the configuration gate is cleared without issuing a claim; successful real-purchase verification and redemption still require a purchaser retry.
+
 ## Automatic lifetime access (17 October 2026)
 
 Mobile Account no longer exposes the redundant Check lifetime access button. The existing native adapter reads available IAP purchases at startup and listens for purchase updates; shared account billing refreshes at startup, foreground return, sign-in and before authenticated exports. Account grants and existing-customer claims still require server verification because they are not store purchases. Unlock → Restore purchases remains the explicit native recovery handoff. Account status continues to use the shared allowance; `get_lifetime_access` retains the owner-scoped entitlement read and purchase/restore handoff. Dashboard behavior, store verification and authorization are unchanged.

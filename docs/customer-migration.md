@@ -6,7 +6,7 @@ Existing health.md, iso.me, and paid time.md purchasers can claim a permanent, a
 
 Start from myself.md’s onboarding **Claim existing-customer access** option or the same button on its paywall. The account screen explains the steps below and the time.md activation-key verification flow. These entry points do not purchase anything or claim access without verification.
 
-1. In health.md (iPhone, iPad, or Google Play Android) or iso.me (iOS), open Settings → **Claim myself.md access**.
+1. In health.md (iPhone, iPad, or an updated Google Play Android build) or iso.me (iOS), open Settings → **Claim myself.md access**. Health.md's Android implementation requires a new app build; the backend configuration alone does not update installed apps.
 2. Read the disclosure and choose **Verify purchase and continue**. Only purchase evidence is sent to myself.md; no health, location, or export data is uploaded.
 3. The server verifies ownership with Apple or Google and opens a 15-minute claim link. Sign in with Apple or GitHub, check the displayed account, and explicitly claim lifetime access.
 4. Open myself.md → Settings → **Your myself.md account**, then sign in with the same account. The app retrieves the lifetime grant. Agent pairing remains a separate action.
@@ -30,7 +30,7 @@ Configure the existing native verification credentials from [lifetime-unlock.md]
 
 | Variable                                                        | Value                                                                            |
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `HEALTH_MD_APPLE_APP_ID`                                        | Health.md's numeric App Store app ID; required for its Apple verification.       |
+| `HEALTH_MD_APPLE_APP_ID`                                        | `6757763969`; required for Health.md Apple verification.                         |
 | `ISO_ME_APPLE_APP_ID`                                           | `6761960794`                                                                     |
 | `APPLE_IAP_KEY_PATH`, `APPLE_IAP_KEY_ID`, `APPLE_IAP_ISSUER_ID` | App Store Server API key with access to both legacy apps.                        |
 | `GOOGLE_APPLICATION_CREDENTIALS`                                | Android Publisher service account with access to Health.md as well as myself.md. |
@@ -38,6 +38,16 @@ Configure the existing native verification credentials from [lifetime-unlock.md]
 | `EXPO_PUBLIC_ACCOUNT_SERVER`                                    | Mobile myself.md account server, default `https://myself.md`.                    |
 
 Compose forwards the legacy app IDs and existing verification credentials. In the two Swift apps, an optional `MyselfClaimServerURL` Info.plist value overrides `https://myself.md` for a separate HTTPS test server. Health.md Android currently targets `https://myself.md`.
+
+The hosted Worker requires `ISO_ME_APPLE_APP_ID=6761960794` and `HEALTH_MD_APPLE_APP_ID=6757763969` as deployment secrets, alongside its shared Apple verification credentials. These original app IDs are distinct from myself.md's `APPLE_IAP_APP_ID`; configuring only the latter leaves the legacy Apple claims unavailable with HTTP 503 before purchase verification.
+
+On 18 October 2026, production reproduced that exact iso.me configuration error. Worker version `96dc8182-ba75-471f-9ccd-fec4c1f79604` added only the missing iso.me binding to the active application, preserving its script etag and existing bindings. The invalid-proof probe no longer returns the configuration error and issues no claim; it still receives the Worker's generic HTTP 503 failure response. Health, dashboard and OAuth discovery return HTTP 200. This confirms the missing configuration was repaired, without establishing successful Apple verification or real-purchaser redemption; those require a purchaser retry. Private version metadata and smoke results are retained under `.local/iso-me-claim-config/`.
+
+The follow-up audit found the same missing setting for both Health.md Apple proof kinds. Worker version `a05d201d-852a-4b0a-878f-b9d2ca95f54c` added `HEALTH_MD_APPLE_APP_ID`, preserving the active script, assets, runtime and existing bindings. The retained Apple key authenticates requests for Health.md and iso.me; nonexistent transaction IDs return Apple's `TRANSACTION_ID_NOT_FOUND` rather than an authentication error. The retained Google service account can read Health.md's active `health_md_premium_lifetime` one-time product; an invalid purchase token is rejected. These credential checks do not establish real purchase ownership or successful production redemption.
+
+time.md's nonexistent-license probes return HTTP 403 from its proof endpoint, myself.md's migration endpoint and the time.md claim endpoint. Its production Stripe secret is configured, its claim page is reachable, and its regression suite covers paid eligibility, trial/free/refund/dispute/revocation rejection and the browser handoff. The myself.md HTTP/MCP fixtures also verify claim completion, ownership isolation and entitlement observation. Real Stripe payment retrieval still needs a consenting purchaser's license. Android Health.md has backend product support but its current native source documents the disclosure/deep-link claim UI as planned; it must not be described as a verified available flow. Follow-up evidence is retained under `.local/other-app-claims/`.
+
+The subsequent Android implementation adds the Play-only Settings entry and exact `healthmd://myself/claim` route. It presents disclosure before querying fresh completed lifetime-purchase evidence, submits only that evidence to the existing verifier, validates the same-origin browser ticket and reports awaiting-user confirmation. Cached unlocks, grandfathered Android access and F-Droid access do not establish a paid purchase. See [Health.md Android claim behavior](../../health-md/apps/android/docs/features/myself-md-claim.md). Native distribution and real-purchaser redemption remain separate release checks; no Google Play release is implied by source completion.
 
 Deploy the backend and dashboard before shipping the legacy-app claim buttons. Keep all three apps' native purchase flows intact. Explain the existing-customer migration and one-account rule in App Review notes. This implementation has not been deployed or submitted to a store by this change.
 
