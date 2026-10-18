@@ -18,13 +18,25 @@ const profiles = ['a', 'b'].map((id) =>
 );
 /** @type {Map<string,string>} */
 const rows = new Map();
-/** @type {{profiles:{profileId:string,enabledAt:string}[]}[]} */
+/** @type {{profiles:{profileId:string,enabledAt:string}[],token?:string|null,notificationError?:string|null}[]} */
 const registrations = [];
 /** @type {{profile:string,day:string,writeMode:import('../core/export-files.js').ExportWriteMode|undefined}[]} */
 const exported = [];
 let authorizationFailure = '';
+let pushRegistrationFailure = false;
+let workerRegistrations = 0;
+let workerIsRegistered = false;
+let notificationTaskRegistered = false;
+/** @type {Promise<void>|null} */
+let pendingNotificationRegistration = null;
+/** @type {Promise<{data:string}>|null} */
+let pendingPushToken = null;
+/** @type {Promise<void>|null} */
+let pendingDayExport = null;
 let reservations = 0;
 let historyStarts = 0;
+/** @type {Map<string,()=>Promise<number>>} */
+const backgroundTasks = new Map();
 const mocks = {
   phoneDatabase: () => ({
     execSync() {},
@@ -48,15 +60,35 @@ const mocks = {
   qaEnabled: false,
   getPermissionsAsync: async () => ({ granted: true }),
   requestPermissionsAsync: async () => ({ granted: true }),
-  getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[test]' }),
+  getExpoPushTokenAsync: async () => {
+    if (pendingPushToken) return pendingPushToken;
+    if (pushRegistrationFailure) throw new Error('FCM token unavailable');
+    return { data: 'ExponentPushToken[test]' };
+  },
   setNotificationChannelAsync: async () => {},
   AndroidImportance: { DEFAULT: 3 },
-  isTaskRegisteredAsync: async () => false,
+  /** @param {string} name */
+  isTaskRegisteredAsync: async (name) =>
+    name === 'profile-export-notifications' ? notificationTaskRegistered : workerIsRegistered,
   getStatusAsync: async () => 1,
   BackgroundTaskStatus: { Available: 1 },
-  registerTaskAsync: async () => {},
-  unregisterTaskAsync: async () => {},
-  defineTask() {},
+  registerTaskAsync: async () => {
+    workerRegistrations++;
+    workerIsRegistered = true;
+  },
+  unregisterTaskAsync: async () => {
+    workerIsRegistered = false;
+  },
+  /** @param {string} name @param {()=>Promise<number>} handler */
+  defineTask(name, handler) {
+    backgroundTasks.set(name, handler);
+  },
+  BackgroundTaskResult: { Success: 1, Failed: 2 },
+  /** @param {boolean} enabled */
+  reconcileExportNotificationTask: async (enabled) => {
+    await pendingNotificationRegistration;
+    notificationTaskRegistered = enabled;
+  },
   requireCloudAuthorization: async () => {
     if (authorizationFailure) throw new Error(authorizationFailure);
   },
@@ -76,6 +108,7 @@ const mocks = {
   /** @param {unknown} _session @param {import("../core/profiles.js").ExportProfile} profile @param {{day:string}} day */
   exportProfileDay: async (_session, profile, day) => {
     exported.push({ profile: profile.id, day: day.day, writeMode: profile.export.writeMode });
+    await pendingDayExport;
     return { files: [], count: 0, failedSources: 0 };
   },
 };
@@ -93,9 +126,20 @@ await module.link((specifier) => {
     for (const [key, value] of Object.entries(values)) this.setExport(key, value);
   });
 });
-await module.evaluate();
+// A headless launch evaluates the entry module without mounting the router or PhoneProvider.
+const headlessEntry = new SourceTextModule(
+  await readFile(new URL('../index.js', import.meta.url), 'utf8'),
+);
+await headlessEntry.link((specifier) =>
+  specifier === './client/export-task.js' ? module : new SyntheticModule([], function () {}),
+);
+await headlessEntry.evaluate();
+assert.ok(
+  backgroundTasks.has('profile-file-exports'),
+  'A cold headless launch must define scheduled exports before the UI mounts.',
+);
 const task =
-  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void)=>Promise<unknown>,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>}} */ (
+  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void)=>Promise<unknown>,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,reminderError?:string|null},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>,reconcileExports:()=>Promise<void>}} */ (
     /** @type {unknown} */ (module.namespace)
   );
 const first = profiles[0];
@@ -170,7 +214,33 @@ await task.setScheduleEnabled(session.deviceId, second, true);
 const multipleState = task.scheduleState(session.deviceId, second);
 multipleState.progress.enabledAt = new Date(Date.now() - 172800000).toISOString();
 rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(multipleState));
-await task.runScheduledExports(second.id);
+await task.setScheduleEnabled(session.deviceId, first, false);
+const backgroundExport = backgroundTasks.get('profile-file-exports');
+assert.ok(backgroundExport);
+// An OS wake must retain its keepalive while an already-started scheduled export is pending.
+/** @type {()=>void} */
+let releaseDay = () => {};
+pendingDayExport = new Promise((resolve) => {
+  releaseDay = resolve;
+});
+const foregroundExport = task.runScheduledExports(second.id);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(exported.length, beforeMultiple + 1, 'Foreground export reached delivery');
+let backgroundFinished = false;
+const joinedWake = backgroundExport().then((result) => {
+  backgroundFinished = true;
+  return result;
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(
+  backgroundFinished,
+  false,
+  'OS task must await an in-flight scheduled export before releasing its keepalive',
+);
+releaseDay();
+pendingDayExport = null;
+await foregroundExport;
+assert.equal(await joinedWake, mocks.BackgroundTaskResult.Success);
 assert.equal(exported.length, beforeMultiple + 2);
 assert.equal(exported.at(-1)?.day, localCalendar.day(new Date().toISOString()));
 assert.equal(exported.at(-1)?.writeMode, 'append');
@@ -182,6 +252,7 @@ assert.equal(
 );
 await task.setScheduleEnabled(session.deviceId, second, false);
 second.export = oldExport;
+await task.setScheduleEnabled(session.deviceId, first, true);
 console.log(
   'Multi-time scheduled execution includes today, preserves file policy and checkpoints completion.',
 );
@@ -398,7 +469,18 @@ await assert.rejects(
   cloud.register('owner-a', { ...registration, deviceId: 'other' }),
   /Not owned/,
 );
+await cloud.register('owner-a', {
+  ...registration,
+  token: null,
+  notificationError: 'token-unavailable',
+});
+assert.equal(cloud.list('owner-a')[0]?.profiles.length, 1);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registration-failed');
+assert.equal(cloud.list('owner-a')[0]?.profiles[0]?.timing.reminders, 'unavailable');
+assert.match(cloud.list('owner-a')[0]?.lastError ?? '', /independent/);
 await cloud.register('owner-a', registration);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registered');
+assert.equal(cloud.list('owner-a')[0]?.lastError, null);
 await cloud.dispatch('2026-10-15T06:01:00.000Z');
 assert.equal(pushes, 1);
 assert.equal(notifications[0]?.exportSchedule.profileId, 'b');
@@ -628,4 +710,72 @@ tap({ type: 'cloud-storage' }, 'after-unmount');
 assert.equal(tapRoutes.length, 2);
 console.log(
   'Phone notification taps: cloud replay, owned exports, foreign-device denial and cleanup pass.',
+);
+
+// Notification delivery must not prevent the independently authorized OS export worker.
+mocks.Platform.OS = 'android';
+pushRegistrationFailure = true;
+workerIsRegistered = false;
+const workersBeforePushFailure = workerRegistrations;
+await task.reconcileExports();
+assert.equal(
+  workerRegistrations,
+  workersBeforePushFailure + 1,
+  'An enabled Android schedule must register its OS worker even when push registration fails',
+);
+console.log('Android OS export registration survives push-token failure.');
+
+assert.equal(registrations.at(-1)?.token, null);
+assert.equal(registrations.at(-1)?.notificationError, 'token-unavailable');
+assert.ok(registrations.at(-1)?.profiles.length);
+assert.equal(task.scheduleState(session.deviceId, first).reminderError, 'token-unavailable');
+pushRegistrationFailure = false;
+workerIsRegistered = false;
+pendingPushToken = new Promise(() => {});
+const stalledRegistration = task.reconcileExports();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  workerIsRegistered,
+  true,
+  'The OS worker registers while push lookup is still pending',
+);
+await task.setScheduleEnabled(session.deviceId, first, false);
+await stalledRegistration;
+assert.ok(
+  !registrations.at(-1)?.profiles.some((p) => p.profileId === first.id),
+  'Disabling during token lookup must not publish a stale enabled schedule',
+);
+pendingPushToken = null;
+await task.reconcileExports();
+assert.equal(registrations.at(-1)?.notificationError, null);
+assert.equal(task.scheduleState(session.deviceId, first).reminderError, null);
+console.log(
+  'Stalled push lookup is bounded, latest opt-in wins and token recovery clears diagnostics.',
+);
+
+let finishNotificationRegistration = () => {};
+pendingNotificationRegistration = new Promise((resolve) => {
+  finishNotificationRegistration = resolve;
+});
+const beforeCapability = registrations.length;
+const enablingNotificationWake = task.setScheduleEnabled(session.deviceId, first, true);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(workerIsRegistered, true, 'Pending notification registration must not block OS work');
+assert.equal(
+  registrations.length,
+  beforeCapability,
+  'Do not advertise an unregistered wake handler',
+);
+finishNotificationRegistration();
+await enablingNotificationWake;
+assert.equal(
+  /** @type {{backgroundNotifications?:boolean}|undefined} */ (registrations.at(-1))
+    ?.backgroundNotifications,
+  true,
+  'First opt-in publishes background wake capability after actual registration',
+);
+pendingNotificationRegistration = null;
+await task.setScheduleEnabled(session.deviceId, first, false);
+console.log(
+  'Delayed notification registration preserves OS work and publishes the first wake capability.',
 );

@@ -97,7 +97,7 @@
     "auth:docker": "docker compose up -d",
     "auth:social:install": "node scripts/install-apple-provider.js",
     "auth:social": "node --env-file=.env scripts/setup-social.js",
-    "verify:exports": "node scripts/verify-profile-exports.js && node --experimental-vm-modules scripts/verify-export-resilience.js && node --experimental-vm-modules scripts/verify-scheduled-exports.js",
+    "verify:exports": "node scripts/verify-profile-exports.js && node --experimental-vm-modules scripts/verify-export-resilience.js && node --experimental-vm-modules scripts/verify-scheduled-exports.js && node --experimental-vm-modules scripts/verify-export-notifications.js",
     "build:android": "cd android && ./gradlew :app:assembleDebug",
     "build:ios": "xcodebuild -workspace ios/myselfmd.xcworkspace -scheme myselfmd -configuration Release -destination generic/platform=iOS -allowProvisioningUpdates -derivedDataPath .local/xcode/ios-release",
     "cloud:setup": "node scripts/setup-cloud.js",

@@ -17,12 +17,13 @@ import { localCalendar } from './calendar.js';
 import { beginExport, recordArtifact, finishExport } from './history.js';
 import { exportProfileDay } from './profile-export.js';
 import { requireCloudAuthorization } from './destinations.js';
+import { reconcileExportNotificationTask } from './export-notification-registration.js';
 const task = 'profile-file-exports';
 const db = phoneDatabase();
 db.execSync(
   'CREATE TABLE IF NOT EXISTS profile_schedules (device TEXT, profile TEXT, value TEXT, PRIMARY KEY(device,profile))',
 );
-/** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{historyId?:string,profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number}} State */
+/** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{historyId?:string,profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number,reminderError?:'token-unavailable'|'permission-required'|null}} State */
 /** @param {import('../core/profiles.js').ExportProfile} profile */
 function fingerprint(profile) {
   const configuration = { ...profile };
@@ -140,6 +141,50 @@ async function synchronizeExportNotifications() {
   if (qaEnabled) return;
   const session = await loadSession();
   if (!session?.server || session.deviceId !== loadExportContext()?.deviceId) return;
+  let token = null;
+  /** @type {'token-unavailable'|'permission-required'|null} */
+  let notificationError = 'permission-required';
+  // The same token also receives cloud storage lapse reminders, so register it without schedules.
+  try {
+    if ((await Notifications.getPermissionsAsync()).granted) {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('exports', {
+          name: 'Scheduled exports',
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+        await Notifications.setNotificationChannelAsync('cloud-storage', {
+          name: 'Cloud storage',
+          importance: Notifications.AndroidImportance.HIGH,
+        });
+      }
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      if (typeof projectId !== 'string') throw new Error('Notification project is not configured.');
+      /** @type {ReturnType<typeof setTimeout>|undefined} */
+      let timeout;
+      try {
+        token = (
+          await Promise.race([
+            Notifications.getExpoPushTokenAsync({ projectId }),
+            /** @type {Promise<never>} */ (
+              new Promise((_, reject) => {
+                timeout = setTimeout(
+                  () => reject(new Error('Push registration timed out.')),
+                  10000,
+                );
+              })
+            ),
+          ])
+        ).data;
+        notificationError = null;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  } catch {
+    // Push delivery is optional; it must not block OS exports or cloud schedule metadata.
+    notificationError = 'token-unavailable';
+  }
+  if (loadExportContext()?.deviceId !== session.deviceId) return;
   const profiles = (loadProfiles(session.deviceId)?.profiles ?? []).flatMap((profile) => {
     const { progress } = scheduleState(session.deviceId, profile);
     return progress.enabled && progress.enabledAt
@@ -154,22 +199,10 @@ async function synchronizeExportNotifications() {
         ]
       : [];
   });
-  let token = null;
-  // The same token also receives cloud storage lapse reminders, so register it without schedules.
-  if ((await Notifications.getPermissionsAsync()).granted) {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('exports', {
-        name: 'Scheduled exports',
-        importance: Notifications.AndroidImportance.DEFAULT,
-      });
-      await Notifications.setNotificationChannelAsync('cloud-storage', {
-        name: 'Cloud storage',
-        importance: Notifications.AndroidImportance.HIGH,
-      });
-    }
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    if (typeof projectId !== 'string') throw new Error('Notification project is not configured.');
-    token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+  for (const profile of loadProfiles(session.deviceId)?.profiles ?? []) {
+    const state = scheduleState(session.deviceId, profile);
+    state.reminderError = notificationError;
+    store(session.deviceId, profile.id, state);
   }
   const response =
     /** @type {{requests?:{requestId:string,profileId:string,enabled:boolean,expiresAt:number}[]}} */ (
@@ -178,6 +211,10 @@ async function synchronizeExportNotifications() {
         body: JSON.stringify({
           deviceId: session.deviceId,
           token,
+          notificationError,
+          backgroundNotifications: await TaskManager.isTaskRegisteredAsync(
+            'profile-export-notifications',
+          ),
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           profiles,
         }),
@@ -247,12 +284,32 @@ async function synchronizeExportNotifications() {
   }
 }
 /** Register one coalesced OS worker. Foreground runs provide catch-up when background execution is delayed. */
-export async function reconcileExports() {
-  await syncExportNotifications();
+export function reconcileExports() {
+  workerSync ??= reconcileExportWorker().finally(() => {
+    workerSync = null;
+  });
+  // Publish wake capability only after registration settles; push lookup cannot hold up the worker.
+  return workerSync.then(
+    () => syncExportNotifications(),
+    async (error) => {
+      await syncExportNotifications();
+      throw error;
+    },
+  );
+}
+let workerSync = /** @type {Promise<void>|null} */ (null);
+async function reconcileExportWorker() {
   const session = loadExportContext();
   const profiles = session ? (loadProfiles(session.deviceId)?.profiles ?? []) : [];
   const enabled =
     session && profiles.some((p) => scheduleState(session.deviceId, p).progress.enabled);
+  await Promise.all([
+    reconcilePeriodicExportWorker(Boolean(enabled)),
+    reconcileExportNotificationTask(Boolean(enabled)),
+  ]);
+}
+/** @param {boolean} enabled */
+async function reconcilePeriodicExportWorker(enabled) {
   const registered = await TaskManager.isTaskRegisteredAsync(task);
   if (enabled && !registered) {
     if ((await BackgroundTask.getStatusAsync()) !== BackgroundTask.BackgroundTaskStatus.Available)
@@ -361,9 +418,20 @@ export async function exportNow(session, profile, progress) {
     running = false;
   }
 }
+/** @type {Promise<void>|null} */
+let scheduledRun = null;
+/** Join scheduled work so an OS callback keeps its native background lifetime until delivery settles.
+ * @param {string} [profileId] @param {import('../core/schedules.js').Occurrence} [requested] */
+export function runScheduledExports(profileId, requested) {
+  if (scheduledRun) return scheduledRun;
+  if (running) return Promise.resolve();
+  scheduledRun = executeScheduledExports(profileId, requested).finally(() => {
+    scheduledRun = null;
+  });
+  return scheduledRun;
+}
 /** @param {string} [profileId] @param {import('../core/schedules.js').Occurrence} [requested] */
-export async function runScheduledExports(profileId, requested) {
-  if (running) return;
+async function executeScheduledExports(profileId, requested) {
   running = true;
   try {
     const epoch = generation;

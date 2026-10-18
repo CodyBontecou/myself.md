@@ -11,6 +11,8 @@ const registration = z.object({
     .string()
     .regex(/^(ExponentPushToken|ExpoPushToken)\[[\w-]+\]$/)
     .nullable(),
+  backgroundNotifications: z.boolean().default(false),
+  notificationError: z.enum(['token-unavailable', 'permission-required']).nullable().default(null),
   timeZone: z
     .string()
     .max(100)
@@ -36,12 +38,12 @@ const registration = z.object({
     .max(100),
 });
 /** Send one Expo push and report whether Expo accepted the ticket.
- * @param {typeof fetch} send @param {{to:string,title:string,body:string,channelId:string,data:Record<string,unknown>}} message */
+ * @param {typeof fetch} send @param {{to:string,title?:string,body?:string,channelId?:string,_contentAvailable?:boolean,priority?:'normal',data:Record<string,unknown>}} message */
 export async function sendExpoPush(send, message) {
   const response = await send('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...message, sound: 'default' }),
+    body: JSON.stringify(message['_contentAvailable'] ? message : { ...message, sound: 'default' }),
     signal: AbortSignal.timeout(15000),
   });
   const result = /** @type {{data?:{status?:string,details?:{error?:string}}}} */ (
@@ -87,12 +89,23 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         return {
           deviceId: String(row.device),
           timeZone: value.timeZone,
+          backgroundNotifications: value.backgroundNotifications === true,
           profiles: /** @type {RegisteredProfile[]} */ (value.profiles).map((profile) =>
             Object.assign({}, profile, {
               timing: {
                 intervalMs: scheduleIntervalMs(profile.schedule),
                 background: 'best_effort',
-                reminders: scheduleIntervalMs(profile.schedule) ? 'disabled' : 'enabled',
+                notificationWake: value.backgroundNotifications
+                  ? value.token
+                    ? 'best_effort'
+                    : 'unavailable'
+                  : 'unsupported',
+                reminders:
+                  value.backgroundNotifications || scheduleIntervalMs(profile.schedule)
+                    ? 'disabled'
+                    : value.token
+                      ? 'enabled'
+                      : 'unavailable',
               },
             }),
           ),
@@ -160,8 +173,16 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
             status: !profiles.length
               ? 'disabled'
               : value.token
-                ? (previous?.status ?? 'registered')
-                : 'permission-required',
+                ? previous?.token && previous?.profiles.length
+                  ? previous.status
+                  : 'registered'
+                : value.notificationError === 'token-unavailable'
+                  ? 'registration-failed'
+                  : 'permission-required',
+            lastError:
+              value.notificationError === 'token-unavailable'
+                ? 'Push wakes and reminders are unavailable on this phone. Check notification setup and connectivity. Periodic background exports are independent of push delivery.'
+                : null,
             updatedAt: new Date().toISOString(),
           }),
         );
@@ -214,6 +235,8 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
         }
         const value = JSON.parse(String(row.value));
         if (!value.token) continue;
+        /** @type {{profile:RegisteredProfile,occurrence:import('../core/schedules.js').Occurrence}[][]} */
+        const batches = [];
         for (const profile of /** @type {RegisteredProfile[]} */ (value.profiles)) {
           // Frequent refreshes run on the phone; do not send a reminder every minute.
           if (scheduleIntervalMs(profile.schedule)) continue;
@@ -237,52 +260,79 @@ export function createExportSchedules(db, ownDevice, arm, send = fetch) {
             scheduleCalendar(value.timeZone),
           );
           for (const occurrence of due) {
-            try {
-              // oxlint-disable-next-line eslint/no-await-in-loop -- Preserve each occurrence's delivery checkpoint before sending the next.
-              const result = await sendExpoPush(send, {
-                to: value.token,
-                title: 'Time for your scheduled export',
-                body: 'Tap to open myself.md and export your scheduled profile.',
-                channelId: 'exports',
-                data: {
-                  exportSchedule: {
-                    deviceId: row.device,
-                    profileId: profile.profileId,
-                    enabledAt: profile.enabledAt,
-                    ...occurrence,
+            if (value.backgroundNotifications) {
+              const previous = batches.at(-1);
+              const entry = { profile, occurrence };
+              // Leave room for the Expo envelope under APNs' 4 KB payload limit.
+              const bytes = new TextEncoder().encode(
+                JSON.stringify(
+                  [...(previous ?? []), entry].map(({ profile: saved, occurrence: slot }) =>
+                    Object.assign(
+                      {
+                        deviceId: row.device,
+                        profileId: saved.profileId,
+                        enabledAt: saved.enabledAt,
+                      },
+                      slot,
+                    ),
+                  ),
+                ),
+              ).byteLength;
+              if (previous && bytes < 3000) previous.push(entry);
+              else batches.push([entry]);
+            } else batches.push([{ profile, occurrence }]);
+          }
+        }
+        for (const batch of batches) {
+          const hints = batch.map(({ profile, occurrence }) => ({
+            deviceId: row.device,
+            profileId: profile.profileId,
+            enabledAt: profile.enabledAt,
+            ...occurrence,
+          }));
+          try {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- Checkpoint accepted delivery before sending the next batch.
+            const result = await sendExpoPush(
+              send,
+              value.backgroundNotifications
+                ? {
+                    to: value.token,
+                    _contentAvailable: true,
+                    priority: 'normal',
+                    data: { exportSchedules: hints },
+                  }
+                : {
+                    to: value.token,
+                    title: 'Time for your scheduled export',
+                    body: 'Tap to open myself.md and export your scheduled profile.',
+                    channelId: 'exports',
+                    data: { exportSchedule: hints[0] },
                   },
-                },
-              });
-              if (!result.accepted) {
-                if (result.unregistered) value.token = null;
-                throw new Error('Push delivery was not accepted.');
-              }
+            );
+            if (!result.accepted) {
+              if (result.unregistered) value.token = null;
+              throw new Error('Push delivery was not accepted.');
+            }
+            for (const { profile, occurrence } of batch) {
               profile[
                 occurrence.kind === 'completed-day'
                   ? 'lastNotifiedCompleted'
                   : 'lastNotifiedRefresh'
               ] = occurrence.fireDate;
-              value.status = 'accepted-by-expo';
-              value.lastError = null;
-            } catch {
-              value.status = 'delivery-failed';
-              value.lastError =
-                'Push gateway did not accept the notification. Check connectivity and Expo/APNs/FCM credentials; reopen the phone to refresh its token.';
             }
-            // Registration may change while delivery is in flight. Never resurrect an old snapshot.
-            const updated = db
-              .prepare(
-                'UPDATE export_schedules SET value=? WHERE subject=? AND device=? AND value=?',
-              )
-              .run(
-                JSON.stringify(value),
-                String(row.subject),
-                String(row.device),
-                String(row.value),
-              );
-            if (!updated.changes) break;
-            row.value = JSON.stringify(value);
+            value.status = 'accepted-by-expo';
+            value.lastError = null;
+          } catch {
+            value.status = 'delivery-failed';
+            value.lastError =
+              'Push gateway did not accept the notification. Check connectivity and Expo/APNs/FCM credentials; reopen the phone to refresh its token.';
           }
+          // Registration may change while delivery is in flight. Never resurrect an old snapshot.
+          const updated = db
+            .prepare('UPDATE export_schedules SET value=? WHERE subject=? AND device=? AND value=?')
+            .run(JSON.stringify(value), String(row.subject), String(row.device), String(row.value));
+          if (!updated.changes) break;
+          row.value = JSON.stringify(value);
         }
       }
     },

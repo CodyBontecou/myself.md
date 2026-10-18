@@ -117,7 +117,7 @@
       "expo-status-bar",
       "@react-native-vector-icons/ionicons",
       "expo-iap",
-      "expo-notifications",
+      ["expo-notifications", { "enableBackgroundRemoteNotifications": true }],
       "./plugins/with-embedded-debug.cjs"
     ],
     "scheme": "myselfmd",
