@@ -167,7 +167,18 @@ export class Account extends DurableObject {
           : request,
       (/** @type {import('../server/location-capture.js').LocationCapture} */ request) => request,
     );
+    const whoopRequests = new DurableMap(
+      this.db,
+      this.cloud,
+      'whoop-requests',
+      (/** @type {import('../server/whoop-requests.js').WhoopRequest} */ request) =>
+        request.status === 'running'
+          ? { ...request, status: /** @type {const} */ ('failed') }
+          : request,
+      (/** @type {import('../server/whoop-requests.js').WhoopRequest} */ request) => request,
+    );
     this.data = createDataService({
+      whoopRequests,
       cloud: this.cloud,
       jobs,
       proposals,
@@ -195,6 +206,8 @@ export class Account extends DurableObject {
     });
     this.listener = createApplication(
       {
+        WHOOP_CLIENT_ID: this.env.WHOOP_CLIENT_ID,
+        WHOOP_CLIENT_SECRET: this.env.WHOOP_CLIENT_SECRET,
         PUBLIC_URL: this.env.PUBLIC_URL,
         REVIEWER_LOGIN_ENABLED: this.env.REVIEWER_LOGIN_ENABLED,
         PUBLIC_URL_ALIASES: this.env.PUBLIC_URL_ALIASES,

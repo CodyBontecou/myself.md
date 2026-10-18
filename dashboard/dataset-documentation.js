@@ -1,3 +1,4 @@
+import { whoopType } from '../core/whoop.js';
 import { HeroPortrait } from './hero-portrait.js';
 import { HeroDataFlow } from './hero-data-flow.js';
 import { SiteHeader } from './site-header.js';
@@ -23,10 +24,13 @@ const tutorials = [
 
 /** @param {string} key */
 function typeLabel(key) {
-  return key
-    .replace(/^native:/, '')
-    .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return (
+    whoopType(key.replace(/^native:/, ''))?.label ??
+    key
+      .replace(/^native:/, '')
+      .replace(/^HK(?:Quantity|Category|Correlation|Data)TypeIdentifier/, '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  );
 }
 /** @param {{dataset:string, landing?:boolean}} props */
 export function DatasetDocumentation({ dataset, landing = false }) {

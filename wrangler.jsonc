@@ -105,6 +105,8 @@
   },
   "secrets": {
     "required": [
+      "WHOOP_CLIENT_ID",
+      "WHOOP_CLIENT_SECRET",
       "CLOUD_ENCRYPTION_KEY",
       "IMPORT_SECRET",
       "IDENTITY_SECRET",

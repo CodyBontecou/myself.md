@@ -1,3 +1,4 @@
+import { reviewWhoopRequest } from './whoop-request.js';
 import { profileSyncBase, saveProfileSyncBase, commitSyncedProfiles } from './profile-sync.js';
 import { mergeProfileStates, sameProfileValue } from '../core/profile-sync.js';
 import { trackAnalytics } from './analytics.js';
@@ -301,13 +302,14 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{whoopRequest?:import('./whoop-request.js').WhoopRequest|null,locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
             })
           );
         if (active) {
+          await reviewWhoopRequest(session, response.whoopRequest, () => active);
           acceptAllowance(response.allowance);
           acceptProfileSync(response.profileSync, { profiles: info.profiles });
           await reviewLocationCapture(

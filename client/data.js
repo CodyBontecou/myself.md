@@ -1,3 +1,4 @@
+import { whoopHealthTypes, whoopPage, whoopStatus } from './whoop.js';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import { profileAllows, agentProfileAllows } from '../core/profiles.js';
@@ -8,13 +9,17 @@ import { usageStatus, usagePage } from './usage.js';
 import { locationStatus } from './location-task.js';
 /** @param {string} _owner @param {import('./library.js').Grants} grants @param {import('../core/profiles.js').ExportProfile} [profile] */
 export async function catalog(_owner, grants, profile) {
-  const health = await healthTypes();
-  const selectableHealth = Platform.OS === 'android' ? await healthTypes(true) : health;
+  const health = [...(await healthTypes()), ...(await whoopHealthTypes(_owner))];
+  const selectableHealth = [
+    ...(Platform.OS === 'android' ? await healthTypes(true) : await healthTypes()),
+    ...(await whoopHealthTypes(_owner, true)),
+  ];
   const usage = await usageStatus();
   const location = await Location.getForegroundPermissionsAsync();
   const status = await locationStatus(_owner);
   return {
     locationTracking: status.tracking,
+    whoop: await whoopStatus(_owner),
     domains: domains.map((domain) => ({
       domain,
       selectableTypes: (domain === 'health'
@@ -54,6 +59,7 @@ export async function catalog(_owner, grants, profile) {
       notes:
         domain === 'health'
           ? [
+              'WHOOP types need a separate Settings → WHOOP connection. Provider status and approved scopes are in catalog.whoop. Connecting never changes selections or Agent permissions. WHOOP body data is a current snapshot; recovery timestamps must be joined by cycle_id/sleep_id.',
               'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions are not captured by this adapter.',
               'Characteristics are current snapshots captured at read time, not historical values for the selected day. Newly available types require profile selection; agents cannot add them or grant Health access.',
               'Exports preserve native records and explicit timeSeries without summaries. Workout selection includes genuinely associated heart-rate/form series and routes. Nested capture failures mark exports partial. Health Connect series remain intact; Android exercise membership is not inferred from overlapping times.',
@@ -97,7 +103,7 @@ export async function readPage(owner, query, profile, forChat = true) {
     query.domain === 'location'
       ? localPage(owner, query, token)
       : query.domain === 'health'
-        ? await healthPage(query, token)
+        ? await readHealth(owner, query, token)
         : await usagePage(query, token);
   let limit = query.limit;
   if (forChat) {
@@ -112,10 +118,17 @@ export async function readPage(owner, query, profile, forChat = true) {
           : query.domain === 'health'
             ? // Re-read the same cursor with a smaller page to avoid skipping any records.
               // oxlint-disable-next-line eslint/no-await-in-loop
-              await healthPage(reduced, token)
+              await readHealth(owner, reduced, token)
             : // oxlint-disable-next-line eslint/no-await-in-loop
               await usagePage(reduced, token);
     }
   }
   return { ...page, nextCursor: page.nextCursor === null ? null : cursor(query, page.nextCursor) };
+}
+
+/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} token */
+function readHealth(owner, query, token) {
+  return query.type.startsWith('whoop.')
+    ? whoopPage(owner, query, token)
+    : healthPage(query, token);
 }

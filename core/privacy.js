@@ -1,7 +1,7 @@
 /** Shared public disclosures for the phone, website and MCP. */
 export const privacyPolicy = {
   title: 'myself.md Privacy Policy',
-  updated: '2026-10-17',
+  updated: '2026-10-18',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/contact',
   supportEmail: 'cody@isolated.tech',
@@ -10,7 +10,11 @@ export const privacyPolicy = {
   sections: [
     {
       title: 'What we collect and why',
-      body: 'myself.md reads the health, screen time and location data you choose to export or share. Health data comes from HealthKit on iOS and Health Connect on Android, including readings, timestamps, units and the original source details. The app only reads your health store.\n\nYour phone’s permissions and your profile selection control what the app can read and export. HealthKit does not tell apps when read access is denied, so an empty result does not confirm permission. Screen-time data can include app or website identifiers and usage totals, depending on your phone and its permissions.',
+      body: 'myself.md reads the health, screen time and location data you choose to export or share. Health data comes from HealthKit on iOS and Health Connect on Android, including readings, timestamps, units and the original source details. The app reads your health store without writing to it. You can also connect WHOOP separately to read provider data directly.\n\nYour phone’s permissions and your profile selection control what the app can read and export. HealthKit does not tell apps when read access is denied, so an empty result does not confirm permission. Screen-time data can include app or website identifiers and usage totals, depending on your phone and its permissions.',
+    },
+    {
+      title: 'WHOOP is optional',
+      body: 'Connecting WHOOP opens its sign-in and consent page. WHOOP access and rotating refresh tokens stay in secure storage on this phone, scoped to your myself.md account. Our authenticated OAuth broker exchanges authorization codes and refresh tokens using server-held app credentials; it does not persist provider tokens or health data. The phone calls WHOOP’s v2 data API directly.\n\nSelect WHOOP types in a profile to export cycles, recovery, sleep, workouts or current body measurements. WHOOP records remain separate from operating-system health records, which can contain overlapping events. Connecting does not grant agent read access. Profile Agent permissions and selected types govern phone and stored-cloud reads. Disconnect in Settings → WHOOP to revoke provider access and remove local credentials. Existing exports remain until deleted. Signing out prevents WHOOP reads but keeps account-scoped credentials for your next sign-in; account deletion erases them from this phone.',
     },
     {
       title: 'Location is optional',

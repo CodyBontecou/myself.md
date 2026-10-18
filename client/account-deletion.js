@@ -1,3 +1,4 @@
+import { forgetWhoop } from './whoop.js';
 import { Directory, File, Paths } from 'expo-file-system';
 import { loadProfiles } from './profiles.js';
 import { forgetDestinationCredentials } from './destinations.js';
@@ -131,10 +132,12 @@ export async function deleteLocalAccount(session) {
       }
     }
   }
+  await forgetWhoop(session.owner);
   await clearNativePurchase();
   clearAccountAllowance();
   db.withTransactionSync(() => {
     for (const [table, column, value] of [
+      ['whoop_receipts', 'owner', session.owner],
       ['records', 'owner', session.owner],
       ['records', 'owner', device],
       ['location_capture_receipts', 'owner', session.owner],

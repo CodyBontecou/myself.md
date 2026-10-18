@@ -1,3 +1,4 @@
+import { whoopType } from '../core/whoop.js';
 import { showToast } from '../src/components/Toast.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { useEffect, useRef, useState } from 'react';
@@ -57,7 +58,11 @@ export default function ProfileDataEditor({
       const added = domains.find(
         (domain) =>
           (inline || domain !== 'health') &&
-          next[domain].some((key) => !selection[domain].includes(key)),
+          next[domain].some(
+            (key) =>
+              !selection[domain].includes(key) &&
+              !(domain === 'health' && key.startsWith('native:whoop.')),
+          ),
       );
       if (
         added &&
@@ -447,10 +452,11 @@ export default function ProfileDataEditor({
     const label =
       domain === 'location' && key === 'native:points'
         ? 'Recorded locations'
-        : key
+        : (whoopType(key.replace(/^native:/, ''))?.label ??
+          key
             .replace(/^native:/, '')
             .replace(/^HK(Quantity|Category|Correlation|Data)TypeIdentifier/, '')
-            .replace(/([a-z])([A-Z])/g, '$1 $2');
+            .replace(/([a-z])([A-Z])/g, '$1 $2'));
     if (inline)
       return (
         <Pressable
@@ -683,6 +689,7 @@ function toggleHealthSection(selected, available, group, enabled) {
  * @param {string} key */
 function healthGroup(key) {
   const type = key.replace(/^native:/, '');
+  if (type.startsWith('whoop.')) return 'WHOOP';
   if (/Sleep/i.test(type)) return 'Sleep';
   if (
     /HeartRate|HeartRhythm|Heartbeat|AtrialFibrillation|BloodPressure|Hypertension|Electrocardiogram|CardioFitness|PeripheralPerfusion/i.test(

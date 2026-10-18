@@ -73,6 +73,7 @@ function RootStack() {
               <Stack.Screen name="cloud-storage" options={{ title: 'Cloud storage' }} />
               <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
               <Stack.Screen name="account" options={{ title: 'Account' }} />
+              <Stack.Screen name="whoop" options={{ title: 'WHOOP' }} />
               <Stack.Screen name="connected-logins" options={{ title: 'Connected logins' }} />
               <Stack.Screen name="login" options={{ title: 'Sign in' }} />
               <Stack.Screen name="claim-access" options={{ title: 'Existing purchases' }} />

@@ -110,6 +110,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     ...r2?.env,
     DATA_DIR: directory,
     CLOUD_ENCRYPTION_KEY: 'a'.repeat(64),
+    WHOOP_CLIENT_ID: 'fixture-whoop-client',
+    WHOOP_CLIENT_SECRET: 'fixture-whoop-secret',
     PUBLIC_URL: origin,
     PUBLIC_URL_ALIASES: 'https://legacy.example',
     OAUTH_ISSUER: issuer,
@@ -292,6 +294,30 @@ try {
     z.object({ clientId: z.string() }).parse((await request('/dashboard/config', null)).value)
       .clientId,
     'myselfmd-dashboard',
+  );
+  const whoopAuthorize = { action: 'authorize', state: '1234abcd' };
+  assert.equal((await request('/api/whoop/oauth', null, 'POST', whoopAuthorize)).status, 401);
+  assert.equal((await request('/api/whoop/oauth', chatToken, 'POST', whoopAuthorize)).status, 403);
+  assert.equal(
+    (await request('/api/whoop/oauth', dashboardToken, 'POST', whoopAuthorize)).status,
+    403,
+  );
+  const whoopAuthorization = await request('/api/whoop/oauth', phoneToken, 'POST', whoopAuthorize);
+  assert.equal(whoopAuthorization.status, 200);
+  const whoopURL = new URL(
+    z.object({ authorization_url: z.string() }).parse(whoopAuthorization.value).authorization_url,
+  );
+  assert.equal(whoopURL.searchParams.get('redirect_uri'), 'myselfmd://whoop');
+  assert.equal(whoopURL.searchParams.get('client_id'), 'fixture-whoop-client');
+  assert.equal(whoopURL.searchParams.has('client_secret'), false);
+  assert.equal(
+    (
+      await request('/api/whoop/oauth', phoneToken, 'POST', {
+        ...whoopAuthorize,
+        redirect_uri: 'foreign://callback',
+      })
+    ).status,
+    400,
   );
   assert.equal((await request('/api/dashboard', null)).status, 401);
   assert.equal((await request('/api/dashboard', phoneToken)).status, 403);

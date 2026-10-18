@@ -126,8 +126,14 @@ const sqlite = {
     },
   }),
 };
+const forgottenWhoop = /** @type {string[]} */ ([]);
 /** @type {Record<string,Record<string,unknown>>} */
 const mocks = {
+  './whoop.js': {
+    forgetWhoop: async (/** @type {string} */ owner) => {
+      forgottenWhoop.push(owner);
+    },
+  },
   './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
   'expo-file-system': {
     Directory: Entry,
@@ -205,6 +211,10 @@ assert.deepEqual(
 );
 assert.deepEqual([...credentials], ['phone-b|current']);
 assert.equal(nativeCleared, true);
+assert.ok(
+  forgottenWhoop.includes(session.owner),
+  'Account deletion erases account-scoped WHOOP credentials',
+);
 assert.equal(db.prepare('SELECT owner FROM account_cleanup').get()?.owner, 'alice');
 const finishCleanup = /** @type {{completeAccountCleanup:()=>void}} */ (module.namespace)
   .completeAccountCleanup;

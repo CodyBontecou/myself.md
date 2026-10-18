@@ -1,3 +1,4 @@
+import { whoopTypes } from '../core/whoop.js';
 import {
   quantities,
   categories,
@@ -16,7 +17,9 @@ const healthLimitations = {
   android: [
     'Health Connect can limit historical reads to 30 days without historical access. Exercise routes may require separate consent.',
   ],
-  shared: [],
+  shared: [
+    'Optional WHOOP connection requires provider sign-in and consent. WHOOP v2 records preserve scores, RMSSD and millisecond durations separately from OS health records; overlapping events are not deduplicated. Body measurements are current snapshots, not historical measurements. Recovery has no independent measurement timestamp.',
+  ],
 };
 
 /** @type {{ios:string[],android:string[],shared:string[]}} */
@@ -51,7 +54,8 @@ export const datasets = {
     domain: /** @type {const} */ ('health'),
     introduction:
       'Export the health samples your phone can read into files. Select individual metrics and keep the original units, metadata, and source fields.',
-    sources: 'HealthKit on iOS and Health Connect on Android.',
+    sources:
+      'HealthKit on iOS, Health Connect on Android, and optional WHOOP on either phone platform.',
     groups: [
       { title: 'iOS · Quantity samples', keys: quantities.map((key) => `native:${key}`) },
       { title: 'iOS · Category samples', keys: categories.map((key) => `native:${key}`) },
@@ -61,6 +65,10 @@ export const datasets = {
       },
       { title: 'iOS · Workouts and other samples', keys: special.map((key) => `native:${key}`) },
       { title: 'Android · Health Connect', keys: androidTypes.map((key) => `native:${key}`) },
+      {
+        title: 'WHOOP · Connected provider',
+        keys: Object.keys(whoopTypes).map((key) => `native:${key}`),
+      },
     ],
     defaults: [
       'native:HKQuantityTypeIdentifierStepCount',

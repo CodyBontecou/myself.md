@@ -39,6 +39,15 @@ export default function SettingsScreen() {
         />
       )}
 
+      <SectionHeader title="Connected health apps" />
+      <Group>
+        <Row
+          testID="settings-whoop"
+          title="WHOOP"
+          subtitle="Connect recovery, sleep and activity"
+          onPress={() => router.push('/whoop')}
+        />
+      </Group>
       <SectionHeader title="Agent" />
       <Group>
         <Row

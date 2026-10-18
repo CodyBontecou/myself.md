@@ -1,3 +1,4 @@
+import { createWhoopRequests, whoopRequestInput } from './whoop-requests.js';
 import { exportSchemas, defaultExportSchema } from '../core/export-schemas.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -61,7 +62,7 @@ const queryFields = {
     .literal('native')
     .default('native')
     .describe(
-      "Capture adapter; native reads data through the phone's operating-system APIs under existing OS permissions.",
+      'Phone capture adapter; native includes OS APIs and explicitly selected WHOOP types under separate provider consent. Returned records identify the actual source.',
     ),
   start: z.iso
     .datetime()
@@ -285,6 +286,17 @@ const profileSchema = z.object({
     ),
 });
 const catalogSchema = z.object({
+  whoop: z
+    .object({
+      provider: z.literal('whoop'),
+      error: z.literal('secure_storage_unavailable').optional(),
+      connected: z.boolean(),
+      scopes: z.array(z.string().max(100)).max(10),
+      handoff: z.literal('myselfmd://whoop'),
+      instructions: z.string().max(1000),
+    })
+    .strict()
+    .optional(),
   profileSync: z.object({ base: z.unknown().nullable() }).optional(),
   locationTracking: z.boolean().optional(),
   locationCapture: z
@@ -362,7 +374,7 @@ function phoneCatalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,captures?:Map<string,import('./location-capture.js').LocationCapture>}} dependencies */
+/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,whoopRequests?:Map<string,import('./whoop-requests.js').WhoopRequest>,captures?:Map<string,import('./location-capture.js').LocationCapture>}} dependencies */
 export function createDataService({
   cloud,
   billing,
@@ -373,7 +385,16 @@ export function createDataService({
   jobs = new Map(),
   proposals = new Map(),
   captures = new Map(),
+  whoopRequests = new Map(),
 }) {
+  const whoopOperations = createWhoopRequests({
+    requests: whoopRequests,
+    own,
+    phone: (deviceId) => phones.get(deviceId),
+    authorize: (subject, client) => {
+      if (client) cloud.observeAgent?.(subject, client);
+    },
+  });
   const locationCaptures = createLocationCaptures({
     captures,
     own,
@@ -443,6 +464,7 @@ export function createDataService({
   }
   /** @param {string} deviceId @param {string} subject */
   function cancelPhone(deviceId, subject) {
+    whoopOperations.cancel(subject, deviceId);
     locationCaptures.cancel(subject, deviceId);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
@@ -458,6 +480,7 @@ export function createDataService({
   /** Remove all retained account work, including requests for already disconnected phones.
    * @param {string} subject */
   function cancelAccount(subject) {
+    whoopOperations.cancel(subject);
     locationCaptures.cancel(subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
@@ -470,6 +493,7 @@ export function createDataService({
   /** Blocking an agent also discards its queued and retained live requests.
    * @param {string} subject @param {string} client */
   function cancelAgent(subject, client) {
+    whoopOperations.cancel(subject, undefined, client);
     locationCaptures.cancel(subject, undefined, client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
@@ -483,6 +507,23 @@ export function createDataService({
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] @param {{chatgpt?:boolean}} [options] */
   function registerDataTools(mcp, subject, client = null, { chatgpt = false } = {}) {
     registerDebugTools(mcp, subject, own, phones);
+    mcp.registerTool(
+      'manage_phone_whoop',
+      {
+        title: 'Manage phone WHOOP connection',
+        description:
+          'Request owner-reviewed WHOOP connect/disconnect, inspect status or cancel before execution. Use an owned online phone, operation and caller-chosen UUID; reuse identical arguments for safe retries. WHOOP authentication/consent occur on the phone. Completion requires the phone effect; no selections or agent grants change. get_phone_data_catalog exposes current connection/scopes. Failed/interrupted requests require checking phone status before new work.',
+        inputSchema: whoopRequestInput,
+        annotations: {
+          title: 'Manage phone WHOOP connection',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      (input) => content(whoopOperations.tool(subject, client, input)),
+    );
     mcp.registerTool(
       'request_phone_location_capture',
       {
@@ -937,6 +978,7 @@ export function createDataService({
               ? {
                   domains: p.catalog.domains,
                   locationTracking: p.catalog.locationTracking,
+                  whoop: p.catalog.whoop,
                   profiles: p.catalog.profiles.map(
                     ({
                       id,
@@ -1353,12 +1395,13 @@ export function createDataService({
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
     const match = path.match(
-      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture)$/,
+      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture|whoop)$/,
     );
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
+    if (match[2] === 'whoop') return whoopOperations.report(subject, deviceId, body);
     if (match[2] === 'location-capture') return locationCaptures.report(subject, deviceId, body);
     if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
     if (match[2] === 'poll') {
@@ -1453,6 +1496,8 @@ export function createDataService({
           : undefined;
       return {
         profileSync: sync,
+        whoopRequest:
+          catalog.dispatch && catalog.whoop ? whoopOperations.dispatch(subject, deviceId) : null,
         locationCapture:
           catalog.dispatch && catalog.locationCapture?.version === 1
             ? locationCaptures.dispatch(subject, deviceId)

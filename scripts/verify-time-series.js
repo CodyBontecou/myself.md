@@ -1,3 +1,4 @@
+import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
@@ -344,6 +345,7 @@ assert.ok(partial.warnings.some((warning) => warning.includes('nested')));
 const phone =
   /** @type {{readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      './whoop.js': disconnectedWhoop,
       './location-task.js': { locationStatus: async () => ({ tracking: false }) },
       'expo-location': {},
       'react-native': { Platform: { OS: 'ios' } },

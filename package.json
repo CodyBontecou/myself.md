@@ -117,6 +117,7 @@
     "verify:explorer": "node scripts/verify-explorer.js",
     "verify:demo": "node scripts/verify-demo.js",
     "verify:billing": "node scripts/verify-billing.js && node --experimental-vm-modules scripts/verify-local-billing.js",
+    "verify:whoop": "node --experimental-vm-modules scripts/verify-whoop.js",
     "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js",
     "verify:migration": "node scripts/verify-migration.js",
     "billing:grant": "node --env-file-if-exists=.env scripts/grant-lifetime.js",

@@ -1,3 +1,4 @@
+import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
@@ -364,6 +365,7 @@ let locationTracking = false;
 const phone =
   /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{locationTracking:boolean,domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      './whoop.js': disconnectedWhoop,
       'expo-location': {
         getForegroundPermissionsAsync: async () => ({ granted: foregroundGranted }),
       },
@@ -711,6 +713,7 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
+      './destinations.js': { requireCloudAuthorization: async () => {} },
       'expo-constants': { default: { expoConfig: {} } },
       'expo-notifications': {},
       'react-native': { Alert: { alert() {} }, Platform: { OS: 'ios' } },

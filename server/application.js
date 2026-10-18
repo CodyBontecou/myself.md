@@ -1,3 +1,4 @@
+import { whoopOAuth } from './whoop.js';
 import { registerAnalyticsTools } from './analytics-tools.js';
 import { chatgptMcpPath, restrictChatgptTools } from './chatgpt-tools.js';
 import { readAccountProfile } from './account-profile.js';
@@ -998,6 +999,16 @@ export function createApplication(
           .object({ ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
           .parse(JSON.parse((await bodyBytes(req, 1024)).toString()));
         json(res, 200, await claimMigration(subject, input.ticket));
+        return;
+      }
+      if (url.pathname === '/api/whoop/oauth' && req.method === 'POST') {
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Phone OAuth client required.');
+        json(
+          res,
+          200,
+          await whoopOAuth(config, JSON.parse((await bodyBytes(req, 16384)).toString())),
+        );
         return;
       }
       if (url.pathname === '/api/billing' && req.method === 'POST') {
