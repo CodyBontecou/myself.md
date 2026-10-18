@@ -1,5 +1,9 @@
 # Remote mobile updates
 
+## Current-main store builds, 18 October 2026
+
+[TestFlight build 16 and Google Play internal build 15](beta-release.md#current-main-store-distribution--18-october-2026) are available to their existing beta audiences. Both embed the changes captured from canonical main at `6ba9741`, including simpler Cloud storage copy, store connection recovery, WHOOP and background export notifications. Android includes the dedicated Firebase push configuration. These are verified fresh store binaries; no OTA update or runtime override was published. Later local native background-network patches are outside this release, and this store submission does not deploy the independent server token-retention change. Background execution remains best effort. Installation and fresh handset behavior were not observed.
+
 ## Android and store export release, 18 October 2026
 
 Android export updates are published to preview (group `9a90057f-b727-4b92-842d-6ad1ce31d039`) and beta (group `ae8bd95b-21a1-467f-bf6c-c762ac3e1ab2`). Both use runtime `55a2052c2ea05a4dce76326e3cc703c992584951`, matching the signed Google Play build 14. A fresh Play readback confirms build 14 is the completed internal-testing release and its checksum matches the verified AAB. Native-loader requests return the intended update IDs; downloading their launch bundles with the manifest's asset authorization headers confirms the multiple-daily-time and cloud file-mode controls. Actual handset update application remains unverified.

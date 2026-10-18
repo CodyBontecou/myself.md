@@ -24,7 +24,7 @@
         "com.apple.developer.applesignin": ["Default"]
       },
       "appleTeamId": "67KC823C9A",
-      "buildNumber": "15"
+      "buildNumber": "16"
     },
     "android": {
       "adaptiveIcon": {
@@ -74,7 +74,7 @@
         "android.permission.health.READ_OXYGEN_SATURATION",
         "android.permission.health.READ_POWER"
       ],
-      "versionCode": 14,
+      "versionCode": 15,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
