@@ -353,13 +353,6 @@ export default function CloudStoragePlans() {
         />
       </View>
 
-      <Copy testID="cloud-plan-disclosure" variant="caption" muted>
-        {disclosure(
-          offer?.title ?? `Cloud Storage ${plan?.label ?? ''}`,
-          period,
-          offer?.displayPrice,
-        )}
-      </Copy>
       <Group compact>
         <Row
           compact
@@ -388,19 +381,6 @@ function subscriptionSummary(subscription) {
   if (subscription.status === 'billing_retry') return `${billed} · payment problem, paused`;
   if (!subscription.expiresAt) return billed;
   return `${billed} · ${subscription.autoRenew ? 'renews' : 'ends'} ${formatCloudDate(subscription.expiresAt)}`;
-}
-
-/** Store-required auto-renewal disclosure: title, length, price per period, renewal and cancellation.
- * @param {string} title @param {import('../core/cloud-plans.js').CloudPeriod} period @param {string|undefined} price */
-function disclosure(title, period, price) {
-  const length = period === 'monthly' ? '1 month' : '1 year';
-  const cost = price ? `${price} per ${periodUnit(period)}` : 'the price shown by the store';
-  const summary = `${title}: auto-renewing subscription, ${length}, ${cost}.`;
-  const store =
-    Platform.OS === 'android'
-      ? 'Payment is charged to your Google Play account when you confirm the purchase. The subscription renews automatically at the same price and length until you cancel. Cancel anytime in Google Play subscriptions; storage continues until the end of the period already paid.'
-      : 'Payment is charged to your Apple Account when you confirm the purchase. The subscription renews automatically at the same price and length unless you cancel at least 24 hours before the end of the current period; your account is charged for renewal within 24 hours before the period ends. Manage or cancel anytime in your App Store account settings.';
-  return `${summary} ${store} Requires Lifetime access; the plan replaces the 100 MB included with Lifetime. Moving to a smaller plan never deletes files, but uploads beyond the smaller capacity are blocked.`;
 }
 
 const styles = StyleSheet.create({
