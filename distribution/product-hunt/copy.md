@@ -1,6 +1,6 @@
 # Product Hunt submission copy
 
-Local draft only. The saved external draft requires review and synchronization before publication. Edit distribution/product-hunt/listing.json to update this copy.
+Saved to the existing Product Hunt draft and verified October 19, 2026. The launch remains unpublished and unscheduled. Edit distribution/product-hunt/listing.json to update this copy.
 
 ## Name
 

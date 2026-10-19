@@ -1,6 +1,6 @@
 # myself.md Product Hunt preparation
 
-The [saved Product Hunt draft](https://www.producthunt.com/products/myself-md?launch=myself-md) was last verified October 16, 2026, as unscheduled. The current local copy was revised October 19. Replace the external draft's copy and gallery before publication; this cleanup did not edit, publish or schedule it. [Edit draft](https://www.producthunt.com/posts/myself-md/edit) · [Status](draft-status.json).
+The [saved Product Hunt draft](https://www.producthunt.com/products/myself-md?launch=myself-md) was updated and verified October 19, 2026. Its description, maker comment and five mobile images match the cleaned local packet. It remains a draft with no launch scheduled. [Saved copy](saved-draft-copy.json). [Edit draft](https://www.producthunt.com/posts/myself-md/edit) · [Status](draft-status.json).
 
 Use the [current mobile gallery and packet](v2/README.md): [preview](v2/preview.png), [copy](copy.md), [ZIP](v2/myself-md-product-hunt-v2.zip). Superseded local screenshots, copy snapshots and the older packet have been removed. Historical versions remain in Git.
 

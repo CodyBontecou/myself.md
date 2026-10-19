@@ -1,6 +1,6 @@
 # Product Hunt gallery v2
 
-Local review packet revised October 19, 2026. This revision has not been uploaded, posted or scheduled; the saved external draft needs synchronization.
+Review packet revised October 19, 2026. The copy and five mobile gallery images were saved to the existing Product Hunt draft and verified that day. The launch remains unpublished and unscheduled.
 
 This revision focuses on the current iPhone app, using cream, charcoal and the app's existing neutral interface. The full iPhone frames are larger, with enlarged control details and a single short headline per slide. [Copy](copy.md) and [listing](listing.json) are included. Edit the source listing one directory above, then run `npm run product-hunt:render` to regenerate this version.
 
