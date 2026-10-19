@@ -15,7 +15,7 @@ if (origin.username || origin.password || origin.search || origin.hash || origin
 try {
   if (command === 'help') {
     console.log(
-      'myself.md CLI\n\nnode scripts/myself.js health|config|docs|openapi\nnode scripts/myself.js tools\nnode scripts/myself.js call TOOL < arguments.json\n\nMYSELF_URL selects the service origin. MYSELF_TOKEN supplies an existing OAuth access token for tools/call; obtain it through owner-approved OAuth in your MCP client. Tokens are never stored. Call arguments are read as a JSON object from stdin. Tool errors exit nonzero.',
+      'myself.md CLI\n\nnpx myself-md-cli health|config|docs|openapi\nnpx myself-md-cli tools\nnpx myself-md-cli call TOOL < arguments.json\n\nGlobal install: replace npx myself-md-cli with myself. Standalone download: use node myself.mjs. Repository source: use npm run myself --.\n\nMYSELF_URL selects the service origin. MYSELF_TOKEN supplies an existing OAuth access token for tools/call; obtain it through owner-approved OAuth in your MCP client. Tokens are never stored. Call arguments are read as a JSON object from stdin. Tool errors exit nonzero.',
     );
   } else if (['health', 'config', 'docs', 'openapi'].includes(command)) {
     const path = command === 'openapi' ? '/openapi.json' : `/v1/${command}`;
@@ -61,7 +61,7 @@ try {
     } finally {
       await client.close();
     }
-  } else throw new Error('Unknown command. Run node scripts/myself.js help.');
+  } else throw new Error('Unknown command. Run npx myself-md-cli help.');
 } catch (error) {
   // Avoid printing transport errors, which may contain request credentials.
   console.error(

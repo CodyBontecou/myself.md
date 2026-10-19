@@ -186,11 +186,43 @@ Report only what was verified: available source/profile, whether the phone must 
 
 Use public documentation and fictional previews without private grants. Reading instructions, configuring MCP or completing onboarding never grants access to records.
 `;
+const localAgentSetupGuide = `## Codex CLI setup
+
+If the owner uses the Codex CLI, first inspect existing connections with \`codex mcp list\`. Reuse an existing myself.md entry; otherwise add the remote server:
+
+\`\`\`sh
+codex mcp add myself --url https://myself.md/mcp
+\`\`\`
+
+If that entry still requires OAuth, start sign-in and let the owner complete the browser flow:
+
+\`\`\`sh
+codex mcp login myself --scopes myselfmd,offline_access
+\`\`\`
+
+Use the existing entry's name instead of myself when it differs. After authorization, verify the server's tools are available in the intended session; configuration alone is not a successful connection. Other clients use their supported remote MCP settings. See [official Codex MCP instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+`;
+const phoneSetupGuide = `## Pair a phone and approve a profile
+
+Live reads require an installed myself.md app. Public App Store and Google Play downloads are coming soon. If the owner has no installed app or authorized test-build access, explain that prerequisite and offer public discovery or already-approved cloud exports. For a developer installation, use the [source setup instructions](https://github.com/CodyBontecou/myself.md#run-locally); do not invent a store link or treat the CLI as a phone installer.
+
+1. Verify the intended account using get_account_logins where exposed, then list_connected_phones. Reuse the intended paired phone. If an existing connection points to the wrong account, ask the owner to correct it before reading records; do not silently switch accounts.
+2. If a phone still needs pairing and tools/list exposes create_phone_pairing, call it once. Show its returned pairingUrl or QR to the owner. On the installed app, open **Settings → Agent connection**, scan the QR or paste the pairing link, sign in to the same account and confirm. On the same phone, the pairing page's **Open in myself.md** button opens the app. Pairing links expire after five minutes and are single-use; keep the link private.
+3. Where exposed, poll get_pairing_status with the returned pairingId, then refresh list_connected_phones and get_phone_data_catalog. Verify the returned device ID identifies the intended phone in that refreshed list and catalog; a non-null device alone is not enough. A displayed QR, browser sign-in or opened app is not a confirmed pairing. For an expired uncompleted link, create a new pairing handoff rather than reusing it.
+4. Open **Profiles**, select the intended profile, and review **Data selection**. Select only the types needed for the task and complete the app's OS/provider permission prompts. Under that saved profile's **Agent permissions**, approve only the relevant Health, Screen time or Location permission. Saving a profile or selecting a type does not grant agent access. Keep the app open while verifying a live query.
+5. Refresh get_phone_data_catalog and confirm the intended phone is online, the saved profile exists, and its selections and individual agentPermissions cover the request before querying. If catalog is null, there is no discoverable live profile yet; do not guess IDs or enqueue a query.
+
+Some directory connections use the separate read-only resource https://myself.md/mcp/chatgpt. Reuse that connection for its approved reads. It does not expose pairing-ticket creation or profile proposals. If those tools are absent, explain the owner step: pair using a compatible full MCP client connected to https://myself.md/mcp, then return to this connection and rediscover. Both clients and the phone must use the same intended account; verify that identity before continuing. Do not change the existing connector's resource or try hidden tool names to bypass its restrictions. Owners always control profile and OS permissions in the phone app.
+`;
 const overview = `# Get started
 
 ${agentSetup.description}
 
 ${agentSetupGuide}
+
+${localAgentSetupGuide}
+
+${phoneSetupGuide}
 
 ## Use the JavaScript SDK
 
@@ -490,23 +522,28 @@ First check whether this client already exposes myself.md tools. Reuse a working
 - **Local coding agent:** configure the remote MCP server through the client's supported settings. Let the owner complete browser sign-in and consent. The CLI below is useful for terminal calls with an existing OAuth token; it does not perform login or register an MCP connection.
 - **Cloud or restricted sandbox:** use an existing client connector if available. If network policy blocks myself.md, report the failed host and required network access to the owner or administrator. A public HTTP read or a CLI installed inside the sandbox does not establish a connector in the owner's client.
 
-OAuth sign-in, phone pairing and data approval are separate steps. The owner pairs the phone with the same account, reviews the profile's selected data, and enables its relevant individual Agent permissions. OS permission prompts, provider authentication and purchases remain owner handoffs. Agents cannot grant themselves access. Public App Store and Google Play downloads are coming soon; do not promise an available store install. Use the current [getting-started guide](https://myself.md/docs) and source repository for installation and pairing options.
+OAuth sign-in, phone pairing and data approval are separate steps. OS permission prompts, provider authentication and purchases remain owner handoffs. Agents cannot grant themselves access. Follow the phone setup steps below and the [getting-started guide](https://myself.md/docs).
 
 After connecting, initialize MCP and call tools/list for the schemas and operations actually exposed by this client. A successful public health check proves service availability only. Verify available phones and approved profiles before saying personal data is ready.
+
+${localAgentSetupGuide}
+
+${phoneSetupGuide}
 
 ## Public discovery — no account needed
 
 Read these before requesting private access:
 
-- [Dataset catalog](https://myself.md/v1/dataset-catalog): supported sources and limitations. Follow nextCursor as cursor until hasMore is false.
-- [Getting started as Markdown](https://myself.md/v1/docs): connection, SDK and CLI guidance.
+- [Dataset catalog](https://myself.md/v1/dataset-catalog): supported sources and limitations. Omit limit for the default page, or use an integer from 1 to 3. Follow nextCursor as cursor until hasMore is false.
+- [Getting started](https://myself.md/v1/docs): connection, pairing, SDK and CLI guidance. Send Accept: text/markdown for Markdown; ordinary browser/curl requests return HTML.
 - [API reference](https://myself.md/docs/reference): authentication, request formats, pagination and limits.
 - [Pricing](https://myself.md/pricing): the app includes ${freeExports} free exports or queries, then an optional Lifetime unlock. Successful phone captures consume allowance; discovering data is not a capture. Lifetime removes export/query usage limits and includes ${includedCloud} of cloud storage; additional storage is a separate subscription purchased in the phone app.
 
-Public service check:
+Public service check and Markdown guide:
 
 \`\`\`sh
 curl -fsS https://myself.md/v1/health
+curl -fsS -H 'Accept: text/markdown' https://myself.md/v1/docs
 \`\`\`
 
 ## First approved phone query

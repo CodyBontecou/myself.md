@@ -192,7 +192,7 @@ export function createApplication(
       {
         title: 'Browse supported datasets',
         description:
-          'Read the public dataset adapter catalog. Contains no personal records. Follow nextCursor until hasMore is false.',
+          'Read the public dataset adapter catalog. Contains no personal records. Omit limit for the default page or use an integer from 1 to 3. Follow nextCursor until hasMore is false.',
         inputSchema: z
           .object({
             limit: z
