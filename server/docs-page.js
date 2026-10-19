@@ -23,6 +23,13 @@ function anchor(heading) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 }
+/** @param {string} line */
+function cells(line) {
+  return line
+    .slice(1, -1)
+    .split('|')
+    .map((cell) => cell.trim());
+}
 /** Server-rendered documentation remains readable without JavaScript. @param {string} markdown @param {string} path */
 export function docsHTML(markdown, path) {
   const reference = path === '/docs/reference';
@@ -44,6 +51,23 @@ export function docsHTML(markdown, path) {
           if (heading?.[1] && heading[2])
             return `<h${heading[1].length} id="${anchor(heading[2])}">${inline(heading[2])}</h${heading[1].length}>`;
           const lines = block.split('\n');
+          if (
+            lines.length >= 2 &&
+            lines.every((line) => line.startsWith('|') && line.endsWith('|')) &&
+            /^\|(?:\s*:?-+:?\s*\|)+$/.test(lines[1] ?? '')
+          ) {
+            return `<div class="docs-table"><table><thead><tr>${cells(lines[0] ?? '')
+              .map((cell) => `<th scope="col">${inline(cell)}</th>`)
+              .join('')}</tr></thead><tbody>${lines
+              .slice(2)
+              .map(
+                (line) =>
+                  `<tr>${cells(line)
+                    .map((cell) => `<td>${inline(cell)}</td>`)
+                    .join('')}</tr>`,
+              )
+              .join('')}</tbody></table></div>`;
+          }
           if (
             lines.every((line) => /^[-\d]/.test(line)) &&
             lines.every((line) => /^(?:- |\d+\. )/.test(line))

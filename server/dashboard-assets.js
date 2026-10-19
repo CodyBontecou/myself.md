@@ -50,6 +50,20 @@ export const assets = new Map([
         [`brand-icons/${name}.png`, 'image/png'],
       ]),
   ),
+  ...['claude-code', 'codex', 'opencode', 'grokbot', 'chatgpt', 'dots', 'muse', 'pi'].map(
+    (name) =>
+      /** @type {[string,[string,string]]} */ ([
+        `/dashboard/agent-logos/${name}.svg`,
+        [`agent-logos/${name}.svg`, 'image/svg+xml'],
+      ]),
+  ),
+  ...['selection', 'approval', 'overview'].flatMap(
+    (name) =>
+      /** @type {[string,[string,string]][]} */ ([
+        [`/dashboard/showcase/${name}.mp4`, [`showcase/${name}.mp4`, 'video/mp4']],
+        [`/dashboard/showcase/${name}.jpg`, [`showcase/${name}.jpg`, 'image/jpeg']],
+      ]),
+  ),
   ['/dashboard/favicon.png', ['favicon.png', 'image/png']],
   ['/dashboard/hero-portrait.png', ['hero-portrait.png', 'image/png']],
   ['/dashboard/store-badges/apple-icon.svg', ['store-badges/apple-icon.svg', 'image/svg+xml']],

@@ -7,6 +7,56 @@ import {
   characteristics,
 } from '../client/health-types.js';
 
+/** Selected adapter examples, restricted to identifiers present in the supported type catalog. */
+export const healthMetricExamples = [
+  {
+    metric: 'Steps',
+    platform: 'iOS',
+    type: 'HKQuantityTypeIdentifierStepCount',
+    fields: 'quantity and unit (for example count)',
+    note: 'Samples can overlap across sources; do not blindly sum duplicates.',
+  },
+  {
+    metric: 'Steps',
+    platform: 'Android',
+    type: 'Steps',
+    fields: 'count, startTime and endTime',
+    note: 'Interval counts; preserve source metadata when comparing records.',
+  },
+  {
+    metric: 'Heart rate',
+    platform: 'iOS',
+    type: 'HKQuantityTypeIdentifierHeartRate',
+    fields: 'quantity and unit (for example count/min)',
+    note: 'Individual samples are not a daily average.',
+  },
+  {
+    metric: 'Heart rate',
+    platform: 'Android',
+    type: 'HeartRate',
+    fields: 'samples with time and beatsPerMinute',
+    note: 'A record can contain multiple measurements.',
+  },
+  {
+    metric: 'Sleep',
+    platform: 'iOS',
+    type: 'HKCategoryTypeIdentifierSleepAnalysis',
+    fields: 'value, startDate and endDate',
+    note: 'Category intervals describe sleep states; overlapping sources are not deduplicated.',
+  },
+  {
+    metric: 'Sleep',
+    platform: 'Android',
+    type: 'SleepSession',
+    fields: 'startTime, endTime and stages',
+    note: 'Session duration and stage duration are different measures.',
+  },
+].filter((example) =>
+  example.platform === 'iOS'
+    ? [...quantities, ...categories].includes(example.type)
+    : androidTypes.includes(example.type),
+);
+
 /** @type {{ios:string[],android:string[],shared:string[]}} */
 const healthLimitations = {
   ios: [

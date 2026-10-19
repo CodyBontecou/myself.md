@@ -59,6 +59,7 @@ import { cloudUsageLabel } from '../core/cloud-allowance.js';
 import { CloudStorageCard, cloudStorageSummary } from './cloud-storage.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
+import { Landing } from './landing.js';
 import { Explorer } from './explorer.js';
 import { HistoryView } from './history.js';
 import { ExportActivity } from './export-activity.js';
@@ -1477,8 +1478,10 @@ function pageSnapshot() {
 function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
-  const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return pathname === '/operator/analytics' ? (
+  const dataset = datasetRoute ? (datasetRoute[1] ?? 'all') : null;
+  return pathname === '/' ? (
+    <Landing />
+  ) : pathname === '/operator/analytics' ? (
     <AnalyticsReport />
   ) : pathname === '/delete-account' ||
     (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
@@ -1488,7 +1491,7 @@ function Page() {
       sessionStorage.getItem('myself-migration-ticket')) ? (
     <MigrationClaim />
   ) : dataset ? (
-    <DatasetDocumentation key={pathname} dataset={dataset} landing={pathname === '/'} />
+    <DatasetDocumentation key={pathname} dataset={dataset} />
   ) : (
     <App />
   );

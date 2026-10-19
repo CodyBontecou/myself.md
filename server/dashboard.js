@@ -1,4 +1,5 @@
 import { publicHTML, publicPages } from '../core/public-site.js';
+import { datasetDocument } from './dataset-pages.js';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createDashboardService } from './dashboard-service.js';
@@ -18,13 +19,12 @@ export function dashboardAsset(path, res, issuer) {
     Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin} https://cloudflareinsights.com; img-src 'self' https:; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(issuer).origin} https://cloudflareinsights.com; img-src 'self' https:; media-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const content = readFileSync(new URL(`../dashboard/dist/${asset[0]}`, import.meta.url));
   res.end(
     asset[1] === 'text/html'
-      ? content
-          .toString('utf8')
+      ? datasetDocument(content.toString('utf8'), path)
           .replace('__STYLE_NONCE__', nonce)
           .replace(
             '__PUBLIC_CONTENT__',

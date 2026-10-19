@@ -191,6 +191,24 @@
   max-width: 68ch;
   overflow-wrap: anywhere;
 }
+.docs-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 18px 0;
+}
+.docs-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.docs-table th,
+.docs-table td {
+  padding: 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
 .docs-content p a,
 .docs-content li a {
   text-decoration: underline;

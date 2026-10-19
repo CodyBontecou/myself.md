@@ -49,7 +49,7 @@ export function DownloadBadges() {
       ))}
       <Button asChild variant="ghost" size="icon" className="size-10">
         <a
-          href="https://github.com/CodyBontecou/myself.md"
+          href="https://github.com/CodyBontecou/agent-bridge"
           target="_blank"
           rel="noopener noreferrer"
           aria-label="View myself.md on GitHub"

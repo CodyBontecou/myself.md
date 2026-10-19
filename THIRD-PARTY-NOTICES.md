@@ -43,3 +43,13 @@ The unmodified GitHub logo comes from the [GitHub Brand Toolkit](https://brand.g
 ## Geist documentation font
 
 Geist by Vercel is distributed under the SIL Open Font License 1.1. The documentation serves regular, medium and semibold files locally, downloaded from Google Fonts. The complete license is included in dashboard/geist-license.txt and served alongside the font assets.
+
+## Agent identity artwork
+
+Unmodified Claude Code, Codex and OpenCode SVG identity artwork was retrieved from the rendered treg.to reference on 19 October 2026: [Claude Code](https://treg.to/media/landing/assets/claudecode-color.svg), [Codex](https://treg.to/media/landing/assets/codex-color.svg), and [OpenCode](https://treg.to/media/landing/assets/opencode.svg). These names and marks belong to their respective owners and are excluded from the project AGPL license. Their use identifies MCP clients and does not imply endorsement. Assets are served locally.
+
+## Homepage data-source artwork
+
+Apple Health, Google Chrome and Google Maps use the existing local product icons in `dashboard/brand-icons`. WHOOP artwork is displayed through the [Logo.dev CDN](https://www.logo.dev/docs/logo-images/get), reusing health-md’s publishable website key. A visible Logo.dev attribution link is included in the homepage footer. Brand artwork and trademarks belong to their respective owners and are excluded from the project AGPL license. Chrome and Maps identify illustrative data categories, not additional integrations.
+
+Additional agent identity artwork (19 October 2026): [Grok Bot](https://asvg.app/assets/svg/grok-bot/grok-bot-logomark-mono.svg) and [ChatGPT](https://asvg.app/assets/svg/chatgpt/chatgpt-logomark-mono.svg) via asvg; [Dots](https://images.ctfassets.net/kftzwdyauwt9/KKSjto3MtJguvsLQsM1Bp/1704a6937d22b1bb3cac38dc5f43f9df/dots-o.svg) from the official OpenAI announcement; [Muse](https://muse.ai/images/favicon/app-squiggle.svg) from the official Muse site; and [Pi](https://treg.to/media/landing/assets/pi.svg) from the existing treg.to reference. These locally served marks belong to their respective owners, are excluded from the project AGPL license, and do not imply endorsement.

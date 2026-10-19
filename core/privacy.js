@@ -9,6 +9,10 @@ export const privacyPolicy = {
   discordUrl: 'https://discord.gg/RaQYS4t6gn',
   sections: [
     {
+      title: 'Public website logo images',
+      body: 'The public homepage loads WHOOP artwork from img.logo.dev. This image service receives the ordinary network request, including your IP address; requests suppress the page referrer and contain no account, phone, health, screen-time or location records. Other homepage product icons are served by myself.md.',
+    },
+    {
       title: 'What we collect and why',
       body: 'myself.md reads the health, screen time and location data you choose to export or share. Health data comes from HealthKit on iOS and Health Connect on Android, including readings, timestamps, units and the original source details. The app reads your health store without writing to it. You can also connect WHOOP separately to read provider data directly.\n\nYour phone’s permissions and your profile selection control what the app can read and export. HealthKit does not tell apps when read access is denied, so an empty result does not confirm permission. Screen-time data can include app or website identifiers and usage totals, depending on your phone and its permissions.',
     },

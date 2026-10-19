@@ -122,6 +122,8 @@ copyFileSync('dashboard/favicon.png', 'dashboard/dist/favicon.png');
 copyFileSync('assets/myself-portrait.png', 'dashboard/dist/hero-portrait.png');
 cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
 cpSync('dashboard/brand-icons', 'dashboard/dist/brand-icons', { recursive: true });
+cpSync('dashboard/agent-logos', 'dashboard/dist/agent-logos', { recursive: true });
+cpSync('dashboard/showcase', 'dashboard/dist/showcase', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');
 
 for (const asset of [

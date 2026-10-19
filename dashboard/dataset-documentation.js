@@ -2,19 +2,25 @@ import { whoopType } from '../core/whoop.js';
 import { HeroPortrait } from './hero-portrait.js';
 import { HeroDataFlow } from './hero-data-flow.js';
 import { SiteHeader } from './site-header.js';
-import { AgentSetup } from './agent-setup.js';
 import { DownloadBadges } from './download-badges.js';
-import { agentSetup, publicFAQs, smitheryListingUrl } from '../core/public-site.js';
+import { publicFAQs, smitheryListingUrl } from '../core/public-site.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { useEffect, useRef, useState } from 'react';
-import { IconChevronRight, IconSearch, IconX } from '@tabler/icons-react';
-import { datasets } from './dataset-catalog.js';
+import { Tabs } from 'radix-ui';
+import { IconChevronRight, IconSearch, IconVideo, IconX } from '@tabler/icons-react';
+import { datasets, healthMetricExamples } from './dataset-catalog.js';
 import { parseProfile } from '../core/profiles.js';
 import { datasetExportPreview } from './dataset-export-preview.js';
 import { ExportJson } from './export-json.js';
 import { PricingSection } from './pricing-section.js';
 import { Button } from './components/ui/button.js';
 import { Input } from './components/ui/input.js';
+
+const tutorials = [
+  { id: 'launch', label: 'Launch video' },
+  { id: 'mcp', label: 'MCP' },
+  { id: 'agent-design', label: 'Agent-first design' },
+];
 
 /** @param {string} key */
 function typeLabel(key) {
@@ -56,6 +62,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
     };
   }, []);
   const included = Object.values(datasets);
+  const routeDataset = Object.entries(datasets).find(([slug]) => slug === dataset)?.[1];
   const selectable =
     filter === 'all'
       ? included
@@ -147,110 +154,156 @@ export function DatasetDocumentation({ dataset, landing = false }) {
   );
   return (
     <div className={`mx-auto max-w-7xl px-5 sm:px-8 ${landing ? 'landing-page' : ''}`}>
-      <main className={`space-y-10 ${landing ? 'landing-main' : 'py-8 sm:py-12'}`}>
-        {landing && (
-          <div className="landing-introduction">
-            <HeroPortrait />
-            <SiteHeader />
-            <section className="landing-hero" aria-labelledby="landing-title">
-              <div className="landing-hero-copy">
-                <h1
-                  id="landing-title"
-                  className="max-w-4xl text-3xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-                >
-                  {agentSetup.title}
-                </h1>
-                <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-lg">
-                  {agentSetup.description}
-                </p>
-              </div>
-              <AgentSetup />
-              <div className="landing-hero-footer">
-                <p className="text-sm text-muted-foreground">
-                  Paste it into your agent. You complete sign-in and decide what to share.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
-                  <a
-                    href="/demo"
-                    className="inline-flex min-h-11 items-center underline underline-offset-4"
-                  >
-                    Try sample data
-                  </a>
-                  <a
-                    href="/docs"
-                    className="inline-flex min-h-11 items-center underline underline-offset-4"
-                  >
-                    Setup guide
-                  </a>
-                  <a
-                    href="/llms.txt"
-                    className="inline-flex min-h-11 items-center underline underline-offset-4"
-                  >
-                    Agent instructions
-                  </a>
-                </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Prefer files? Export without enabling agent access.{' '}
-                  <a href="/datasets" className="underline underline-offset-4">
-                    Explore the data
-                  </a>
-                </p>
-              </div>
-            </section>
-          </div>
-        )}
+      <main className="space-y-10 py-8 sm:py-12">
         <div className="dataset-grid grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="contents">
             {landing ? (
-              <section
-                className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1"
-                aria-labelledby="how-it-works-title"
-              >
-                <h2 id="how-it-works-title" className="text-2xl font-medium tracking-tight">
-                  How myself.md works
-                </h2>
-                <ol className="space-y-5">
-                  {agentSetup.steps.map((step, index) => (
-                    <li key={step.title} className="space-y-1">
-                      <h3 className="text-sm font-medium">
-                        {index + 1}. {step.title}
-                      </h3>
-                      <p className="text-sm leading-relaxed break-words text-muted-foreground">
-                        {step.description}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {agentSetup.availability}
-                </p>
-                <DownloadBadges />
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  The sample dashboard uses fictional data in your browser. It needs no account and
-                  does not connect your agent or share personal data.
-                </p>
-                <div className="lg:hidden">
-                  <HeroDataFlow />
-                  {exportPreview}
-                </div>
-                <details className="space-y-3 text-sm">
-                  <summary className="cursor-pointer font-medium">Common questions</summary>
-                  {publicFAQs.map((item) => (
-                    <div key={item.question} className="space-y-1">
-                      <h3 className="font-medium">{item.question}</h3>
-                      <p className="text-muted-foreground">{item.answer}</p>
-                    </div>
-                  ))}
-                </details>
-              </section>
+              <div className="landing-hero-column min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+                <HeroPortrait />
+                <SiteHeader />
+                <section className="landing-hero" aria-labelledby="landing-title">
+                  <div className="landing-hero-copy">
+                    <h1
+                      id="landing-title"
+                      className="max-w-4xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
+                    >
+                      File over app.
+                      <br />
+                      Yours to keep.
+                    </h1>
+                    <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+                      Save health, screen time, and location data from your phone and wearables as
+                      files you can read, back up, and take with you.
+                    </p>
+                    <DownloadBadges />
+                  </div>
+                </section>
+                <section className="space-y-6 pb-6 sm:pb-10" aria-label="How myself.md works">
+                  <div className="lg:hidden">
+                    <HeroDataFlow />
+                    {exportPreview}
+                  </div>
+                  <Tabs.Root defaultValue="launch" className="space-y-4">
+                    <Tabs.List
+                      aria-label="Video tutorials"
+                      className="inline-flex max-w-full items-center divide-x divide-border"
+                    >
+                      {tutorials.map((tutorial) => (
+                        <Tabs.Trigger
+                          key={tutorial.id}
+                          value={tutorial.id}
+                          className="cursor-pointer px-3 text-sm font-medium text-muted-foreground outline-none first:pl-0 last:pr-0 hover:text-foreground focus-visible:underline focus-visible:underline-offset-4 data-[state=active]:text-foreground"
+                        >
+                          {tutorial.label}
+                        </Tabs.Trigger>
+                      ))}
+                    </Tabs.List>
+                    {tutorials.map((tutorial) => (
+                      <Tabs.Content
+                        key={tutorial.id}
+                        value={tutorial.id}
+                        className="outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <figure className="flex aspect-video min-h-[200px] w-full flex-col items-center justify-center gap-4 rounded-lg border border-border bg-muted/40 px-6 text-center">
+                          <IconVideo
+                            aria-hidden="true"
+                            className="size-8 text-muted-foreground"
+                            stroke={1.25}
+                          />
+                          <figcaption className="space-y-1">
+                            <p className="text-sm font-medium">{tutorial.label}</p>
+                            <p className="text-sm text-muted-foreground">Video coming soon</p>
+                          </figcaption>
+                        </figure>
+                      </Tabs.Content>
+                    ))}
+                  </Tabs.Root>
+
+                  <details className="space-y-3 text-sm">
+                    <summary className="cursor-pointer font-medium">Common questions</summary>
+                    {publicFAQs.map((item) => (
+                      <div key={item.question} className="space-y-1">
+                        <h3 className="font-medium">{item.question}</h3>
+                        <p className="text-muted-foreground">{item.answer}</p>
+                      </div>
+                    ))}
+                  </details>
+                </section>
+              </div>
             ) : (
               <header className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
                 <SiteHeader />
-                <h1 className="text-4xl font-semibold tracking-tight">Datasets</h1>
+                <h1 className="text-4xl font-semibold tracking-tight">
+                  {routeDataset ? `${routeDataset.title} exports` : 'Datasets'}
+                </h1>
                 <p className="max-w-xl text-base leading-relaxed text-muted-foreground">
-                  Explore supported data types and see how they appear in an export. Select a type
-                  to update the fictional example.
+                  {routeDataset
+                    ? `${routeDataset.introduction} ${routeDataset.sources} `
+                    : 'Explore supported data types and see how they appear in an export. '}
+                  Select a type to update the fictional example.
                 </p>
+                {dataset === 'health' && (
+                  <details className="space-y-4 text-sm">
+                    <summary className="cursor-pointer font-medium">
+                      Common health questions and native fields
+                    </summary>
+                    <p>
+                      These are adapter capabilities, not authorization or a person&apos;s available
+                      records. Profile selections use a native: prefix. Public store downloads are
+                      coming soon; live queries require an installed app, OS permission and separate
+                      profile agent approval.
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr>
+                            <th scope="col" className="p-2">
+                              Metric
+                            </th>
+                            <th scope="col" className="p-2">
+                              Native identifier
+                            </th>
+                            <th scope="col" className="p-2">
+                              Fields and interpretation
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {healthMetricExamples.map((example) => (
+                            <tr key={example.type}>
+                              <td className="p-2 align-top">
+                                {example.metric} ({example.platform})
+                              </td>
+                              <td className="p-2 align-top break-all">
+                                <code>{example.type}</code>
+                              </td>
+                              <td className="p-2 align-top">
+                                {example.fields}. {example.note}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <h2 className="font-medium">Reproduce a fictional step question</h2>
+                    <p>
+                      How many steps are in the example&apos;s October 8, 2026, 08:00–08:30 UTC
+                      interval? Clear the selection and choose only iOS
+                      HKQuantityTypeIdentifierStepCount. The fictional JSON preview contains one
+                      sample with quantity 1250 and unit count: 1,250 steps for that interval, not a
+                      daily total or a live phone result.
+                    </p>
+                    <p>
+                      For real data, discover the approved profile and native type, query an
+                      explicit interval, wait for completion and read every result page. Verify
+                      sources, timestamps and units before aggregating; records may overlap or be
+                      absent. Android Steps uses count instead of the iOS quantity field.{' '}
+                      <a href="/docs" className="underline">
+                        Read connection and verification steps.
+                      </a>
+                    </p>
+                  </details>
+                )}
               </header>
             )}
             <section
@@ -450,7 +503,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
               What this dataset contains
             </h2>
             <div className="text-base leading-8 text-muted-foreground sm:text-lg">
-              {included.map((item) => (
+              {selectable.map((item) => (
                 <p key={item.domain}>
                   <strong>{item.title}:</strong> {item.sources}
                 </p>
@@ -469,7 +522,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                 <section key={platform} className="space-y-4">
                   <h3 className="text-xl font-medium">{title}</h3>
                   <ul className="list-disc space-y-4 pl-5 text-base leading-8 text-muted-foreground sm:text-lg">
-                    {included
+                    {selectable
                       .flatMap((item) =>
                         item.limitationsByPlatform[
                           /** @type {'ios'|'android'} */ (platform)
@@ -486,7 +539,7 @@ export function DatasetDocumentation({ dataset, landing = false }) {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <p className="text-sm text-muted-foreground">
-            File over app. Yours to keep. You control what agents can read.{' '}
+            Your data stays in files. You control what agents can read.{' '}
             <a href={smitheryListingUrl} className="underline underline-offset-4">
               Find us on Smithery
             </a>

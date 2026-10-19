@@ -1,6 +1,8 @@
 import { verifyAnalytics } from './verify-analytics.js';
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { verifyBlogHTTP, verifyBlogMCP } from './verify-blog.js';
+import { verifyDatasetHTTP, verifyDatasetMCP } from './verify-dataset-pages.js';
 import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -206,6 +208,31 @@ try {
     `INSERT INTO analytics_events VALUES('retention-first','retention-fixture','retention-fixture','export_completed',${retentionStart},${Date.now()},'ios',NULL,0),('retention-return','retention-fixture','retention-fixture','app_opened',${retentionStart + 7 * 86400000},${Date.now()},'ios',NULL,0),('qa-retention-first',NULL,'${analyticsKey(`anonymous:${'f'.repeat(32)}`)}','export_completed',${retentionStart},${Date.now()},'ios',NULL,0),('qa-retention-return',NULL,'${analyticsKey(`anonymous:${'f'.repeat(32)}`)}','app_opened',${retentionStart + 7 * 86400000},${Date.now()},'ios',NULL,0),('reviewer-history','${analyticsKey(`account:${namespace}|myselfmd-directory-reviewer-v1`)}','reviewer-history','app_opened',${Date.now() - 1000},${Date.now()},'ios',NULL,0)`,
   ]);
   await start();
+  const showcaseHome = await fetch(origin + '/');
+  assert.ok(showcaseHome.headers.get('Content-Security-Policy')?.includes("media-src 'self'"));
+  await showcaseHome.arrayBuffer();
+  const showcasePath = '/dashboard/showcase/selection.mp4';
+  const mediaRange = await fetch(origin + showcasePath, { headers: { Range: 'bytes=0-63' } });
+  const mediaBytes = readFileSync('dashboard/dist/showcase/selection.mp4');
+  // A server may ignore Range and deliver the complete representation (HTTP 200).
+  // A partial response must retain its 206 status and exact byte metadata.
+  if (mediaRange.status === 206) {
+    assert.equal(mediaRange.headers.get('Content-Range'), `bytes 0-63/${mediaBytes.length}`);
+    assert.equal(mediaRange.headers.get('Content-Length'), '64');
+    assert.deepEqual(Buffer.from(await mediaRange.arrayBuffer()), mediaBytes.subarray(0, 64));
+  } else {
+    assert.equal(mediaRange.status, 200);
+    assert.equal(mediaRange.headers.get('Content-Range'), null);
+    assert.equal(mediaRange.headers.get('Content-Length'), String(mediaBytes.length));
+    assert.deepEqual(Buffer.from(await mediaRange.arrayBuffer()), mediaBytes);
+  }
+  const mediaHead = await fetch(origin + showcasePath, { method: 'HEAD' });
+  assert.equal(mediaHead.status, 200);
+  const headLength = mediaHead.headers.get('Content-Length');
+  if (headLength !== null) assert.equal(headLength, String(mediaBytes.length));
+  assert.ok(mediaHead.headers.get('Content-Type')?.startsWith('video/mp4'));
+  assert.equal((await mediaHead.arrayBuffer()).byteLength, 0);
+
   assert.equal((await request('/__migration', 'Migration invalid', 'POST', {})).status, 404);
   const ticket = randomBytes(32).toString('base64url');
   const purchase = hash('iso.me:ios:iap|fixture-purchase');
@@ -378,6 +405,8 @@ try {
   );
   await verifyAnalytics({ request, token, mcp: client, origin });
   await verifyBlogHTTP(origin);
+  await verifyDatasetHTTP(origin);
+  await verifyDatasetMCP(client);
   await verifyBlogMCP(client);
   const reviewedTools = reviewToolMetadata((await client.listTools()).tools);
   console.log(

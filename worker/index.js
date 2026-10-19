@@ -8,6 +8,7 @@ import {
   createPublicReadLimiter,
 } from '../server/public-site.js';
 import { publicHTML, publicPages } from '../core/public-site.js';
+import { datasetDocument } from '../server/dataset-pages.js';
 import { z } from 'zod';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
@@ -42,13 +43,13 @@ async function publicAsset(request, env) {
     Vary: 'Accept',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin} https://cloudflareinsights.com; img-src 'self' https:; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self' ${new URL(env.OAUTH_ISSUER).origin} https://cloudflareinsights.com; img-src 'self' https:; media-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   const body =
     request.method === 'HEAD'
       ? null
       : asset[1] === 'text/html'
-        ? (await response.text())
+        ? datasetDocument(await response.text(), new URL(request.url).pathname)
             .replace('__STYLE_NONCE__', nonce)
             .replace(
               '__PUBLIC_CONTENT__',
@@ -59,7 +60,11 @@ async function publicAsset(request, env) {
               ),
             )
         : response.body;
-  return new Response(body, { headers });
+  for (const name of ['Content-Length', 'Content-Range', 'Accept-Ranges']) {
+    const value = response.headers.get(name);
+    if (value && asset[1] !== 'text/html') headers.set(name, value);
+  }
+  return new Response(body, { status: response.status, headers });
 }
 /** @param {Request} request @param {number} limit */
 async function boundedJson(request, limit) {

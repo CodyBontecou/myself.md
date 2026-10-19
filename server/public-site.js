@@ -2,10 +2,42 @@ import { randomUUID } from 'node:crypto';
 import { notFoundPage } from './not-found-page.js';
 import { pricingPage } from './pricing-page.js';
 import { docsHTML } from './docs-page.js';
+import { datasetPage } from './dataset-pages.js';
 import { blogResponse, blogAgentIndex, blogSitemap } from './blog.js';
-import { datasets } from '../dashboard/dataset-catalog.js';
+import { datasets, healthMetricExamples } from '../dashboard/dataset-catalog.js';
 import { publicDiscovery } from './public-discovery.js';
 import { agentIndex, publicHTML, publicPages, publicFAQs } from '../core/public-site.js';
+
+const pageDescriptions = new Map([
+  [
+    '/docs',
+    'Connect Apple Health and Android Health Connect to compatible AI assistants with myself.md. Set up MCP, pair your phone and approve specific data profiles.',
+  ],
+  [
+    '/docs/reference',
+    'myself.md API and MCP reference: OAuth, approved phone queries, asynchronous results, pagination, cloud exports and JavaScript integration.',
+  ],
+  [
+    '/about',
+    'Learn why myself.md exists: open-source personal data exports and owner-approved access for AI agents, built by Cody Bontecou.',
+  ],
+  [
+    '/contact',
+    'Contact myself.md support, report a bug or ask about personal data exports, MCP setup and account access.',
+  ],
+  [
+    '/privacy',
+    'How myself.md handles phone data, cloud exports, encryption, agent permissions, retention and deletion. Read the privacy policy before sharing records.',
+  ],
+  [
+    '/terms',
+    'myself.md service terms covering data access, purchases, optional cloud storage, subscriptions and your responsibilities.',
+  ],
+  [
+    '/faq',
+    'Answers about myself.md, Apple Health, Android Health Connect, Claude and Codex MCP setup, approvals, exports, pricing and revoking access.',
+  ],
+]);
 
 /** Shared public HTTP representations for Node and Workers. @param {string} pathname @param {string} accept @param {string} issuer @param {string} [resource] @param {URLSearchParams} [params] */
 export function publicResponse(
@@ -30,6 +62,13 @@ export function publicResponse(
     'X-Content-Type-Options': 'nosniff',
     Vary: 'Accept',
   };
+  const datasetDocument = datasetPage(path.endsWith('.md') ? path.slice(0, -3) : path);
+  if (datasetDocument && (accept.includes('text/markdown') || path.endsWith('.md')))
+    return {
+      status: 200,
+      headers: { ...headers, 'Content-Type': 'text/markdown; charset=utf-8' },
+      body: datasetDocument.markdown,
+    };
   // Public ownership proof issued by the verified OpenAI plugin portal.
   if (path === '/.well-known/openai-apps-challenge')
     return {
@@ -81,6 +120,7 @@ export function publicResponse(
       url: `https://myself.md/datasets/${slug}`,
       groups: dataset.groups,
       limitations: dataset.limitations,
+      metricExamples: slug === 'health' ? healthMetricExamples : [],
     }));
     const next = offset + limit;
     return {
@@ -127,7 +167,7 @@ export function publicResponse(
   else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex + blogAgentIndex;
   else if (path === '/sitemap.xml') {
     type = 'application/xml';
-    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/demo', '/datasets'].map((page) => `<url><loc>https://myself.md${page}</loc><lastmod>2026-10-10</lastmod></url>`).join('')}${blogSitemap}</urlset>`;
+    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/demo', '/datasets', ...Object.keys(datasets).map((slug) => `/datasets/${slug}`)].map((page) => `<url><loc>https://myself.md${page}</loc></url>`).join('')}${blogSitemap}</urlset>`;
   } else {
     const markdown = publicPages.get(path);
     if (!markdown) return null;
@@ -143,7 +183,7 @@ export function publicResponse(
       )
     ) {
       type = 'text/html';
-      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="myself.md personal health, screen time and location data for AI agents. Owner-approved MCP access and developer resources."><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
+      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="${pageDescriptions.get(path)}"><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
         {
           '@context': 'https://schema.org',
           '@type': 'BreadcrumbList',

@@ -1,4 +1,5 @@
 @import 'tailwindcss' source(none);
+@import './landing.css';
 @source "./**/*.js";
 @source "../packages/support-chat/support-web.js";
 @custom-variant dark (@media (prefers-color-scheme: dark));
@@ -302,175 +303,29 @@ summary.export-json-line:focus-visible {
 .landing-page {
   overflow-x: clip;
 }
-.landing-main {
-  --landing-header-space: 4.75rem;
-  padding-block: 0.75rem 2rem;
-}
-.landing-introduction {
+.landing-hero-column {
   position: relative;
   isolation: isolate;
 }
-.landing-introduction > :not(.hero-portrait) {
+.landing-hero-column > header,
+.landing-hero-column > section {
   position: relative;
   z-index: 1;
 }
-.landing-introduction > .hero-portrait {
-  top: -5rem;
-  right: 50%;
-  transform: translateX(50%);
-}
 .landing-hero {
-  display: grid;
-  grid-template-rows: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
-  gap: clamp(1rem, 3svh, 2rem);
-  min-height: calc(100svh - var(--landing-header-space) - var(--landing-header-space));
-  max-width: 56rem;
-  margin-inline: auto;
-  padding-block: 1.25rem;
-}
-.landing-hero-copy,
-.landing-hero-footer {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
+  min-height: 32rem;
+  padding-block: 4rem;
 }
 .landing-hero-copy {
-  align-self: end;
-  gap: 1rem;
-}
-.landing-hero-footer {
-  align-self: start;
-  gap: 0.5rem;
-}
-.agent-setup {
-  width: 100%;
-  min-width: 0;
-  padding: 1rem;
-  border: 1px solid #343434;
-  border-radius: 1.75rem;
-  background: #080808;
-  color: #f4f4f1;
-  scroll-margin-top: 1.5rem;
-}
-.agent-setup:focus-visible {
-  outline: 2px solid var(--foreground);
-  outline-offset: 4px;
-}
-.agent-setup-title {
-  margin-bottom: 1rem;
-  font-size: 1.125rem;
-  font-weight: 550;
-  line-height: 1.5;
-  text-align: center;
-}
-.agent-setup-command {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.875rem;
-  padding: 0.75rem 0.875rem;
-  border: 1px solid #343434;
-  border-radius: 1.25rem;
-  background: #222;
-}
-.agent-setup-prefix {
-  color: #aaa;
-  font-family: ui-monospace, 'SF Mono', monospace;
-  font-size: 1rem;
-}
-.agent-setup-prompt {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  height: 1.5rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-family: ui-monospace, 'SF Mono', monospace;
-  font-size: clamp(0.8125rem, 1.65vw, 1rem);
-  line-height: 1.5rem;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  resize: none;
-}
-.agent-setup-prompt:focus-visible {
-  outline: 2px solid #f4f4f1;
-  outline-offset: 4px;
-  border-radius: 2px;
-}
-.agent-setup-copy {
-  min-width: 6rem;
-  height: 3rem;
-  border-radius: 0.875rem;
-  background: #f4f4f1;
-  color: #141414;
-  font-size: 1rem;
-  letter-spacing: 0.025em;
-}
-.agent-setup-copy:hover {
-  background: #ddd;
-}
-.agent-setup-copy:focus-visible {
-  outline: 2px solid #f4f4f1;
-  outline-offset: 4px;
-}
-.agent-setup-status {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  text-align: center;
-}
-.agent-setup-status:not(:empty) {
-  margin-top: 0.75rem;
-}
-@media (min-width: 40rem) {
-  .landing-main {
-    --landing-header-space: 5.25rem;
-    padding-block: 1.25rem 3rem;
-  }
-}
-@media (max-width: 39.99rem) {
-  .agent-setup {
-    padding: 0.75rem;
-    border-radius: 1.5rem;
-  }
-  .agent-setup-title {
-    margin-bottom: 0.75rem;
-    font-size: 1rem;
-  }
-  .agent-setup-command {
-    gap: 0.5rem;
-    padding: 0.625rem;
-    border-radius: 1rem;
-  }
-  .agent-setup-prompt {
-    height: 3.75rem;
-    line-height: 1.25rem;
-  }
-  .agent-setup-copy {
-    min-width: 4rem;
-    height: 2.75rem;
-    padding-inline: 0.75rem;
-    font-size: 0.875rem;
-  }
-}
-@media (max-width: 39.99rem) and (max-height: 700px) {
-  .landing-hero {
-    grid-template-rows: auto auto minmax(0, 1fr);
-    gap: 0.5rem;
-    padding-block: 0.25rem;
-  }
-  .landing-hero-copy {
-    gap: 0.75rem;
-  }
-  .landing-hero-copy h1 {
-    font-size: 1.75rem;
-    line-height: 1.1;
-  }
-  .landing-hero-copy p {
-    font-size: 0.8125rem;
-  }
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.75rem;
+  max-width: 44rem;
 }
 .hero-portrait {
   position: absolute;
@@ -504,6 +359,10 @@ summary.export-json-line:focus-visible {
   background: currentColor;
 }
 @media (max-width: 63.99rem) {
+  .landing-hero {
+    min-height: 29rem;
+    padding-block: 3rem;
+  }
   .hero-portrait {
     top: -3rem;
     right: -10rem;
