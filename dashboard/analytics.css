@@ -12,6 +12,12 @@
   font-size: 0.8125rem;
   box-shadow: 0 4px 20px #0002;
 }
+.analytics-consent-inline {
+  position: static;
+  max-width: none;
+  margin-block: 1rem;
+  box-shadow: none;
+}
 .analytics-consent button {
   min-height: 44px;
   padding: 0.5rem;
@@ -22,6 +28,7 @@
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+.analytics-consent[hidden],
 .analytics-consent [hidden] {
   display: none;
 }

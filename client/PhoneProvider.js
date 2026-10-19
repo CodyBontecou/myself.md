@@ -29,6 +29,7 @@ import {
   signIn,
   revokeDevice,
   resumeSession,
+  reauthenticateSession,
 } from './session.js';
 const PhoneContext = createContext(/** @type {ReturnType<typeof usePhoneState>|null} */ (null));
 export function usePhone() {
@@ -443,6 +444,14 @@ function usePhoneState() {
       await disconnect();
       setPairing(next);
       locked.current = true;
+    },
+    /** @param {'apple'|'github'|'google'} provider */
+    reauthenticateAccount: async (provider) => {
+      if (!session) throw new Error('Sign in before reconnecting this account.');
+      const next = await reauthenticateSession(session, provider);
+      clearAccountAllowance();
+      setSession(next);
+      await syncBilling(next);
     },
     /** @param {'apple'|'github'|'google'} provider */
     signInAccount: async (provider) => {

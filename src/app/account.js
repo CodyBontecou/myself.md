@@ -50,6 +50,13 @@ export default function AccountScreen() {
           onPress={() => router.push('/connected-logins')}
         />
       </Group>
+      <Button
+        testID="account-sign-in-again"
+        label="Sign in again"
+        secondary
+        disabled={busy}
+        onPress={() => router.push('/login?reauthenticate=1')}
+      />
       <Group>
         <Row
           testID="account-sign-out"

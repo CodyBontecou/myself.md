@@ -129,6 +129,10 @@ export function initializeWebAnalytics() {
   const controls = document.createElement('aside');
   controls.className = 'analytics-consent';
   controls.setAttribute('aria-label', 'Usage analytics privacy');
+  const privacyHeading = /^\/privacy\/?$/.test(location.pathname)
+    ? document.getElementById('usage-analytics-and-website-measurement')
+    : null;
+  let reviewing = false;
   const message = document.createElement('p');
   message.textContent =
     'Optional setup and export events; no health records, locations, file contents or recordings. While signed in, changes also update your account choice. An existing account choice can be restored on sign-in. Turning account analytics off erases linked usage events.';
@@ -146,14 +150,24 @@ export function initializeWebAnalytics() {
         .globalPrivacyControl === true;
     message.textContent = `${browserTrafficExcluded() ? 'This browser is excluded from analytics.' : privacySignal ? 'Analytics is off because of your browser privacy signal.' : collector.choice() === true ? 'Usage analytics is on.' : 'Usage analytics is off.'} Optional setup and export events; no health records, locations, file contents or recordings. While signed in, changes also update your account choice. An existing account choice can be restored on sign-in. Turning account analytics off erases linked usage events.`;
     enable.disabled = privacySignal;
-    const expanded = collector.choice() === null;
+    const expanded = reviewing || collector.choice() === null;
+    controls.hidden = excludedPath() || (!expanded && !privacyHeading);
     message.hidden = enable.hidden = disable.hidden = !expanded;
     settings.hidden = expanded;
   };
+  const review = () => {
+    reviewing = true;
+    render();
+  };
   const save = (/** @type {boolean} */ enabled) => {
+    reviewing = true;
     enable.disabled = disable.disabled = true;
     void choose(enabled)
-      .then(render)
+      .then(() => {
+        reviewing = false;
+        render();
+        return null;
+      })
       .catch(() => {
         message.textContent = 'Could not save your account choice. Try again.';
       })
@@ -167,15 +181,14 @@ export function initializeWebAnalytics() {
   };
   enable.addEventListener('click', () => save(true));
   disable.addEventListener('click', () => save(false));
-  settings.addEventListener('click', () => {
-    message.hidden = enable.hidden = disable.hidden = false;
-    settings.hidden = true;
-  });
+  settings.addEventListener('click', review);
   controls.append(message, enable, disable, settings);
-  document.body.append(controls);
-  window.addEventListener('popstate', () => {
-    controls.hidden = excludedPath();
-  });
+  if (privacyHeading) {
+    controls.classList.add('analytics-consent-inline');
+    privacyHeading.after(controls);
+  } else document.body.append(controls);
+  window.addEventListener('myself-analytics-preferences', review);
+  window.addEventListener('popstate', render);
   render();
   trackWebAnalytics('page_viewed', pageStep());
   const timer = setInterval(() => {

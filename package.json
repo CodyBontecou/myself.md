@@ -109,7 +109,7 @@
     "cloud:auth:social": "node --env-file=.env.cloud scripts/setup-social.js --cloud",
     "cloud:domain:setup": "node --env-file=.env.cloud scripts/setup-domain.js",
     "verify:history": "node scripts/verify-history.js && node --experimental-vm-modules scripts/verify-local-history.js",
-    "verify:disconnect": "node scripts/verify-disconnect.js && node scripts/verify-session.js && node scripts/verify-session-recovery.js",
+    "verify:disconnect": "node scripts/verify-disconnect.js && node scripts/verify-session.js && node scripts/verify-session-recovery.js && node scripts/verify-session-reauth.js",
     "web": "expo start --web",
     "dashboard:auth": "node --env-file=.env.cloud scripts/setup-dashboard.js --cloud",
     "dashboard:build": "node scripts/build-dashboard.js",
@@ -197,5 +197,16 @@
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-notifications",
+          "expo-task-manager",
+          "unimodules-app-loader"
+        ]
+      }
+    }
   }
 }

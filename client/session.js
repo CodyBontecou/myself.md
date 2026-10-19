@@ -379,6 +379,22 @@ export async function signIn(server, provider) {
   }
   return session;
 }
+/** Renew login without changing the paired owner, server or phone partition.
+ * @param {Session} previous @param {'apple'|'github'|'google'} provider */
+export async function reauthenticateSession(previous, provider) {
+  activeSession(previous);
+  const next = await signIn(previous.server, provider);
+  activeSession(previous);
+  if (currentSession !== previous)
+    throw new Error('The account connection changed during sign-in. Try again.');
+  if (next.owner !== previous.owner || next.server !== previous.server)
+    throw new Error('Sign in to the same account to keep this phone connected.');
+  if (previous.deviceId && next.deviceId !== previous.deviceId)
+    throw new Error('The connected phone is no longer registered. Review its connection first.');
+  // This is a fresh OAuth lineage, not pairing with the old credentials.
+  await saveSession(next);
+  return next;
+}
 /** @template T @param {Session} session @param {string} path @param {RequestInit} [options] @returns {Promise<T>} */
 export async function api(session, path, options) {
   activeSession(session);

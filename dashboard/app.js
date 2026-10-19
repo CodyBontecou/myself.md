@@ -338,6 +338,11 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
                       Connected logins
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem
+                    onSelect={() => window.dispatchEvent(new Event('myself-analytics-preferences'))}
+                  >
+                    Analytics preferences
+                  </DropdownMenuItem>
                   {operator && (
                     <DropdownMenuItem asChild>
                       <a href="/operator/analytics">Product analytics</a>

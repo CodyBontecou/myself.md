@@ -24,7 +24,7 @@
         "com.apple.developer.applesignin": ["Default"]
       },
       "appleTeamId": "67KC823C9A",
-      "buildNumber": "16"
+      "buildNumber": "17"
     },
     "android": {
       "adaptiveIcon": {
@@ -74,7 +74,7 @@
         "android.permission.health.READ_OXYGEN_SATURATION",
         "android.permission.health.READ_POWER"
       ],
-      "versionCode": 15,
+      "versionCode": 18,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -124,7 +124,9 @@
           "enableBackgroundRemoteNotifications": true
         }
       ],
-      "./plugins/with-embedded-debug.cjs"
+      "./plugins/with-automatic-signing.cjs",
+      "./plugins/with-embedded-debug.cjs",
+      "./plugins/with-scrawl.cjs"
     ],
     "scheme": "myselfmd",
     "updates": {

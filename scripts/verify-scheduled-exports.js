@@ -23,6 +23,9 @@ const registrations = [];
 /** @type {{profile:string,day:string,writeMode:import('../core/export-files.js').ExportWriteMode|undefined}[]} */
 const exported = [];
 let authorizationFailure = '';
+let notificationPermission = { granted: true, canAskAgain: true };
+let permissionRequests = 0;
+let blockedPermissionRequest = false;
 let pushRegistrationFailure = false;
 let workerRegistrations = 0;
 let workerIsRegistered = false;
@@ -58,8 +61,12 @@ const mocks = {
   Alert: { alert() {} },
   Platform: { OS: 'ios' },
   qaEnabled: false,
-  getPermissionsAsync: async () => ({ granted: true }),
-  requestPermissionsAsync: async () => ({ granted: true }),
+  getPermissionsAsync: async () => notificationPermission,
+  requestPermissionsAsync: async () => {
+    permissionRequests++;
+    if (blockedPermissionRequest) return new Promise(() => {});
+    return notificationPermission;
+  },
   getExpoPushTokenAsync: async () => {
     if (pendingPushToken) return pendingPushToken;
     if (pushRegistrationFailure) throw new Error('FCM token unavailable');
@@ -144,7 +151,39 @@ const task =
   );
 const first = profiles[0];
 assert.ok(first);
+// A permanently denied Android request can leave Expo's native promise unresolved.
+// Exercise the actual opt-in boundary, including the unchanged persisted toggle.
+mocks.Platform.OS = 'android';
+notificationPermission = { granted: false, canAskAgain: false };
+blockedPermissionRequest = true;
+/** @type {ReturnType<typeof setTimeout>|undefined} */
+let permissionDeadline;
+try {
+  await assert.rejects(
+    Promise.race([
+      task.setScheduleEnabled(session.deviceId, first, true),
+      new Promise((_, reject) => {
+        permissionDeadline = setTimeout(() => reject(new Error('Opt-in remained busy')), 100);
+      }),
+    ]),
+    /Allow notifications in Settings/,
+    'Blocked notifications must finish with an actionable error, not leave setup busy',
+  );
+} finally {
+  clearTimeout(permissionDeadline);
+}
+assert.equal(permissionRequests, 0, 'Do not request a permission that Android cannot ask for');
+assert.equal(task.scheduleState(session.deviceId, first).progress.enabled, false);
+assert.equal(registrations.length, 0, 'A denied opt-in must not publish an enabled schedule');
+notificationPermission = { granted: false, canAskAgain: true };
+blockedPermissionRequest = false;
+await assert.rejects(task.setScheduleEnabled(session.deviceId, first, true), /Allow notifications/);
+assert.equal(permissionRequests, 1, 'Requestable denial uses the native prompt once');
+assert.equal(task.scheduleState(session.deviceId, first).progress.enabled, false);
+notificationPermission = { granted: true, canAskAgain: true };
 await task.setScheduleEnabled(session.deviceId, first, true);
+assert.equal(permissionRequests, 1, 'Settings recovery retries without another prompt');
+mocks.Platform.OS = 'ios';
 assert.equal(
   registrations.length > 0,
   true,

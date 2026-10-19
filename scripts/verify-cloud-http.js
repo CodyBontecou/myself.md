@@ -22,6 +22,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
 import { parseProfile, parseProfileState } from '../core/profiles.js';
 import { privacyPolicy } from '../core/privacy.js';
+import { agentSetup } from '../core/public-site.js';
 import { chromium } from 'playwright';
 // Verify the shared status contract without exposing account or device fields.
 const statusStore = new PairingStore(':memory:');
@@ -365,7 +366,7 @@ try {
   assert.ok((await landing.text()).includes('Open in myself.md'));
   const home = await fetch(origin, { redirect: 'manual' });
   assert.equal(home.status, 200);
-  assert.ok((await home.text()).includes('datasets and example exports'));
+  assert.ok((await home.text()).includes(agentSetup.description));
   assert.equal((await fetch(`${origin}/demo`)).status, 200);
   assert.equal((await fetch(`${origin}/demo/`)).status, 200);
   const browser = await chromium.launch({ headless: true });
@@ -396,14 +397,171 @@ try {
         await page.close();
       }),
     );
-    const catalogPage = await browser.newPage();
+    const catalogContext = await browser.newContext({
+      permissions: ['clipboard-read', 'clipboard-write'],
+    });
+    const catalogPage = await catalogContext.newPage();
     await catalogPage.goto(`${origin}/docs`);
     await catalogPage.getByRole('link', { name: 'Datasets', exact: true }).click();
     await catalogPage.getByRole('heading', { name: 'Datasets', exact: true }).waitFor();
     assert.equal(await catalogPage.getByRole('tablist', { name: 'Video tutorials' }).count(), 0);
     await catalogPage.goto(origin);
-    await catalogPage.getByRole('heading', { name: 'File over app. Yours to keep.' }).waitFor();
-    await catalogPage.close();
+    await catalogPage.getByRole('heading', { name: agentSetup.title, exact: true }).waitFor();
+    assert.equal(await catalogPage.getByRole('tablist', { name: 'Video tutorials' }).count(), 0);
+    const setupPrompt = catalogPage.getByRole('textbox', { name: 'Agent setup prompt' });
+    assert.equal(await setupPrompt.inputValue(), agentSetup.prompt);
+    const copyPrompt = catalogPage.getByRole('button', { name: 'Copy setup prompt', exact: true });
+    await copyPrompt.focus();
+    await copyPrompt.press('Enter');
+    await catalogPage
+      .getByText('Prompt copied. Paste it into your agent to begin setup.', { exact: true })
+      .waitFor();
+    assert.equal(await catalogPage.evaluate('navigator.clipboard.readText()'), agentSetup.prompt);
+    // Exercise denied and absent clipboard APIs without changing the browser's actual permissions.
+    await catalogPage.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error('Fixture denied clipboard access.');
+          },
+        },
+      });
+    });
+    await copyPrompt.click();
+    await catalogPage
+      .getByText('Copy is unavailable in this browser. Copy the selected prompt manually.', {
+        exact: true,
+      })
+      .waitFor();
+    const selectedPrompt = await catalogPage.evaluate(`(() => {
+      const element = document.getElementById('agent-setup-prompt');
+      return {
+        focused: document.activeElement === element,
+        text: element.value.slice(element.selectionStart, element.selectionEnd)
+      };
+    })()`);
+    assert.deepEqual(selectedPrompt, { focused: true, text: agentSetup.prompt });
+    assert.equal(
+      await catalogPage
+        .getByText('Prompt copied. Paste it into your agent to begin setup.')
+        .count(),
+      0,
+    );
+    await catalogPage.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    });
+    await copyPrompt.click();
+    await catalogPage
+      .getByText('Copy is unavailable in this browser. Copy the selected prompt manually.', {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await catalogPage
+        .getByRole('link', { name: 'Setup guide', exact: true })
+        .getAttribute('href'),
+      '/docs',
+    );
+    assert.equal(
+      await catalogPage
+        .getByRole('link', { name: 'Agent instructions', exact: true })
+        .getAttribute('href'),
+      '/llms.txt',
+    );
+    await catalogPage.getByRole('link', { name: 'Try sample data', exact: true }).click();
+    assert.equal(new URL(catalogPage.url()).pathname, '/demo');
+    await catalogPage
+      .getByText('You’re exploring a fictional workspace. Join to connect your own data.', {
+        exact: true,
+      })
+      .waitFor();
+    await catalogContext.close();
+    await Promise.all(
+      [
+        { width: 320, height: 640, colorScheme: /** @type {const} */ ('light') },
+        { width: 330, height: 740, colorScheme: /** @type {const} */ ('light') },
+        { width: 390, height: 844, colorScheme: /** @type {const} */ ('dark') },
+        { width: 1024, height: 768, colorScheme: /** @type {const} */ ('light') },
+        { width: 1280, height: 900, colorScheme: /** @type {const} */ ('light') },
+        { width: 1280, height: 900, colorScheme: /** @type {const} */ ('dark') },
+      ].map(async ({ width, height, colorScheme }) => {
+        const page = await browser.newPage({ viewport: { width, height }, colorScheme });
+        await page.goto(origin);
+        await page.getByRole('heading', { name: agentSetup.title, exact: true }).waitFor();
+        await page.screenshot({
+          path: `/tmp/myself-centered-agent-home-${width}-${height}-${colorScheme}.png`,
+        });
+        const setup = await page.locator('#agent-setup').boundingBox();
+        assert.ok(setup);
+        assert.ok(
+          Math.abs(setup.x + setup.width / 2 - width / 2) <= 1,
+          'Setup is horizontally centered in the viewport',
+        );
+        assert.ok(
+          Math.abs(setup.y + setup.height / 2 - height / 2) <= Math.max(48, height * 0.12),
+          'Setup stays near the viewport center',
+        );
+        assert.ok(
+          setup.y >= 0 && setup.y + setup.height <= height,
+          'The complete setup component is visible before scrolling',
+        );
+        assert.equal(await page.evaluate('window.scrollY'), 0);
+        assert.equal(
+          await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'),
+          true,
+        );
+        assert.equal(
+          await page.evaluate(`(() => {
+            const element = document.getElementById('agent-setup-prompt');
+            return element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth;
+          })()`),
+          true,
+          'The complete setup prompt is visible without internal scrolling',
+        );
+        assert.equal(
+          await page.evaluate(`(() => {
+            const button = document.querySelector('[aria-label="Copy setup prompt"]');
+            const bounds = button.getBoundingClientRect();
+            return button.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+          })()`),
+          true,
+          'The initial copy button is not covered by another surface',
+        );
+        assert.equal(
+          await page.evaluate(`(() => {
+            const panel = document.getElementById('agent-setup');
+            const bounds = panel.getBoundingClientRect();
+            return [
+              [bounds.x + bounds.width / 2, bounds.y + 2],
+              [bounds.x + bounds.width / 2, bounds.bottom - 2],
+              [bounds.x + 2, bounds.y + bounds.height / 2],
+              [bounds.right - 2, bounds.y + bounds.height / 2]
+            ].every(([x, y]) => panel.contains(document.elementFromPoint(x, y)));
+          })()`),
+          true,
+          'The setup panel stays unobscured even before an analytics choice',
+        );
+        const preview = await page
+          .getByRole('complementary', { name: 'Live export JSON preview', includeHidden: true })
+          .boundingBox();
+        if (preview)
+          assert.ok(
+            preview.y >= setup.y + setup.height,
+            'The JSON preview cannot compete with setup above the fold',
+          );
+        await page.close();
+      }),
+    );
+    const noScript = await browser.newPage({ javaScriptEnabled: false });
+    await noScript.goto(origin);
+    await noScript.getByRole('heading', { name: agentSetup.title, exact: true }).waitFor();
+    assert.ok(
+      (await noScript.locator('body').innerText())
+        .replace(/\s+/g, ' ')
+        .includes(agentSetup.prompt.replace(/\s+/g, ' ')),
+    );
+    await noScript.close();
   } finally {
     await browser.close();
   }
@@ -1769,10 +1927,9 @@ try {
       assert.match(await page.text(), /class="docs-page"/);
       const markdown = await fetch(origin + path, { headers: { Accept: 'text/markdown' } });
       assert.equal(markdown.status, 200);
-      assert.match(
-        await markdown.text(),
-        path.endsWith('/reference') ? /Idempotency-Key/ : /# Get started/,
-      );
+      const text = await markdown.text();
+      assert.match(text, path.endsWith('/reference') ? /Idempotency-Key/ : /# Get started/);
+      if (!path.endsWith('/reference')) assert.ok(text.includes(agentSetup.prompt));
     }),
   );
   const documentation = await client.callTool({ name: 'get_public_documentation', arguments: {} });
@@ -1780,6 +1937,22 @@ try {
   await verifyBlogMCP(client);
   assert.match(JSON.stringify(documentation), /# Get started/);
   assert.match(JSON.stringify(documentation), /Idempotency-Key/);
+  const setupDocumentation = z
+    .object({ content: z.array(z.object({ text: z.string() })) })
+    .parse(documentation);
+  assert.ok(setupDocumentation.content.some((item) => item.text.includes(agentSetup.prompt)));
+  await Promise.all(
+    ['/llms.txt', '/llms-full.txt', '/v1/llms.txt'].map(async (path) => {
+      const response = await fetch(origin + path);
+      assert.equal(response.status, 200);
+      const text = await response.text();
+      assert.ok(text.includes(agentSetup.prompt));
+      assert.match(text, /Hosted assistant/);
+      assert.match(text, /Local coding agent/);
+      assert.match(text, /Restricted sandbox/);
+      assert.match(text, /receipt, not save or consent/);
+    }),
+  );
   const publicSdk = createMyselfClient({ origin });
   const sdk = createMyselfClient({ origin, token: chatToken });
   const firstCatalog = z
@@ -1806,11 +1979,11 @@ try {
     publicSdk,
   );
   assert.equal(browserTools.length, 2);
-  assert.ok(
-    String(
-      z.object({ markdown: z.string() }).parse(await browserTools[0]?.execute({})).markdown,
-    ).includes('OAuth'),
-  );
+  const browserDocumentation = z
+    .object({ markdown: z.string() })
+    .parse(await browserTools[0]?.execute({})).markdown;
+  assert.ok(browserDocumentation.includes('OAuth'));
+  assert.ok(browserDocumentation.includes(agentSetup.prompt));
   assert.deepEqual(
     await browserTools[1]?.execute({ limit: 1 }),
     await publicSdk.datasets({ limit: 1 }),

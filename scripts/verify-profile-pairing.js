@@ -334,7 +334,7 @@ const folders =
       '../core/export-files.js': {
         appendExportContent: () => assert.fail('Pairing must not write files.'),
       },
-      'expo-file-system': { Directory: class {}, File: class {}, Paths: {} },
+      'expo-file-system': { Directory: class {}, File: class {}, FileMode: {}, Paths: {} },
       'react-native': { Platform: { OS: 'ios' } },
       expo: { requireOptionalNativeModule: () => null },
       './phone-database.js': { phoneDatabase: () => storage },

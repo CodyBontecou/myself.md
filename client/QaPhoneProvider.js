@@ -109,6 +109,7 @@ export default function QaPhoneProvider({ children }) {
         changeAccount: () => {},
         switchConnection: unavailable,
         signInAccount: unavailable,
+        reauthenticateAccount: unavailable,
         signIn: unavailable,
       }}
     >

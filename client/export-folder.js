@@ -1,5 +1,5 @@
 import { appendExportContent } from '../core/export-files.js';
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { phoneDatabase } from './phone-database.js';
@@ -161,19 +161,44 @@ export async function saveInExportFolder(context, profile, file, format, options
     );
     try {
       staged.write(content);
-      await staged.copy(target, { overwrite: true });
+      await copyExport(staged, target);
       if (target.size !== staged.size)
         throw new Error('Export folder write was incomplete. Retry the export.');
     } finally {
       if (staged.exists) staged.delete();
     }
   } else {
-    await file.copy(target, { overwrite: true });
+    await copyExport(file, target);
     if (target.size !== file.size)
       throw new Error('Export folder write was incomplete. Retry the export.');
   }
   if (content !== null) options.onAppend?.();
   return target;
+}
+
+/** Keep Android document URIs alive: Expo's overwrite copy deletes the SAF
+ * destination before opening it. Stream into the granted document instead.
+ * @param {File} source @param {File} target */
+async function copyExport(source, target) {
+  if (Platform.OS !== 'android' || !target.uri.startsWith('content://')) {
+    await source.copy(target, { overwrite: true });
+    return;
+  }
+  const reader = source.open(FileMode.ReadOnly);
+  try {
+    const writer = target.open(FileMode.Truncate);
+    try {
+      for (;;) {
+        const bytes = reader.readBytes(256 * 1024);
+        if (!bytes.length) break;
+        writer.writeBytes(bytes);
+      }
+    } finally {
+      writer.close();
+    }
+  } finally {
+    reader.close();
+  }
 }
 
 /** @param {Context} context @param {import('../core/export-files.js').ExportSettings} settings */

@@ -58,7 +58,47 @@ class File {
   /** @param {File} target */
   async copy(target) {
     if (failWrite) throw new Error('Disk full');
+    // Expo 57 SAF overwrite removes the already-created destination document;
+    // its tree URI can then no longer resolve that same document for writing.
+    if (target.uri.startsWith('content://')) {
+      files.delete(target.uri);
+      throw new Error(
+        'FileSystemFile.copy: Failed to determine if document is child: FileNotFoundException',
+      );
+    }
     files.set(target.uri, files.get(this.uri) ?? '');
+  }
+  /** @param {string} mode */
+  open(mode) {
+    assert.ok(['r', 'wt'].includes(mode));
+    if (failProviderOpen && mode === 'wt') throw new Error('Provider denied write');
+    if (mode === 'wt') files.set(this.uri, '');
+    let offset = 0;
+    let closed = false;
+    const uri = this.uri;
+    openHandles++;
+    return {
+      /** @param {number} length */
+      readBytes(length) {
+        assert.equal(closed, false);
+        assert.equal(mode, 'r');
+        assert.ok(length <= 256 * 1024, 'SAF copies use bounded chunks');
+        const bytes = new TextEncoder().encode(files.get(uri) ?? '').slice(offset, offset + length);
+        offset += bytes.length;
+        return bytes;
+      },
+      /** @param {Uint8Array} bytes */
+      writeBytes(bytes) {
+        assert.equal(closed, false);
+        assert.equal(mode, 'wt');
+        files.set(uri, (files.get(uri) ?? '') + new TextDecoder().decode(bytes));
+      },
+      close() {
+        assert.equal(closed, false);
+        closed = true;
+        openHandles--;
+      },
+    };
   }
   get size() {
     return files.has(this.uri) ? files.get(this.uri)?.length : null;
@@ -73,6 +113,8 @@ class File {
     files.delete(this.uri);
   }
 }
+let openHandles = 0;
+let failProviderOpen = false;
 let failMove = false,
   failWrite = false,
   failDelivery = false;
@@ -84,6 +126,7 @@ const mocks = {
 
   Directory,
   File,
+  FileMode: { ReadOnly: 'r', Truncate: 'wt' },
   Paths: { document: 'documents', cache: 'cache' },
   catalog: async () => ({
     domains: [
@@ -382,6 +425,34 @@ assert.equal(
   preservedJsonl,
   'Invalid sidecar fails before appending data',
 );
+
+// Exercise more than one provider write chunk without loading the whole source.
+const { saveInExportFolder } =
+  /** @type {{saveInExportFolder:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,file:File,format:string,options?:{filename:string})=>Promise<File>}} */ (
+    folderModule.namespace
+  );
+const largeSource = new File(new Directory('cache'), 'large.jsonl');
+const largeBytes = `${'x'.repeat(600 * 1024)}\n`;
+files.set(largeSource.uri, largeBytes);
+await saveInExportFolder(
+  session,
+  { ...profile, export: { ...profile.export, localFolderId: 'fixture' } },
+  largeSource,
+  'jsonl',
+  { filename: 'large.jsonl' },
+);
+assert.equal(files.get('content://chosen/large.jsonl'), largeBytes);
+
+// A provider write-open failure closes the source and leaves existing bytes alone.
+const beforeProviderFailure = new Map(files);
+failProviderOpen = true;
+await assert.rejects(exportToFolder('replace'), /Provider denied write/);
+failProviderOpen = false;
+assert.deepEqual(
+  [...files].filter(([uri]) => uri.startsWith('content://')),
+  [...beforeProviderFailure].filter(([uri]) => uri.startsWith('content://')),
+);
+assert.equal(openHandles, 0, 'All provider handles close after successful or failed writes');
 
 // Cloud keeps one JSONL file per day; HTTP receives every selected format.
 for (const [destination, expected] of /** @type {const} */ ([

@@ -1,4 +1,4 @@
-import { Redirect, Stack, router } from 'expo-router';
+import { Redirect, Stack, router, useLocalSearchParams } from 'expo-router';
 import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { usePhone } from '../../client/PhoneProvider.js';
 import { Screen, Copy, Button, Icon, Notice } from '../components/ui.js';
@@ -26,14 +26,19 @@ const providers = /** @type {const} */ ([
   },
 ]);
 export default function LoginScreen() {
-  const { session, busy, error, run, signInAccount, deletionStatusUrl } = usePhone();
+  const { session, busy, error, run, signInAccount, reauthenticateAccount, deletionStatusUrl } =
+    usePhone();
+  const { reauthenticate } = useLocalSearchParams();
+  const recovery = reauthenticate === '1' && Boolean(session?.owner);
   const { colors } = useTheme();
-  if (session?.owner && !session.requiresSignIn) return <Redirect href="/account" />;
+  if (session?.owner && !session.requiresSignIn && !recovery) return <Redirect href="/account" />;
   return (
     <Screen compact testID="login-screen">
       <Stack.Screen options={{ title: 'Sign in' }} />
       <Copy muted style={styles.center}>
-        Sign in to save exports in the cloud and manage your account.
+        {recovery
+          ? 'Sign in to the same account to keep this phone and its saved data connected.'
+          : 'Sign in to save exports in the cloud and manage your account.'}
       </Copy>
       {session?.requiresSignIn && (
         <Notice
@@ -50,7 +55,14 @@ export default function LoginScreen() {
             accessibilityLabel={provider.label}
             accessibilityState={{ disabled: busy, busy }}
             disabled={busy}
-            onPress={() => void run(() => signInAccount(provider.id))}
+            onPress={() =>
+              void run(async () => {
+                if (recovery) {
+                  await reauthenticateAccount(provider.id);
+                  router.replace('/account');
+                } else await signInAccount(provider.id);
+              })
+            }
             style={({ pressed }) => [
               styles.provider,
               {

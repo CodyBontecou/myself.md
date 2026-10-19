@@ -371,6 +371,13 @@ async function verifyAnalyticsBrowser(origin, owner) {
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
+    const consent = page.locator('.analytics-consent');
+    const preferences = page.getByRole('button', { name: 'Analytics preferences', exact: true });
+    const expectDismissed = async () => {
+      await consent.waitFor({ state: 'attached' });
+      await consent.waitFor({ state: 'hidden' });
+      assert.equal(await preferences.isVisible(), false);
+    };
     const errors = /** @type {string[]} */ ([]);
     page.on('pageerror', (error) => errors.push(error.message));
     let captures = 0;
@@ -386,11 +393,25 @@ async function verifyAnalyticsBrowser(origin, owner) {
     );
     await page.getByRole('button', { name: 'Allow usage analytics', exact: true }).click();
     await received;
-    await page.getByRole('button', { name: 'Analytics preferences', exact: true }).click();
-    await page.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
-    const afterOptOut = captures;
+    await expectDismissed();
     await page.reload();
-    await page.getByRole('button', { name: 'Analytics preferences', exact: true }).waitFor();
+    await expectDismissed();
+    await page.goto(`${origin}/privacy`);
+    await preferences.click();
+    assert.equal(
+      await page.evaluate(
+        "getComputedStyle(document.querySelector('.analytics-consent')).position",
+      ),
+      'static',
+    );
+    await page.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
+    await preferences.waitFor();
+    const afterOptOut = captures;
+    await page.goto(origin);
+    await expectDismissed();
+    await page.reload();
+    await page.evaluate("window.dispatchEvent(new Event('popstate'))");
+    await expectDismissed();
     assert.equal(captures, afterOptOut);
     await page.goto(`${origin}/operator/analytics`);
     await page.getByRole('button', { name: 'Exclude this browser', exact: true }).click();
@@ -401,12 +422,15 @@ async function verifyAnalyticsBrowser(origin, owner) {
     );
     await page.reload();
     await page.getByRole('button', { name: 'Include this browser', exact: true }).waitFor();
-    await page.goto(origin);
-    await page.getByRole('button', { name: 'Analytics preferences', exact: true }).click();
+    await page.goto(`${origin}/privacy/`);
+    await preferences.click();
     await page.getByRole('button', { name: 'Allow usage analytics', exact: true }).click();
+    await preferences.waitFor();
     await page.waitForFunction(() => localStorage.getItem('myself-analytics-choice') === 'true');
+    await page.goto(origin);
+    await expectDismissed();
     await page.reload();
-    await page.getByRole('button', { name: 'Analytics preferences', exact: true }).waitFor();
+    await expectDismissed();
     assert.equal(captures, afterOptOut, 'Excluded browser must not send opted-in product events.');
     await page.goto(`${origin}/operator/analytics`);
     await page.getByRole('button', { name: 'Include this browser', exact: true }).click();
@@ -425,8 +449,11 @@ async function verifyAnalyticsBrowser(origin, owner) {
     await page.goto(origin);
     await resumed;
     assert.ok(captures > afterOptOut, 'Including the browser restores consented collection.');
-    await page.getByRole('button', { name: 'Analytics preferences', exact: true }).click();
+    await expectDismissed();
+    await page.goto(`${origin}/privacy`);
+    await preferences.click();
     await page.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
+    await preferences.waitFor();
     await page.route('**/protocol/openid-connect/token', (route) =>
       route.fulfill({
         status: 200,
@@ -468,6 +495,28 @@ async function verifyAnalyticsBrowser(origin, owner) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.screenshot({ path: '.local/analytics-report-mobile-dark.png', fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(
+      `sessionStorage.setItem('myselfmd-dashboard-login',JSON.stringify({verifier:'synthetic-pkce',state:'analytics-ui',created:Date.now(),returnTo:'/dashboard'}))`,
+    );
+    await page.goto(`${origin}/dashboard/callback?code=synthetic&state=analytics-ui`);
+    await page.getByRole('button', { name: 'Your account Personal account', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Analytics preferences', exact: true }).click();
+    await page.getByRole('button', { name: 'Allow usage analytics', exact: true }).click();
+    await expectDismissed();
+    const accountChoice = async () => {
+      const response = await context.request.get(`${origin}/api/analytics/preferences`, {
+        headers: { Authorization: owner },
+      });
+      assert.equal(response.status(), 200);
+      return response.json();
+    };
+    assert.equal((await accountChoice()).enabled, true);
+    await page.getByRole('button', { name: 'Your account Personal account', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Analytics preferences', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
+    await expectDismissed();
+    assert.equal((await accountChoice()).enabled, false);
     assert.equal(errors.length, 0, errors.join('\n'));
     await context.close();
     console.log(

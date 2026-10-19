@@ -1,0 +1,85 @@
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
+index 82bc0db..6609212 100644
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
+@@ -141,8 +141,8 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+       Log.i(TAG, "Approaching job limit (" + pendingJobs.size() + "). Merging data for task '" + task.getName() + "'.");
+       try {
+         JobInfo mergedJobInfo = createJobInfoByAddingData(newestJob, data);
+-        jobScheduler.cancel(newestJob.getId());
+-        jobScheduler.schedule(mergedJobInfo);
++        if (!isProfileExportJob(mergedJobInfo.getExtras())) jobScheduler.cancel(newestJob.getId());
++        scheduleWithExportFallback(jobScheduler, mergedJobInfo);
+       } catch (IllegalStateException e) {
+         Log.e(this.getClass().getName(), "Unable to merge job: " + e.getMessage());
+       }
+@@ -152,7 +152,7 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+     // Under limit: schedule as new job. Don't touch existing jobs.
+     try {
+       JobInfo jobInfo = createJobInfo(context, task, newJobId, data);
+-      jobScheduler.schedule(jobInfo);
++      scheduleWithExportFallback(jobScheduler, jobInfo);
+     } catch (IllegalStateException e) {
+       Log.e(this.getClass().getName(), "Unable to schedule job: " + e.getMessage());
+     }
+@@ -199,7 +199,26 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+     return createTaskIntent(context, appScopeKey, taskName, flags);
+   }
+ 
++  private void scheduleWithExportFallback(JobScheduler scheduler, JobInfo jobInfo) {
++    int result = scheduler.schedule(jobInfo);
++    if (result != JobScheduler.RESULT_SUCCESS && isProfileExportJob(jobInfo.getExtras())) {
++      // A rejected replacement leaves the previous persisted job intact.
++      result = scheduler.schedule(createJobInfo(jobInfo.getId(), jobInfo.getService(), jobInfo.getExtras(), false));
++      if (result != JobScheduler.RESULT_SUCCESS) {
++        throw new IllegalStateException("Scheduled export network job was rejected; periodic recovery remains pending");
++      }
++    }
++  }
++
++  private static boolean isProfileExportJob(PersistableBundle extras) {
++    return "profile-export-notifications".equals(extras.getString("taskName"));
++  }
++
+   private JobInfo createJobInfo(int jobId, ComponentName jobService, PersistableBundle extras) {
++    return createJobInfo(jobId, jobService, extras, true);
++  }
++
++  private JobInfo createJobInfo(int jobId, ComponentName jobService, PersistableBundle extras, boolean expedited) {
+     JobInfo.Builder jobBuilder = new JobInfo.Builder(jobId, jobService)
+         .setExtras(extras)
+         .setPersisted(true)
+@@ -213,11 +232,14 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+       // For Android 9 (API 28) to Android 11 (API 30)
+       jobBuilder.setImportantWhileForeground(true)
+           .setOverrideDeadline(DEFAULT_OVERRIDE_DEADLINE);
+-    } else {
++    } else if (expedited) {
+       // For Android 12 (API 31) and above
+       jobBuilder.setExpedited(true);
+     }
+ 
++    if (isProfileExportJob(extras)) {
++      jobBuilder.setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY);
++    }
+     return jobBuilder.build();
+   }
+ 
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+index 8416444..ba2a4e4 100644
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+@@ -345,8 +345,11 @@ public class TaskService implements SingletonModule, TaskServiceInterface {
+     boolean isAsyncJob = consumer.didExecuteJob(jobService, params);
+ 
+     if (isAsyncJob) {
+-      // Make sure the task doesn't take more than 15 seconds
+-      finishJobAfterTimeout(jobService, params, MAX_TASK_EXECUTION_TIME_MS);
++      // Export uploads have a 60-second request timeout and checkpoint their
++      // bounded run. Keep the OS network job until JS settles, with a hard cap.
++      long timeout = "profile-export-notifications".equals(taskName)
++        ? 180000L : MAX_TASK_EXECUTION_TIME_MS;
++      finishJobAfterTimeout(jobService, params, timeout);
+     }
+ 
+     return isAsyncJob;

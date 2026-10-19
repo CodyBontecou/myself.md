@@ -212,6 +212,24 @@ class PickedFile {
     this.name = uri.split('/').at(-1) ?? '';
     this.size = 12;
   }
+  /** @param {string} mode */
+  open(mode) {
+    const file = this;
+    let read = false;
+    return {
+      readBytes() {
+        if (read) return new Uint8Array();
+        read = true;
+        return new Uint8Array(file.size);
+      },
+      /** @param {Uint8Array} bytes */
+      writeBytes(bytes) {
+        assert.equal(mode, 'wt');
+        file.size = bytes.length;
+      },
+      close() {},
+    };
+  }
   /** @param {PickedFile} target */
   async copy(target) {
     target.size = this.size;
@@ -230,7 +248,12 @@ const folderContext = { owner: 'folder-owner', deviceId: 'folder-device' };
 const folderRuntime =
   /** @type {{chooseExportFolder:(context:typeof folderContext,previous?:string)=>Promise<string>,exportFolder:(context:typeof folderContext,id?:string)=>{name:string}|null,exportFolderStatus:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile)=>{status:string},saveInExportFolder:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile,file:PickedFile,format:string)=>Promise<PickedFile>}} */ (
     await load('../client/export-folder.js', {
-      'expo-file-system': { Directory: PickedDirectory, File: PickedFile, Paths: {} },
+      'expo-file-system': {
+        Directory: PickedDirectory,
+        File: PickedFile,
+        FileMode: { ReadOnly: 'r', Truncate: 'wt' },
+        Paths: {},
+      },
       '../core/export-files.js': exportFiles,
       'react-native': { Platform: folderPlatform },
       expo: { requireOptionalNativeModule: () => bookmarkBridge },
@@ -713,6 +736,7 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
+      './export-notification-registration.js': { reconcileExportNotificationTask: async () => {} },
       './destinations.js': { requireCloudAuthorization: async () => {} },
       'expo-constants': { default: { expoConfig: {} } },
       'expo-notifications': {},

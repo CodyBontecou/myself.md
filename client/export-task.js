@@ -23,15 +23,6 @@ const db = phoneDatabase();
 db.execSync(
   'CREATE TABLE IF NOT EXISTS profile_schedules (device TEXT, profile TEXT, value TEXT, PRIMARY KEY(device,profile))',
 );
-/** @param {import('../packages/support-chat/errors.js').ErrorDetails} value @returns {unknown} */
-const boundedExportTrace = (value) => ({
-  name: value.name.slice(0, 100),
-  code: value.code,
-  domain: value.domain,
-  message: value.message.replace(/https?:\/\/[^\s"']+/gi, '[url]').slice(0, 1000),
-  ...(value.cause ? { cause: boundedExportTrace(value.cause) } : {}),
-});
-
 /** @typedef {{progress:import('../core/schedules.js').ScheduleProgress,fingerprint:string,job:null|{historyId?:string,profile:import('../core/profiles.js').ExportProfile,occurrence:import('../core/schedules.js').Occurrence,days:{day:string,start:string,end:string}[]},files:string[],message:string,retryAt:number,reminderError?:'token-unavailable'|'permission-required'|null}} State */
 /** @param {import('../core/profiles.js').ExportProfile} profile */
 function fingerprint(profile) {
@@ -98,7 +89,8 @@ export async function setScheduleEnabled(device, profile, enabled) {
         importance: Notifications.AndroidImportance.DEFAULT,
       });
     let permission = await Notifications.getPermissionsAsync();
-    if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+    if (!permission.granted && permission.canAskAgain)
+      permission = await Notifications.requestPermissionsAsync();
     if (!permission.granted)
       throw new Error('Allow notifications in Settings to enable scheduled export reminders.');
   }
@@ -500,12 +492,10 @@ async function executeScheduledExports(profileId, requested) {
         return s.progress.enabled && s.progress.enabledAt === state.progress.enabledAt;
       };
       let produced = false;
-      let diagnosticStage = 'cloud-authorization';
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop -- Check approval before each scheduled profile.
         await requireCloudAuthorization(session, job.profile);
         // Reuse the occurrence ID across OS restarts and retries.
-        diagnosticStage = 'allowance';
         // oxlint-disable-next-line eslint/no-await-in-loop
         await reserveExport(session, historyId, {
           profileId: profile.id,
@@ -524,7 +514,6 @@ async function executeScheduledExports(profileId, requested) {
           const day = job.days[0];
           if (!day) break;
           // Checkpoint each completed day after delivery.
-          diagnosticStage = 'day-export';
           // oxlint-disable-next-line eslint/no-await-in-loop
           const result = await exportProfileDay(
             session,
@@ -539,7 +528,6 @@ async function executeScheduledExports(profileId, requested) {
             historyId,
           );
           // Count output even if the profile changes immediately after delivery.
-          diagnosticStage = 'settlement';
           // oxlint-disable-next-line eslint/no-await-in-loop
           await settleExport(session, historyId, true);
           if (!valid()) {
@@ -570,16 +558,6 @@ async function executeScheduledExports(profileId, requested) {
           // Partial scheduled output still consumes this occurrence's single allowance.
           // oxlint-disable-next-line eslint/no-await-in-loop
           await settleExport(session, historyId, true).catch(() => {});
-        }
-        if (process.env.EXPO_PUBLIC_EXPORT_BACKGROUND_TRACE === '1') {
-          const detail =
-            /** @type {{error:import('../packages/support-chat/errors.js').ErrorDetails}} */ (
-              JSON.parse(errorJSON(e))
-            ).error;
-          console.warn(
-            '[export-background-qa]',
-            JSON.stringify({ stage: diagnosticStage, error: boundedExportTrace(detail) }),
-          );
         }
         finishExport(session, historyId, valid() ? 'failed' : 'cancelled', exportFailureMessage(e));
         if (valid()) {

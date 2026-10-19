@@ -1,0 +1,59 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/background/BackgroundRemoteNotificationTaskConsumer.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/background/BackgroundRemoteNotificationTaskConsumer.kt
+index 6fdc1c6..f391386 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/background/BackgroundRemoteNotificationTaskConsumer.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/background/BackgroundRemoteNotificationTaskConsumer.kt
+@@ -4,6 +4,7 @@ import android.app.job.JobParameters
+ import android.app.job.JobService
+ import android.content.Context
+ import android.os.Bundle
++import android.os.PersistableBundle
+ import android.util.Log
+ import expo.modules.interfaces.taskManager.TaskConsumer
+ import expo.modules.interfaces.taskManager.TaskConsumerInterface
+@@ -48,8 +49,11 @@ class BackgroundRemoteNotificationTaskConsumer(
+ 
+     for (item in taskManagerUtils.extractDataFromJobParams(params)) {
+       val notificationEntry = requireNotNull(item.getString(NOTIFICATION_KEY)) { "Job data missing '$NOTIFICATION_KEY' entry" }
+-      val bundle = Bundle().apply {
+-        putBundle(NOTIFICATION_KEY, jsonStringToBundle(notificationEntry))
++      val notification = jsonStringToBundle(notificationEntry)
++      val bundle = if (item.getBoolean(EXPORT_JOB_KEY)) {
++        requireNotNull(notification) { "Scheduled export notification is invalid" }
++      } else {
++        Bundle().apply { putBundle(NOTIFICATION_KEY, notification) }
+       }
+       task.execute(bundle, null) { jobService.jobFinished(params, false) }
+     }
+@@ -59,12 +63,31 @@ class BackgroundRemoteNotificationTaskConsumer(
+     return true
+   }
+ 
++  override fun didCancelJob(jobService: JobService, params: JobParameters?): Boolean {
++    // Android can stop a network job when its constraint changes. The durable
++    // notification and JS occurrence checkpoint make a later retry safe.
++    return task?.name == "profile-export-notifications"
++  }
++
+   fun executeTask(bundle: Bundle) {
+-    requireNotNull(task) { "executeTask called but no task is registered" }.execute(bundle, null)
++    val registered = requireNotNull(task) { "executeTask called but no task is registered" }
++    if (registered.name == "profile-export-notifications") {
++      // FCM's brief receiver lifetime does not cover asynchronous JS uploads.
++      // Persist the original payload and let JobScheduler own network access
++      // until didExecuteJob's task completion callback finishes the job.
++      val data = PersistableBundle().apply {
++        putString(NOTIFICATION_KEY, bundleToJson(bundle).toString())
++        putBoolean(EXPORT_JOB_KEY, true)
++      }
++      taskManagerUtils.scheduleJob(context, registered, listOf(data))
++      return
++    }
++    registered.execute(bundle, null)
+   }
+ 
+   companion object {
+     private const val NOTIFICATION_KEY = "notification"
++    private const val EXPORT_JOB_KEY = "profileExportJob"
+ 
+     private fun bundleToJson(bundle: Bundle): JSONObject {
+       val json = JSONObject()
