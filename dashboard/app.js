@@ -1114,6 +1114,7 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
 /** @param {{ready:boolean,notice?:string}} props */
 function LoginCard({ ready, notice = '' }) {
   const standalone = ['/login', '/login/'].includes(location.pathname);
+  const clientLogin = standalone && new URLSearchParams(location.search).has('client_id');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   /** @param {'apple'|'github'|'google'|'reviewer'} provider */
@@ -1150,7 +1151,7 @@ function LoginCard({ ready, notice = '' }) {
             {(error || notice) && (
               <AccountError
                 error={error || notice}
-                actionHref="/login"
+                actionHref={clientLogin ? null : '/login'}
                 actionLabel="Start sign-in again"
               />
             )}

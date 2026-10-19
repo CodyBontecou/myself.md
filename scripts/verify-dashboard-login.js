@@ -3,6 +3,8 @@ import { runInNewContext } from 'node:vm';
 import { Buffer } from 'node:buffer';
 import { webcrypto } from 'node:crypto';
 import { build } from 'esbuild';
+import { publicErrorMessage } from '../core/public-errors.js';
+import { errorJSON } from '../packages/support-chat/errors.js';
 
 const source = await build({
   entryPoints: ['dashboard/session.js'],
@@ -25,6 +27,7 @@ const exports = { exports: {} };
 let exchangeCount = 0;
 let returnedTo = '';
 let pendingOAuth = '';
+let socialError = '';
 const context = {
   module: exports,
   crypto: webcrypto,
@@ -64,6 +67,7 @@ const context = {
       const body = JSON.parse(String(options.body));
       assert.equal(body.oauth_query, pendingOAuth);
       assert.ok(['github', 'google'].includes(body.provider));
+      if (socialError) return Response.json({ error: socialError }, { status: 401 });
       return Response.json({
         url:
           body.provider === 'google'
@@ -155,6 +159,20 @@ await session.signIn('google');
 assert.equal(destination.hostname, 'accounts.google.com');
 assert.equal(storage.has('myselfmd-dashboard-login'), false);
 assert.equal(exchangeCount, 6, 'Phone login must retain its own native token exchange');
+socialError = 'invalid_signature';
+const previousDestination = destination.href;
+await assert.rejects(session.signIn('google'), (reason) => {
+  assert.ok(reason instanceof Error || (reason && typeof reason === 'object'));
+  const text = publicErrorMessage(errorJSON(reason));
+  assert.match(text, /sign-in link.*expired or could not be verified/i);
+  assert.match(text, /app or assistant that started sign-in/i);
+  assert.doesNotMatch(text, /invalid_signature/);
+  return true;
+});
+assert.equal(destination.href, previousDestination, 'Failed login must not redirect to dashboard');
+assert.equal(storage.has('myselfmd-dashboard-login'), false);
+assert.equal(exchangeCount, 6);
+socialError = '';
 location.pathname = '/claim';
 location.search = '';
 await session.signIn('github');
