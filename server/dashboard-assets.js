@@ -50,7 +50,17 @@ export const assets = new Map([
         [`brand-icons/${name}.png`, 'image/png'],
       ]),
   ),
-  ...['claude-code', 'codex', 'opencode', 'grokbot', 'chatgpt', 'dots', 'muse', 'pi'].map(
+  ...[
+    'claude-code',
+    'codex',
+    'opencode',
+    'openclaw',
+    'grokbot',
+    'chatgpt',
+    'dots',
+    'muse',
+    'pi',
+  ].map(
     (name) =>
       /** @type {[string,[string,string]]} */ ([
         `/dashboard/agent-logos/${name}.svg`,

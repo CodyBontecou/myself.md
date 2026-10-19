@@ -1473,6 +1473,8 @@ The homepage and shared public header display the existing myself.md portrait lo
 
 ## Additional homepage agent logos — 19 October 2026
 
+OpenClaw is also included using its official [website SVG](https://openclaw.ai/favicon.svg), served locally with an accessible name. This artwork-only addition preserves the existing setup prompt and public documentation operations; mobile, dashboard actions and authorization are unchanged.
+
 The existing agent setup prompt and client identity row now include Grok Bot, ChatGPT, Dots, Muse and Pi, with locally served artwork and accessible names. This artwork-only change adds no UI action or integration; public setup documentation and its MCP coverage remain unchanged. Mobile and dashboard actions, grants and authentication are unaffected.
 
 ## AEO follow-up production verification — 19 October 2026

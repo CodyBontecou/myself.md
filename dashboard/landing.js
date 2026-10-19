@@ -112,6 +112,7 @@ const agents = [
   { name: 'Claude Code', file: 'claude-code' },
   { name: 'Codex', file: 'codex' },
   { name: 'OpenCode', file: 'opencode' },
+  { name: 'OpenClaw', file: 'openclaw' },
   { name: 'Grok Bot', file: 'grokbot' },
   { name: 'ChatGPT', file: 'chatgpt' },
   { name: 'Dots', file: 'dots' },
