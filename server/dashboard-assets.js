@@ -65,7 +65,14 @@ export const assets = new Map([
         [`agent-logos/${name}.svg`, 'image/svg+xml'],
       ]),
   ),
-  ...['selection', 'approval', 'overview'].flatMap(
+  ...[
+    'selection',
+    'approval',
+    'overview',
+    'context-loop',
+    'permissions-loop',
+    'discovery-loop',
+  ].flatMap(
     (name) =>
       /** @type {[string,[string,string]][]} */ ([
         [`/dashboard/showcase/${name}.mp4`, [`showcase/${name}.mp4`, 'video/mp4']],
