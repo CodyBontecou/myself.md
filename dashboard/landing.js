@@ -300,7 +300,7 @@ export function Landing() {
         <a className="personal-brand" href="/" aria-label="myself.md home">
           myself<span className="brand-extension">.md</span>
         </a>
-        <nav aria-label="Main navigation">
+        <nav className="personal-nav" aria-label="Main navigation">
           <a href="/datasets">Datasets</a>
           <a href="/docs">Docs</a>
           <a href="/pricing">Pricing</a>

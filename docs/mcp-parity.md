@@ -1536,3 +1536,7 @@ Worker `c6357775-db59-45d8-bd36-3de2da09abc7` publishes both source-specific hea
 ## Public website sandbox removal — 19 October 2026
 
 The public browser sandbox and its routes are removed. Homepage, pricing, setup documentation, blog guidance, shared HTTP/MCP/WebMCP documentation and sitemap no longer advertise it. Retired URLs return 404. The public overview recording ends before its retired sandbox CTA; future launch renders link to the setup guide. Dataset previews remain public through HTTP, `get_public_dataset_catalog` and WebMCP `myself_dataset_catalog`; shared documentation remains available through `get_public_documentation` and `myself_public_documentation`. Authenticated dashboard and mobile operations retain their existing authorization, grants and owner handoffs. Earlier entries describe historical behavior.
+
+## Homepage mobile navigation — 19 October 2026
+
+At widths up to 800 pixels, the homepage shows Docs, Pricing and Sign in directly in the header, with no menu. Sign in links to `/dashboard`, which presents authentication when needed. Desktop navigation retains all existing links. These links retain their existing public HTTP/documentation discovery and dashboard authentication handoff; this presentation adds no account action, grant or mobile-app capability. Public setup reads remain available through `get_public_documentation` and WebMCP `myself_public_documentation`. Sign-in remains an owner browser handoff.
