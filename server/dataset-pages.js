@@ -1,5 +1,10 @@
 import { datasets, healthMetricExamples } from '../dashboard/dataset-catalog.js';
 import { docsHTML } from './docs-page.js';
+import {
+  datasetWorkflows,
+  workflowPrerequisites,
+  workflowQuerySteps,
+} from '../core/dataset-workflows.js';
 
 /** @param {string} value */
 function escape(value) {
@@ -17,12 +22,51 @@ export function datasetPage(pathname) {
   const title = entry ? `${entry[1].title} exports` : 'Supported phone datasets';
   const description = entry
     ? `${entry[1].introduction} ${entry[1].sources}`
-    : 'Explore supported health, screen time and recorded location exports, native sources, platform limitations and fictional JSON examples in myself.md.';
-  const markdown = `# ${title} in myself.md
+    : 'Explore questions your AI can answer about health, screen time and recorded locations, the data they need, platform limits and fictional examples. Technical types and JSON are available below.';
+  const workflows = datasetWorkflows.filter((workflow) =>
+    selected.some(([slug]) => workflow.dataset === slug),
+  );
+  const markdown = `# Ask about your data
 
 ${description}
 
-This catalog describes adapter capabilities, not a connected person's available records. Examples are fictional. Agent reads require supported phone sources, operating-system permission, selected profile types and separate agent approval. Public App Store and Google Play downloads are coming soon.
+Copy a question into your agent to get started. This catalog describes capabilities, not a connected person's available records. All answer examples are fictional.
+
+${workflows
+  .map(
+    (workflow) => `## ${workflow.question}
+
+${workflow.description}
+
+Fictional answer example: ${workflow.example}
+
+Data needed: ${workflow.dataNeeded}
+
+Availability: ${workflow.availability}
+
+${workflow.limitations.map((limit) => `- ${limit}`).join('\n')}
+
+Prompt to send to your agent:
+
+${workflow.prompt}
+
+[Explore ${workflow.dataset} data types and example JSON](/datasets/${workflow.dataset}#technical-explorer).`,
+  )
+  .join('\n\n')}
+
+## Connect your data when you’re ready
+
+${workflowPrerequisites.map((step, stepIndex) => `${stepIndex + 1}. ${step}`).join('\n')}
+
+Viewing this page or copying a prompt does not grant access. Your assistant must check available records and date coverage before answering. Public App Store and Google Play downloads are coming soon.
+
+[Connect an AI assistant](/docs). Agents can discover these same structured workflows, required types, prerequisites and query steps through \`get_public_dataset_catalog\` or [the public catalog](/v1/dataset-catalog). Follow \`nextCursor\` until \`hasMore\` is false.
+
+${workflowQuerySteps.map((step, stepIndex) => `${stepIndex + 1}. \`${step.tool}\`: ${step.instruction}`).join('\n')}
+
+## Technical explorer
+
+${title} in myself.md. Select native types in the interactive explorer to update a fictional JSON export. Agent reads require supported phone sources, operating-system permission, selected profile types and separate agent approval.
 
 ${selected
   .map(

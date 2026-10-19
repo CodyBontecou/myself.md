@@ -24,6 +24,7 @@ import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js'
 import { parseProfile, parseProfileState } from '../core/profiles.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { chromium } from 'playwright';
+import { datasetWorkflows } from '../core/dataset-workflows.js';
 // Verify the shared status contract without exposing account or device fields.
 const statusStore = new PairingStore(':memory:');
 try {
@@ -407,10 +408,70 @@ try {
     const catalogPage = await browser.newPage();
     await catalogPage.goto(`${origin}/docs`);
     await catalogPage.getByRole('link', { name: 'Datasets', exact: true }).click();
-    await catalogPage.getByRole('heading', { name: 'Datasets', exact: true }).waitFor();
+    await catalogPage.getByRole('heading', { name: 'Ask about your data', exact: true }).waitFor();
+    await Promise.all(
+      datasetWorkflows.map(async (workflow) => {
+        const questionPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        try {
+          await questionPage.goto(`${origin}/datasets`);
+          const question = questionPage
+            .locator('details')
+            .filter({ has: questionPage.locator('summary', { hasText: workflow.question }) });
+          await question.locator('summary').click();
+          assert.ok(await question.getByText(workflow.example, { exact: true }).isVisible());
+          assert.equal(
+            await question
+              .getByRole('textbox', { name: 'Prompt to send to your agent' })
+              .inputValue(),
+            workflow.prompt,
+          );
+          assert.equal(
+            await questionPage.evaluate('document.documentElement.scrollWidth > innerWidth'),
+            false,
+          );
+        } finally {
+          await questionPage.close();
+        }
+      }),
+    );
+    await catalogPage.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const sleepQuestion = catalogPage.locator('[data-workflow="sleep-trends"]');
+    assert.equal(await sleepQuestion.locator('details').getAttribute('open'), null);
+    await sleepQuestion.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+    await sleepQuestion.getByText('Copied.', { exact: true }).waitFor();
+    assert.equal(
+      await catalogPage.evaluate('navigator.clipboard.readText()'),
+      datasetWorkflows[0]?.prompt,
+    );
+    await catalogPage.evaluate(
+      `navigator.clipboard.writeText = async () => { throw new Error('Clipboard unavailable in fixture'); }`,
+    );
+    await sleepQuestion.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+    await sleepQuestion
+      .getByText('Copy unavailable. Copy the selected prompt manually.', { exact: true })
+      .waitFor();
+    const selectedPrompt = sleepQuestion.getByRole('textbox', {
+      name: 'Prompt to send to your agent',
+    });
+    assert.ok(await selectedPrompt.isVisible());
+    assert.equal(
+      await catalogPage.evaluate(`(() => {
+        const textarea = document.getElementById('sleep-trends-prompt');
+        return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+      })()`),
+      datasetWorkflows[0]?.prompt,
+    );
+    await catalogPage.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await catalogPage.evaluate('document.documentElement.scrollWidth > innerWidth'),
+      false,
+    );
+    await catalogPage.setViewportSize({ width: 1280, height: 900 });
     assert.equal(await catalogPage.getByRole('tablist', { name: 'Video tutorials' }).count(), 0);
     await catalogPage.goto(`${origin}/datasets/health`);
-    await catalogPage.getByRole('heading', { name: 'Health exports', exact: true }).waitFor();
+    await catalogPage
+      .getByRole('heading', { name: 'Health: technical explorer', exact: true })
+      .waitFor();
     const sources = catalogPage.locator('section[aria-labelledby="sources-title"]');
     assert.match((await sources.textContent()) ?? '', /HealthKit/);
     assert.doesNotMatch((await sources.textContent()) ?? '', /Points recorded|PhoneUsage/);
@@ -428,9 +489,7 @@ try {
     try {
       const reader = await noScript.newPage();
       await reader.goto(`${origin}/datasets/health`);
-      await reader
-        .getByRole('heading', { name: 'Health exports in myself.md', exact: true })
-        .waitFor();
+      await reader.getByRole('heading', { name: 'Ask about your data', exact: true }).waitFor();
       assert.ok(
         await reader
           .getByText('HealthKit does not reveal read denial.', { exact: false })

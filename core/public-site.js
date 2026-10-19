@@ -582,7 +582,7 @@ ${phoneSetupGuide}
 
 Read these before requesting private access:
 
-- [Dataset catalog](https://myself.md/v1/dataset-catalog): supported sources and limitations. Omit limit for the default page, or use an integer from 1 to 3. Follow nextCursor as cursor until hasMore is false.
+- [Dataset catalog](https://myself.md/v1/dataset-catalog): question-first workflows, starter prompts, platform-specific required types, prerequisites, query tools, supported sources and limitations. Examples are fictional; discover actual approved phone data and coverage before answering. Omit limit for the default page, or use an integer from 1 to 3. Follow nextCursor as cursor until hasMore is false.
 - [Getting started](https://myself.md/v1/docs): connection, pairing, SDK and CLI guidance. Send Accept: text/markdown for Markdown; ordinary browser/curl requests return HTML.
 - [API reference](https://myself.md/docs/reference): authentication, request formats, pagination and limits.
 - [Pricing](https://myself.md/pricing): the app includes ${freeExports} free exports or queries, then an optional Lifetime unlock. Successful phone captures consume allowance; discovering data is not a capture. Lifetime removes export/query usage limits and includes ${includedCloud} of cloud storage; additional storage is a separate subscription purchased in the phone app.

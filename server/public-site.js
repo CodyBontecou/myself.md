@@ -5,6 +5,11 @@ import { docsHTML } from './docs-page.js';
 import { datasetPage } from './dataset-pages.js';
 import { blogResponse, blogAgentIndex, blogSitemap } from './blog.js';
 import { datasets, healthMetricExamples } from '../dashboard/dataset-catalog.js';
+import {
+  datasetWorkflows,
+  workflowPrerequisites,
+  workflowQuerySteps,
+} from '../core/dataset-workflows.js';
 import { publicDiscovery } from './public-discovery.js';
 import { agentIndex, publicPages, publicFAQs } from '../core/public-site.js';
 import { healthGuides } from '../core/health-guides.js';
@@ -128,6 +133,18 @@ export function publicResponse(
       groups: dataset.groups,
       limitations: dataset.limitations,
       metricExamples: slug === 'health' ? healthMetricExamples : [],
+      workflows: datasetWorkflows
+        .filter((workflow) => workflow.dataset === slug)
+        .map((workflow) =>
+          Object.assign({}, workflow, {
+            exampleKind: 'fictional',
+            prerequisites: workflowPrerequisites,
+            querySteps: workflowQuerySteps,
+            setupUrl: 'https://myself.md/docs',
+            interpretation:
+              'Check actual record coverage, source metadata, timestamps and units before answering. Report gaps and uncertainty; supported types do not establish records or authorization.',
+          }),
+        ),
     }));
     const next = offset + limit;
     return {

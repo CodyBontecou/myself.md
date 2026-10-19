@@ -4,6 +4,47 @@ import { datasetPage } from '../server/dataset-pages.js';
 import { healthGuides } from '../core/health-guides.js';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
+import {
+  datasetWorkflows,
+  workflowPrerequisites,
+  workflowQuerySteps,
+} from '../core/dataset-workflows.js';
+import { datasets } from '../dashboard/dataset-catalog.js';
+
+/** Verify the public wire contract against the content used by the page. @param {unknown} value */
+function verifyWorkflows(value) {
+  const catalog = z
+    .object({
+      items: z.array(
+        z.object({ slug: z.string(), workflows: z.array(z.record(z.string(), z.unknown())) }),
+      ),
+    })
+    .parse(value);
+  for (const item of catalog.items) {
+    const expected = datasetWorkflows.filter((workflow) => workflow.dataset === item.slug);
+    assert.equal(item.workflows.length, expected.length);
+    for (const [index, workflow] of expected.entries()) {
+      const actual = item.workflows[index];
+      assert.ok(actual);
+      for (const [key, entry] of Object.entries(workflow)) assert.deepEqual(actual[key], entry);
+      assert.equal(actual.exampleKind, 'fictional');
+      const prompt = z.string().parse(actual.prompt);
+      assert.ok(prompt.includes('https://myself.md/mcp'));
+      assert.ok(prompt.includes('https://myself.md/docs'));
+      assert.ok(prompt.includes(workflow.question));
+      assert.deepEqual(actual.prerequisites, workflowPrerequisites);
+      assert.deepEqual(actual.querySteps, workflowQuerySteps);
+      assert.equal(actual.setupUrl, 'https://myself.md/docs');
+      const types = Object.entries(datasets)
+        .find(([slug]) => slug === item.slug)?.[1]
+        .groups.flatMap((group) => group.keys);
+      assert.ok(types);
+      for (const type of Object.values(workflow.requiredTypes).flat())
+        assert.ok(types.includes(type));
+    }
+  }
+  return catalog;
+}
 
 /** Verify that agents receive the same setup prerequisites and metric examples.
  * @param {import('@modelcontextprotocol/client').Client} client
@@ -40,6 +81,12 @@ export async function verifyDatasetMCP(client) {
     /Public App Store and Google Play downloads are coming soon/,
   );
   const catalog = await client.callTool({ name: 'get_public_dataset_catalog', arguments: {} });
+  verifyWorkflows(catalog.structuredContent);
+  const paged = await client.callTool({
+    name: 'get_public_dataset_catalog',
+    arguments: { limit: 1, cursor: 'catalog-v1:1' },
+  });
+  assert.equal(verifyWorkflows(paged.structuredContent).items[0]?.slug, 'screen-time');
   assert.match(JSON.stringify(catalog), /metricExamples/);
   assert.match(
     JSON.stringify(catalog),
@@ -71,6 +118,14 @@ export async function verifyDatasetHTTP(origin) {
     (tool) => tool.name === 'myself_public_documentation',
   );
   assert.ok(documentationTool);
+  const catalogTool = browserTools.find((tool) => tool.name === 'myself_dataset_catalog');
+  assert.ok(catalogTool);
+  verifyWorkflows(await sdk.datasets());
+  verifyWorkflows(await catalogTool.execute({}));
+  assert.equal(
+    verifyWorkflows(await catalogTool.execute({ limit: 1, cursor: 'catalog-v1:2' })).items[0]?.slug,
+    'location',
+  );
   await Promise.all(
     healthGuides.map(async (guide) => {
       const path = `/docs/${guide.slug}`;
@@ -125,6 +180,22 @@ export async function verifyDatasetHTTP(origin) {
       assert.match(response.headers.get('content-type') ?? '', /text\/html/);
       assert.equal(response.headers.get('vary'), 'Accept');
       const html = await response.text();
+      assert.ok(html.includes('Ask about your data'));
+      for (const workflow of datasetWorkflows.filter(
+        (candidate) =>
+          path === '/datasets' ||
+          path === '/datasets/all' ||
+          path === `/datasets/${candidate.dataset}`,
+      )) {
+        assert.ok(expected.markdown.includes(workflow.question));
+        assert.ok(expected.markdown.includes(workflow.prompt));
+        assert.ok(expected.markdown.includes(workflow.availability));
+        assert.ok(
+          expected.markdown.indexOf(workflow.question) <
+            expected.markdown.indexOf('## Technical explorer'),
+        );
+      }
+
       assert.ok(
         html.includes(`<link rel="canonical" href="https://myself.md${expected.canonical}"`),
       );

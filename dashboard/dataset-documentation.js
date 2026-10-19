@@ -15,6 +15,7 @@ import { ExportJson } from './export-json.js';
 import { PricingSection } from './pricing-section.js';
 import { Button } from './components/ui/button.js';
 import { Input } from './components/ui/input.js';
+import { DatasetQuestions } from './dataset-questions.js';
 
 const tutorials = [
   { id: 'launch', label: 'Launch video' },
@@ -155,6 +156,12 @@ export function DatasetDocumentation({ dataset, landing = false }) {
   return (
     <div className={`mx-auto max-w-7xl px-5 sm:px-8 ${landing ? 'landing-page' : ''}`}>
       <main className="space-y-10 py-8 sm:py-12">
+        {!landing && (
+          <>
+            <SiteHeader />
+            <DatasetQuestions dataset={dataset} />
+          </>
+        )}
         <div className="dataset-grid grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="contents">
             {landing ? (
@@ -231,11 +238,15 @@ export function DatasetDocumentation({ dataset, landing = false }) {
                 </section>
               </div>
             ) : (
-              <header className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
-                <SiteHeader />
-                <h1 className="text-4xl font-semibold tracking-tight">
-                  {routeDataset ? `${routeDataset.title} exports` : 'Datasets'}
-                </h1>
+              <header
+                id="technical-explorer"
+                className="min-w-0 scroll-mt-6 space-y-4 lg:col-start-1 lg:row-start-1"
+              >
+                <h2 className="text-2xl font-medium tracking-tight">
+                  {routeDataset
+                    ? `${routeDataset.title}: technical explorer`
+                    : 'Technical explorer'}
+                </h2>
                 <p className="max-w-xl text-base leading-relaxed text-muted-foreground">
                   {routeDataset
                     ? `${routeDataset.introduction} ${routeDataset.sources} `

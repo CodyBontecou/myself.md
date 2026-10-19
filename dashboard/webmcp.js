@@ -38,7 +38,7 @@ export async function registerPublicTools(context, client) {
   await context.registerTool({
     name: 'myself_dataset_catalog',
     description:
-      'List supported public datasets and adapter limits. Follow nextCursor for the next page. No personal records or permissions are exposed.',
+      'Discover supported questions and dataset adapters. Workflows include starter prompts, required types, prerequisites, query tools, limits and fictional answers. Follow nextCursor for the next page. No personal records or permissions are exposed.',
     inputSchema: {
       type: 'object',
       properties: {

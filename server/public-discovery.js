@@ -151,7 +151,7 @@ const openapi = {
       get: {
         ...readOperation(
           'listPublicDatasets',
-          'List supported dataset adapters; follow nextCursor until hasMore is false. No personal records.',
+          'Discover supported questions, starter prompts, platform requirements and query workflows alongside dataset adapters; follow nextCursor until hasMore is false. Examples are fictional; no personal records or grants.',
           {
             'application/json': {
               schema: {
@@ -171,6 +171,65 @@ const openapi = {
                         url: { type: 'string', format: 'uri' },
                         sources: { type: 'string' },
                         limitations: { type: 'array', items: { type: 'string' } },
+                        workflows: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            required: [
+                              'id',
+                              'dataset',
+                              'topic',
+                              'question',
+                              'description',
+                              'dataNeeded',
+                              'requiredTypes',
+                              'availability',
+                              'limitations',
+                              'example',
+                              'exampleKind',
+                              'prompt',
+                              'prerequisites',
+                              'querySteps',
+                              'setupUrl',
+                              'interpretation',
+                            ],
+                            properties: {
+                              id: { type: 'string' },
+                              dataset: { type: 'string' },
+                              topic: { type: 'string' },
+                              question: { type: 'string' },
+                              description: { type: 'string' },
+                              dataNeeded: { type: 'string' },
+                              requiredTypes: {
+                                type: 'object',
+                                required: ['ios', 'android'],
+                                properties: {
+                                  ios: { type: 'array', items: { type: 'string' } },
+                                  android: { type: 'array', items: { type: 'string' } },
+                                },
+                              },
+                              availability: { type: 'string' },
+                              limitations: { type: 'array', items: { type: 'string' } },
+                              example: { type: 'string' },
+                              exampleKind: { type: 'string', const: 'fictional' },
+                              prompt: { type: 'string' },
+                              prerequisites: { type: 'array', items: { type: 'string' } },
+                              querySteps: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  required: ['tool', 'instruction'],
+                                  properties: {
+                                    tool: { type: 'string' },
+                                    instruction: { type: 'string' },
+                                  },
+                                },
+                              },
+                              setupUrl: { type: 'string', format: 'uri' },
+                              interpretation: { type: 'string' },
+                            },
+                          },
+                        },
                         groups: {
                           type: 'array',
                           items: {

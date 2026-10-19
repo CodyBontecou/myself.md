@@ -193,7 +193,7 @@ export function createApplication(
       {
         title: 'Browse supported datasets',
         description:
-          'Read the public dataset adapter catalog. Contains no personal records. Omit limit for the default page or use an integer from 1 to 3. Follow nextCursor until hasMore is false.',
+          'Discover questions you can answer with phone data and the public dataset adapters. Each workflow includes a starter prompt, required native types by platform, prerequisites, query tools, limitations and a fictional answer. Contains no personal records or grants; discover actual approved records before querying. Omit limit for the default page or use 1 to 3. Follow nextCursor until hasMore is false.',
         inputSchema: z
           .object({
             limit: z
