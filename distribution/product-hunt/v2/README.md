@@ -1,6 +1,6 @@
 # Product Hunt gallery v2
 
-Local review packet, October 16, 2026. Nothing is uploaded, posted or scheduled.
+Local review packet revised October 19, 2026. This revision has not been uploaded, posted or scheduled; the saved external draft needs synchronization.
 
 This revision focuses on the current iPhone app, using cream, charcoal and the app's existing neutral interface. The full iPhone frames are larger, with enlarged control details and a single short headline per slide. [Copy](copy.md) and [listing](listing.json) are included. Edit the source listing one directory above, then run `npm run product-hunt:render` to regenerate this version.
 
@@ -26,6 +26,6 @@ The recorded `product-hunt-iphone-screens-v2` flow replayed with 57 passing chec
 
 ## Review before eventual publication
 
-Review maker wording, public installation, pricing and final release behavior. The five screenshots tell one narrow permission story; they do not substitute for new-user installation and a completed native read. The earlier colorful dashboard gallery remains in the parent directory as the prior iteration.
+Review maker wording, public installation, pricing and final release behavior. The five screenshots tell one narrow permission story; they do not substitute for new-user installation and a completed native read. Use only this current mobile gallery; superseded local screenshots and packet have been removed.
 
 The renderer checks the 60-character tagline and 500-character description limits, PNG dimensions and thumbnail size. Layout source is `launch-video/product-hunt.js`. No app capability or MCP operation changed.

@@ -49,7 +49,7 @@ function Caption({ text, start, end, words }) {
   const apps = text.startsWith('Five hours');
   const wow = text === 'Wow!';
   const numeric = steps || apps;
-  const demo = start >= 1.5 && start < 12.5;
+  const phoneFootage = start >= 1.5 && start < 12.5;
   const value = bounce(frame, fps);
   const spokenFrames = Math.round((end - start) * fps);
   const exit = interpolate(frame, [spokenFrames + 1, spokenFrames + 5], [1, 0], {
@@ -82,16 +82,16 @@ function Caption({ text, start, end, words }) {
       style={{
         pointerEvents: 'none',
         fontFamily: 'Arial, Helvetica, sans-serif',
-        alignItems: demo ? 'flex-start' : 'center',
+        alignItems: phoneFootage ? 'flex-start' : 'center',
         justifyContent: 'flex-end',
-        padding: demo ? '0 0 20px 70px' : '0 40px 15px',
+        padding: phoneFootage ? '0 0 20px 70px' : '0 40px 15px',
         boxSizing: 'border-box',
       }}
     >
       <div
         style={{
           position: 'relative',
-          maxWidth: demo ? 660 : 1100,
+          maxWidth: phoneFootage ? 660 : 1100,
           background,
           color,
           padding: numeric ? '6px 18px' : '8px 15px',

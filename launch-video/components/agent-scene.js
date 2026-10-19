@@ -102,7 +102,7 @@ export function AgentScene() {
                 fontSize: 26,
               }}
             >
-              <span>Demo iPhone</span>
+              <span>Sample iPhone</span>
               <span style={{ color: yellow }}>········································</span>
               <span
                 style={{

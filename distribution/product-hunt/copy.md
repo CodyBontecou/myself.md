@@ -1,6 +1,6 @@
 # Product Hunt submission copy
 
-Local draft only. Nothing is submitted or scheduled. Edit listing.json and rerender to update this file.
+Local draft only. The saved external draft requires review and synchronization before publication. Edit distribution/product-hunt/listing.json to update this copy.
 
 ## Name
 
@@ -14,9 +14,9 @@ Give your AI the phone data you choose to share
 
 ## Description
 
-Use health, screen-time and recorded location data in your AI workflow. Choose data types and date ranges in export profiles, then approve what compatible agents can read through MCP. Browse the fictional dashboard demo without signing in. Private reads require a paired phone and your approval. Supported data varies by platform; public mobile store downloads are coming soon.
+Use health, screen-time and recorded location data in your AI workflow. Choose data types and date ranges in export profiles, then approve what compatible agents can read through MCP. Browse the supported datasets and setup guide. Private reads require a paired phone and your approval. Supported data varies by platform; public mobile store downloads are coming soon.
 
-377 / 500 characters.
+368 / 500 characters.
 
 ## Maker comment
 
@@ -26,7 +26,7 @@ myself.md lets you bring selected phone records into your AI workflow. You creat
 
 For example, you could ask your agent to summarize your step counts and app usage for the past week. The agent requests the approved records; phone support and OS permissions determine which data is available. You can also export to local files, your own HTTPS endpoint, or the paired cloud service.
 
-Try the dashboard at https://myself.md/demo. It uses fictional records and requires no account. Public mobile store downloads are coming soon. The gallery's agent result comes from a local MCP run with synthetic phone data, presented in an illustration.
+Explore the supported datasets at https://myself.md/datasets and connection instructions at https://myself.md/docs. Public mobile store downloads are coming soon. The gallery shows the current iPhone interface with an isolated sample profile, including data selection and the separate agent-permission confirmation.
 
 Cloud exports are encrypted at rest, and the service decrypts approved reads. Revoking sharing stops future reads; it can't recall copies already sent to an AI provider.
 

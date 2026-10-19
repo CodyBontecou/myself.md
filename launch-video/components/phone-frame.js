@@ -1,5 +1,5 @@
 // SnapCN phone-frame, afce9f0 (MIT). Rise/float rig and device geometry ported
-// to checkJs; unused showcase, theme provider and ride demo omitted.
+// to checkJs; unused showcase, theme provider and ride example omitted.
 import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 
 /** @param {{children: import('react').ReactNode, scale?: number, floatAmplitude?: number}} props */

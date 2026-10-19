@@ -25,7 +25,7 @@ identity.listen(0, '127.0.0.1');
 await once(identity, 'listening');
 const identityAddress = identity.address();
 assert.ok(identityAddress && typeof identityAddress !== 'string');
-const issuer = `http://127.0.0.1:${identityAddress.port}/realms/demo`;
+const issuer = `http://127.0.0.1:${identityAddress.port}/realms/launch-fixture`;
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
 await once(reservation, 'listening');
@@ -48,7 +48,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
   },
   stdio: 'ignore',
 });
-const client = new Client({ name: 'launch-demo-agent', version: '1' });
+const client = new Client({ name: 'launch-sample-agent', version: '1' });
 /** @param {string} azp */
 const token = (azp) =>
   new SignJWT({ scope: 'myselfmd', azp })
@@ -59,7 +59,7 @@ const token = (azp) =>
     .setExpirationTime('5m')
     .sign(privateKey);
 const phoneToken = await token('myselfmd-phone');
-const agentToken = await token('launch-demo-agent');
+const agentToken = await token('launch-sample-agent');
 /** @param {string} path @param {unknown} body */
 async function phone(path, body) {
   const response = await fetch(origin + path, {
@@ -108,7 +108,7 @@ try {
   const { id: deviceId } = z.object({ id: z.string() }).parse(
     await phone('/api/claim', {
       ticket: new URL(pairing.pairingUrl).hash.slice(1),
-      name: 'Demo iPhone',
+      name: 'Sample iPhone',
     }),
   );
   const profile = {
@@ -181,7 +181,7 @@ try {
         records,
         nextCursor: null,
         warnings: [],
-        capture: 'synthetic-launch-demo',
+        capture: 'synthetic-launch-sample',
         complete: true,
       },
     });
