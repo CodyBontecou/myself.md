@@ -13,7 +13,7 @@ Run `npm run video:studio` to edit and scrub. `npm run video:capture-agent` exec
 | 10–12.5s | Owner approves profile access                               |
 | 12.5–18s | Agent connection, question, tool calls, completed responses |
 | 18–24.1s | Result cards, animated daily steps and app totals           |
-| 24.1–26s | Brand and public-demo URL                                   |
+| 24.1–26s | Brand and setup-guide URL                                   |
 
 The agent transcript comes from an actual `@modelcontextprotocol/client` connection to the unchanged production `server/index.js` running locally with a temporary database. The capture script uses a local RS256 identity issuer and a synthetic phone adapter. It creates a real pairing ticket, claims it using the phone identity, publishes the selected profile, verifies a query is denied before consent, and publishes owner-side approval. The agent discovers the catalog, invokes `query_phone_data` twice, and reads completed `get_phone_request` responses. The phone adapter polls the real queue and submits synthetic records through the real result endpoint. Assertions verify dispatch IDs and the exact returned records. The displayed totals are calculated from those responses. Tokens, pairing codes and signing keys are excluded; temporary services and storage are cleaned up.
 

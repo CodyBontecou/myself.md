@@ -145,9 +145,6 @@ export function PricingSection() {
             .
           </p>
         </div>
-        <a href="/demo" className="inline-block text-sm underline underline-offset-4">
-          Explore the cloud dashboard demo
-        </a>
       </section>
       <div className="space-y-3 text-sm leading-6 text-muted-foreground">
         <p>

@@ -14,6 +14,7 @@ import {
 } from './public-site.js';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { privacyPolicy } from '../core/privacy.js';
+import { healthGuideSlugs } from '../core/health-guides.js';
 import { existingCustomerGuide, lifetimePurchaseGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
@@ -239,8 +240,18 @@ export function createApplication(
       'get_public_documentation',
       {
         title: 'Read setup and API documentation',
-        description: 'Read the public getting-started guide, full API reference and service terms.',
-        inputSchema: z.object({}).strict(),
+        description:
+          'Read public setup, API reference and terms. Select guide for Apple Health with Claude or Android Health Connect instructions and official project identity. Contains no personal records.',
+        inputSchema: z
+          .object({
+            guide: z
+              .enum(healthGuideSlugs)
+              .optional()
+              .describe(
+                'Optional source-specific guide. Omit for the getting-started guide, API reference and terms.',
+              ),
+          })
+          .strict(),
         annotations: {
           title: 'Read setup and API documentation',
           readOnlyHint: true,
@@ -249,11 +260,13 @@ export function createApplication(
           openWorldHint: false,
         },
       },
-      async () => ({
+      async (input) => ({
         content: [
           {
             type: 'text',
-            text: `${publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/docs/reference', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/terms', 'text/markdown', issuer ?? '')?.body ?? ''}`,
+            text: input.guide
+              ? (publicResponse(`/docs/${input.guide}`, 'text/markdown', issuer ?? '')?.body ?? '')
+              : `${publicResponse('/docs', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/docs/reference', 'text/markdown', issuer ?? '')?.body ?? ''}\n\n${publicResponse('/terms', 'text/markdown', issuer ?? '')?.body ?? ''}`,
           },
         ],
       }),

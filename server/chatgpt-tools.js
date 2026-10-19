@@ -1,4 +1,5 @@
 import { serviceTerms } from '../core/terms.js';
+import { z } from 'zod';
 
 /** A separate OAuth resource; tokens for this surface cannot authorize the full MCP/API. */
 export const chatgptMcpPath = '/mcp/chatgpt';
@@ -41,21 +42,20 @@ export function restrictChatgptTools(mcp) {
    * @param {Parameters<typeof mcp.registerTool>[1]} configuration
    * @param {Parameters<typeof mcp.registerTool>[2]} callback */
   const guardedRegister = (name, configuration, callback) => {
-    const registration = register(
-      name,
+    const registration =
       name === 'get_public_documentation'
-        ? {
-            ...configuration,
-            description:
-              'Read setup, privacy and usage instructions for the ChatGPT data-read connection. No purchase or upgrade flows.',
-          }
-        : configuration,
-      name === 'get_public_documentation'
-        ? async () => ({
-            content: [{ type: /** @type {const} */ ('text'), text: chatgptDocumentation }],
-          })
-        : callback,
-    );
+        ? register(
+            name,
+            {
+              title: 'Read setup and API documentation',
+              description:
+                'Read setup, privacy and usage instructions for the ChatGPT data-read connection. No purchase or upgrade flows.',
+              inputSchema: z.object({}).strict(),
+              ...(configuration.annotations ? { annotations: configuration.annotations } : {}),
+            },
+            async () => ({ content: [{ type: 'text', text: chatgptDocumentation }] }),
+          )
+        : register(name, configuration, callback);
     if (!allowed.has(name)) registration.remove();
     return registration;
   };

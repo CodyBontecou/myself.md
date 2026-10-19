@@ -1,3 +1,5 @@
+import { healthGuideSlugs } from '../core/health-guides.js';
+
 /** @typedef {{origin?:string,token?:string,fetch?:typeof globalThis.fetch}} ClientOptions */
 /** Public reads and owner-approved asynchronous queries. @param {ClientOptions} [options] */
 export function createMyselfClient(options = {}) {
@@ -35,7 +37,18 @@ export function createMyselfClient(options = {}) {
   return {
     health: () => read('/v1/health'),
     config: () => read('/v1/config'),
-    docs: () => read('/v1/docs', { text: true }),
+    /** @param {{guide?:string}} [input] */
+    docs: (input = {}) => {
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input) ||
+        Object.keys(input).some((key) => key !== 'guide') ||
+        (input.guide !== undefined && !healthGuideSlugs.some((slug) => slug === input.guide))
+      )
+        throw new Error('Choose a supported public health guide.');
+      return read(input.guide ? `/v1/docs/${input.guide}` : '/v1/docs', { text: true });
+    },
     /** @param {{limit?:number,cursor?:string}} [input] */
     datasets: (input = {}) => {
       if (

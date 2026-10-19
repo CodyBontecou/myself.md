@@ -52,7 +52,7 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
+import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { AccountDeletion } from './account-deletion.js';
 import { MigrationClaim } from './migration-claim.js';
 import { cloudUsageLabel } from '../core/cloud-allowance.js';
@@ -194,7 +194,7 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
   const { setOpenMobile } = useSidebar();
   const [operator, setOperator] = useState(false);
   useEffect(() => {
-    if (!workspace || isDemo) return;
+    if (!workspace) return;
     let active = true;
     void api('/api/analytics/access')
       .then((result) => {
@@ -234,130 +234,108 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {views
-                .filter((item) => !isDemo || item.id !== 'support')
-                .map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      isActive={view === item.id}
-                      aria-current={view === item.id ? 'page' : undefined}
-                      onClick={() => navigate(item.id)}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+              {views.map((item) => (
+                <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton
+                    isActive={view === item.id}
+                    aria-current={view === item.id ? 'page' : undefined}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <nav
-          className="flex gap-4 px-2 text-xs underline"
-          aria-label={isDemo ? 'Privacy' : 'Privacy and support'}
-        >
+        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy and support">
           <a href="/privacy">Privacy policy</a>
-          {!isDemo && <a href="/support">Support</a>}
+          <a href="/support">Support</a>
         </nav>
         <SidebarMenu>
           <SidebarMenuItem>
-            {isDemo ? (
-              <SidebarMenuButton asChild size="lg">
-                <a href="/login">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <IconUser className="size-4" aria-hidden="true" />
-                  </div>
-                  <div className="grid flex-1 gap-1 text-left text-sm leading-tight">
-                    <span className="font-medium">Sign in</span>
-                    <span className="text-xs text-muted-foreground">Your files, your control</span>
-                  </div>
-                  <IconChevronRight className="ml-auto size-4" aria-hidden="true" />
-                </a>
-              </SidebarMenuButton>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton size="lg" disabled={!workspace || busy}>
-                    <div className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted font-semibold">
-                      {profile?.name || profile?.email ? (
-                        accountName.slice(0, 1).toUpperCase()
-                      ) : (
-                        <IconUser className="size-4" aria-hidden="true" />
-                      )}
-                      {profile?.picture && (
-                        <img
-                          src={profile.picture}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="absolute inset-0 size-full object-cover"
-                          onError={(event) => {
-                            event.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      )}
-                    </div>
-                    <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-medium">
-                        {workspace ? accountName : 'Your workspace'}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {workspace ? accountEmail : 'Sign in to continue'}
-                      </span>
-                    </div>
-                    <IconDotsVertical className="ml-auto size-4" />
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="end" className="w-56">
-                  <DropdownMenuLabel className="grid gap-1">
-                    <span className="truncate">{accountName}</span>
-                    {profile?.email && (
-                      <span className="truncate text-xs font-normal text-muted-foreground">
-                        {profile.email}
-                      </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton size="lg" disabled={!workspace || busy}>
+                  <div className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted font-semibold">
+                    {profile?.name || profile?.email ? (
+                      accountName.slice(0, 1).toUpperCase()
+                    ) : (
+                      <IconUser className="size-4" aria-hidden="true" />
                     )}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {!isDemo && (
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        void api('/api/account-logins')
-                          .then((result) => {
-                            const logins = /** @type {{handoff:{url:string}}} */ (result);
-                            location.assign(logins.handoff.url);
-                            return null;
-                          })
-                          .catch((error) =>
-                            window.alert(
-                              error instanceof Error
-                                ? error.message
-                                : 'Connected logins could not open.',
-                            ),
-                          );
-                      }}
-                    >
-                      Connected logins
-                    </DropdownMenuItem>
+                    {profile?.picture && (
+                      <img
+                        src={profile.picture}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 size-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {workspace ? accountName : 'Your workspace'}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {workspace ? accountEmail : 'Sign in to continue'}
+                    </span>
+                  </div>
+                  <IconDotsVertical className="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-56">
+                <DropdownMenuLabel className="grid gap-1">
+                  <span className="truncate">{accountName}</span>
+                  {profile?.email && (
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {profile.email}
+                    </span>
                   )}
-                  <DropdownMenuItem
-                    onSelect={() => window.dispatchEvent(new Event('myself-analytics-preferences'))}
-                  >
-                    Analytics preferences
-                  </DropdownMenuItem>
-                  {operator && (
-                    <DropdownMenuItem asChild>
-                      <a href="/operator/analytics">Product analytics</a>
-                    </DropdownMenuItem>
-                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    void api('/api/account-logins')
+                      .then((result) => {
+                        const logins = /** @type {{handoff:{url:string}}} */ (result);
+                        location.assign(logins.handoff.url);
+                        return null;
+                      })
+                      .catch((error) =>
+                        window.alert(
+                          error instanceof Error
+                            ? error.message
+                            : 'Connected logins could not open.',
+                        ),
+                      );
+                  }}
+                >
+                  Connected logins
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => window.dispatchEvent(new Event('myself-analytics-preferences'))}
+                >
+                  Analytics preferences
+                </DropdownMenuItem>
+                {operator && (
                   <DropdownMenuItem asChild>
-                    <a href="/delete-account">Delete account</a>
+                    <a href="/operator/analytics">Product analytics</a>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={signOut}>
-                    <IconLogout /> Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                )}
+                <DropdownMenuItem asChild>
+                  <a href="/delete-account">Delete account</a>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={signOut}>
+                  <IconLogout /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
@@ -374,9 +352,7 @@ function BrandWordmark() {
 /** @param {{title:string,busy:boolean,onRefresh:()=>void,workspace:Workspace|null,view:View}} props */
 function SiteHeader({ title, busy, onRefresh, workspace, view }) {
   return (
-    <header
-      className={`flex min-h-(--header-height) shrink-0 items-center gap-2 border-b ${isDemo ? 'sticky top-0 z-30 bg-background' : ''}`}
-    >
+    <header className="flex min-h-(--header-height) shrink-0 items-center gap-2 border-b">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 py-2 lg:px-6">
         <SidebarTrigger className="-ml-1 size-11 shrink-0 lg:size-7" />
         <Separator
@@ -389,29 +365,13 @@ function SiteHeader({ title, busy, onRefresh, workspace, view }) {
             {title}
           </h1>
         )}
-        {workspace && !isDemo && (
+        {workspace && (
           <div className="ml-auto hidden lg:block">
             <SummaryPills workspace={workspace} view={view} />
           </div>
         )}
-        {isDemo && (
-          <div className="ml-auto flex shrink-0 items-center gap-3">
-            <a
-              href="/login"
-              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
-            >
-              Log in
-            </a>
-            <Button asChild size="sm" className="h-11 lg:h-8">
-              <a href="/login">
-                <span className="sm:hidden">Join</span>
-                <span className="hidden sm:inline">Join myself.md</span>
-                <IconChevronRight className="hidden sm:block" />
-              </a>
-            </Button>
-          </div>
-        )}
-        {workspace && !isDemo && (
+
+        {workspace && (
           <Button
             variant="outline"
             size="sm"
@@ -685,7 +645,7 @@ function DataTable(props) {
                           className="-ml-3"
                           onClick={header.column.getToggleSortingHandler()}
                         >
-                          {<FlexRender header={header} />}
+                          <FlexRender header={header} />
                           {header.column.getIsSorted() === 'asc' ? (
                             <IconArrowUp />
                           ) : header.column.getIsSorted() === 'desc' ? (
@@ -705,7 +665,9 @@ function DataTable(props) {
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getAllCells().map((cell) => (
-                      <TableCell key={cell.id}>{<FlexRender cell={cell} />}</TableCell>
+                      <TableCell key={cell.id}>
+                        <FlexRender cell={cell} />
+                      </TableCell>
                     ))}
                   </TableRow>
                 ))
@@ -1219,7 +1181,7 @@ function App() {
             : 'exports';
   const viewingWorkspace = Boolean(workspace);
   useEffect(() => {
-    if (viewingWorkspace && !isDemo) trackWebAnalytics('dashboard_viewed', view);
+    if (viewingWorkspace) trackWebAnalytics('dashboard_viewed', view);
   }, [view, viewingWorkspace]);
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
@@ -1318,18 +1280,10 @@ function App() {
                 workspace ? 'flex flex-col gap-4 py-4 md:gap-6 md:py-6' : 'flex flex-1 flex-col'
               }
             >
-              {workspace && !isDemo && (
+              {workspace && (
                 <div className="px-4 lg:hidden">
                   <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
                 </div>
-              )}
-              {isDemo && currentView && currentView.id !== 'exports' && (
-                <header className="space-y-2 px-4 lg:px-6">
-                  <h2 className="text-2xl font-semibold tracking-tight">{currentView.title}</h2>
-                  <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                    {currentView.description}
-                  </p>
-                </header>
               )}
               {notice && (
                 <div className="mx-4 lg:mx-6">
@@ -1348,16 +1302,12 @@ function App() {
                   ) : (
                     <>
                       {view === 'support' ? (
-                        isDemo ? (
-                          <p className="p-6">Sign in to contact support.</p>
-                        ) : (
-                          <WebSupport
-                            projectLabel="myself.md"
-                            request={supportRequest}
-                            data={supportData}
-                            Button={Button}
-                          />
-                        )
+                        <WebSupport
+                          projectLabel="myself.md"
+                          request={supportRequest}
+                          data={supportData}
+                          Button={Button}
+                        />
                       ) : view === 'history' ? (
                         <HistoryView
                           workspace={workspace}
@@ -1367,7 +1317,7 @@ function App() {
                         />
                       ) : view === 'exports' ? (
                         <>
-                          {workspace.cloudStorage && !isDemo && (
+                          {workspace.cloudStorage && (
                             <div className="px-4 lg:px-6">
                               <CloudStorageCard
                                 key={workspace.account}
@@ -1392,9 +1342,7 @@ function App() {
                             onDelete={(item) =>
                               setConfirmation({
                                 title: 'Delete this export?',
-                                description: isDemo
-                                  ? `${item.profileName} · ${item.day}. This removes a sample export from this preview. Reload the page to bring it back.`
-                                  : `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
+                                description: `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
                                 label: 'Delete export',
                                 action: async () => {
                                   await api(`/api/dashboard/exports/${item.id}`, 'DELETE');
@@ -1416,25 +1364,8 @@ function App() {
                     </>
                   )}
                   <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
-                    {isDemo
-                      ? 'You’re exploring a fictional workspace. Join to connect your own data.'
-                      : `Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
+                    {`Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
                   </p>
-                  {isDemo && (
-                    <div className="mx-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-6 lg:mx-6">
-                      <div>
-                        <p className="font-semibold">Make this workspace yours.</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Connect your phone, build your profiles, and bring your agents along.
-                        </p>
-                      </div>
-                      <Button asChild>
-                        <a href="/login">
-                          Join myself.md <IconChevronRight />
-                        </a>
-                      </Button>
-                    </div>
-                  )}
                 </>
               ) : (
                 <LoginCard ready={ready} />

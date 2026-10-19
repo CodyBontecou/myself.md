@@ -1,7 +1,5 @@
 import { connectWebAnalytics, resetWebAnalytics, trackWebAnalytics } from './analytics.js';
 import { readJSONResponse } from '../packages/support-chat/errors.js';
-import { demoApi } from './demo.js';
-export const isDemo = /^\/demo\/?$/.test(location.pathname);
 /** @type {{issuer:string,clientId:string}|null} */ let config = null;
 /** @type {{access_token:string,refresh_token?:string,id_token?:string,expires_in:number}|null} */ let tokens =
   null;
@@ -12,7 +10,7 @@ function reset() {
   tokens = null;
 }
 export function hasSession() {
-  return isDemo || tokens !== null;
+  return tokens !== null;
 }
 /** @param {Record<string,string>} parameters */
 async function exchange(parameters) {
@@ -51,7 +49,6 @@ async function ensureToken() {
 }
 /** @template T @param {string} path @param {string} [method] @param {unknown} [body] @returns {Promise<T>} */
 export async function api(path, method = 'GET', body) {
-  if (isDemo) return /** @type {T} */ (demoApi(path, method, body));
   await ensureToken();
   const response = await fetch(path, {
     method,
@@ -133,7 +130,6 @@ export async function signIn(provider) {
   location.assign(url);
 }
 export async function initializeSession() {
-  if (isDemo) return true;
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
   config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
   if (

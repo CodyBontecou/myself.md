@@ -1,4 +1,5 @@
 import { publicSiteHeaderStyles } from '../core/site-header.js';
+import { projectSchema } from '../core/project-identity.js';
 import { publicFAQs } from '../core/public-site.js';
 import { buildProfileShare } from './build-profile-share.js';
 import { buildBlog } from './build-blog.js';
@@ -105,18 +106,20 @@ writeFileSync(
 );
 writeFileSync(
   'dashboard/dist/index.html',
-  readFileSync('dashboard/index.html', 'utf8').replace(
-    '"__PUBLIC_FAQ_SCHEMA__"',
-    JSON.stringify({
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: publicFAQs.map((item) => ({
-        '@type': 'Question',
-        name: item.question,
-        acceptedAnswer: { '@type': 'Answer', text: item.answer },
-      })),
-    }),
-  ),
+  readFileSync('dashboard/index.html', 'utf8')
+    .replace('"__PROJECT_SCHEMA__"', JSON.stringify(projectSchema))
+    .replace(
+      '"__PUBLIC_FAQ_SCHEMA__"',
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: publicFAQs.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: { '@type': 'Answer', text: item.answer },
+        })),
+      }),
+    ),
 );
 copyFileSync('dashboard/favicon.png', 'dashboard/dist/favicon.png');
 copyFileSync('assets/myself-portrait.png', 'dashboard/dist/hero-portrait.png');

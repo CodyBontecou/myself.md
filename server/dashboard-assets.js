@@ -14,8 +14,6 @@ export const assets = new Map([
   ),
   ['/dashboard/geist-license.txt', ['geist-license.txt', 'text/plain']],
   ['/', ['index.html', 'text/html']],
-  ['/demo', ['index.html', 'text/html']],
-  ['/demo/', ['index.html', 'text/html']],
   ['/datasets', ['index.html', 'text/html']],
   ['/datasets/', ['index.html', 'text/html']],
   ...['health', 'screen-time', 'location', 'all'].flatMap(

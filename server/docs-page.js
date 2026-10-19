@@ -1,4 +1,5 @@
 import { publicSiteHeader } from '../core/site-header.js';
+import { healthGuides } from '../core/health-guides.js';
 
 /** @param {string} value */
 function escape(value) {
@@ -81,7 +82,7 @@ export function docsHTML(markdown, path) {
     })
     .join('');
   const startLinks = documentation
-    ? `<p>Start here</p><a href="/docs" ${reference ? '' : 'aria-current="page"'}>Getting started</a><a href="/docs/reference" ${reference ? 'aria-current="page"' : ''}>API reference</a>`
+    ? `<p>Start here</p>${[['/docs', 'Getting started'], ['/docs/reference', 'API reference'], ...healthGuides.map((guide) => [`/docs/${guide.slug}`, guide.title])].map(([href, title]) => `<a href="${href}"${path === href ? ' aria-current="page"' : ''}>${escape(title ?? '')}</a>`).join('')}`
     : '';
   const contents = headings.length
     ? `<p>On this page</p>${headings.map((heading) => `<a href="#${anchor(heading)}">${escape(heading)}</a>`).join('')}`

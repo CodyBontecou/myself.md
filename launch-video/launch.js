@@ -413,7 +413,7 @@ export function LaunchVideo() {
                       display: 'inline-block',
                     }}
                   >
-                    Explore the cloud dashboard → myself.md/demo
+                    Connect your agent → myself.md/docs
                   </span>
                 </div>
               </Pop>

@@ -6,9 +6,14 @@ import { datasetPage } from './dataset-pages.js';
 import { blogResponse, blogAgentIndex, blogSitemap } from './blog.js';
 import { datasets, healthMetricExamples } from '../dashboard/dataset-catalog.js';
 import { publicDiscovery } from './public-discovery.js';
-import { agentIndex, publicHTML, publicPages, publicFAQs } from '../core/public-site.js';
+import { agentIndex, publicPages, publicFAQs } from '../core/public-site.js';
+import { healthGuides } from '../core/health-guides.js';
+import { projectSchema } from '../core/project-identity.js';
 
 const pageDescriptions = new Map([
+  ...healthGuides.map(
+    (guide) => /** @type {[string,string]} */ ([`/docs/${guide.slug}`, guide.description]),
+  ),
   [
     '/docs',
     'Connect Apple Health and Android Health Connect to compatible AI assistants with myself.md. Set up MCP, pair your phone and approve specific data profiles.',
@@ -47,7 +52,9 @@ export function publicResponse(
   resource = 'https://myself.md/mcp',
   params = new URLSearchParams(),
 ) {
-  const normalized = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  const withoutSlash = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  const markdownAlias = withoutSlash.endsWith('.md') && publicPages.has(withoutSlash.slice(0, -3));
+  const normalized = markdownAlias ? withoutSlash.slice(0, -3) : withoutSlash;
   const path = publicApiPath(normalized) ?? normalized;
   const blog = blogResponse(path, accept);
   if (blog)
@@ -167,23 +174,20 @@ export function publicResponse(
   else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex + blogAgentIndex;
   else if (path === '/sitemap.xml') {
     type = 'application/xml';
-    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/demo', '/datasets', ...Object.keys(datasets).map((slug) => `/datasets/${slug}`)].map((page) => `<url><loc>https://myself.md${page}</loc></url>`).join('')}${blogSitemap}</urlset>`;
+    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/datasets', ...Object.keys(datasets).map((slug) => `/datasets/${slug}`)].map((page) => `<url><loc>https://myself.md${page}</loc></url>`).join('')}${blogSitemap}</urlset>`;
   } else {
     const markdown = publicPages.get(path);
     if (!markdown) return null;
-    if (accept.includes('text/markdown')) {
+    if (accept.includes('text/markdown') || markdownAlias) {
       type = 'text/markdown';
       body = markdown;
     } else if (path === '/pricing') {
       type = 'text/html';
       body = pricingPage();
-    } else if (
-      ['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(
-        path,
-      )
-    ) {
+    } else if (pageDescriptions.has(path)) {
       type = 'text/html';
-      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="${pageDescriptions.get(path)}"><link rel="canonical" href="https://myself.md${path}">${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
+      const title = `${(markdown.split('\n')[0] ?? '# myself.md').slice(2)} · myself.md`;
+      body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${path.startsWith('/docs') ? '<meta name="is-agentic-site-type" content="content">' : ''}<meta name="description" content="${pageDescriptions.get(path)}"><link rel="canonical" href="https://myself.md${path}"><meta property="og:type" content="website"><meta property="og:site_name" content="myself.md"><meta property="og:title" content="${title}"><meta property="og:description" content="${pageDescriptions.get(path)}"><meta property="og:url" content="https://myself.md${path}"><meta property="og:image" content="https://myself.md/dashboard/favicon.png"><meta property="og:image:alt" content="myself.md app icon"><meta name="twitter:card" content="summary"><link rel="icon" href="/dashboard/favicon.png"><link rel="alternate" type="text/markdown" href="${path}.md"><script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': [projectSchema, { '@type': 'WebPage', '@id': `https://myself.md${path}#page`, url: `https://myself.md${path}`, name: title, about: { '@id': projectSchema['@id'] }, author: projectSchema.author, primaryImageOfPage: { '@type': 'ImageObject', url: projectSchema.image } }] }).replaceAll('<', '\\u003c')}</script>${path === '/faq' ? `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: publicFAQs.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })) })}</script>` : ''}<script type="application/ld+json">${JSON.stringify(
         {
           '@context': 'https://schema.org',
           '@type': 'BreadcrumbList',
@@ -197,7 +201,7 @@ export function publicResponse(
             },
           ],
         },
-      )}</script><title>${(markdown.split('\n')[0] ?? '# myself.md').slice(2)} · myself.md</title><link rel="stylesheet" href="/dashboard/style.css">${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? '<link rel="stylesheet" href="/dashboard/docs.css">' : ''}<script type="module" src="/dashboard/public-tools.js"></script></head><body>${['/docs', '/docs/reference', '/about', '/contact', '/privacy', '/terms', '/faq'].includes(path) ? docsHTML(markdown, path) : publicHTML(markdown)}</body></html>`;
+      )}</script><title>${(markdown.split('\n')[0] ?? '# myself.md').slice(2)} · myself.md</title><link rel="stylesheet" href="/dashboard/style.css"><link rel="stylesheet" href="/dashboard/docs.css"><script type="module" src="/dashboard/public-tools.js"></script></head><body>${docsHTML(markdown, path)}</body></html>`;
     } else return null;
   }
   return {
@@ -241,6 +245,7 @@ export function notFoundResponse(accept) {
 }
 
 const apiPaths = new Set([
+  ...healthGuides.map((guide) => `/docs/${guide.slug}`),
   '/dataset-catalog',
   '/health',
   '/config',

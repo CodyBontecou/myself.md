@@ -1,3 +1,5 @@
+import { healthGuideSlugs } from '../core/health-guides.js';
+
 /** @typedef {{name:string,description:string,inputSchema:Record<string,unknown>,annotations:{readOnlyHint:boolean},execute:(input:Record<string,unknown>)=>Promise<unknown>}} BrowserTool */
 /** @typedef {{registerTool:(tool:BrowserTool)=>void|Promise<void>}} ModelContext */
 /** Register public documentation tools when the browser supports WebMCP. @param {ModelContext|undefined} context @param {ReturnType<typeof import('./public-client.js').createMyselfClient>} client */
@@ -6,13 +8,31 @@ export async function registerPublicTools(context, client) {
   await context.registerTool({
     name: 'myself_public_documentation',
     description:
-      'Read myself.md public MCP, OAuth, privacy and API documentation. Contains no account records.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'Read myself.md public setup documentation. Select guide for Apple Health with Claude or Android Health Connect instructions and official project identity. Contains no account records.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        guide: {
+          type: 'string',
+          enum: [...healthGuideSlugs],
+          description: 'Optional source-specific guide. Omit for getting started.',
+        },
+      },
+      additionalProperties: false,
+    },
     annotations: { readOnlyHint: true },
     execute: async (input) => {
-      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
-        throw new Error('This tool takes an empty object.');
-      return { markdown: await client.docs() };
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input) ||
+        Object.keys(input).some((key) => key !== 'guide') ||
+        (input.guide !== undefined && typeof input.guide !== 'string')
+      )
+        throw new Error('Choose a supported public health guide.');
+      return {
+        markdown: await client.docs(typeof input.guide === 'string' ? { guide: input.guide } : {}),
+      };
     },
   });
   await context.registerTool({

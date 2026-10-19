@@ -367,8 +367,15 @@ try {
   const home = await fetch(origin, { redirect: 'manual' });
   assert.equal(home.status, 200);
   assert.ok((await home.text()).includes('Export Apple Health, Android Health Connect'));
-  assert.equal((await fetch(`${origin}/demo`)).status, 200);
-  assert.equal((await fetch(`${origin}/demo/`)).status, 200);
+  assert.equal((await fetch(`${origin}/demo`)).status, 404);
+  assert.equal((await fetch(`${origin}/demo/`)).status, 404);
+  await Promise.all(
+    ['/', '/pricing', '/docs', '/llms.txt', '/llms-full.txt', '/sitemap.xml'].map(async (path) => {
+      const response = await fetch(`${origin}${path}`);
+      assert.equal(response.status, 200);
+      assert.doesNotMatch(await response.text(), /\/demo\b|\b(?:dashboard|browser) demo\b/i);
+    }),
+  );
   const browser = await chromium.launch({ headless: true });
   try {
     await Promise.all(

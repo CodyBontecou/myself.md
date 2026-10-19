@@ -115,7 +115,7 @@
     "dashboard:build": "node scripts/build-dashboard.js",
     "verify:dashboard": "npm run dashboard:build && node scripts/verify-dashboard-login.js",
     "verify:explorer": "node scripts/verify-explorer.js",
-    "verify:demo": "node scripts/verify-demo.js",
+    "verify:dataset-previews": "node scripts/verify-dataset-previews.js",
     "verify:billing": "node scripts/verify-billing.js && node --experimental-vm-modules scripts/verify-local-billing.js",
     "verify:whoop": "node --experimental-vm-modules scripts/verify-whoop.js",
     "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js",

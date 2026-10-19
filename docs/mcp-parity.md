@@ -24,6 +24,36 @@ Runtime verification covers saved versus unsaved destinations, first-use/retry/c
 
 # UI and MCP parity
 
+## Homepage rotating context examples (19 October 2026)
+
+The hero's visible definition paragraph is replaced by a typewriter line with three decorative agent icons and health-record, screen-time and recorded-location examples. A stable accessible sentence exposes every example; the initial HTML/Markdown retains the complete product definition and use-case content. The animation has no pause button; reduced-motion preferences show a static example. This presentation initiates no phone query or account operation. Existing public documentation/catalog MCP reads and mobile/dashboard capabilities, grants and handoffs are unchanged.
+
+## Homepage client-logo row removed (19 October 2026)
+
+The standalone MCP client-logo row beneath the agent setup prompt is removed. The setup prompt and existing public documentation/catalog MCP reads retain their coverage. This presentation-only removal changes no mobile or dashboard actions, grants, authorization or platform handoffs.
+
+## Homepage header destinations (19 October 2026)
+
+The homepage header retains Datasets, Docs, Pricing, Sign in and Try the demo, and adds accessible GitHub repository and Discord community icon links. Existing responsive navigation behavior is preserved. These are navigation links to existing surfaces: public documentation/catalog MCP reads retain their coverage, and the dashboard retains its existing sign-in and account-scoped operations. Repository and community links are public external resources, not permission to post or join on the owner's behalf. No mobile action, grant or authentication boundary changes.
+
+## Homepage product definition and use cases (19 October 2026)
+
+The homepage hero defines the product, supported source categories and approved MCP access. Its first H2 explains when to use myself.md, with platform, live-query and store-availability limits and a link to the existing fictional demo. Both the visual homepage and initial HTML/Markdown use the shared `homepageOverview` content in `core/public-site.js`; agents can read the public homepage over HTTP without executing JavaScript. Existing public documentation/catalog MCP reads and demo coverage remain in place. This copy-only change adds no mobile or authenticated dashboard action and changes no authorization, grants or platform handoffs.
+
+## Homepage illustrative video loops (19 October 2026)
+
+The homepage context, permissions and agent-workflow sections show public Sunra-generated illustrations with muted inline autoplay and looping. The three inline illustrations hide native playback controls for uninterrupted loops; reduced-motion preferences disable autoplay and pause playback when enabled. The Animation details disclosures and their Open animation links have been removed; the existing illustration captions remain. The public homepage and same-origin MP4 assets are available to agents over HTTP; playback is browser presentation, not an account operation. Existing public dataset/documentation reads and authenticated MCP profile, catalog and query operations retain their coverage. Mobile and authenticated dashboard actions, ownership, grants and phone handoffs are unchanged.
+
+Published to `https://myself.md` as Worker version `c8e96cee-f2ed-48a4-9347-c4fcc1df2bab`. The isolated release preserves the concurrent blog publication, existing backend, bindings, runtime and settings; only the video component, three clip/caption pairs, scoped video CSS and six media routes changed. Live hashes matched all eight modified assets, all three videos played muted with looping enabled in the browser, and health, OAuth discovery and unauthenticated MCP denial passed. Private account workflows were unchanged. Release receipt: `.local/homepage-video-release/release-receipt.json`.
+
+The first context loop and poster now use a local dark color treatment with light labels and muted colored icons to match the other two illustrations. Motion, text, playback controls and all UI/MCP capabilities are unchanged; no external generation or account data is involved.
+
+## Project identity and citation sources — 19 October 2026
+
+Shared public content now distinguishes myself.md from self.md, names the maintainer and official endpoint/repository, and maps setup, health capability and privacy claims to the corresponding first-party pages. The same FAQ answers feed the homepage, FAQ and public documentation; health guide selectors retain their existing validated HTTP, SDK, full MCP and WebMCP reads. Agent instructions and the MCP server card carry the same identity distinction. Shared SoftwareApplication metadata links the homepage and documentation to one stable product ID and the existing app icon; this introduces no agent action or private data. Mobile and dashboard actions, OAuth, ownership, profile grants and platform handoffs are unchanged. This change is local pending publication; it does not establish corrected search citations.
+
+Published at 100% in Worker `dcf0e085-86c2-4102-a466-384646a0a18e` on October 19 at 22:12:21 UTC; the local-only status is superseded. The exact scoped workerd package passed HTTP/MCP and private-grant isolation checks. Live HTTPS, bundled SDK and actual WebMCP reads confirmed the shared identity FAQ and guide content; a rendered homepage disclosure also returned the updated answer. Production settings and authorization boundaries were retained. See `docs/aeo-identity-2026-10-19.md` for the release scope, verification and attribution limits.
+
 ## Native-source export runtime boundary (19 October 2026)
 
 The [actual-record phone export check](argent-qa.md#actual-native-source-exports--19-october-2026) exercised native Steps consent, Android Usage Access, saved private source selections and foreground cloud export on normal phone builds. Independent content verification used authenticated owner-dashboard reads with all source agent grants off. It establishes UI/native/export effects only; no additional MCP source-query or grant pass is claimed. Existing profile proposals, catalog/history/cloud reads and documented phone permission/export handoffs retain their existing ownership and grant boundaries. iOS Screen Time eligibility and Android selected-folder failure remain explicit limitations; an accepted handoff is not a completed export.
@@ -1490,3 +1520,19 @@ Revoking the profile Health permission blocked the retained result before its fi
 ## Public header image removal — 19 October 2026
 
 The homepage and shared public header now show the text wordmark without the decorative portrait image. The existing home link and navigation retain their behavior and MCP coverage. This presentation-only change affects no mobile or dashboard capability, authorization, or platform handoff.
+
+## Source-specific health discovery and attribution — 19 October 2026
+
+Two public guides now cover Apple Health with Claude and scoped MCP access (`/docs/apple-health-claude-mcp`) and Android Health Connect exports/queries (`/docs/android-health-connect-mcp`). Shared dependency-free guide content supplies HTML, negotiated Markdown, `.md` aliases, versioned public reads, sitemap entries, descriptions and navigation. Docs and the dataset guide link to both. About, guide identity sections, llms instructions and the public MCP server card consistently identify the official domain, remote endpoint and repository, distinguishing similarly named independent projects without claiming control over assistant citations.
+
+Full MCP `get_public_documentation` and browser WebMCP `myself_public_documentation` accept an optional validated `guide` selector for those two slugs. Default reads retain their previous behavior. The bundled JavaScript client's `docs({guide})` reads the same public source; older npm clients can use the public HTTP route. OpenAPI documents the new versioned reads. The dedicated `/mcp/chatgpt` resource keeps its existing restricted documentation and empty input schema; it does not advertise or ignore the full connector's new selector. Public HTTP guides remain accessible to agents independently of that connection.
+
+These are public content reads. They grant no phone, profile, source, account or cloud access; private actions, OAuth resources, ownership checks, billing, OS permission prompts and owner handoffs are unchanged. Runtime checks exercise both guide selectors through HTTP, SDK, MCP and WebMCP, reject unsupported slugs/URL inputs and unknown guide paths, and retain the existing private-data regression coverage. Local browser checks cover the linked guides, actual WebMCP reads and a phone-width layout. These changes are local pending publication; no new crawl, citation improvement or third-party directory correction is claimed.
+
+## Discovery guides production publication — 19 October 2026
+
+Worker `c6357775-db59-45d8-bd36-3de2da09abc7` publishes both source-specific health guides, official project attribution and validated documentation selectors at 100% traffic. The exact scoped workerd package passed public HTTP/MCP and existing privacy/private-operation regressions. Live HTTP, bundled SDK and actual WebMCP reads verified guide content, discovery links and the selector on both guide pages and the retained homepage. The dedicated ChatGPT documentation remains restricted to its original empty input. Production bindings, runtime, non-versioned settings and unrelated assets were retained; no real phone records or private account actions were used in live verification. The preceding local-only status is superseded for these changes. Evidence and limits are recorded in `docs/aeo-discovery-guides-2026-10-19.md` and ignored `.local/aeo-guides-release/`.
+
+## Public website sandbox removal — 19 October 2026
+
+The public browser sandbox and its routes are removed. Homepage, pricing, setup documentation, blog guidance, shared HTTP/MCP/WebMCP documentation and sitemap no longer advertise it. Retired URLs return 404. The public overview recording ends before its retired sandbox CTA; future launch renders link to the setup guide. Dataset previews remain public through HTTP, `get_public_dataset_catalog` and WebMCP `myself_dataset_catalog`; shared documentation remains available through `get_public_documentation` and `myself_public_documentation`. Authenticated dashboard and mobile operations retain their existing authorization, grants and owner handoffs. Earlier entries describe historical behavior.

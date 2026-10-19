@@ -7,10 +7,6 @@ export function routeSnapshot() {
 }
 /** @param {string} search */
 export function navigateRoute(search) {
-  history.pushState(
-    null,
-    '',
-    `${/^\/demo\/?$/.test(location.pathname) ? '/demo' : '/dashboard'}${search}`,
-  );
+  history.pushState(null, '', `/dashboard${search}`);
   window.dispatchEvent(new Event('popstate'));
 }

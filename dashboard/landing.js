@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   IconArrowUpRight,
   IconCheck,
@@ -9,8 +9,10 @@ import {
   IconShieldCheck,
   IconArrowRight,
   IconBrandGithub,
+  IconBrandDiscord,
 } from '@tabler/icons-react';
-import { publicFAQs, agentSetupPrompt } from '../core/public-site.js';
+import { publicFAQs, agentSetupPrompt, homepageOverview } from '../core/public-site.js';
+import { privacyPolicy } from '../core/privacy.js';
 import { datasets } from './dataset-catalog.js';
 
 const stories = [
@@ -135,21 +137,103 @@ function AgentLogos() {
     </span>
   );
 }
-/** @param {{clip:string,title:string,description:string,landscape?:boolean}} props */
-function ShowcaseVideo({ clip, title, description, landscape = false }) {
+const contextExamples = ['health records', 'screen time', 'recorded locations'];
+
+function HeroContext() {
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window === 'undefined' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const [typing, setTyping] = useState({ index: 0, length: 13, deleting: false });
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    if (reducedMotion) return;
+    const phrase = contextExamples[typing.index] ?? '';
+    const complete = typing.length === phrase.length && !typing.deleting;
+    const timer = window.setTimeout(
+      () => {
+        setTyping((current) => {
+          if (complete) return { ...current, deleting: true };
+          if (current.deleting && current.length === 0)
+            return {
+              index: (current.index + 1) % contextExamples.length,
+              length: 0,
+              deleting: false,
+            };
+          return { ...current, length: current.length + (current.deleting ? -1 : 1) };
+        });
+      },
+      complete ? 2200 : typing.deleting ? 40 : 75,
+    );
+    return () => window.clearTimeout(timer);
+  }, [reducedMotion, typing]);
   return (
-    <figure className={`showcase-video ${landscape ? 'landscape' : ''}`}>
-      <div className="showcase-chrome" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <span>{title}</span>
+    <div className="hero-context">
+      <p className="sr-only">
+        Give your AI agent context from your health records, screen time and recorded locations. You
+        choose what to share.
+      </p>
+      <div className="hero-context-line" aria-hidden="true">
+        <span>Give</span>
+        <span className="hero-context-agents">
+          {['claude-code', 'grokbot', 'openclaw'].map((file) => (
+            <img
+              key={file}
+              src={`/dashboard/agent-logos/${file}.svg`}
+              alt=""
+              width="24"
+              height="24"
+            />
+          ))}
+        </span>
+        <span>context from your</span>
+        <span className="hero-context-example">
+          <span>
+            {reducedMotion
+              ? contextExamples[0]
+              : contextExamples[typing.index]?.slice(0, typing.length)}
+          </span>
+          <span className="hero-context-caret">|</span>
+        </span>
       </div>
+    </div>
+  );
+}
+/** @param {{clip:string,title:string,description:string}} props */
+function ShowcaseVideo({ clip, title, description }) {
+  const videoRef = useRef(/** @type {HTMLVideoElement | null} */ (null));
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window === 'undefined' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (reducedMotion) video?.pause();
+    else void video?.play().catch(() => {});
+  }, [reducedMotion]);
+  return (
+    <figure className="showcase-video">
       <div className="showcase-stage">
         <video
-          controls
+          ref={videoRef}
+          autoPlay={!reducedMotion}
+          muted
+          loop
           playsInline
-          preload="none"
+          preload="metadata"
           poster={`/dashboard/showcase/${clip}.jpg`}
           aria-label={title}
         >
@@ -158,11 +242,6 @@ function ShowcaseVideo({ clip, title, description, landscape = false }) {
         </video>
       </div>
       <figcaption>{description}</figcaption>
-      <details>
-        <summary>Recording details</summary>
-        <p>{description} Recorded in October 2026. App UI may differ from the current release.</p>
-        <a href={`/dashboard/showcase/${clip}.mp4`}>Open recording</a>
-      </details>
     </figure>
   );
 }
@@ -225,11 +304,22 @@ export function Landing() {
           <a href="/datasets">Datasets</a>
           <a href="/docs">Docs</a>
           <a href="/pricing">Pricing</a>
+          <a
+            className="personal-social"
+            href="https://github.com/CodyBontecou/myself.md"
+            aria-label="GitHub repository"
+          >
+            <IconBrandGithub size={17} aria-hidden="true" />
+          </a>
+          <a
+            className="personal-social"
+            href={privacyPolicy.discordUrl}
+            aria-label="Discord community"
+          >
+            <IconBrandDiscord size={17} aria-hidden="true" />
+          </a>
           <a className="personal-signin" href="/dashboard">
             Sign in
-          </a>
-          <a className="personal-button" href="/demo">
-            Try the demo <IconArrowUpRight size={14} />
           </a>
         </nav>
       </header>
@@ -245,10 +335,7 @@ export function Landing() {
               Your agent.
               <br className="mobile-break" /> Now with your context.
             </h1>
-            <p>
-              Health, screen time, and location.
-              <br className="mobile-break" /> The missing context is you.
-            </p>
+            <HeroContext />
           </div>
           <div className="story-picker" role="group" aria-label="Explore example workflows">
             {stories.map((item, index) => (
@@ -332,20 +419,18 @@ export function Landing() {
             </div>
           </div>
           <AgentPrompt />
-          <div className="agent-compatibility" aria-label="MCP clients">
-            {agents.map(({ name, file }) => (
-              <span key={file}>
-                <img src={`/dashboard/agent-logos/${file}.svg`} alt={name} width="18" height="18" />
-                {name}
-              </span>
-            ))}
-            <span>+ compatible MCP clients</span>
-          </div>
           <div className="hero-bottom">
             <span>MCP · REST · JavaScript SDK · CLI</span>
             <a href="/docs">
               See how it works <IconArrowRight size={13} />
             </a>
+          </div>
+        </section>
+        <section className="personal-use-cases personal-section" aria-labelledby="use-cases-title">
+          <div className="section-intro">
+            <h2 id="use-cases-title">{homepageOverview.question}</h2>
+            <p>{homepageOverview.answer}</p>
+            <p>{homepageOverview.limitations}</p>
           </div>
         </section>
         <section
@@ -418,9 +503,9 @@ export function Landing() {
             </a>
           </div>
           <ShowcaseVideo
-            clip="selection"
+            clip="context-loop"
             title="Choose your context"
-            description="Recorded app walkthrough: select data types and choose JSON or JSONL export files. Isolated QA session."
+            description="Illustration: personal data categories available as context for your agent."
           />
         </section>
         <section
@@ -428,9 +513,9 @@ export function Landing() {
           aria-labelledby="permission-title"
         >
           <ShowcaseVideo
-            clip="approval"
+            clip="permissions-loop"
             title="Approve agent access"
-            description="Recorded owner approval in an isolated QA profile. Permissions are reviewed on the phone; agents cannot approve themselves."
+            description="Illustrative sharing profile: selected data types, a bounded date range, and owner approval."
           />
           <div className="explanation">
             <span className="flow-overline">02 / STAY IN CONTROL</span>
@@ -470,10 +555,9 @@ export function Landing() {
             </a>
           </div>
           <ShowcaseVideo
-            clip="overview"
+            clip="discovery-loop"
             title="From phone to agent"
-            landscape
-            description="App setup footage and an illustrated replay of an actual MCP run using synthetic phone data. The agent UI is illustrative."
+            description="Illustration: discover approved data, select Sleep and Activity, and prepare a comparison."
           />
         </section>
         <section className="personal-section personal-faq" aria-labelledby="questions-title">
@@ -495,11 +579,8 @@ export function Landing() {
             Make your agent
             <br />a little more yours.
           </h2>
-          <p>Start with fictional data. Connect your own when you’re ready.</p>
+          <p>Choose your data. Connect your agent.</p>
           <div>
-            <a className="personal-button" href="/demo">
-              Explore the demo <IconArrowUpRight size={15} />
-            </a>
             <a className="closing-secondary" href="/docs">
               Connect your agent <IconArrowRight size={15} />
             </a>
@@ -522,7 +603,6 @@ export function Landing() {
         <nav aria-label="Explore">
           <span>EXPLORE</span>
           <a href="/datasets">Datasets</a>
-          <a href="/demo">Dashboard demo</a>
           <a href="/pricing">Pricing</a>
         </nav>
         <nav aria-label="Build">

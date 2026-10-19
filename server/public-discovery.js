@@ -1,12 +1,14 @@
 import { phoneQueryBodySchema } from './data-service.js';
 import { privacyPolicy } from '../core/privacy.js';
+import { healthGuides } from '../core/health-guides.js';
 
 const origin = 'https://myself.md';
 const card = {
   $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
   name: 'md.myself/mcp',
   title: 'myself.md',
-  description: 'Owner-approved health, screen time and location data for AI agents.',
+  description:
+    'myself.md: owner-approved phone data exports and remote MCP access. Reads Apple Health through HealthKit on iOS and Health Connect on Android, plus supported screen time and recorded location. Maintained by Cody Bontecou at github.com/CodyBontecou/myself.md. Official website: https://myself.md/; MCP: https://myself.md/mcp. Separate from self.md and other Apple Health MCP projects.',
   version: '1.0.0',
   websiteUrl: origin,
   repository: { url: 'https://github.com/CodyBontecou/myself.md', source: 'github' },
@@ -383,6 +385,18 @@ const openapi = {
       'getDeveloperGuide',
       'Read MCP onboarding, authentication, consent and result verification guidance. Send Accept: text/markdown to request the documented Markdown representation.',
       textContent,
+    ),
+    ...Object.fromEntries(
+      healthGuides.map((guide) => [
+        `/v1/docs/${guide.slug}`,
+        readOperation(
+          guide.slug === 'apple-health-claude-mcp'
+            ? 'getAppleHealthClaudeGuide'
+            : 'getHealthConnectGuide',
+          guide.description,
+          textContent,
+        ),
+      ]),
     ),
   },
 };
