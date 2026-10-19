@@ -218,13 +218,6 @@ export function Landing() {
     <div className="personal-site">
       <header className="personal-header">
         <a className="personal-brand" href="/" aria-label="myself.md home">
-          <img
-            className="personal-mark"
-            src="/dashboard/favicon.png"
-            alt=""
-            width="32"
-            height="32"
-          />
           myself<span className="brand-extension">.md</span>
         </a>
         <nav aria-label="Main navigation">

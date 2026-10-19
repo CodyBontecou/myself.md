@@ -45,15 +45,6 @@
 .brand-extension {
   color: #7c7c7c;
 }
-.personal-mark {
-  display: block;
-  flex-shrink: 0;
-  object-fit: contain;
-  width: 32px;
-  height: 32px;
-  margin-right: 10px;
-  border-radius: 9px;
-}
 .personal-header nav {
   display: flex;
   gap: 28px;
@@ -1057,11 +1048,6 @@
   }
   .personal-brand {
     font-size: 20px;
-  }
-  .personal-mark {
-    width: 28px;
-    height: 28px;
-    margin-right: 7px;
   }
   .personal-header nav {
     gap: 12px;
