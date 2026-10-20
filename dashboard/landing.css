@@ -1447,27 +1447,36 @@
 }
 .showcase-video {
   overflow: hidden;
-  border: 1px solid #303030;
-  border-radius: 14px;
-  background: #0b0b0b;
-  box-shadow: 0 20px 80px #0008;
+  background: transparent;
+  mix-blend-mode: lighten;
 }
 .showcase-stage {
-  background: #040404;
+  overflow: hidden;
+  background: transparent;
 }
 .showcase-stage video {
   display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 9;
-  background: #040404;
+  background: transparent;
+  mask-image:
+    linear-gradient(to right, transparent, #000 8%, #000 92%, transparent),
+    linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent);
+  mask-composite: intersect;
+  transform: scale(1.18);
 }
-.showcase-video figcaption {
-  padding: 15px 18px 8px;
-  color: #aaa;
-  font-size: 11px;
-  line-height: 1.7;
+
+@media (min-width: 801px) {
+  .story-section {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 64px;
+  }
+  .story-section.reverse-story {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
 }
+
 @media (hover: hover) and (pointer: fine) {
   .personal-site a:hover {
     color: #fff;

@@ -1,6 +1,6 @@
-# Isobot support integration
+# Isobot support integration (historical host notes)
 
-The v1 client is integrated into myself.md's phone Settings → Contact support and dashboard Support view. The service runs inside Isobot's Cloudflare Worker. The previous client/server API remains available for compatibility.
+The myself.md app no longer integrates this client, exposes its support proxy or registers its MCP tools. The support Codex workflow is removed. This standalone package remains available for reuse; the deployment and verification notes below document the former integration. Historical conversation erasure remains part of account deletion.
 
 ## Behavior
 

@@ -6,8 +6,6 @@ import { createMyselfClient } from './public-client.js';
 import { registerPublicTools } from './webmcp.js';
 
 import { errorJSON } from '../packages/support-chat/errors.js';
-import { WebSupport } from '../packages/support-chat/web.js';
-import { createSupportClient } from '../packages/support-chat/index.js';
 import {
   createContext,
   useContext,
@@ -23,7 +21,6 @@ import { Dialog } from 'radix-ui';
 import {
   IconUser,
   IconDatabase,
-  IconChartBar,
   IconListDetails,
   IconRobot,
   IconCloud,
@@ -60,6 +57,7 @@ import { CloudStorageCard, cloudStorageSummary } from './cloud-storage.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
 import { Landing } from './landing.js';
+import { GettingStarted } from './getting-started.js';
 import { Explorer } from './explorer.js';
 import { HistoryView } from './history.js';
 import { ExportActivity } from './export-activity.js';
@@ -112,75 +110,38 @@ import {
 } from './components/ui/dropdown-menu.js';
 /** @typedef {import('./workspace.js').Workspace} Workspace */
 /** @typedef {import('./workspace.js').StoredExport} StoredExport */
-/** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'|'support'} View */
+/** @typedef {'start'|'exports'|'explore'|'profiles'|'agents'|'history'} View */
 /** @typedef {{title:string,description:string,label:string,action:()=>Promise<void>}} Confirmation */
-const supportRequest = createSupportClient((path, options) =>
-  api(path, options.method, options.body === undefined ? undefined : JSON.parse(options.body)),
-);
-const supportData = {
-  automaticLogs: false,
-  /** @param {import('../packages/support-chat/support-client.js').SupportDataRequest|null} request */
-  collect: async (request) => ({
-    category: request?.selector.category ?? 'manual',
-    capturedAt: Date.now(),
-    content: JSON.stringify(
-      {
-        note: 'Paste only the information you want to share. Phone logs can be reviewed on your phone.',
-        requested: request?.reason ?? '',
-        data: null,
-      },
-      null,
-      2,
-    ),
-  }),
-  /** @param {string} content */
-  digest: async (content) =>
-    Array.from(
-      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))),
-      (b) => b.toString(16).padStart(2, '0'),
-    ).join(''),
-};
 const views = [
   {
-    id: /** @type {const} */ ('support'),
-    title: 'Support',
-    description: 'Ask Isobot a question or report a problem.',
-    icon: IconRobot,
+    id: /** @type {const} */ ('start'),
+    title: 'Start',
+    description: 'Connect your assistant and phone, then ask your first question.',
   },
   {
     id: /** @type {const} */ ('exports'),
-    title: 'Stored data',
-    description:
-      'Browse exported files from your phone, see when they were saved, and open them to explore their contents. Try it with fictional health, screen time, and location exports below.',
-    icon: IconDatabase,
+    title: 'Files',
+    description: 'Browse files exported from your phone and explore the records inside.',
   },
   {
     id: /** @type {const} */ ('history'),
     title: 'History',
-    description:
-      'See when data was exported and when agents accessed it. Filter the sample activity by profile or event type, then open an entry to see what happened.',
-    icon: IconListDetails,
+    description: 'Review exports and agent access. Open an event to see what happened.',
   },
   {
     id: /** @type {const} */ ('explore'),
-    title: 'Explore data',
-    description:
-      'Look inside your exported files to find individual records and spot patterns. Filter the sample data, compare it in charts, and open a record for details.',
-    icon: IconChartBar,
+    title: 'Explore',
+    description: 'Find records in your exports, compare them in charts and inspect their details.',
   },
   {
     id: /** @type {const} */ ('profiles'),
-    title: 'Profiles & permissions',
-    description:
-      'Profiles define which data you export and share. Try changing a sample profile’s Agent permissions to control which stored data agents can read.',
-    icon: IconListDetails,
+    title: 'Profiles',
+    description: 'Choose what to export and control the data your assistants can read.',
   },
   {
     id: /** @type {const} */ ('agents'),
-    title: 'Connected agents',
-    description:
-      'See which AI agents have connected to your workspace and when they were last active. Try blocking a sample agent or restoring its access.',
-    icon: IconRobot,
+    title: 'Agents',
+    description: 'Review connected assistants and manage their access to your workspace.',
   },
 ];
 /** @param {number} value */
@@ -220,10 +181,7 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
               <a href="/">
-                <span aria-hidden="true" className="font-mono text-lg font-semibold">
-                  m.
-                </span>
-                <span className="text-base font-semibold">myself.md</span>
+                <BrandWordmark />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -241,7 +199,6 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
                     aria-current={view === item.id ? 'page' : undefined}
                     onClick={() => navigate(item.id)}
                   >
-                    <item.icon />
                     <span>{item.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -251,9 +208,8 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy and support">
-          <a href="/privacy">Privacy policy</a>
-          <a href="/support">Support</a>
+        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy">
+          <a href="/privacy">Privacy</a>
         </nav>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -344,28 +300,30 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
 }
 function BrandWordmark() {
   return (
-    <span className="text-xl font-semibold tracking-[-0.8px] text-[#18181b] dark:text-[#f4f4f5]">
-      myself<span className="text-[#60616b] dark:text-[#a7a7b1]">.md</span>
+    <span className="dashboard-wordmark text-xl font-semibold tracking-[-0.8px] text-foreground">
+      myself<span className="text-muted-foreground">.md</span>
     </span>
   );
 }
 /** @param {{title:string,busy:boolean,onRefresh:()=>void,workspace:Workspace|null,view:View}} props */
 function SiteHeader({ title, busy, onRefresh, workspace, view }) {
   return (
-    <header className="flex min-h-(--header-height) shrink-0 items-center gap-2 border-b">
+    <header className="dashboard-header flex min-h-(--header-height) shrink-0 items-center gap-2 border-b">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 py-2 lg:px-6">
         <SidebarTrigger className="-ml-1 size-11 shrink-0 lg:size-7" />
         <Separator
           orientation="vertical"
           className="mx-2 hidden data-[orientation=vertical]:h-4 lg:block"
         />
-        <BrandWordmark />
+        <a href="/" aria-label="myself.md home">
+          <BrandWordmark />
+        </a>
         {workspace && (
-          <h1 className="ml-4 hidden truncate border-l pl-4 text-sm font-medium text-muted-foreground lg:block">
+          <span className="ml-4 hidden truncate border-l pl-4 text-sm font-medium text-muted-foreground lg:block">
             {title}
-          </h1>
+          </span>
         )}
-        {workspace && (
+        {workspace && view !== 'start' && (
           <div className="ml-auto hidden lg:block">
             <SummaryPills workspace={workspace} view={view} />
           </div>
@@ -859,33 +817,6 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
   return (
     <div className="px-4 lg:px-6">
       <Card>
-        <CardHeader>
-          <CardTitle>
-            {view === 'profiles' ? 'Profile settings and permissions' : 'Connected agents'}
-          </CardTitle>
-          <CardDescription>
-            {view === 'profiles'
-              ? 'Configure profiles and choose what agents can read from your phone and stored cloud exports.'
-              : 'Agents appear after their first MCP request. Block access at any time.'}
-          </CardDescription>
-        </CardHeader>
-        {view === 'profiles' && (
-          <div className="mx-6 flex items-start gap-3 rounded-lg border bg-muted/30 p-4">
-            <IconShieldCheck
-              className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <div className="space-y-1">
-              <p className="text-sm font-medium">You control what agents can access</p>
-              <p className="text-sm text-muted-foreground">
-                Health, Screen time and Location Agent permissions on your phone also control this
-                profile’s old cloud exports. After your phone syncs, turning a permission off blocks
-                that data. Turning it back on restores access to those selected data types. Your
-                saved files stay unchanged.
-              </p>
-            </div>
-          </div>
-        )}
         {refreshError && (
           <p role="status" className="px-6 pb-4 text-sm text-muted-foreground">
             {refreshError}
@@ -1092,7 +1023,7 @@ function LoginCard({ ready, notice = '' }) {
     }
   }
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-[#f8f9fa] dark:bg-[#111113]">
+    <div className="dashboard-sign-in flex min-h-full flex-1 flex-col bg-background">
       {standalone && (
         <header className="flex min-h-14 shrink-0 items-center border-b bg-background px-5 sm:px-8">
           <BrandWordmark />
@@ -1101,12 +1032,12 @@ function LoginCard({ ready, notice = '' }) {
       <div
         className={`flex flex-1 flex-col items-center justify-start px-4 py-6 sm:justify-center sm:px-6 sm:py-12 ${standalone ? 'min-h-[calc(100svh-3.5rem)]' : ''}`}
       >
-        <Card className="w-full max-w-[440px] gap-5 rounded-[20px] border-[#e6e7eb] bg-white py-6 sm:gap-6 sm:py-8 text-[#18181b] shadow-[0_4px_24px_rgb(0_0_0/0.03)] dark:border-[#333338] dark:bg-[#1b1b1f] dark:text-[#f4f4f5]">
+        <Card className="w-full max-w-[440px] gap-5 rounded-[20px] border-border bg-card py-6 sm:gap-6 sm:py-8 text-card-foreground shadow-[0_4px_24px_rgb(0_0_0/0.03)]">
           <CardHeader className="gap-2 px-5 sm:gap-3 sm:px-8">
             <CardTitle className="text-2xl leading-tight tracking-[-0.8px] sm:text-[26px]">
               <h1>Sign in to myself.md</h1>
             </CardTitle>
-            <CardDescription className="text-sm leading-relaxed text-[#60616b] sm:text-base dark:text-[#a7a7b1]">
+            <CardDescription className="text-sm leading-relaxed text-muted-foreground sm:text-base">
               Use the same account as the myself.md app to keep your exports and purchases together.
             </CardDescription>
           </CardHeader>
@@ -1124,7 +1055,7 @@ function LoginCard({ ready, notice = '' }) {
                   <button
                     key={provider}
                     type="button"
-                    className="grid min-h-12 w-full touch-manipulation select-none active:bg-[#f8f9fa] dark:active:bg-[#222226] grid-cols-[20px_1fr_20px] items-center gap-2 rounded-[9px] border border-[#e6e7eb] px-3 py-3 sm:gap-3 sm:px-[18px] text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50 dark:border-[#333338] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-[#f8f9fa] dark:[@media(hover:hover)_and_(pointer:fine)]:hover:bg-[#222226]"
+                    className="grid min-h-12 w-full touch-manipulation select-none active:bg-accent grid-cols-[20px_1fr_20px] items-center gap-2 rounded-[9px] border border-input text-foreground px-3 py-3 sm:gap-3 sm:px-[18px] text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-accent"
                     disabled={!ready || busy}
                     onClick={() => void login(provider)}
                   >
@@ -1141,7 +1072,7 @@ function LoginCard({ ready, notice = '' }) {
               }
             </div>
             <nav
-              className="flex flex-wrap items-center justify-between gap-x-4 text-[13px] text-[#60616b] dark:text-[#a7a7b1]"
+              className="flex flex-wrap items-center justify-between gap-x-4 text-[13px] text-muted-foreground"
               aria-label="Other sign-in options"
             >
               <button
@@ -1169,16 +1100,15 @@ function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
   const query = new URLSearchParams(search);
-  const view =
-    query.get('view') === 'support'
-      ? 'support'
-      : query.has('history')
-        ? 'history'
-        : query.get('view') === 'profiles'
-          ? 'profiles'
-          : query.get('view') === 'agents'
-            ? 'agents'
-            : 'exports';
+  const view = query.has('history')
+    ? 'history'
+    : query.get('view') === 'profiles'
+      ? 'profiles'
+      : query.get('view') === 'agents'
+        ? 'agents'
+        : query.get('view') === 'start' || (!query.has('view') && !workspace?.devices.length)
+          ? 'start'
+          : 'exports';
   const viewingWorkspace = Boolean(workspace);
   useEffect(() => {
     if (viewingWorkspace) trackWebAnalytics('dashboard_viewed', view);
@@ -1242,7 +1172,7 @@ function App() {
     };
   }, []);
   const currentView = views.find((item) => item.id === (exploring ? 'explore' : view));
-  const title = exploring ? 'Data explorer' : (currentView?.title ?? 'Stored data');
+  const title = currentView?.title ?? 'Files';
   if (!workspace && ['/login', '/login/'].includes(location.pathname))
     return <LoginCard ready={ready} notice={notice} />;
   return (
@@ -1255,9 +1185,9 @@ function App() {
               ? '?explore=1'
               : next === 'history'
                 ? '?history=1'
-                : next === 'profiles' || next === 'agents'
+                : next === 'profiles' || next === 'agents' || next === 'start'
                   ? `?view=${next}`
-                  : '',
+                  : '?view=exports',
           );
         }}
         workspace={workspace}
@@ -1280,7 +1210,7 @@ function App() {
                 workspace ? 'flex flex-col gap-4 py-4 md:gap-6 md:py-6' : 'flex flex-1 flex-col'
               }
             >
-              {workspace && (
+              {workspace && view !== 'start' && (
                 <div className="px-4 lg:hidden">
                   <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
                 </div>
@@ -1292,6 +1222,14 @@ function App() {
               )}
               {workspace ? (
                 <>
+                  {(view !== 'start' || exploring) && currentView && (
+                    <header className="dashboard-view-heading">
+                      <div>
+                        <h1>{title}</h1>
+                        <p>{currentView.description}</p>
+                      </div>
+                    </header>
+                  )}
                   {exploring ? (
                     <Explorer
                       workspace={workspace}
@@ -1301,13 +1239,8 @@ function App() {
                     />
                   ) : (
                     <>
-                      {view === 'support' ? (
-                        <WebSupport
-                          projectLabel="myself.md"
-                          request={supportRequest}
-                          data={supportData}
-                          Button={Button}
-                        />
+                      {view === 'start' ? (
+                        <GettingStarted workspace={workspace} />
                       ) : view === 'history' ? (
                         <HistoryView
                           workspace={workspace}
@@ -1363,9 +1296,11 @@ function App() {
                       )}
                     </>
                   )}
-                  <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
-                    {`Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
-                  </p>
+                  {view !== 'start' && (
+                    <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
+                      {`Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
+                    </p>
+                  )}
                 </>
               ) : (
                 <LoginCard ready={ready} />

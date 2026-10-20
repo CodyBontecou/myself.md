@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { createRemoteSupportCleanup } from '../server/support-remote.js';
 import { deleteLegacySupport } from '../server/support-cleanup.js';
 const thread = '11111111111111111';
 const channel = '22222222222222222';
@@ -110,3 +111,36 @@ try {
 } finally {
   db.close();
 }
+
+// The retired integration only retains erasure, with failure propagated for account-deletion retry.
+/** @type {{url:string,body:unknown}[]} */
+const remoteCalls = [];
+const remoteCleanup = createRemoteSupportCleanup(
+  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-token' },
+  async (url, options) => {
+    remoteCalls.push({ url: String(url), body: JSON.parse(String(options?.body)) });
+    assert.equal(options?.method, 'POST');
+    assert.equal(new Headers(options?.headers).get('X-Support-Owner'), 'owner');
+    assert.equal(new Headers(options?.headers).get('Authorization'), 'Bearer fixture-token');
+    return Response.json({ deleted: true });
+  },
+);
+assert.deepEqual(Object.keys(remoteCleanup), ['deleteRemoteSupport']);
+await remoteCleanup.deleteRemoteSupport('owner');
+assert.deepEqual(remoteCalls, [
+  { url: 'https://support.fixture/api/support/v1', body: { action: 'deleteAccount' } },
+]);
+await createRemoteSupportCleanup({}, async () => {
+  throw new Error('Unexpected request');
+}).deleteRemoteSupport('owner');
+await assert.rejects(
+  () =>
+    createRemoteSupportCleanup(
+      { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-token' },
+      async () => Response.json({ error: 'Retry cleanup' }, { status: 503 }),
+    ).deleteRemoteSupport('owner'),
+  /Retry cleanup/,
+);
+console.log(
+  'Historical remote cleanup: erasure-only surface, ownership, unconfigured no-op and retry propagation pass.',
+);

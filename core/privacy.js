@@ -1,7 +1,7 @@
 /** Shared public disclosures for the phone, website and MCP. */
 export const privacyPolicy = {
   title: 'myself.md Privacy Policy',
-  updated: '2026-10-18',
+  updated: '2026-10-20',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/contact',
   supportEmail: 'cody@isolated.tech',
@@ -57,8 +57,8 @@ export const privacyPolicy = {
       body: 'The app keeps up to 300 recent app events on your phone for seven days. These include times, actions, results, request durations and HTTP status codes. We always record raw error messages, which may contain sensitive information. Logs do not capture structured record excerpts, request credentials or URLs; retained attachment fields from older versions are removed. Raw error text is not redacted and may itself contain these details. These logs do not capture native crashes.\n\nLogs in each profile’s Agent permissions is off by default and needs approval on the phone. When enabled, the app sends a metadata-and-error report to the paired service while open. Reports expire after five minutes; expired reports are removed at the next service cleanup or when the service process ends. An agent can read them only if the phone has sent a heartbeat within the last 15 seconds and a profile permits Logs. Agents can also read their separately authorized export and access history.\n\nTurn off Logs in a profile to stop future app-log reads through it. Turn it off in all profiles to stop sending reports. Copies already shared follow the recipient’s retention policy.',
     },
     {
-      title: 'Support conversations',
-      body: 'Support conversations remain available in the web dashboard and through connected agents with your support-access approval. The phone app does not provide support chat or guest conversations. Messages are stored with your account by the Isobot support service and may be delivered to a private Discord support channel where designated staff can reply. Support chat is not end-to-end encrypted; Discord holds a separate copy under its own terms and privacy policy.\n\nDeleting your account removes its support conversations and requests cleanup of retained legacy Discord threads. We retry failed cleanup before marking deletion complete. Discord backups and copies staff made elsewhere may remain under their own retention rules.\n\nAgents can read and send support messages only after you enable support access in the dashboard. Blocking an agent or revoking that access stops future access. Keep health records, precise location, credentials and receipts out of support chat. You can also contact us by email or public GitHub issue.',
+      title: 'Contact and previous support conversations',
+      body: 'Contact us by email or public GitHub issue. The app, dashboard and connected agents no longer provide support chat. Check a message or bug report before sending it, and keep health records, precise location, credentials and receipts out of support requests.\n\nPreviously stored support conversations remain subject to account deletion. Deleting your account requests removal from the former support service and cleanup of retained legacy Discord threads. We retry failed cleanup before marking deletion complete. Discord backups and copies staff made elsewhere may remain under their own retention rules.',
     },
     {
       title: 'Usage analytics and website measurement',

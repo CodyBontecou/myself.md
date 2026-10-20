@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
 import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/server';
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
-import { createRemoteSupport } from '../server/support-remote.js';
 import { createSupportClient } from '../packages/support-chat/support-client.js';
 
 const summaries = [
@@ -15,9 +12,6 @@ const sequences = new Map([
 ]);
 const cursors = new Map();
 let failB = true;
-let blocked = false;
-/** @type {string[]} */
-const receivedAgents = [];
 /** @param {string} action @param {Record<string,unknown>} [input] */
 async function operation(action, input = {}) {
   if (action === 'list') return { conversations: summaries.map((item) => ({ ...item })) };
@@ -56,47 +50,6 @@ assert.ok(summaries.every((item) => item.unreadCount === 0));
 assert.deepEqual(resultSchema.parse(await mobile('clearNotifications')).outcomes, []);
 assert.equal(summaries.length, 2, 'Clearing must preserve conversations');
 
-const remote = createRemoteSupport(
-  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
-  () => {
-    if (blocked) throw new Error('Agent blocked');
-  },
-  async (_url, options) => {
-    const headers = new Headers(options?.headers);
-    assert.equal(headers.get('X-Support-Owner'), 'alice');
-    receivedAgents.push(headers.get('X-Support-Agent') ?? '');
-    const { action, ...input } = JSON.parse(String(options?.body));
-    return Response.json(await operation(action, input));
-  },
-);
-const mcp = new McpServer({ name: 'notifications-fixture', version: '1' });
-remote.registerSupportV1Tools(mcp, 'alice', 'approved-agent');
-const client = new Client({ name: 'notifications-client', version: '1' });
-const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-await mcp.connect(serverTransport);
-await client.connect(clientTransport);
-try {
-  assert.ok(summaries[1]);
-  summaries[1].unreadCount = 1;
-  const result = await client.callTool({
-    name: 'support_conversations',
-    arguments: { action: 'markAllRead' },
-  });
-  assert.notEqual(result.isError, true);
-  assert.equal(resultSchema.parse(result.structuredContent).status, 'completed');
-  assert.ok(receivedAgents.every((agent) => agent === 'approved-agent'));
-  blocked = true;
-  const previous = receivedAgents.length;
-  const denied = await client.callTool({
-    name: 'support_conversations',
-    arguments: { action: 'clearNotifications' },
-  });
-  assert.equal(denied.isError, true);
-  assert.equal(receivedAgents.length, previous);
-} finally {
-  await client.close();
-  await mcp.close();
-}
 console.log(
-  'PASS notification acknowledgement, partial failure, retry, new replies, preserved history and MCP authorization.',
+  'PASS portable notification acknowledgement, partial failure, retry, new replies and preserved history.',
 );

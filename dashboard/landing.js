@@ -225,7 +225,7 @@ function ShowcaseVideo({ clip, title, description }) {
     else void video?.play().catch(() => {});
   }, [reducedMotion]);
   return (
-    <figure className="showcase-video">
+    <figure className="showcase-video" aria-label={description}>
       <div className="showcase-stage">
         <video
           ref={videoRef}
@@ -241,7 +241,6 @@ function ShowcaseVideo({ clip, title, description }) {
           <a href={`/dashboard/showcase/${clip}.mp4`}>Watch {title}</a>
         </video>
       </div>
-      <figcaption>{description}</figcaption>
     </figure>
   );
 }

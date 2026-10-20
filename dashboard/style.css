@@ -1,5 +1,7 @@
 @import 'tailwindcss' source(none);
 @import './landing.css';
+@import './getting-started.css';
+@import './dashboard-theme.css';
 @source "./**/*.js";
 @source "../packages/support-chat/support-web.js";
 @custom-variant dark (@media (prefers-color-scheme: dark));

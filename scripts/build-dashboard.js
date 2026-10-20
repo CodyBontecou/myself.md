@@ -137,5 +137,9 @@ for (const asset of [
   'geist-medium.ttf',
   'geist-semibold.ttf',
   'geist-license.txt',
+  'geist-pixel-square.woff2',
+  'geist-pixel-license.txt',
 ])
   copyFileSync(`dashboard/${asset}`, `dashboard/dist/${asset}`);
+
+cpSync('dashboard/getting-started', 'dashboard/dist/getting-started', { recursive: true });

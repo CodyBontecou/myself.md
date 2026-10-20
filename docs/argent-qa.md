@@ -1,5 +1,17 @@
 # Argent phone QA
 
+## Apple Health tutorial through Claude sandbox — 19 October 2026
+
+The normal iPhone Release build 17 completed the Apple Health tutorial through a retained, isolated payment-QA backend with an already verified sandbox Lifetime purchase. Production purchase verification was unchanged. Ordinary OAuth consent, phone pairing, profile review/Save and native permissions were used; no fixture records or manual entitlement were introduced. The owner-approved profile selected only Steps and Sleep, with all other agent domains disabled. Exact request IDs, date bounds, counts and expiry timestamps remain in ignored `.local/apple-health-walkthrough-qa/checkpoint.json`.
+
+Both types completed their entire approved interval and reached terminal pagination. Two intermediate jobs explicitly failed because the service restarted; retrying their original cursors with new request keys succeeded. Large native responses exhausted a single Claude chat's working context, so the weekly pagination check continued in fresh chats with metadata-only cursor handoffs. This is a transport/pagination pass, not a single-chat weekly analysis pass. A fresh one-completed-day example then returned both types on one terminal page each; Claude distinguished source/category limitations and a partial sleep night before computing descriptive totals.
+
+After phone-side Health sharing was disabled, Claude's catalog showed the profile and phone Health domain disabled. Both previously completed results returned “Request expired or not found.” A host timestamp captured both denials before either original expiry, establishing pre-expiry removal despite the generic error text. A new query was rejected before a request ID or job was returned. Native Steps and Sleep permissions were restored Off. A shifting Settings row briefly enabled one unrelated read permission during cleanup, after agent Health access was already off; the type was never selected or queried, and its Off state was verified before finishing. Source records were unchanged; no cloud exports, schedules or background recording were created.
+
+The sandbox Claude client was blocked and its connector disconnected; the previously allowed QA agent was restored only after Health sharing was off. The sandbox phone registration was disconnected through the ordinary connection switch. Normal-account restoration is tracked separately in the private checkpoint. The scratch Argent flow is diagnostic, with recycled native switch identifiers, a coordinate fallback and authentication recovery; it is not a twice-replayed regression suite.
+
+The published walkthrough now starts with one completed local day and documents context limits and explicit restart recovery. Public HTML/Markdown and MCP continue to consume the same generated snapshot. Content-only Worker publication `bb133381-706e-4693-8896-9bf3923b207f` preserved the deployed application, bindings, runtime and assets; live HTML, Markdown, RSS, sitemap and navigation verification passed. This run does not verify production purchase migration or change its validation.
+
 ## Google Play 18 sleep, heart rate and workout exports — partial verification, 19 October 2026
 
 Fresh Play metadata confirms internal build **1.0.0 version code 18** remains completed; USB package inventory independently confirms code 18 and installer com.android.vending. After explicit Thumble return, the Pixel was reserved for this test. No app reinstall, store publication, OTA, source-record creation or application change occurred.

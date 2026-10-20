@@ -10,7 +10,7 @@ Restricted reviewer login: [setup and revocation](docs/reviewer-login.md). `npm 
 
 MCP directory preparation: [Claude and Registry submission packet](docs/mcp-claude-registry-submission.md). `npm run verify:mcp-metadata` exercises emitted metadata and existing authenticated Node/support fixtures with fictional data. `npm run verify:worker` covers the shared MCP surface in workerd. `npm run mcp:review` inspects an authenticated live tool list using a dedicated review account's existing `MYSELF_TOKEN`; `MYSELF_URL` defaults to `https://myself.md`. It reports only tool names, titles and hints, omitting account-bound schemas and credentials. It does not execute tools, verify OAuth refresh or prove reviewer login. No directory submission or production deployment is performed by these commands.
 
-The reusable [Support Chat client](packages/support-chat/README.md) remains portable and intact. Mobile support entry points are removed; the web dashboard Support view and account-scoped Isobot `/api/support/v1` proxy remain. Configure server-only `SUPPORT_ISOBOT_ORIGIN` and `SUPPORT_ISOBOT_TOKEN`; never include bridge credentials in mobile or dashboard bundles. `support_conversations` remains the semantic MCP interface, with owner approval handed off to web dashboard Support. Agents cannot grant themselves access. The legacy Discord support API, tools and setup runner are removed; existing legacy-thread cleanup is retained for account deletion.
+The reusable [Support Chat client](packages/support-chat/README.md) remains a standalone package. Isobot is removed from the phone app and dashboard, and `/api/support/v1` and the `support_conversations` MCP tool are removed. Help is available through email and GitHub. Historical conversation cleanup remains part of account deletion; server-only `SUPPORT_ISOBOT_ORIGIN` and `SUPPORT_ISOBOT_TOKEN` are retained solely for that cleanup.
 
 Privacy disclosures live in `core/privacy.js` and are shared by the offline mobile policy, the public `/privacy` and `/support` pages, and `get_privacy_policy` over MCP. Support uses `cody@isolated.tech` and the repository’s public GitHub issues; users should omit sensitive data from reports. Build and deploy the dashboard/Worker to publish the pages, then set `https://myself.md/privacy` in App Store Connect. `npm run verify:cloud` checks unauthenticated browser rendering and MCP disclosure parity alongside cloud integration.
 
@@ -199,7 +199,7 @@ Tools:
 - `forget_phone_request`: immediately removes a response from server memory.
 - `list_phone_logs`: lists authorized app/export/agent metadata, with filters, history pagination and optional JSONL.
 - `get_phone_debug_logs`, `request_phone_debug_access`: read consented phone errors/metadata or hand off to the owner’s Settings toggle; agents cannot enable sharing.
-- `support_conversations`: uses the retained Isobot backend; owner-only approval handoffs open web dashboard Support, not a mobile route.
+- Support messaging and its MCP tool are removed; email and GitHub remain contact options.
 
 Ask the client to call `create_phone_pairing` and display its image. The returned browser link provides a fallback when a client does not render MCP image content. This does not depend on an MCP Apps widget.
 
@@ -434,9 +434,9 @@ The aggregate static gate also checks the extracted chat package’s native and 
 
 The support package's `web.js` and `support-web.js` render DOM elements and are excluded from React Native text/style rules; their web type check and normal lint rules still apply. The support response reader uses sequential stream reads to enforce its byte limit.
 
-### Isobot support v1
+### Retired support integration
 
-Dashboard Support uses the versioned Isobot inbox. Configure server-only `SUPPORT_ISOBOT_ORIGIN` and `SUPPORT_ISOBOT_TOKEN`; no bridge credential is included in clients. Mobile has no support route or composer. `support_conversations` retains account/agent authorization and per-conversation owner approvals via web dashboard Support. The portable package is unchanged; legacy Discord runtime routes/tools are removed while account-deletion cleanup remains.
+The phone app, dashboard and MCP no longer expose Isobot conversations. The support proxy, MCP registration and support-triggered Codex workflow are removed. The standalone portable client remains independently checked. Account deletion retains its cleanup-only transport to erase historical remote conversations, using the existing server-only support credentials. The separate website audit tooling is unchanged.
 
 Handled errors retain actionable name, message, native code/domain, HTTP status, stack and bounded causes through the portable error formatter. Server payloads are projected to diagnostic fields; request headers and credential fields are excluded, and common authorization values are redacted. Oversized details remain valid JSON with `truncated: true`. Mobile action errors remain readable toasts; structured error metadata remains available to authorized agents and the unchanged dashboard, without a mobile diagnostics viewer or native feedback SDK.
 

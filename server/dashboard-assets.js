@@ -12,6 +12,15 @@ export const assets = new Map([
         [`geist-${weight}.ttf`, 'font/ttf'],
       ]),
   ),
+  ['/dashboard/geist-pixel-square.woff2', ['geist-pixel-square.woff2', 'font/woff2']],
+  ['/dashboard/geist-pixel-license.txt', ['geist-pixel-license.txt', 'text/plain']],
+  ...['sleep', 'activity', 'focus', 'location'].map(
+    (name) =>
+      /** @type {[string,[string,string]]} */ ([
+        `/dashboard/getting-started/${name}-marble.jpg`,
+        [`getting-started/${name}-marble.jpg`, 'image/jpeg'],
+      ]),
+  ),
   ['/dashboard/geist-license.txt', ['geist-license.txt', 'text/plain']],
   ['/', ['index.html', 'text/html']],
   ['/datasets', ['index.html', 'text/html']],

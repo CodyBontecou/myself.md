@@ -1,6 +1,6 @@
 import { createAnalytics } from './analytics.js';
 import { createExportSchedules } from '../server/export-schedules.js';
-import { createRemoteSupport } from '../server/support-remote.js';
+import { createRemoteSupportCleanup } from '../server/support-remote.js';
 import { deleteLegacySupport } from '../server/support-cleanup.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
@@ -66,14 +66,11 @@ export class Account extends DurableObject {
       objectStorage(this.env.EXPORTS),
       (subject) => this.billing.cloudEntitlement(subject),
     );
-    this.remoteSupport = createRemoteSupport(
+    this.remoteSupport = createRemoteSupportCleanup(
       {
         SUPPORT_ISOBOT_ORIGIN: this.env.SUPPORT_ISOBOT_ORIGIN,
         SUPPORT_ISOBOT_TOKEN: this.env.SUPPORT_ISOBOT_TOKEN,
         PUBLIC_URL: this.env.PUBLIC_URL,
-      },
-      (subject, agent) => {
-        this.cloud.observeAgent(subject, agent);
       },
       fetch,
       async (subject) => {
@@ -231,7 +228,6 @@ export class Account extends DurableObject {
         ...this.data,
         ...cloudService,
         ...dashboard,
-        ...this.remoteSupport,
         billing: this.billing,
         cloud: this.cloud,
         history: this.history,

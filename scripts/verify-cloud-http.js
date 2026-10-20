@@ -621,7 +621,21 @@ try {
     ),
   );
   assert.equal((await fetch(`${origin}/v1/mcp`)).status, 404);
+  assert.equal((await request('/api/support/v1', dashboardToken)).status, 404);
+  assert.equal(
+    (
+      await request('/api/support/v1', phoneToken, 'POST', {
+        action: 'send',
+        text: 'must not send',
+      })
+    ).status,
+    404,
+  );
   const tools = await client.listTools();
+  assert.equal(
+    tools.tools.some((tool) => tool.name === 'support_conversations'),
+    false,
+  );
   const reviewTools = reviewToolMetadata(tools.tools);
   console.log(
     'MCP_REVIEW_METADATA ' + JSON.stringify({ runtime: 'node-fixture', tools: reviewTools }),
