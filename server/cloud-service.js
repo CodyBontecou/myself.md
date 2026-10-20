@@ -18,7 +18,7 @@ export function createCloudService({
       {
         title: 'Check cloud storage',
         description:
-          'Read verified cloud plan, subscription and store grace/retry state, used/available bytes, lapse deletion deadline and bytes at risk. Includes user handoff to subscribe, upgrade, restore or manage/cancel in the phone/store; agents cannot purchase or cancel. Does not enable uploads or sharing.',
+          'Read verified Cloud subscription, app access (including expiry), and store grace/retry state, used/available bytes, lapse deletion deadline and bytes at risk. Includes user handoff to subscribe, restore or manage/cancel in the phone/store; agents cannot purchase or cancel. Does not enable uploads or sharing.',
         inputSchema: z.object({}).strict(),
         annotations: {
           title: 'Check cloud storage',

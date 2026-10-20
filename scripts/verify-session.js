@@ -80,13 +80,13 @@ const loaded = await Promise.all([context.loadSession(), context.loadSession()])
 assert.equal(loaded[0], loaded[1], 'Foreground and billing loads share the rotating session');
 await context.resumeSession(loaded[0]);
 assert.equal((await context.loadSession()).refreshToken, 'rotated');
-now += 29 * day;
+now += 364 * day;
 assert.equal(await context.resumeSession(session), true);
-now += 29 * day;
+now += 364 * day;
 assert.equal(
   await context.resumeSession(session),
   true,
-  'Active use survives more than 30 days since login',
+  'Active use survives more than one year since login',
 );
 const beforeBackground = session.lastActiveAt;
 await context.api(session, '/api/devices');
@@ -95,12 +95,12 @@ assert.equal(
   beforeBackground,
   'Background API use must not extend foreground activity',
 );
-now += 30 * day;
-await assert.rejects(context.api(session, '/api/devices'), /30 days of inactivity/);
+now += 365 * day;
+await assert.rejects(context.api(session, '/api/devices'), /365 days of inactivity/);
 assert.equal(await context.resumeSession(session), false);
 assert.equal(storage, '');
 await assert.rejects(context.saveSession(session), /signed out/);
-storage = JSON.stringify({ ...peer, lastActiveAt: now - 30 * day });
+storage = JSON.stringify({ ...peer, lastActiveAt: now - 365 * day });
 assert.equal(await context.loadSession(), null);
 assert.equal(storage, '');
 storage = JSON.stringify({ ...peer, lastActiveAt: undefined });
@@ -142,8 +142,8 @@ let renewals = 0;
 context.fetch = async (url, options) => {
   if (url.endsWith('/api/cloud/credential/renew')) {
     renewals++;
-    assert.equal(JSON.parse(options.body).expiresAt, now + 30 * day);
-    return Response.json({ expiresAt: now + 30 * day });
+    assert.equal(JSON.parse(options.body).expiresAt, now + 365 * day);
+    return Response.json({ expiresAt: now + 365 * day });
   }
   return Response.json({ error: detail }, { status });
 };
@@ -180,7 +180,7 @@ await assert.rejects(
 await context.renewCloudAuthorizations(await context.loadSession());
 assert.equal(renewals, 3, 'Delivery and foreground activity silently renew existing approvals');
 const countBeforeExpiry = renewals;
-now += 30 * day;
+now += 365 * day;
 await assert.rejects(
   context.deliverExport(
     { deviceId: 'phone', owner: 'owner' },

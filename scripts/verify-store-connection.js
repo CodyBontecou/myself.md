@@ -8,11 +8,11 @@ import * as collections from '../core/collections.js';
 const [plan] = plans.cloudPlans;
 assert.ok(plan);
 const offer = {
-  plan: /** @type {const} */ ('cloud_10gb'),
+  plan: /** @type {const} */ ('cloud_100gb'),
   period: /** @type {const} */ ('monthly'),
   productId: plan.ios.monthly,
-  title: '10 GB',
-  displayPrice: '$2.99',
+  title: '100 GB',
+  displayPrice: '$7.99',
   offerToken: null,
 };
 function noClose() {}
@@ -55,7 +55,7 @@ async function fixture({ failures = 0, falseResult = false, holdClose = false } 
       if (holdClose) await closeGate;
     },
     fetchProducts: async () => [
-      { id: offer.productId, type: 'subs', platform: 'ios', displayPrice: '$2.99' },
+      { id: offer.productId, type: 'subs', platform: 'ios', displayPrice: '$7.99' },
     ],
     requestPurchase: async () => {
       state.checkouts++;
@@ -80,7 +80,11 @@ async function fixture({ failures = 0, falseResult = false, holdClose = false } 
     '../core/billing.js': policy,
     '../core/cloud-plans.js': plans,
     '../core/collections.js': collections,
-    './billing.js': { savePurchase: async () => {}, clearNativePurchase: async () => {} },
+    './billing.js': {
+      savePurchase: async () => {},
+      clearNativePurchase: async () => {},
+      acceptAllowance: () => {},
+    },
     './session.js': {
       loadSession: async () => ({ owner: 'qa', deviceId: 'qa' }),
       api: async (/** @type {unknown} */ _session, /** @type {string} */ path) => {
@@ -89,7 +93,7 @@ async function fixture({ failures = 0, falseResult = false, holdClose = false } 
         assert.equal(path, '/api/cloud/subscription');
         state.verifications++;
         if (rejectVerification) throw new Error('Purchase belongs to another account');
-        return { plan: 'cloud_10gb', eligible: true };
+        return { plan: 'cloud_100gb', eligible: true };
       },
     },
     './cloud-storage.js': {
@@ -196,7 +200,7 @@ restore.setPurchases([
     transactionDate: 1,
   },
 ]);
-assert.equal((await restore.api.restoreCloudPlan()).plan, 'cloud_10gb');
+assert.equal((await restore.api.restoreCloudPlan()).plan, 'cloud_100gb');
 assert.equal(restore.state.attempts, 2);
 assert.equal(restore.state.verifications, 1, 'Restore still requires server verification');
 assert.equal(restore.state.finishes, 1, 'Only a verified restore is finished');

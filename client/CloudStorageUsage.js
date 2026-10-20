@@ -4,6 +4,7 @@ import { useTheme } from '../src/lib/theme.js';
 import { router, useFocusEffect } from 'expo-router';
 import { usePhone } from './PhoneProvider.js';
 import { api } from './session.js';
+import { acceptAllowance } from './billing.js';
 import { qaEnabled, qaSnapshot } from './qa-runtime.js';
 import { cloudUsageLabel } from '../core/cloud-allowance.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
@@ -51,6 +52,7 @@ export function useCloudStatus() {
           );
           if (active) {
             acceptCloudStatus(key, value);
+            if (value.appAccess) acceptAllowance(value.appAccess);
             setState({ key, error: '', loading: false });
           }
         } catch (error) {
@@ -97,7 +99,7 @@ export default function CloudStorageUsage() {
 }
 /** @param {{value:import('../core/cloud-allowance.js').CloudAllowance|null,loading:boolean,error:string,signedIn:boolean,onRefresh:()=>void,onSignIn:()=>void}} props */
 export function CloudStorageUsageView({ value, loading, error, signedIn, onRefresh, onSignIn }) {
-  const paid = value?.plan === 'cloud_10gb' || value?.plan === 'cloud_1tb';
+  const paid = Boolean(value && value.plan !== 'none' && value.plan !== 'included');
   return (
     <>
       <SectionHeader title="Cloud storage" />
@@ -105,16 +107,16 @@ export function CloudStorageUsageView({ value, loading, error, signedIn, onRefre
       <Group>
         <Row
           testID="cloud-storage-usage"
-          title={value?.eligible ? cloudPlanTitle(value.plan) : 'Included cloud storage'}
+          title={value?.eligible ? cloudPlanTitle(value.plan) : 'myself.md Cloud'}
           subtitle={
             !signedIn
-              ? 'Sign in to activate your included lifetime storage'
+              ? 'Sign in to subscribe to Cloud or check storage'
               : loading && !value
                 ? 'Checking cloud storage…'
                 : value
                   ? value.eligible
                     ? cloudUsageLabel(value)
-                    : 'Verify lifetime access to activate 100 MB'
+                    : 'Subscribe to Cloud for 100 GB; no Lifetime required'
                   : 'Cloud storage could not be checked'
           }
         />
@@ -126,14 +128,13 @@ export function CloudStorageUsageView({ value, loading, error, signedIn, onRefre
         </Copy>
       )}
       <Copy variant="caption" muted>
-        Lifetime includes 100 MB with no recurring charge; 10 GB and 1 TB plans are optional
-        subscriptions. Files stay until deletion or replacement, except after a paid-storage lapse
-        or a refunded Lifetime purchase.
+        Cloud includes 100 GB and app access while subscribed. Lifetime owners retain their included
+        100 MB. After Cloud ends, exports above your remaining allowance are kept for 30 days.
       </Copy>
       <View style={styles.actions}>
         <CloudStorageAction
           testID="cloud-storage-upgrade"
-          label={paid ? 'Manage cloud storage plan' : 'Upgrade cloud storage'}
+          label={paid ? 'Manage cloud storage plan' : 'Explore Cloud'}
           primary
           onPress={() => router.push('/cloud-storage')}
         />

@@ -14,7 +14,7 @@ import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] */
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {()=>Promise<void>} [check] */
 export async function exportProfileDay(
   session,
   profile,
@@ -23,6 +23,7 @@ export async function exportProfileDay(
   progress,
   onArtifact = () => {},
   billingOperationId = '',
+  check = async () => {},
 ) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
@@ -71,6 +72,9 @@ export async function exportProfileDay(
         let cursor = '';
         do {
           if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
+          // Revalidate a remote request before reading each page.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          await check();
           progress(`${interval.day}: ${type} · ${count} records`);
           /** @type {import('../core/data.js').DataPage} */ let page;
           try {
@@ -156,6 +160,10 @@ export async function exportProfileDay(
       const bytes = f.target.size;
       if (!Number.isSafeInteger(bytes) || bytes < 0)
         throw new Error('Could not read export file size.');
+      // Revalidate before publishing each file, including after slow native reads.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      await check();
+      if (!valid()) throw new Error('Export cancelled: profile changed.');
       if (settings.destination !== 'local') {
         // Destinations acknowledge each complete daily file before progress advances.
         // oxlint-disable-next-line eslint/no-await-in-loop

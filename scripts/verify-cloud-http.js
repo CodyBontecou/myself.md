@@ -85,12 +85,11 @@ const migrationTicket = billingFixture.createClaim({
   reference: 'migration-fixture',
 });
 const tierSubject = `${accountNamespace}|cloud-tier`;
-billingFixture.grant(tierSubject, 'fixture', 'cloud-tier');
 billingFixture.saveSubscription(tierSubject, {
   store: 'android',
   id: 'node-cloud-tier',
-  product: 'myself_md_cloud_10gb',
-  plan: 'cloud_10gb',
+  product: 'myself_md_cloud_100gb',
+  plan: 'cloud_100gb',
   period: 'yearly',
   status: 'grace',
   expiresAt: Date.now() + 86400000,
@@ -229,16 +228,26 @@ try {
   assert.equal(z.object({ unlocked: z.boolean() }).parse(migrated.value).unlocked, true);
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
   const unpaidToken = await token('unpaid', 'myselfmd-phone');
-  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_10gb' };
+  const purchaseInput = {
+    store: 'android',
+    proof: 'synthetic',
+    productId: 'myself_md_cloud_100gb',
+  };
   assert.equal((await request('/api/cloud/purchase-account', null)).status, 401);
   assert.equal((await request('/api/cloud/purchase-account', chatToken)).status, 403);
   assert.equal(
     (await request('/api/cloud/subscription', chatToken, 'POST', purchaseInput)).status,
     403,
   );
-  assert.equal(
-    (await request('/api/cloud/subscription', unpaidToken, 'POST', purchaseInput)).status,
-    402,
+  const invalidSubscription = await request(
+    '/api/cloud/subscription',
+    unpaidToken,
+    'POST',
+    purchaseInput,
+  );
+  assert.ok(
+    invalidSubscription.status >= 400 && invalidSubscription.status !== 402,
+    'No Lifetime prerequisite; invalid/unverifiable store proof still cannot grant access',
   );
   const purchaseAccount = z.object({ appAccountToken: z.string().uuid() });
   const accountId = purchaseAccount.parse(
@@ -262,10 +271,10 @@ try {
   const tierToken = await token('cloud-tier', 'myselfmd-phone');
   const tierStatus = z
     .object({
-      plan: z.literal('cloud_10gb'),
-      limitBytes: z.literal(10_000_000_000),
+      plan: z.literal('cloud_100gb'),
+      limitBytes: z.literal(100_000_000_000),
       subscription: z.object({ status: z.literal('grace') }),
-      plans: z.array(z.object({ id: z.string() })).length(2),
+      plans: z.array(z.object({ id: z.string() })).length(1),
       handoff: z.object({
         appLink: z.literal('myselfmd://cloud-storage'),
         requiresUser: z.literal(true),
@@ -273,10 +282,73 @@ try {
     })
     .parse((await request('/api/cloud/status', tierToken)).value);
   assert.equal(tierStatus.handoff.requiresUser, true);
+  const tierDashboard = await request(
+    '/api/dashboard',
+    await token('cloud-tier', 'myselfmd-dashboard'),
+  );
+  const dashboardTier = z
+    .object({
+      cloudStorage: z.object({
+        plan: z.literal('cloud_100gb'),
+        limitBytes: z.literal(100_000_000_000),
+      }),
+    })
+    .parse(tierDashboard.value);
+  assert.equal(dashboardTier.cloudStorage.limitBytes, tierStatus.limitBytes);
+  const cloudClient = new Client({ name: 'cloud-only-fixture', version: '1' });
+  await cloudClient.connect(
+    new StreamableHTTPClientTransport(new URL(origin + '/mcp'), {
+      requestInit: {
+        headers: { Authorization: `Bearer ${await token('cloud-tier', 'fixture-agent')}` },
+      },
+    }),
+  );
+  try {
+    const cloudResult = await cloudClient.callTool({ name: 'get_cloud_storage', arguments: {} });
+    const cloudOnly = z
+      .object({
+        plan: z.literal('cloud_100gb'),
+        limitBytes: z.literal(100_000_000_000),
+        appAccess: z.object({
+          unlocked: z.literal(true),
+          lifetime: z.literal(false),
+          accessUntil: z.number(),
+        }),
+        plans: z.array(z.object({ id: z.literal('cloud_100gb') })).length(1),
+      })
+      .parse(cloudResult.structuredContent);
+    assert.equal(cloudOnly.limitBytes, tierStatus.limitBytes);
+    const lifetimeResult = await cloudClient.callTool({
+      name: 'get_lifetime_access',
+      arguments: {},
+    });
+    z.object({
+      purchase: z.object({ status: z.literal('awaiting_user') }),
+      allowance: z.object({ unlocked: z.literal(true), lifetime: z.literal(false) }),
+    }).parse(lifetimeResult.structuredContent);
+  } finally {
+    await cloudClient.close();
+  }
+  for (let i = 0; i < 7; i++) {
+    // Each completed use verifies Cloud bypasses the shared five-use allowance.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Complete each use before reserving another.
+    const cloudReservation = await request('/api/billing', tierToken, 'POST', {
+      action: 'reserve',
+      id: `cloud-use-${i}`,
+    });
+    assert.equal(cloudReservation.status, 200);
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Settlement depends on this reservation.
+    const completion = await request('/api/billing', tierToken, 'POST', {
+      action: 'complete',
+      id: `cloud-use-${i}`,
+    });
+    assert.equal(completion.status, 200);
+  }
+
   const includedStatus = z.object({
     plan: z.literal('included'),
     lapse: z.null(),
-    plans: z.array(z.unknown()).length(2),
+    plans: z.array(z.unknown()).length(1),
   });
   includedStatus.parse((await request('/api/cloud/status', phoneToken)).value);
   const dashboardPage = await fetch(`${origin}/dashboard`);

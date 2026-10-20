@@ -1,5 +1,23 @@
 # Remote mobile updates
 
+## All Time Health store release — 20 October 2026
+
+All Time Health MCP support is live in Worker `2a8ef60b-696c-4f68-879e-f87fd2b3d88d` at 100% traffic. The scoped package preserves the concurrent single-Cloud-subscription release, other backend code, website assets, bindings, secrets and runtime settings. The exact combined candidate passed real workerd HTTP/MCP tests for owner review, lifecycle reports, account isolation, safe retries and a 1,000-day billing scope.
+
+iOS 1.0.0 build **19** is processed and available in the existing **Internal QA** and **Demo Beta** TestFlight groups. The standard canonical-main build included current uncommitted/untracked source, passed native artifact verification, and its embedded Hermes bundle contains the All Time export action and receipt journal. Apple delivery ID is `dde30597-6b6d-4ba5-ab45-28d75724c1c5`; IPA SHA-256 is `bee52b68ea5a0774a32eca8610fed7868989e2ffae3473efb6cbc1a9adc7925c`. Tester membership and App Store production releases are unchanged. [Install through TestFlight](https://testflight.apple.com/join/5GwaFaQD).
+
+Android store publication is in progress. Private build, upload, backend and distribution receipts are under `.local/all-time-health-release/`. Store availability does not establish installation or a full-history export on physical devices; those effects were not observed for this release.
+
+## One-year authentication sessions — 20 October 2026
+
+The server/web auth release is live at `https://myself.md` in Worker `a05fb28d-9b20-4ca6-8353-e45087f2afb9` at 100% traffic. The scoped artifact changes only the browser/refresh-token lifetimes in `identityOptions` and the dashboard session module; unrelated backend/assets, bindings, secrets, runtime and non-versioned settings were preserved. The exact candidate passed workerd/D1 identity, refresh, isolation and deletion checks. Live readback matched the Worker and dashboard bytes, and isolated fictional-reviewer checks passed a one-year cookie, silent phone/web PKCE, refresh rotation, authenticated account reads and unauthenticated denial.
+
+Current canonical local `main` at `7a07596a276148c2df8f32b7d29a02f58e44411d`, including pending application changes, was exported and published to **preview** on both platforms. This includes account-recovery/toast work already in the checkout. The compatible [iOS update](https://expo.dev/accounts/codybontecou/projects/myself-md/updates/17728e42-b678-4a69-a5e9-b0f06ec82d0c) uses runtime `63c36768f2b48353c7ea11f78e7b77f1bc616539`; the [Android update](https://expo.dev/accounts/codybontecou/projects/myself-md/updates/51f1efd6-7023-41fa-98cf-2666c5941b10) uses runtime `eb15c30029a779096d72a687a622df8807bae7dc`. Both match their preceding preview update runtimes. Native-loader responses selected the expected update IDs; downloaded Hermes bundles matched the current export and included the one-year inactivity handling.
+
+The first publication generated different fingerprints solely because the unrelated `verify:toast` package script was pending. Full fingerprint comparisons showed every native input unchanged. The same exported bundles were then published with only that tooling entry temporarily omitted from publication metadata, and `package.json` was restored byte-for-byte. No runtime override, native build, beta/production-channel update or store submission occurred. The initial groups remain available for their own generated runtimes. Private receipts, fingerprint comparisons and exact-byte verification are under `.local/auth-session-release/`.
+
+On a matching preview installation, open the app online to download, then cold-launch it again to apply. Handset download/application was not observed. Already-expired credentials still require a fresh sign-in; existing valid refresh tokens adopt the new rolling lifetime on rotation.
+
 ## Selected-folder fix on Google Play internal — 19 October 2026
 
 **Android 1.0.0 version code 18** is committed as `completed` on the existing internal track and installed in place through Google Play on Pixel 7. The AAB is the exact standard-runner artifact already tested locally, job `61f2b08d-5af5-4328-bc59-79ae9f8c3e15`, SHA-256 `9faf22b7f6ae0d63cfc3dd5fbe0500a5129278ce242616fcdd3090ebf1400704`, from canonical local main including its dirty/untracked source. Google checksum/readback, other tracks, tester resources and historical bundles passed preservation checks. The current commit policy required omitting `changesNotSentForReview`; `ERROR_IF_IN_REVIEW` remained set and no existing review was cancelled. No iOS, production-store, backend or OTA publication occurred.

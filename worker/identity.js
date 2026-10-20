@@ -99,7 +99,7 @@ export async function identityRequest(request, env) {
           : '<p class="intro">We could not complete sign-in. Start a fresh attempt, or return to the app or AI agent that opened sign-in.</p>';
     return page(
       title,
-      `${guidance}<a class="action-link primary" href="/login">Try sign-in again</a><nav class="sign-in-footer" aria-label="Other options"><a href="/">Back to myself.md</a></nav>`,
+      `${guidance}${error === 'state_mismatch' ? '<p class="decision-note">Close this window and start sign-in again in the app or AI agent that opened it.</p>' : '<a class="action-link primary" href="/login">Try sign-in again</a>'}<nav class="sign-in-footer" aria-label="Other options"><a href="/">Back to myself.md</a></nav>`,
       [],
       identityPageStyles,
     );

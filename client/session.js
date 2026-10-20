@@ -12,7 +12,7 @@ const key = 'myselfmd-session';
 const legacyKey = 'qr-connect-session';
 const inactiveSessions = new WeakSet();
 const provisionalSessions = new WeakSet();
-const idleTimeout = 30 * 86400000;
+const idleTimeout = 365 * 86400000;
 /** @type {Session|null} */
 let currentSession = null;
 let sessionRevision = 0;
@@ -342,6 +342,21 @@ export async function signIn(server, provider) {
     },
   });
   const result = await auth.promptAsync(discovery);
+  if (result.type === 'error') {
+    const code = result.error?.code ?? result.params.error;
+    throw new Error(
+      code === 'account_not_linked'
+        ? 'This sign-in method is not connected to your account. Use your original method, then open Connected logins to connect it.'
+        : code === 'account_already_linked_to_different_user'
+          ? 'This sign-in method belongs to another account. Sign in with the method connected to your original account.'
+          : code === 'state_mismatch' || code === 'state_not_found'
+            ? 'This sign-in attempt expired or was replaced. Please start again from the app.'
+            : code === 'access_denied'
+              ? 'Sign-in was cancelled.'
+              : 'Sign-in could not finish. Please start again from the app.',
+      { cause: result.error },
+    );
+  }
   if (result.type !== 'success' || !result.params.code || !auth.codeVerifier)
     throw new Error('Sign-in was cancelled or unsuccessful.');
   const token = await AuthSession.exchangeCodeAsync(
@@ -388,7 +403,9 @@ export async function reauthenticateSession(previous, provider) {
   if (currentSession !== previous)
     throw new Error('The account connection changed during sign-in. Try again.');
   if (next.owner !== previous.owner || next.server !== previous.server)
-    throw new Error('Sign in to the same account to keep this phone connected.');
+    throw new Error(
+      'This is a different account. If the original account was deleted, sign out before connecting this one. Saved phone data stays with its original account.',
+    );
   if (previous.deviceId && next.deviceId !== previous.deviceId)
     throw new Error('The connected phone is no longer registered. Review its connection first.');
   // This is a fresh OAuth lineage, not pairing with the old credentials.
@@ -400,7 +417,7 @@ export async function api(session, path, options) {
   activeSession(session);
   if (session.requiresSignIn) throw new Error('Sign in again to finish the myself.md upgrade.');
   if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout)
-    throw new Error('Your session expired after 30 days of inactivity. Please sign in again.');
+    throw new Error('Your session expired after 365 days of inactivity. Please sign in again.');
   if (session.expires < Date.now() + 30000) await refreshSession(session);
   const send = () =>
     request(

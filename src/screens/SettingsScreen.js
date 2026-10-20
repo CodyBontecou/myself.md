@@ -19,14 +19,22 @@ export default function SettingsScreen() {
       <Group>
         <Row
           testID="settings-lifetime-access"
-          title={billing.unlocked ? 'Lifetime access' : 'Unlock forever · $19.99'}
+          title={
+            billing.lifetime
+              ? 'Lifetime access'
+              : billing.unlocked
+                ? 'Cloud subscription access'
+                : 'Unlock forever · $19.99'
+          }
           subtitle={
             billing.unlocked
               ? 'Unlimited exports and queries'
               : `${billing.remaining} free exports remaining · one-time purchase`
           }
           {...(billing.unlocked ? { value: 'Unlocked' } : {})}
-          onPress={() => router.push('/unlock')}
+          onPress={() =>
+            router.push(billing.unlocked && !billing.lifetime ? '/cloud-storage' : '/unlock')
+          }
         />
       </Group>
       <CloudStorageUsage />

@@ -39,8 +39,18 @@ export function allowance() {
     ...exportAllowance(
       Math.max(Number(row?.used ?? 0), remote.used),
       Math.max(Number(row?.reserved ?? 0), remote.reserved),
-      previewLifetime || nativeUnlocked || remote.unlocked,
+      previewLifetime ||
+        nativeUnlocked ||
+        (remote.unlocked &&
+          (remote.lifetime ||
+            remote.accessUntil === null ||
+            remote.accessUntil === undefined ||
+            remote.accessUntil > Date.now())),
     ),
+    lifetime:
+      previewLifetime ||
+      nativeUnlocked ||
+      Boolean(remote.lifetime ?? (remote.unlocked && !remote.accessUntil)),
     promptVersion,
     previewLifetime,
   };
@@ -195,7 +205,13 @@ export async function clearNativePurchase() {
   const proof = await SecureStore.getItemAsync('lifetime-purchase-proof');
   if (proof) {
     await SecureStore.deleteItemAsync('lifetime-purchase-proof');
-    acceptAllowance({ ...remote, unlocked: Boolean(remote.complimentary) });
+    acceptAllowance({
+      ...remote,
+      unlocked:
+        Boolean(remote.complimentary) ||
+        Boolean(remote.accessUntil && remote.accessUntil > Date.now()),
+      lifetime: Boolean(remote.complimentary),
+    });
   }
   setNativeUnlocked(false);
 }

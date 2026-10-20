@@ -16,7 +16,7 @@ const realm = {
   displayName: 'myself.md',
   enabled: true,
   sslRequired: 'none',
-  offlineSessionIdleTimeout: 30 * 86400,
+  offlineSessionIdleTimeout: 365 * 86400,
   offlineSessionMaxLifespanEnabled: false,
   ...socialAuth,
   defaultDefaultClientScopes: ['profile', 'myselfmd'],

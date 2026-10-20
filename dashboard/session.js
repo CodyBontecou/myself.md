@@ -21,7 +21,7 @@ async function exchange(parameters) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: config.clientId, ...parameters }),
   });
-  if (!response.ok) {
+  if (response.status === 400 || response.status === 401) {
     reset();
   }
   tokens = /** @type {NonNullable<typeof tokens>} */ (await readJSONResponse(response));
@@ -31,9 +31,9 @@ async function exchange(parameters) {
   }
   expires = Date.now() + tokens.expires_in * 1000;
 }
-async function ensureToken() {
+async function ensureToken(force = false) {
   if (!tokens) throw new Error('Sign in to continue.');
-  if (expires > Date.now() + 30000) return;
+  if (!force && expires > Date.now() + 30000) return;
   if (!refreshing) {
     if (!tokens.refresh_token) {
       reset();
@@ -51,15 +51,23 @@ async function ensureToken() {
 /** @template T @param {string} path @param {string} [method] @param {unknown} [body] @returns {Promise<T>} */
 export async function api(path, method = 'GET', body) {
   await ensureToken();
-  const response = await fetch(path, {
-    method,
-    headers: {
-      Authorization: `Bearer ${tokens?.access_token}`,
-      'Content-Type': 'application/json',
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: 'no-store',
-  });
+  const rejectedToken = tokens?.access_token;
+  const send = () =>
+    fetch(path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${tokens?.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      cache: 'no-store',
+    });
+  let response = await send();
+  if (response.status === 401 && tokens?.refresh_token) {
+    await response.body?.cancel();
+    if (tokens.access_token === rejectedToken) await ensureToken(true);
+    response = await send();
+  }
   if (response.status === 401) reset();
   const data = /** @type {T} */ (await readJSONResponse(response));
   return data;
@@ -92,7 +100,7 @@ async function authorizationUrl() {
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
-    scope: 'openid profile email myselfmd',
+    scope: 'openid profile email myselfmd offline_access',
     redirect_uri: `${location.origin}/dashboard/callback`,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -159,7 +167,21 @@ export async function initializeSession() {
     location.assign(`${config.issuer}/reviewer-login${location.search}`);
     return false;
   }
-  if (location.pathname !== '/dashboard/callback') return false;
+  if (location.pathname !== '/dashboard/callback') {
+    if (hasSession() || new URLSearchParams(location.search).has('client_id')) return hasSession();
+    // Restore from the HttpOnly identity cookie after reload or reopening the browser.
+    // PKCE and state protect the fresh exchange; no tokens enter browser storage.
+    const identity = await fetch(`${config.issuer}/get-session`, { cache: 'no-store' });
+    // Legacy identity providers may not expose this optional cookie-session endpoint.
+    if (identity.status === 404) return false;
+    const saved = /** @type {{session?:unknown}|null} */ (await readJSONResponse(identity));
+    if (saved?.session) {
+      const url = await authorizationUrl();
+      url.searchParams.set('prompt', 'none');
+      location.assign(url);
+    }
+    return false;
+  }
   const query = new URLSearchParams(location.search),
     stored = sessionStorage.getItem('myselfmd-dashboard-login');
   sessionStorage.removeItem('myselfmd-dashboard-login');

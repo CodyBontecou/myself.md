@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 import { Checkbox } from './Terminal.js';
 import { Copy, Group, Icon, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
-import { scheduleState, setScheduleEnabled, exportNow } from './export-task.js';
+import { scheduleState, setScheduleEnabled, exportNow, cancelExports } from './export-task.js';
 import { saveDestinationCredential } from './destinations.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { formatNextExport, localCalendar } from './calendar.js';
@@ -40,6 +40,7 @@ function ProfileExportControls({
   const [bearer, setBearer] = useState('');
   const [now, setNow] = useState(() => new Date().toISOString());
   const [state, setState] = useState(() => scheduleState(session.deviceId, profile));
+  const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
   useEffect(() => {
@@ -82,9 +83,11 @@ function ProfileExportControls({
     } finally {
       running.current = false;
       setBusy(false);
+      setExporting(false);
     }
   }
-  function exportProfile() {
+  /** @param {boolean} [allTimeHealth] */
+  function exportProfile(allTimeHealth = false) {
     if (qaEnabled || disabled || running.current) {
       showToast({
         message: qaEnabled
@@ -96,6 +99,7 @@ function ProfileExportControls({
       });
       return;
     }
+    setExporting(true);
     const updateToast = showToast({
       message: `Exporting ${profile.name}`,
       detail: 'Preparing export…',
@@ -104,14 +108,19 @@ function ProfileExportControls({
     });
     void run(
       async () => {
-        const result = await exportNow(session, profile, (detail, progress) => {
-          updateToast({
-            detail: detail
-              .replace(/HK(?:Quantity|Category|Characteristic|Correlation)TypeIdentifier/g, '')
-              .replace(/([a-z])([A-Z])/g, '$1 $2'),
-            progress,
-          });
-        });
+        const result = await exportNow(
+          session,
+          profile,
+          (detail, progress) => {
+            updateToast({
+              detail: detail
+                .replace(/HK(?:Quantity|Category|Characteristic|Correlation)TypeIdentifier/g, '')
+                .replace(/([a-z])([A-Z])/g, '$1 $2'),
+              progress,
+            });
+          },
+          { allTimeHealth },
+        );
         updateToast({
           detail: result.failedSources
             ? `${result.failedSources} source failures · See export details`
@@ -125,6 +134,22 @@ function ProfileExportControls({
       },
       `Could not export ${profile.name}.`,
       (toast) => updateToast({ ...toast, detail: undefined, progress: undefined }),
+    );
+  }
+  function exportAllTimeHealth() {
+    const destination =
+      profile.export.destination === 'local'
+        ? 'this phone'
+        : profile.export.destination === 'cloud'
+          ? 'your cloud storage'
+          : new URL(profile.export.httpUrl ?? '').host;
+    Alert.alert(
+      'Export All Time Health?',
+      `Export the ${profile.selection.health.length} selected Health types in ${profile.name}, from the earliest readable record through today, to ${destination}. This uses the profile’s formats and file replacement settings and your export allowance. Existing files may be replaced. Keep the app open; a large history can take a long time. Health permissions still apply.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Export All Time', onPress: () => exportProfile(true) },
+      ],
     );
   }
   const cloudControls =
@@ -323,6 +348,15 @@ function ProfileExportControls({
               </Copy>
             </Pressable>
           )}
+          {exporting && (
+            <ProfileQuickAction
+              testID={`profile-export-cancel-${profile.id}`}
+              label="Cancel"
+              icon="close-outline"
+              disabled={false}
+              onPress={cancelExports}
+            />
+          )}
           <ProfileQuickAction
             testID={`profile-export-${profile.id}`}
             label={busy ? 'Exporting…' : 'Export'}
@@ -331,8 +365,8 @@ function ProfileExportControls({
             busy={busy}
             roomy={roomy}
             compact={compact}
-            onPress={exportProfile}
-            onDisabledPress={exportProfile}
+            onPress={() => exportProfile()}
+            onDisabledPress={() => exportProfile()}
           />
         </View>
       </View>
@@ -352,9 +386,22 @@ function ProfileExportControls({
           testID="export-now"
           title={busy ? 'Exporting…' : 'Export profile now'}
           disabled={disabled || busy}
-          onPress={exportProfile}
-          onDisabledPress={exportProfile}
+          onPress={() => exportProfile()}
+          onDisabledPress={() => exportProfile()}
         />
+        {profile.selection.health.length > 0 && (
+          <Row
+            compact
+            testID="export-all-time-health"
+            title="Export All Time Health"
+            subtitle="Selected Health types · Earliest readable record through today"
+            disabled={disabled || busy}
+            onPress={exportAllTimeHealth}
+          />
+        )}
+        {exporting && (
+          <Row compact testID="export-cancel" title="Cancel export" onPress={cancelExports} />
+        )}
         {fileControls}
       </Group>
       {message || (!state.retryAt && state.message && state.message !== 'No exports yet.') ? (

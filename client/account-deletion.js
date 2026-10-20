@@ -138,6 +138,7 @@ export async function deleteLocalAccount(session) {
   db.withTransactionSync(() => {
     for (const [table, column, value] of [
       ['whoop_receipts', 'owner', session.owner],
+      ['health_export_receipts', 'owner', session.owner],
       ['records', 'owner', session.owner],
       ['records', 'owner', device],
       ['location_capture_receipts', 'owner', session.owner],

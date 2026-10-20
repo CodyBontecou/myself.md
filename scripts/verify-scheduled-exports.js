@@ -41,6 +41,7 @@ let historyStarts = 0;
 /** @type {Map<string,()=>Promise<number>>} */
 const backgroundTasks = new Map();
 const mocks = {
+  earliestHealthDate: async () => null,
   phoneDatabase: () => ({
     execSync() {},
     /** @param {string} _sql @param {string} device @param {string} id */

@@ -388,11 +388,11 @@ function SummaryPills({ workspace, view, compact = false }) {
               label: storage
                 ? storage.eligible
                   ? cloudUsageLabel(storage)
-                  : 'Lifetime access required'
+                  : 'No active Cloud subscription'
                 : 'Cloud storage unavailable',
               detail: storage
                 ? cloudStorageSummary(storage)
-                : 'Sign in to the app and purchase or restore Lifetime access for included cloud storage',
+                : 'Sign in to the app to subscribe to Cloud or restore access',
               icon: IconCloud,
             },
           ];

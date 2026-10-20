@@ -1,5 +1,9 @@
 # Beta release preparation
 
+## All Time Health exports — 20 October 2026
+
+The backend is deployed and iOS 1.0.0 build **19** is available in the existing Internal QA and Demo Beta TestFlight groups, with owner-reviewed All Time Health exports through full MCP. Android publication and release evidence are tracked in [the store release record](mobile-updates.md#all-time-health-store-release--20-october-2026). This release has artifact and isolated lifecycle coverage; physical-device full-history completion was not observed.
+
 ## Pixel Health follow-up — partial verification, 19 October 2026
 
 The Play-installed build 18 exported one actual Health Connect SleepSession with 28 stages in both JSON and JSONL over seven completed days. Counts and canonical hashes matched after cold restart; manifests were complete with no failures. Heart rate and workouts returned zero, and the native source inventory contains neither type, so their actual-record gates remain open. The owner's approved disposable payment-QA connection avoided production's correct sandbox-receipt rejection without changing entitlement verification. No purchase, build, release or source-record creation occurred. Temporary Health permissions and local export copies were removed. Original production reconnection is verified with matching baseline profile configurations recreated in the new registration, private and unscheduled. The temporary restoration client is blocked. Old device partitions remain preserved, including the initial production test configuration, which ordinary UI cannot select for cleanup; it has no remaining export files or Health access. See [bounded results and cleanup state](argent-qa.md#google-play-18-sleep-heart-rate-and-workout-exports--partial-verification-19-october-2026).

@@ -208,7 +208,7 @@ function usePhoneState() {
             setSession(null);
             setError(
               errorMessage(
-                'Your session expired after 30 days of inactivity. Please sign in again.',
+                'Your session expired after 365 days of inactivity. Please sign in again.',
               ),
             );
           }
@@ -451,7 +451,9 @@ function usePhoneState() {
       const next = await reauthenticateSession(session, provider);
       clearAccountAllowance();
       setSession(next);
-      await syncBilling(next);
+      await syncBilling(next).catch((e) => {
+        setError(`Signed in. Purchase access could not be checked: ${errorMessage(e)}`);
+      });
     },
     /** @param {'apple'|'github'|'google'} provider */
     signInAccount: async (provider) => {
@@ -462,7 +464,9 @@ function usePhoneState() {
       await saveSession(next);
       clearAccountAllowance();
       setSession(next);
-      await syncBilling(next);
+      await syncBilling(next).catch((e) => {
+        setError(`Signed in. Purchase access could not be checked: ${errorMessage(e)}`);
+      });
     },
     /** @param {'apple'|'github'|'google'} provider */
     signIn: async (provider) => {

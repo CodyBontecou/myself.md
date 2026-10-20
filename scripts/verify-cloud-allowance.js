@@ -76,7 +76,7 @@ function allow(subject) {
 try {
   allow('free');
   assert.equal(cloud.storageStatus('free').limitBytes, 0);
-  assert.throws(() => begin('free', '2026-10-01'), /Verified lifetime/);
+  assert.throws(() => begin('free', '2026-10-01'), /verified Cloud/);
   billing.unlock('paid', { store: 'ios', id: 'fixture-purchase', proof: 'fixture' });
   billing.grant('grant', 'fixture', 'complimentary');
   for (const subject of ['paid', 'grant']) {
@@ -124,7 +124,7 @@ try {
   beforePut = () => billing.revoke('paid');
   await assert.rejects(
     cloud.commit('paid', 'device', profile.id, revoked, bytes),
-    /Verified lifetime/,
+    /verified Cloud/,
   );
   beforePut = null;
   assert.equal(cloud.storageStatus('paid').eligible, false);
@@ -292,15 +292,67 @@ async function archive(subject, day, size, created) {
   return item.id;
 }
 try {
-  purchase('unpaid', 'free');
-  await assert.rejects(
-    lifecycle.subscribe('free', {
-      store: 'android',
-      proof: 'unpaid',
-      productId: 'myself_md_cloud_10gb',
-    }),
-    (error) => error instanceof PairingError && error.status === 402,
+  const independent = purchase('unpaid', 'free', {
+    plan: 'cloud_100gb',
+    product: 'myself_md_cloud_100gb',
+  });
+  const independentStatus = await lifecycle.subscribe('free', {
+    store: 'android',
+    proof: independent.id,
+    productId: independent.product,
+  });
+  assert.equal(independentStatus.limitBytes, 100_000_000_000);
+  assert.equal(independentStatus.appAccess.unlocked, true);
+  assert.equal(independentStatus.appAccess.lifetime, false);
+  assert.equal(subscriptionsBilling.cloudEntitlement('free').lifetime, false);
+  for (let i = 0; i < 7; i++) {
+    subscriptionsBilling.reserve('free', `subscription-use-${i}`);
+    subscriptionsBilling.complete('free', `subscription-use-${i}`);
+  }
+  const independentFile = await archive('free', '2026-10-01', 50_000_000_000, clock);
+  await lifecycle.lifetimeRevoked('free');
+  assert.equal(
+    subscriptionCloud.row('free', independentFile).size,
+    50_000_000_000,
+    'Lifetime revocation cannot delete an active subscriber archive',
   );
+  values.set(independent.id, { ...independent, status: 'expired' });
+  await lifecycle.notification('free', {
+    kind: 'subscription',
+    store: 'android',
+    id: independent.id,
+    accountToken: null,
+    linkedId: null,
+    revoked: false,
+  });
+  const expiredIndependent = await lifecycle.status('free');
+  assert.equal(expiredIndependent.limitBytes, 0);
+  assert.equal(expiredIndependent.appAccess.unlocked, false);
+  assert.equal(expiredIndependent.lapse?.targetBytes, 0);
+  assert.equal((await subscriptionCloud.page('free', independentFile, 0, 50)).records.length, 1);
+  assert.throws(() => subscriptionsBilling.reserve('free', 'after-expiry'), /subscribe to Cloud/);
+  assert.throws(
+    () =>
+      subscriptionCloud.begin('free', 'device', profile.id, {
+        profile,
+        day: '2026-10-02',
+        format: 'jsonl',
+        manifest: { profileId: profile.id, recordCount: 1 },
+      }),
+    /verified Cloud/,
+  );
+  const independentClock = clock;
+  clock += 30 * 86400000;
+  await lifecycle.maintain('free');
+  assert.equal(
+    subscriptionCloud.usage('free').length,
+    0,
+    'Cloud-only lapse deletes to zero after 30 days',
+  );
+  clock = independentClock;
+  emails.length = 0;
+  pushes.length = 0;
+  alarms.length = 0;
   for (const subject of ['subscriber', 'other', 'legacy'])
     subscriptionsBilling.grant(subject, 'fixture', subject);
   const firstSubscription = purchase('first', 'subscriber');
@@ -595,7 +647,7 @@ try {
   assert.equal(objects.has(retryKey), false);
   assert.equal(subscriptionsBilling.revocation('retry-refund'), null);
 
-  // A purchase finishing during refund deletion must wait, then fail its Lifetime check.
+  // A purchase finishing during refund deletion waits, then independently activates Cloud.
   subscriptionsBilling.unlock('racing', {
     store: 'ios',
     id: 'racing-lifetime',
@@ -633,10 +685,7 @@ try {
   });
   releaseDeletion();
   await refund;
-  await assert.rejects(
-    concurrentPurchase,
-    (error) => error instanceof PairingError && error.status === 402,
-  );
+  assert.equal((await concurrentPurchase).plan, 'cloud_10gb');
   subscriptionCloud.delete = normalDelete;
   for (const plan of /** @type {const} */ (['cloud_10gb', 'cloud_1tb'])) {
     const tier = cloudPlan(plan);

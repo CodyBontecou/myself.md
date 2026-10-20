@@ -24,7 +24,7 @@
         "com.apple.developer.applesignin": ["Default"]
       },
       "appleTeamId": "67KC823C9A",
-      "buildNumber": "17"
+      "buildNumber": "19"
     },
     "android": {
       "adaptiveIcon": {
@@ -72,9 +72,10 @@
         "android.permission.health.READ_OVULATION_TEST",
         "android.permission.health.READ_TOTAL_CALORIES_BURNED",
         "android.permission.health.READ_OXYGEN_SATURATION",
-        "android.permission.health.READ_POWER"
+        "android.permission.health.READ_POWER",
+        "android.permission.health.READ_HEALTH_DATA_HISTORY"
       ],
-      "versionCode": 18,
+      "versionCode": 19,
       "googleServicesFile": "./google-services.json"
     },
     "web": {

@@ -461,20 +461,21 @@ export function createApplication(
       async () => {
         await refreshEntitlement(subject);
         const allowance = billing.snapshot(subject);
+        const lifetime = allowance.lifetime ?? allowance.unlocked;
         const result = {
           allowance,
           checkedAt: Date.now(),
           scope: 'authenticated-account',
           purchase: {
             ...lifetimePurchaseGuide(),
-            status: allowance.unlocked ? 'completed' : 'awaiting_user',
-            requiresUser: !allowance.unlocked,
+            status: lifetime ? 'completed' : 'awaiting_user',
+            requiresUser: !lifetime,
             verificationTool: 'get_lifetime_access',
           },
           handoff: {
-            status: allowance.unlocked ? 'completed' : 'awaiting_user',
+            status: lifetime ? 'completed' : 'awaiting_user',
             ...existingCustomerGuide(),
-            requiresUser: !allowance.unlocked,
+            requiresUser: !lifetime,
             verificationTool: 'get_lifetime_access',
             instructions:
               'Use the same account as this MCP connection when claiming and signing into myself.md.',

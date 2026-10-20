@@ -174,7 +174,22 @@ export class Account extends DurableObject {
           : request,
       (/** @type {import('../server/whoop-requests.js').WhoopRequest} */ request) => request,
     );
+    const healthExports = new DurableMap(
+      this.db,
+      this.cloud,
+      'health-exports',
+      (/** @type {import('../server/health-export.js').HealthExport} */ request) =>
+        request.status === 'running'
+          ? {
+              ...request,
+              status: /** @type {const} */ ('failed'),
+              error: /** @type {const} */ ('interrupted'),
+            }
+          : request,
+      (/** @type {import('../server/health-export.js').HealthExport} */ request) => request,
+    );
     this.data = createDataService({
+      healthExports,
       whoopRequests,
       cloud: this.cloud,
       jobs,

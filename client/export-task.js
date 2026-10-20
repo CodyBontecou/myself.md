@@ -1,3 +1,4 @@
+import { earliestHealthDate } from './health-history.js';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Alert, Platform } from 'react-native';
@@ -334,8 +335,8 @@ export async function stopAccountExports() {
   }
   throw new Error('An export is still stopping. Retry account cleanup shortly.');
 }
-/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress */
-export async function exportNow(session, profile, progress) {
+/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{allTimeHealth?:boolean,requestId?:string,check?:()=>Promise<void>}} [options] */
+export async function exportNow(session, profile, progress, options = {}) {
   if (running) throw new Error('An export is already running.');
   running = true;
   const epoch = generation;
@@ -349,64 +350,143 @@ export async function exportNow(session, profile, progress) {
   const valid = () =>
     epoch === generation &&
     loadExportContext()?.deviceId === session.deviceId &&
+    loadExportContext()?.owner === session.owner &&
     loadProfiles(session.deviceId)?.profiles.some(
-      (p) => p.id === profile.id && fingerprint(p) === fingerprint(profile),
+      (p) => p.id === profile.id && fingerprint(p) === fingerprint(original),
     ) === true;
   let historyId = '';
+  let billingId = '';
   let produced = false;
-  try {
-    await requireCloudAuthorization(session, profile);
+  let recordCount = 0;
+  let batches = 1;
+  const original = profile;
+  const check = async () => {
     if (!valid()) throw new Error('Export cancelled: profile changed.');
-    historyId = beginExport(session, profile, 'manual', {
-      start: localCalendar.instant(dates[0] ?? day, 0, 0),
-      end: profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0),
-    });
+    await options.check?.();
+    if (!valid()) throw new Error('Export cancelled: profile changed.');
+  };
+  try {
+    await check();
+    await requireCloudAuthorization(session, profile);
+    if (options.allTimeHealth) {
+      if (!profile.selection.health.length) throw new Error('Select at least one Health type.');
+      progress('Finding earliest readable Health data…', 0);
+      const start = await earliestHealthDate(session.owner, profile.selection.health, stamp, check);
+      dates.length = 0;
+      for (let d = start ? localCalendar.day(start) : day; d <= day; d = addDays(d, 1)) {
+        if (dates.length >= 100000)
+          throw new Error('Health history exceeds the supported calendar range.');
+        dates.push(d);
+      }
+      profile = {
+        ...profile,
+        selection: { health: profile.selection.health, time: [], location: [] },
+      };
+    }
+    await check();
+    historyId = beginExport(
+      session,
+      profile,
+      'manual',
+      {
+        start: localCalendar.instant(dates[0] ?? day, 0, 0),
+        end: options.allTimeHealth
+          ? dates[30]
+            ? localCalendar.instant(dates[30], 0, 0)
+            : stamp
+          : profile.export.includeToday
+            ? stamp
+            : localCalendar.instant(day, 0, 0),
+      },
+      options.requestId,
+    );
+    billingId = historyId;
     progress('Preparing export…', 0);
-    await reserveExport(session, historyId, {
+    await reserveExport(session, billingId, {
       profileId: profile.id,
       days: dates,
       formats: deliveredFormats(profile.export),
     });
     state.files = [];
     let failedSources = 0;
-    for (const d of dates) {
+    for (const [index, d] of dates.entries()) {
+      // Keep history events bounded even for decades of daily files.
+      if (options.allTimeHealth && index > 0 && index % 30 === 0) {
+        finishExport(session, historyId, 'complete');
+        state.files = []; // Share controls show the final batch; all files remain in the destination.
+        historyId = beginExport(
+          session,
+          profile,
+          'manual',
+          {
+            start: localCalendar.instant(d, 0, 0),
+            end: dates[index + 30] ? localCalendar.instant(dates[index + 30] ?? day, 0, 0) : stamp,
+          },
+          `${billingId}-part-${++batches}`,
+        );
+      }
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Revalidate each daily effect.
+      await check();
       // Daily output must be written sequentially.
       // oxlint-disable-next-line eslint/no-await-in-loop
       const result = await exportProfileDay(
         session,
-        profile,
+        options.allTimeHealth && d !== day
+          ? {
+              ...profile,
+              selection: {
+                ...profile.selection,
+                health: profile.selection.health.filter(
+                  (key) =>
+                    !key.startsWith('native:HKCharacteristicTypeIdentifier') &&
+                    key !== 'native:whoop.body',
+                ),
+              },
+            }
+          : profile,
         {
           day: d,
           start: localCalendar.instant(d, 0, 0),
           end: d === day ? stamp : localCalendar.instant(addDays(d, 1), 0, 0),
         },
         valid,
-        (message) => progress(message, Math.floor((dates.indexOf(d) / dates.length) * 100)),
+        (message) => progress(message, Math.floor((index / dates.length) * 100)),
         (artifact) => {
           produced = true;
           recordArtifact(session, historyId, artifact);
         },
-        historyId,
+        billingId,
+        check,
       );
+      recordCount += result.count;
       state.files.push(...result.files);
       failedSources += result.failedSources;
-      progress(
-        `Saved ${d}`,
-        Math.min(99, Math.floor(((dates.indexOf(d) + 1) / dates.length) * 100)),
-      );
+      progress(`Saved ${d}`, Math.min(99, Math.floor(((index + 1) / dates.length) * 100)));
     }
     state.message = `Exported ${dates.length} days.${failedSources ? ` Partial export: ${failedSources} source failures across these days. See file metadata for details.` : ''}`;
     if (!valid()) throw new Error('Export cancelled: profile changed.');
-    const latest = scheduleState(session.deviceId, profile);
+    const latest = scheduleState(session.deviceId, original);
     latest.files = state.files;
     latest.message = state.message;
     store(session.deviceId, profile.id, latest);
     progress('Finishing export…', 99);
-    await settleExport(session, historyId, true);
+    await check();
+    await settleExport(session, billingId, true);
     finishExport(session, historyId, 'complete');
-    return { days: dates.length, failedSources };
+    return {
+      days: dates.length,
+      failedSources,
+      recordCount,
+      historyId: billingId,
+      batches,
+      start: localCalendar.instant(dates[0] ?? day, 0, 0),
+      end:
+        options.allTimeHealth || profile.export.includeToday
+          ? stamp
+          : localCalendar.instant(day, 0, 0),
+    };
   } catch (error) {
-    if (historyId) await settleExport(session, historyId, produced).catch(() => {});
+    if (billingId) await settleExport(session, billingId, produced).catch(() => {});
     if (historyId)
       finishExport(
         session,

@@ -5,7 +5,7 @@ import { cloudPlan } from './cloud-plans.js';
 /** For lapse reminders `deleteAt` is the scheduled deletion and `bytesToDelete` the expected amount.
  * For `lapse-deleted` and `lifetime-revoked-deleted` they are when deletion ran and the bytes actually deleted.
  * `plan` is the ended or still-billed paid tier ID, when known.
- * @typedef {{deleteAt:number|null,bytesToDelete:number,plan:string|null}} CloudNoticeContext */
+ * @typedef {{deleteAt:number|null,bytesToDelete:number,plan:string|null,targetBytes?:number}} CloudNoticeContext */
 /** Push (`title`, `body`) and email copy for one cloud storage service notice.
  * @typedef {{title:string,body:string,emailSubject:string,emailText:string,emailHtml:string}} CloudNotice */
 /** @typedef {string|{list:string[]}} Block */
@@ -17,7 +17,6 @@ const termsUrl = 'https://myself.md/terms';
 const appleSubscriptions = 'https://apps.apple.com/account/subscriptions';
 const googleSubscriptions =
   'https://play.google.com/store/account/subscriptions?package=com.myself.md';
-const included = `${lifetimeCloudBytes / 1_000_000} MB`;
 const months = [
   'January',
   'February',
@@ -123,7 +122,11 @@ function notice(subject, blocks, title, body) {
 
 /** Plain-language push and email copy for paid-storage lapse reminders and deletion confirmations. Pure.
  * @param {CloudNoticeKind} kind @param {CloudNoticeContext} context @returns {CloudNotice} */
-export function cloudNotice(kind, { deleteAt, bytesToDelete, plan }) {
+export function cloudNotice(
+  kind,
+  { deleteAt, bytesToDelete, plan, targetBytes = lifetimeCloudBytes },
+) {
+  const included = `${targetBytes / 1_000_000} MB`;
   const date = utcDate(deleteAt);
   const amount = megabytes(bytesToDelete);
   if (kind === 'lapse-0' || kind === 'lapse-23' || kind === 'lapse-29') {
@@ -133,8 +136,8 @@ export function cloudNotice(kind, { deleteAt, bytesToDelete, plan }) {
       : `in ${reminder.daysLeft} ${reminder.daysLeft === 1 ? 'day' : 'days'}`;
     const ended =
       kind === 'lapse-0'
-        ? `Your ${planName(plan)} for myself.md has ended. Lifetime access still includes ${included} of cloud storage, and your cloud exports use more than that.`
-        : `Your ${planName(plan)} for myself.md ended, and your cloud exports still use more than the ${included} included with Lifetime access.`;
+        ? `Your ${planName(plan)} for myself.md has ended. Your remaining cloud allowance is ${included}, and your cloud exports use more than that.`
+        : `Your ${planName(plan)} for myself.md ended, and your cloud exports still use more than the ${included} remaining allowance.`;
     return notice(
       `${reminder.subject}: cloud exports will be deleted ${when}`,
       [
@@ -158,23 +161,23 @@ export function cloudNotice(kind, { deleteAt, bytesToDelete, plan }) {
     return notice(
       'We deleted your oldest cloud exports',
       [
-        `Your ${planName(plan)} for myself.md ended 30 days ago and your cloud exports used more than the ${included} included with Lifetime access, so we deleted your oldest cloud exports${on}: ${amount} in total.`,
+        `Your ${planName(plan)} for myself.md ended 30 days ago and your cloud exports used more than the ${included} remaining allowance, so we deleted your oldest cloud exports${on}: ${amount} in total.`,
         `Your remaining cloud exports fit within ${included}. Deleted exports cannot be recovered. Data on your phone was not affected.`,
         `If you need more space, you can subscribe again on the Cloud storage screen in the myself.md app (on your phone, ${appLink} opens it). You can download or delete your remaining exports at ${dashboardUrl}.`,
       ],
       'Oldest cloud exports deleted',
-      `We deleted ${amount} of your oldest cloud exports so your storage fits the included ${included}.`,
+      `We deleted ${amount} of your oldest cloud exports so your storage fits the remaining ${included} allowance.`,
     );
   }
   const on = date ? ` on ${date} (UTC)` : '';
   const label = cloudPlan(plan)?.label;
   const subscription = label
-    ? `Your ${label} cloud storage subscription does not give you cloud storage without Lifetime access, and we cannot cancel it for you. Cancel it in your store account so you are not charged again:`
-    : 'If you have a myself.md cloud storage subscription, it does not give you cloud storage without Lifetime access, and we cannot cancel it for you. Cancel it in your store account so you are not charged again:';
+    ? `Your ${label} cloud storage subscription is not active. We cannot cancel a store subscription for you. Review it in your store account:`
+    : 'If you have a myself.md cloud storage subscription, it is not active. We cannot cancel a store subscription for you. Review it in your store account:';
   return notice(
     'Your cloud exports were deleted after a Lifetime refund or revocation',
     [
-      `Your myself.md Lifetime purchase was refunded or revoked by the App Store or Google Play. Cloud storage requires Lifetime access, so we deleted all of your cloud exports${on}: ${amount} in total. Deleted exports cannot be recovered. Data on your phone was not affected.`,
+      `Your myself.md Lifetime purchase was refunded or revoked by the App Store or Google Play. No active Cloud subscription remains, so we deleted all of your cloud exports${on}: ${amount} in total. Deleted exports cannot be recovered. Data on your phone was not affected.`,
       subscription,
       { list: [`App Store: ${appleSubscriptions}`, `Google Play: ${googleSubscriptions}`] },
       `Refunds for store purchases are handled by Apple or Google. If you think this is a mistake, write to ${supportEmail}.`,

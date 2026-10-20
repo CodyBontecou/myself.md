@@ -63,7 +63,7 @@ async function renewCredential(session, profileId, credential) {
       deviceId: session.deviceId,
       profileId,
       token: credential.token,
-      expiresAt: (session.lastActiveAt ?? Date.now()) + 30 * 86400000,
+      expiresAt: (session.lastActiveAt ?? Date.now()) + 365 * 86400000,
     }),
   });
 }

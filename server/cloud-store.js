@@ -143,7 +143,7 @@ export class CloudStore {
     if (!status.eligible)
       throw new PairingError(
         402,
-        'Verified lifetime access is required for cloud storage. Sign in and purchase or restore lifetime access in the app.',
+        'A verified Cloud subscription or included Lifetime allowance is required for cloud storage. Sign in and subscribe or restore in the app.',
       );
     return status;
   }

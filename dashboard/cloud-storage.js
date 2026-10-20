@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ArrowUpRight, Cloud, Smartphone, X } from 'lucide-react';
-import { lifetimePurchaseGuide } from '../core/billing.js';
 import { cloudUsageLabel, lifetimeCloudBytes } from '../core/cloud-allowance.js';
 import { cloudPlan, cloudPlans } from '../core/cloud-plans.js';
 import { Button } from './components/ui/button.js';
@@ -74,14 +73,12 @@ export function lapseLabel(storage) {
  * @param {CloudStorageStatus} storage */
 export function cloudStorageSummary(storage) {
   if (!storage.eligible)
-    return 'Sign in to the app and purchase or restore Lifetime access for included cloud storage; paid plans also require Lifetime';
+    return 'Subscribe to myself.md Cloud in the phone app for 100 GB and app access; no Lifetime purchase required';
   return [
     cloudPlanName(storage),
     storage.subscription && subscriptionLabel(storage.subscription),
     lapseLabel(storage) ??
-      (storage.overLimit
-        ? 'Over capacity; uploads are paused. Delete files or choose a larger plan in the app'
-        : null),
+      (storage.overLimit ? 'Over capacity; uploads are paused. Delete files to make room' : null),
     'encrypted at rest',
   ]
     .filter(Boolean)
@@ -164,15 +161,15 @@ function CloudStorageDetails({ storage }) {
       <Card>
         <CardHeader className="pr-28">
           <CardTitle>Cloud storage</CardTitle>
-          <CardDescription>Lifetime access required</CardDescription>
+          <CardDescription>100 GB · $7.99/month or $79.99/year</CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Lifetime access includes {megabytes(lifetimeCloudBytes)} of cloud storage. Larger plans
-          also require Lifetime. {lifetimePurchaseGuide().accountInstructions}
+          Subscribe in the signed-in phone app. Cloud includes app access while subscribed; no
+          Lifetime purchase is required.
         </CardContent>
         <CardFooter>
           <Button asChild size="sm">
-            <a href={lifetimePurchaseGuide().appLink}>Unlock Lifetime in the app</a>
+            <a href={handoff.appLink}>Subscribe to Cloud in the app</a>
           </Button>
         </CardFooter>
       </Card>
@@ -220,7 +217,7 @@ function CloudStorageDetails({ storage }) {
           )
         )}
         <div className="space-y-2.5">
-          <p className="text-xs font-medium text-muted-foreground">Need more room?</p>
+          <p className="text-xs font-medium text-muted-foreground">myself.md Cloud</p>
           <div className="grid gap-3 sm:grid-cols-2">
             {plans.map((plan) => (
               <div key={plan.label} className="min-w-0 rounded-xl border bg-muted/20 px-4 py-3">
@@ -238,7 +235,7 @@ function CloudStorageDetails({ storage }) {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            US prices · Auto-renewing · Lifetime required
+            US prices · Auto-renewing · No Lifetime purchase required
           </p>
         </div>
       </CardContent>
@@ -247,7 +244,9 @@ function CloudStorageDetails({ storage }) {
           <Button asChild size="sm">
             <a href={handoff.appLink}>
               <Smartphone aria-hidden="true" />
-              {storage.plan === 'included' ? 'Choose a plan in the app' : 'Change plan in the app'}
+              {storage.plan === 'included'
+                ? 'Subscribe to Cloud in the app'
+                : 'Manage Cloud in the app'}
               <ArrowUpRight aria-hidden="true" />
             </a>
           </Button>

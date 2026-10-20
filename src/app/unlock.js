@@ -74,6 +74,16 @@ export default function UnlockScreen() {
         disabled={busy || !price}
         onPress={() => void run(buyLifetime)}
       />
+      <Button
+        testID="unlock-cloud-subscription"
+        label="Explore Cloud · 100 GB"
+        secondary
+        disabled={busy}
+        onPress={() => router.push('/cloud-storage')}
+      />
+      <Copy variant="caption" muted>
+        Or subscribe to Cloud for app access and 100 GB. No Lifetime purchase required.
+      </Copy>
       <View style={styles.recovery}>
         <Copy variant="caption" muted>
           {guide.title}

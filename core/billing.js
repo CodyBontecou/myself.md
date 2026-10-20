@@ -8,7 +8,7 @@ export function lifetimePurchaseGuide() {
     instructions:
       'Open the installed iOS or Android app, review the localized store price, then confirm the one-time Lifetime purchase. Use Restore purchases for a purchase already made with this store account.',
     accountInstructions:
-      'For cloud access, sign in to the app with the same account as your dashboard or MCP connection, then check lifetime access.',
+      'For included Lifetime storage, sign in to the app with the same account as your dashboard or MCP connection, then check lifetime access.',
     availability:
       'Requires an installed app. Public App Store and Google Play downloads are coming soon. TestFlight sandbox purchases do not unlock production access.',
   };
@@ -81,7 +81,7 @@ export function existingCustomerGuide() {
     requiresUser: true,
   };
 }
-/** @typedef {{used:number,reserved:number,unlocked:boolean,remaining:number,complimentary?:boolean}} ExportAllowance */
+/** @typedef {{used:number,reserved:number,unlocked:boolean,remaining:number,complimentary?:boolean,lifetime?:boolean,accessUntil?:number|null}} ExportAllowance */
 /** @param {number} used @param {number} reserved @param {boolean} unlocked @returns {ExportAllowance} */
 export function exportAllowance(used, reserved, unlocked) {
   return { used, reserved, unlocked, remaining: Math.max(0, freeExports - used - reserved) };

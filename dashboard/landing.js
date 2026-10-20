@@ -10,6 +10,8 @@ import {
   IconArrowRight,
   IconBrandGithub,
   IconBrandDiscord,
+  IconBrandAppleFilled,
+  IconBrandGooglePlay,
 } from '@tabler/icons-react';
 import { publicFAQs, agentSetupPrompt, homepageOverview } from '../core/public-site.js';
 import { privacyPolicy } from '../core/privacy.js';
@@ -244,6 +246,27 @@ function ShowcaseVideo({ clip, title, description }) {
     </figure>
   );
 }
+function InstallButtons() {
+  return (
+    <div className="install-buttons" role="group" aria-label="App downloads coming soon">
+      <button className="install-badge" type="button" disabled>
+        <IconBrandAppleFilled size={30} aria-hidden="true" />
+        <span>
+          <span className="install-badge-caption">Coming soon on the</span>
+          <span className="install-badge-store">App Store</span>
+        </span>
+      </button>
+      <button className="install-badge" type="button" disabled>
+        <IconBrandGooglePlay size={30} aria-hidden="true" />
+        <span>
+          <span className="install-badge-caption">Coming soon on</span>
+          <span className="install-badge-store">Google Play</span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function AgentPrompt() {
   const [status, setStatus] = useState('');
   const [manual, setManual] = useState(false);
@@ -335,6 +358,7 @@ export function Landing() {
               <br className="mobile-break" /> Now with your context.
             </h1>
             <HeroContext />
+            <InstallButtons />
           </div>
           <div className="story-picker" role="group" aria-label="Explore example workflows">
             {stories.map((item, index) => (
@@ -579,6 +603,7 @@ export function Landing() {
             <br />a little more yours.
           </h2>
           <p>Choose your data. Connect your agent.</p>
+          <InstallButtons />
           <div>
             <a className="closing-secondary" href="/docs">
               Connect your agent <IconArrowRight size={15} />

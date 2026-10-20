@@ -15,9 +15,8 @@ import {
 } from '../src/components/ui.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
 import { showToast } from '../src/components/Toast.js';
-import { cloudUsageLabel, lifetimeCloudBytes } from '../core/cloud-allowance.js';
+import { cloudUsageLabel } from '../core/cloud-allowance.js';
 import { cloudPlan, cloudPlans } from '../core/cloud-plans.js';
-import { useBilling } from './BillingPaywalls.js';
 import { CloudStatusNotices, useCloudStatus } from './CloudStorageUsage.js';
 import { enableCloudReminders } from './export-task.js';
 import { qaEnabled } from './qa-runtime.js';
@@ -46,7 +45,6 @@ const nativeStore = Platform.OS === 'ios' || Platform.OS === 'android';
 export default function CloudStoragePlans() {
   const { colors } = useTheme();
   const status = useCloudStatus();
-  const billing = useBilling();
   const value = status.value;
   const [offers, setOffers] = useState(() => (qaEnabled ? qaCloudOffers(deviceStore) : []));
   const [offersError, setOffersError] = useState(
@@ -63,9 +61,6 @@ export default function CloudStoragePlans() {
       : null;
   const [period, setPeriod] = useState(
     /** @type {import('../core/cloud-plans.js').CloudPeriod} */ (current?.period ?? 'monthly'),
-  );
-  const [selected, setSelected] = useState(
-    /** @type {import('../core/cloud-plans.js').CloudPlanId|null} */ (null),
   );
   const [busy, setBusy] = useState(/** @type {''|'purchase'|'restore'|'manage'} */ (''));
   const [message, setMessage] = useState('');
@@ -85,15 +80,14 @@ export default function CloudStoragePlans() {
     };
   }, []);
 
-  const chosen = selected ?? (live?.plan === 'cloud_10gb' ? 'cloud_1tb' : 'cloud_10gb');
+  const chosen = 'cloud_100gb';
   const plan = cloudPlan(chosen);
   const offer = offers.find((item) => item.plan === chosen && item.period === period) ?? null;
   const isCurrent = Boolean(live && live.plan === chosen && live.period === period);
   const otherStore = live && live.store !== deviceStore ? live.store : null;
   const signedIn = status.signedIn;
-  const eligible = Boolean(value?.eligible);
   const unit = periodUnit(period);
-  const canSubscribe = signedIn && eligible && Boolean(offer) && !busy && !isCurrent && !otherStore;
+  const canSubscribe = signedIn && Boolean(offer) && !busy && !isCurrent && !otherStore;
 
   /** @param {'purchase'|'restore'|'manage'} kind @param {()=>Promise<void>} action */
   async function run(kind, action) {
@@ -135,7 +129,7 @@ export default function CloudStoragePlans() {
     void run('restore', async () => {
       const restored = await restoreCloudPlan();
       setMessage(
-        restored.plan === 'cloud_10gb' || restored.plan === 'cloud_1tb'
+        cloudPlan(restored.plan)
           ? `${cloudPlan(restored.plan)?.label} cloud storage restored to this account.`
           : 'Your store subscription is linked to this account, but it is not currently active.',
       );
@@ -154,10 +148,11 @@ export default function CloudStoragePlans() {
     <Screen compact testID="cloud-plans-screen">
       <View style={styles.intro}>
         <Copy variant="heading" style={styles.heading}>
-          Choose cloud storage
+          myself.md Cloud
         </Copy>
         <Copy muted>
-          More room for your exports. Plans replace the 100 MB included with Lifetime.
+          100 GB for your history and ongoing exports. Includes app access while subscribed, with no
+          Lifetime purchase required.
         </Copy>
       </View>
       {value && <CloudStatusNotices value={value} />}
@@ -172,7 +167,7 @@ export default function CloudStoragePlans() {
               : value
                 ? value.eligible
                   ? cloudPlanTitle(value.plan)
-                  : 'Lifetime access required'
+                  : 'No active Cloud subscription'
                 : status.loading
                   ? 'Checking cloud storage…'
                   : 'Cloud storage could not be checked'
@@ -204,7 +199,7 @@ export default function CloudStoragePlans() {
         <View testID="cloud-plans-sign-in-required" style={styles.gate}>
           <Notice
             title="Sign in for cloud storage"
-            body="Cloud storage belongs to your myself.md account, so plans need a signed-in account with Lifetime access."
+            body="Cloud belongs to your myself.md account. Sign in to subscribe or restore your subscription."
             icon="person-circle-outline"
           />
           <Button
@@ -215,28 +210,8 @@ export default function CloudStoragePlans() {
           />
         </View>
       )}
-      {signedIn && value && !value.eligible && (
-        <View testID="cloud-plans-lifetime-required" style={styles.gate}>
-          <Notice
-            title="Lifetime access required"
-            body={
-              billing.unlocked
-                ? 'This phone has Lifetime access, but your account has not verified it yet. Check lifetime access on your account, then choose a plan.'
-                : 'Cloud storage plans build on Lifetime access: each plan replaces the 100 MB included with Lifetime. Unlock Lifetime first, then choose a plan.'
-            }
-            icon="lock-closed-outline"
-          />
-          <Button
-            filled
-            testID="cloud-plans-lifetime"
-            label={billing.unlocked ? 'Check lifetime access' : 'Unlock Lifetime'}
-            onPress={() => router.push(billing.unlocked ? '/account' : '/unlock')}
-          />
-        </View>
-      )}
-
       <View style={styles.choices}>
-        <SectionHeader compact title="Choose a plan" />
+        <SectionHeader compact title="Billing period" />
         <View style={[styles.segment, { backgroundColor: colors.subtle }]}>
           {cloudPeriods.map((item) => {
             const active = item === period;
@@ -263,14 +238,10 @@ export default function CloudStoragePlans() {
           const active = item.id === chosen;
           const currentPlan = Boolean(live && live.plan === item.id && live.period === period);
           return (
-            <Pressable
+            <View
               key={item.id}
               testID={`cloud-plan-${item.id}`}
-              accessibilityRole="button"
               accessibilityLabel={`${item.label} cloud storage, ${itemOffer ? `${itemOffer.displayPrice} per ${unit}` : 'price unavailable'}${currentPlan ? ', current plan' : ''}`}
-              accessibilityState={{ selected: active, disabled: Boolean(busy) }}
-              disabled={Boolean(busy)}
-              onPress={() => setSelected(item.id)}
               style={[
                 styles.plan,
                 active ? styles.planSelected : styles.planUnselected,
@@ -283,7 +254,7 @@ export default function CloudStoragePlans() {
               <View style={styles.planHeader}>
                 <View style={styles.planName}>
                   <Icon
-                    name={active ? 'radio-button-on' : 'radio-button-off'}
+                    name="cloud-outline"
                     size={20}
                     color={active ? colors.accent : colors.secondary}
                   />
@@ -299,9 +270,9 @@ export default function CloudStoragePlans() {
                 {itemOffer ? `${itemOffer.displayPrice} / ${unit}` : 'Price unavailable'}
               </Copy>
               <Copy variant="caption" muted>
-                {`${item.capacityBytes / lifetimeCloudBytes}× the 100 MB included with Lifetime`}
+                Hosted exports, dashboard and approved agent access.
               </Copy>
-            </Pressable>
+            </View>
           );
         })}
       </View>
@@ -317,14 +288,14 @@ export default function CloudStoragePlans() {
         </Copy>
       )}
       <Button
-        filled={signedIn && eligible}
+        filled={signedIn}
         testID="cloud-plan-subscribe"
         label={
           busy === 'purchase'
             ? 'Waiting for the store…'
             : isCurrent
               ? 'Current plan'
-              : `${live ? `Switch to ${plan?.label}` : `Subscribe to ${plan?.label}`}${offer ? ` · ${offer.displayPrice}/${unit}` : ''}`
+              : `${live ? 'Change Cloud billing' : 'Subscribe to Cloud'}${offer ? ` · ${offer.displayPrice}/${unit}` : ''}`
         }
         busy={busy === 'purchase'}
         disabled={!canSubscribe}
@@ -353,6 +324,15 @@ export default function CloudStoragePlans() {
         />
       </View>
 
+      <Copy variant="caption" muted testID="cloud-plan-disclosure">
+        {offer ? `${offer.displayPrice} per ${unit}. ` : ''}Payment is charged to your store
+        account. The subscription renews automatically unless cancelled at least 24 hours before the
+        period ends. Manage or cancel in App Store or Google Play subscription settings.
+      </Copy>
+      <Copy variant="caption" muted>
+        If Cloud ends, exports above your remaining allowance (100 MB with Lifetime, zero otherwise)
+        are kept for 30 days before oldest-first deletion. Download or resubscribe before then.
+      </Copy>
       <Group compact>
         <Row
           compact

@@ -1,3 +1,4 @@
+import { createHealthExports, healthExportInput } from './health-export.js';
 import { createWhoopRequests, whoopRequestInput } from './whoop-requests.js';
 import { exportSchemas, defaultExportSchema } from '../core/export-schemas.js';
 import { randomUUID, createHash } from 'node:crypto';
@@ -299,6 +300,10 @@ const catalogSchema = z.object({
     .optional(),
   profileSync: z.object({ base: z.unknown().nullable() }).optional(),
   locationTracking: z.boolean().optional(),
+  allTimeHealthExport: z
+    .object({ version: z.literal(1) })
+    .strict()
+    .optional(),
   locationCapture: z
     .object({ version: z.literal(1) })
     .strict()
@@ -374,7 +379,7 @@ function phoneCatalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,whoopRequests?:Map<string,import('./whoop-requests.js').WhoopRequest>,captures?:Map<string,import('./location-capture.js').LocationCapture>}} dependencies */
+/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,whoopRequests?:Map<string,import('./whoop-requests.js').WhoopRequest>,captures?:Map<string,import('./location-capture.js').LocationCapture>,healthExports?:Map<string,import('./health-export.js').HealthExport>}} dependencies */
 export function createDataService({
   cloud,
   billing,
@@ -386,6 +391,7 @@ export function createDataService({
   proposals = new Map(),
   captures = new Map(),
   whoopRequests = new Map(),
+  healthExports = new Map(),
 }) {
   const whoopOperations = createWhoopRequests({
     requests: whoopRequests,
@@ -397,6 +403,14 @@ export function createDataService({
   });
   const locationCaptures = createLocationCaptures({
     captures,
+    own,
+    phone: (deviceId) => phones.get(deviceId),
+    authorize: (subject, client) => {
+      if (client) cloud.observeAgent?.(subject, client);
+    },
+  });
+  const healthExportOperations = createHealthExports({
+    requests: healthExports,
     own,
     phone: (deviceId) => phones.get(deviceId),
     authorize: (subject, client) => {
@@ -466,6 +480,7 @@ export function createDataService({
   function cancelPhone(deviceId, subject) {
     whoopOperations.cancel(subject, deviceId);
     locationCaptures.cancel(subject, deviceId);
+    healthExportOperations.cancel(subject, deviceId);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
@@ -482,6 +497,7 @@ export function createDataService({
   function cancelAccount(subject) {
     whoopOperations.cancel(subject);
     locationCaptures.cancel(subject);
+    healthExportOperations.cancel(subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
@@ -495,6 +511,7 @@ export function createDataService({
   function cancelAgent(subject, client) {
     whoopOperations.cancel(subject, undefined, client);
     locationCaptures.cancel(subject, undefined, client);
+    healthExportOperations.cancel(subject, undefined, client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
         if (!captured(subject, id) && job.state !== 'failed')
@@ -523,6 +540,23 @@ export function createDataService({
         },
       },
       (input) => content(whoopOperations.tool(subject, client, input)),
+    );
+    mcp.registerTool(
+      'export_all_time_health',
+      {
+        title: 'Export all readable Health history',
+        description:
+          'Request, inspect or cancel an owner-reviewed All Time Health export on a supported online phone. Exports only the saved profile Health selection, from its earliest readable record through today, to its saved local, HTTPS or cloud destination in daily files. Uses the same export engine, billing and history as the phone action. Does not grant agent read access. OS history permission and phone owner approval are required; keep the app open. Poll this tool with action status. Accepted, awaiting_user and running are not delivery. Completed requires a phone delivery receipt; receipt.partial reports source failures. Cancellation/expiry retain already-written files. Reusing the same requestId never starts a second export; use a new ID only after checking phone history for interrupted effects.',
+        inputSchema: healthExportInput,
+        annotations: {
+          title: 'Export all readable Health history',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      (input) => content(healthExportOperations.tool(subject, client, input)),
     );
     mcp.registerTool(
       'request_phone_location_capture',
@@ -1395,13 +1429,14 @@ export function createDataService({
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
     const match = path.match(
-      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture|whoop)$/,
+      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture|health-export|whoop)$/,
     );
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
     if (match[2] === 'whoop') return whoopOperations.report(subject, deviceId, body);
+    if (match[2] === 'health-export') return healthExportOperations.report(subject, deviceId, body);
     if (match[2] === 'location-capture') return locationCaptures.report(subject, deviceId, body);
     if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
     if (match[2] === 'poll') {
@@ -1498,6 +1533,10 @@ export function createDataService({
         profileSync: sync,
         whoopRequest:
           catalog.dispatch && catalog.whoop ? whoopOperations.dispatch(subject, deviceId) : null,
+        healthExport:
+          catalog.dispatch && catalog.allTimeHealthExport?.version === 1
+            ? healthExportOperations.dispatch(subject, deviceId)
+            : null,
         locationCapture:
           catalog.dispatch && catalog.locationCapture?.version === 1
             ? locationCaptures.dispatch(subject, deviceId)

@@ -24,7 +24,7 @@ export function PricingSection() {
           Pricing
         </h2>
         <p className="text-base leading-8 text-muted-foreground sm:text-lg">
-          Start free. Unlock once. Keep your files for life.
+          Start free. Buy Lifetime or subscribe to Cloud.
         </p>
       </div>
       <div className="pricing-cards">
@@ -102,30 +102,32 @@ export function PricingSection() {
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">
             <h3 id="cloud-pricing-title" className="text-xl font-medium">
-              Optional cloud storage
+              myself.md Cloud
             </h3>
             <span className="text-xs text-muted-foreground">In-app subscription</span>
           </div>
           <p className="text-base leading-7 text-muted-foreground">
             Store your exports in the cloud and connect your agents through a hosted MCP server.
             Lifetime users get {publicCloudPlans[0]?.capacity} of included storage with no recurring
-            charge. Larger plans require Lifetime access and an account, and replace the included
-            storage rather than adding to it.
+            charge. Cloud includes 100 GB and app access while subscribed, with no Lifetime purchase
+            required. Sign in with your account to subscribe.
           </p>
         </div>
         <div className="divide-y divide-border border-y border-border">
-          {publicCloudPlans.map((plan) => (
-            <div key={plan.id} className="flex flex-wrap items-center justify-between gap-3 py-5">
-              <h4 className="text-lg font-medium">{plan.capacity}</h4>
-              <div className="text-right">
-                <p className="text-sm font-medium">{plan.price}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{plan.billing}</p>
+          {publicCloudPlans
+            .filter((plan) => plan.id !== 'included')
+            .map((plan) => (
+              <div key={plan.id} className="flex flex-wrap items-center justify-between gap-3 py-5">
+                <h4 className="text-lg font-medium">{plan.capacity}</h4>
+                <div className="text-right">
+                  <p className="text-sm font-medium">{plan.price}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{plan.billing}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
         <Button asChild variant="outline">
-          <a href="myselfmd://cloud-storage">Choose a cloud plan in the app</a>
+          <a href="myselfmd://cloud-storage">Subscribe to Cloud in the app</a>
         </Button>
         <div className="space-y-3 text-sm leading-6 text-muted-foreground">
           <p>
@@ -136,9 +138,10 @@ export function PricingSection() {
           </p>
           <p>
             Storage continues during the store’s billing grace period. If paid storage ends while
-            you use more than {publicCloudPlans[0]?.capacity}, your files stay for{' '}
-            {cloudRetentionDays} days with push and email reminders. Resubscribe or delete files
-            before then, or the oldest exports are deleted until usage fits. See the{' '}
+            your files exceed the remaining allowance ({publicCloudPlans[0]?.capacity} with
+            Lifetime, zero otherwise), your files stay for {cloudRetentionDays} days with push and
+            email reminders. Resubscribe or delete files before then, or the oldest exports are
+            deleted until usage fits. See the{' '}
             <a href="/terms" className="underline underline-offset-4">
               terms
             </a>

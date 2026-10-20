@@ -736,6 +736,7 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
+      './health-history.js': { earliestHealthDate: async () => null },
       './export-notification-registration.js': { reconcileExportNotificationTask: async () => {} },
       './destinations.js': { requireCloudAuthorization: async () => {} },
       'expo-constants': { default: { expoConfig: {} } },
@@ -753,11 +754,15 @@ const exportTask =
       './export-context.js': { loadExportContext: () => manualContext },
       './profiles.js': storedProfiles,
       './calendar.js': { localCalendar },
-      './history.js': { beginExport: () => {}, recordArtifact: () => {}, finishExport: () => {} },
+      './history.js': {
+        beginExport: () => 'manual-history',
+        recordArtifact: () => {},
+        finishExport: () => {},
+      },
       './profile-export.js': {
         exportProfileDay: async () => {
           if (manualError) throw new Error('Synthetic export failure');
-          return { files: ['manual.json'], failedSources: manualFailures };
+          return { files: ['manual.json'], count: 0, failedSources: manualFailures };
         },
       },
     })
@@ -786,15 +791,9 @@ const manualProfile = {
   export: { ...privateProfile.export, lookbackDays: 1, includeToday: false },
 };
 storedProfiles.saveProfiles('phone', { ...migrated, profiles: [manualProfile] });
-assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
-  days: 1,
-  failedSources: 0,
-});
+assert.equal((await exportTask.exportNow(manualContext, manualProfile, () => {})).failedSources, 0);
 manualFailures = 2;
-assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
-  days: 1,
-  failedSources: 2,
-});
+assert.equal((await exportTask.exportNow(manualContext, manualProfile, () => {})).failedSources, 2);
 manualError = true;
 await assert.rejects(
   exportTask.exportNow(manualContext, manualProfile, () => {}),

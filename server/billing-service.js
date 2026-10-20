@@ -34,7 +34,7 @@ export function createBillingService({
             days: z
               .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
               .min(1)
-              .max(31),
+              .max(100000),
             formats: z
               .array(z.enum(['json', 'jsonl']))
               .min(1)

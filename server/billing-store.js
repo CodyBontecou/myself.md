@@ -8,7 +8,7 @@ import { PairingError } from './errors.js';
 /** Verified store state for one subscription purchase chain.
  * @typedef {{store:'ios'|'android',id:string,product:string,plan:import('../core/cloud-plans.js').CloudPlanId,period:import('../core/cloud-plans.js').CloudPeriod,status:import('../core/cloud-allowance.js').SubscriptionStatus,expiresAt:number|null,autoRenew:boolean,linkedId:string|null}} StoreSubscription */
 /** Undelivered or failed reminder. Channel states: 0 pending, 1 delivered, 2 unavailable.
- * @typedef {{id:string,kind:string,details:{deleteAt:number|null,bytesToDelete:number,plan:string|null},push:number,email:number,attempts:number}} PendingNotice */
+ * @typedef {{id:string,kind:string,details:import('../core/cloud-notices.js').CloudNoticeContext,push:number,email:number,attempts:number}} PendingNotice */
 /** @typedef {{kind:string,channel:string,at:number,message:string,retrying:boolean}} NoticeFailure */
 export const subscriptionClaimed =
   'This subscription belongs to another myself.md account. Sign in to that account to restore it.';
@@ -48,12 +48,16 @@ export class BillingStore {
       .prepare('SELECT id FROM billing_purchases WHERE subject=? AND verified>?')
       .get(subject, Date.now() - 86400000);
     const complimentary = this.hasGrant(subject);
+    const subscription = this.cloudSubscription(subject);
+    const cloudAccess = subscriptionEntitled(subscription);
+    const lifetime = Boolean(paid) || complimentary;
     return {
       ...exportAllowance(
         Number(row?.used ?? 0),
         Number(row?.reserved ?? 0),
-        Boolean(paid) || complimentary,
+        lifetime || cloudAccess,
       ),
+      ...(cloudAccess ? { lifetime, accessUntil: subscription?.expiresAt } : {}),
       ...(complimentary ? { complimentary: true } : {}),
     };
   }
@@ -66,13 +70,23 @@ export class BillingStore {
         `INSERT INTO billing_uses SELECT ?,?,'reserved',? WHERE
       (SELECT COUNT(*) FROM billing_uses WHERE subject=?) < ? OR
       EXISTS(SELECT 1 FROM billing_purchases WHERE subject=? AND verified>?) OR
-      EXISTS(SELECT 1 FROM billing_grants WHERE subject=?)`,
+      EXISTS(SELECT 1 FROM billing_grants WHERE subject=?) OR ?`,
       )
-      .run(subject, id, scope, subject, freeExports, subject, Date.now() - 86400000, subject);
+      .run(
+        subject,
+        id,
+        scope,
+        subject,
+        freeExports,
+        subject,
+        Date.now() - 86400000,
+        subject,
+        subscriptionEntitled(this.cloudSubscription(subject)) ? 1 : 0,
+      );
     if (!result.changes)
       throw new PairingError(
         402,
-        'Your 5 free exports have been used. Buy the $19.99 lifetime unlock in the phone app.',
+        'Your 5 free exports have been used. Buy Lifetime or subscribe to Cloud in the phone app.',
       );
   }
   /** @param {string} subject @param {string} id */
@@ -319,8 +333,9 @@ export class BillingStore {
   }
   /** @param {string} subject @param {number} [now] @returns {import('../core/cloud-allowance.js').CloudEntitlement} */
   cloudEntitlement(subject, now = Date.now()) {
+    const access = this.snapshot(subject);
     return {
-      lifetime: this.snapshot(subject).unlocked,
+      lifetime: access.lifetime ?? access.unlocked,
       subscription: this.cloudSubscription(subject, now),
       lapse: this.lapse(subject)?.lapse ?? null,
     };

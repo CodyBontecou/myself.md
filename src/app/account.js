@@ -22,7 +22,13 @@ export default function AccountScreen() {
       <Group>
         <Row
           testID="account-lifetime-access"
-          title="Lifetime access"
+          title={
+            current.lifetime
+              ? 'Lifetime access'
+              : current.unlocked
+                ? 'Cloud subscription access'
+                : 'App access'
+          }
           subtitle={
             current.unlocked
               ? 'Active · unlimited exports and queries'

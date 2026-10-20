@@ -61,6 +61,7 @@ export default function BillingPaywalls() {
       !navigation?.key ||
       pathname === '/' ||
       pathname === '/account' ||
+      pathname === '/cloud-storage' ||
       pathname.startsWith('/onboarding') ||
       current.unlocked
     )

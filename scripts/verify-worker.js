@@ -301,7 +301,7 @@ try {
         {
           name: 'billing_grants',
           columns: ['source', 'reference', 'subject', 'created'],
-          rows: [['fixture', 'cloud-tier', `${namespace}|cloud-tier`, Date.now()]],
+          rows: [],
         },
         {
           name: 'cloud_subscriptions',
@@ -323,8 +323,8 @@ try {
               'android',
               'worker-cloud-tier',
               `${namespace}|cloud-tier`,
-              'myself_md_cloud_10gb',
-              'cloud_10gb',
+              'myself_md_cloud_100gb',
+              'cloud_100gb',
               'yearly',
               'grace',
               Date.now() + 86400000,
@@ -361,11 +361,21 @@ try {
   );
   assert.equal((await request('/api/migration/claim', alice, 'POST', { ticket })).status, 409);
   assert.equal((await request('/api/billing', agent, 'POST', { action: 'sync' })).status, 403);
-  const purchaseInput = { store: 'android', proof: 'synthetic', productId: 'myself_md_cloud_10gb' };
+  const purchaseInput = {
+    store: 'android',
+    proof: 'synthetic',
+    productId: 'myself_md_cloud_100gb',
+  };
   const unpaid = await token('unpaid', 'myselfmd-phone');
-  assert.equal(
-    (await request('/api/cloud/subscription', unpaid, 'POST', purchaseInput)).status,
-    402,
+  const invalidSubscription = await request(
+    '/api/cloud/subscription',
+    unpaid,
+    'POST',
+    purchaseInput,
+  );
+  assert.ok(
+    invalidSubscription.status >= 400 && invalidSubscription.status !== 402,
+    'No Lifetime prerequisite; unverified proof cannot grant access',
   );
   assert.equal(
     (await request('/api/cloud/subscription', agent, 'POST', purchaseInput)).status,
@@ -389,10 +399,10 @@ try {
   assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
   const tierToken = await token('cloud-tier', 'myselfmd-phone');
   z.object({
-    plan: z.literal('cloud_10gb'),
-    limitBytes: z.literal(10_000_000_000),
+    plan: z.literal('cloud_100gb'),
+    limitBytes: z.literal(100_000_000_000),
     subscription: z.object({ status: z.literal('grace') }),
-    plans: z.array(z.unknown()).length(2),
+    plans: z.array(z.unknown()).length(1),
     handoff: z.object({
       appLink: z.literal('myselfmd://cloud-storage'),
       requiresUser: z.literal(true),

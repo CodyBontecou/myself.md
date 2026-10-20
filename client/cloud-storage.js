@@ -6,7 +6,7 @@ import {
 import { cloudPlan, cloudPlans } from '../core/cloud-plans.js';
 
 /** `GET /api/cloud/status` body. Server-only extras (plans, handoff, diagnostics) are not read by the phone.
- * @typedef {import('../core/cloud-allowance.js').CloudAllowance} CloudStatus */
+ * @typedef {import('../core/cloud-allowance.js').CloudAllowance & {appAccess?:import('../core/billing.js').ExportAllowance}} CloudStatus */
 /** A purchasable store subscription with its localized price.
  * @typedef {{plan:import('../core/cloud-plans.js').CloudPlanId,period:import('../core/cloud-plans.js').CloudPeriod,productId:string,title:string,displayPrice:string,offerToken:string|null}} CloudOffer */
 
@@ -91,7 +91,7 @@ export function cloudStatusNotices(value, now = Date.now()) {
     notices.push({
       id: 'lapse',
       title: `At least ${formatCloudBytes(value.lapse.bytesToDelete)} of cloud exports will be deleted on ${date}`,
-      body: `Paid cloud storage ended and your exports use ${formatCloudBytes(value.usedBytes)} of the ${formatCloudBytes(value.lapse.targetBytes)} included with Lifetime. ${days === 1 ? '1 day' : `${days} days`} left: on ${date} your oldest whole exports are deleted until usage is ${formatCloudBytes(value.lapse.targetBytes)} or less. Resubscribe, or delete enough cloud files before the deadline, to prevent this cleanup. Download files first to keep offline copies; downloading alone does not prevent cloud deletion.`,
+      body: `Paid cloud storage ended and your exports use ${formatCloudBytes(value.usedBytes)} of the ${formatCloudBytes(value.lapse.targetBytes)} remaining allowance. ${days === 1 ? '1 day' : `${days} days`} left: on ${date} your oldest whole exports are deleted until usage is ${formatCloudBytes(value.lapse.targetBytes)} or less. Resubscribe, or delete enough cloud files before the deadline, to prevent this cleanup. Download files first to keep offline copies; downloading alone does not prevent cloud deletion.`,
     });
   }
   if (subscription?.status === 'grace')
@@ -140,7 +140,7 @@ export function qaCloudStatus(scenario, store, now = qaCloudTime) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_10gb', 'monthly', 'active', now + 18 * day, true),
+          subscription: subscription('cloud_100gb', 'monthly', 'active', now + 18 * day, true),
           lapse: null,
         },
         420 * mb,
@@ -149,7 +149,7 @@ export function qaCloudStatus(scenario, store, now = qaCloudTime) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_10gb', 'yearly', 'grace', now - 2 * day, true),
+          subscription: subscription('cloud_100gb', 'yearly', 'grace', now - 2 * day, true),
           lapse: null,
         },
         3_200 * mb,
@@ -158,7 +158,13 @@ export function qaCloudStatus(scenario, store, now = qaCloudTime) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_10gb', 'monthly', 'billing_retry', now - 2 * day, true),
+          subscription: subscription(
+            'cloud_100gb',
+            'monthly',
+            'billing_retry',
+            now - 2 * day,
+            true,
+          ),
           lapse: {
             startedAt: now - 2 * day,
             deleteAt: now + 28 * day,
@@ -171,7 +177,7 @@ export function qaCloudStatus(scenario, store, now = qaCloudTime) {
       return cloudAllowance(
         {
           lifetime: true,
-          subscription: subscription('cloud_10gb', 'monthly', 'expired', now - 7 * day, false),
+          subscription: subscription('cloud_100gb', 'monthly', 'expired', now - 7 * day, false),
           lapse: {
             startedAt: now - 7 * day,
             deleteAt: now + 23 * day,

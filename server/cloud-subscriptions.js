@@ -33,14 +33,12 @@ const cloudHandoff = {
   appLink: 'myselfmd://cloud-storage',
   requiresUser: true,
   instructions:
-    'Cloud storage plans require Lifetime access and are bought, upgraded, downgraded or restored by the account owner in the myself.md phone app, signed in to this account (open myselfmd://cloud-storage). Manage or cancel an existing subscription in App Store or Google Play subscription settings. Agents cannot purchase or cancel plans.',
+    'myself.md Cloud includes 100 GB and app access while subscribed, with no Lifetime purchase required. Subscriptions are bought or restored by the account owner in the myself.md phone app, signed in to this account (open myselfmd://cloud-storage). Manage or cancel an existing subscription in App Store or Google Play subscription settings. Agents cannot purchase or cancel plans.',
   manageUrls: {
     ios: 'https://apps.apple.com/account/subscriptions',
     android: 'https://play.google.com/store/account/subscriptions?package=com.myself.md',
   },
 };
-const lifetimeRequiredForPlans =
-  'Cloud storage plans require lifetime access. Buy or restore lifetime access first.';
 /** @typedef {{bind:(key:string,subject:string)=>Promise<void>,owner:(key:string)=>Promise<string|null>}} Owners */
 /** @typedef {{configured:boolean,send:(message:{to:string,subject:string,text:string,html:string})=>Promise<unknown>}} Mailer */
 /** @typedef {import('./store-subscriptions.js').VerifiedSubscription} VerifiedSubscription */
@@ -101,6 +99,7 @@ export function createCloudSubscriptions({
   function body(subject) {
     return {
       ...cloud.storageStatus(subject),
+      appAccess: billing.snapshot(subject),
       plans: cloudPlanSummaries,
       handoff: cloudHandoff,
       diagnostics: { noticeFailure: billing.noticeFailure(subject) },
@@ -137,9 +136,6 @@ export function createCloudSubscriptions({
    * @param {string} subject @param {{store:'ios'|'android',proof:string,productId:string}} input */
   function subscribe(subject, input) {
     return serial(subject, async () => {
-      await refreshEntitlement(subject);
-      if (!billing.snapshot(subject).unlocked)
-        throw new PairingError(402, lifetimeRequiredForPlans);
       await purchaseAccount(subject);
       const value = await verifier.verify(input.store, input.proof);
       if (value.product !== input.productId)
@@ -319,7 +315,7 @@ export function createCloudSubscriptions({
         const deleted = await removeExports(
           subject,
           exports.filter((item) => victims.has(item.id)),
-          'Deleted automatically 30 days after paid cloud storage ended, oldest first, to fit the included 100 MB.',
+          `Deleted automatically 30 days after Cloud ended, oldest first, to fit the remaining ${lapse.targetBytes / 1_000_000} MB allowance.`,
         );
         billing.setLapse(subject, null);
         billing.dropNotices(subject, 'lapse:');
@@ -328,7 +324,7 @@ export function createCloudSubscriptions({
             subject,
             `deleted:${lapse.startedAt}`,
             'lapse-deleted',
-            { deleteAt: at, bytesToDelete: deleted, plan },
+            { deleteAt: at, bytesToDelete: deleted, plan, targetBytes: lapse.targetBytes },
             at,
           );
       } else {
@@ -342,6 +338,7 @@ export function createCloudSubscriptions({
             {
               deleteAt: lapse.deleteAt,
               bytesToDelete: Math.max(0, used - lapse.targetBytes),
+              targetBytes: lapse.targetBytes,
               plan,
             },
             at,
@@ -467,7 +464,10 @@ export function createCloudSubscriptions({
    * @param {string} subject */
   function lifetimeRevoked(subject) {
     return serial(subject, async () => {
-      if (billing.lifetimeHeld(subject)) {
+      if (
+        billing.lifetimeHeld(subject) ||
+        subscriptionEntitled(billing.cloudSubscription(subject, now()))
+      ) {
         billing.clearRevocation(subject);
         return;
       }
@@ -486,7 +486,7 @@ export function createCloudSubscriptions({
       await removeExports(
         subject,
         exports,
-        'Deleted because lifetime access was refunded or revoked; cloud storage requires lifetime access.',
+        'Deleted because lifetime access was refunded or revoked; no active Cloud subscription remains.',
       );
       billing.setLapse(subject, null);
       billing.dropNotices(subject, 'lapse:');

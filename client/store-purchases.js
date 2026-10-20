@@ -2,9 +2,9 @@ import { errorJSON } from '../packages/support-chat/errors.js';
 import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { lifetimeProductId } from '../core/billing.js';
-import { cloudPlanForProduct, cloudPlans } from '../core/cloud-plans.js';
+import { cloudPlanForProduct, cloudPlans, legacyCloudPlans } from '../core/cloud-plans.js';
 import { sorted } from '../core/collections.js';
-import { savePurchase, clearNativePurchase } from './billing.js';
+import { savePurchase, clearNativePurchase, acceptAllowance } from './billing.js';
 import { api, loadSession } from './session.js';
 import {
   acceptCloudStatus,
@@ -199,7 +199,11 @@ export async function restoreLifetime(explicit = false) {
 /** @typedef {{kind:'verified',status:import('./cloud-storage.js').CloudStatus}|{kind:'pending'}|{kind:'cancelled'}|{kind:'error',error:unknown}} CloudPurchaseEvent */
 const storeName = () => (Platform.OS === 'ios' ? 'ios' : 'android');
 const cloudProductIds = new Set(
-  cloudPlans.flatMap((plan) => [plan.ios.monthly, plan.ios.yearly, plan.android.productId]),
+  [...cloudPlans, ...legacyCloudPlans].flatMap((plan) => [
+    plan.ios.monthly,
+    plan.ios.yearly,
+    plan.android.productId,
+  ]),
 );
 /** Resolves only the product's checkout the user started; unrelated store replays still verify.
  * @type {{productId:string,resolve:(event:CloudPurchaseEvent)=>void}|null} */
@@ -249,6 +253,7 @@ async function verifyCloudPurchase(session, purchase) {
     })
   );
   acceptCloudStatus(cloudStatusKey(session), status);
+  if (status.appAccess) acceptAllowance(status.appAccess);
   return status;
 }
 /** Finish only after the server verified the proof. Google Play subscriptions are acknowledged by

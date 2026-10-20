@@ -183,7 +183,21 @@ await Promise.all(
 );
 const session = await context.internalAdapter.createSession('original-user-id');
 assert.ok(session);
+assert.ok(
+  session.expiresAt.getTime() - Date.now() > 364 * 86400000,
+  'Identity cookies last one year',
+);
 const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(session.token + '.' + createHmac('sha256', secret).update(session.token).digest('base64'))}`;
+const agedSession = await context.internalAdapter.createSession('original-user-id');
+assert.ok(agedSession);
+const sessionAge = 2 * 86400000;
+db.prepare('UPDATE session SET createdAt=?, updatedAt=?, expiresAt=? WHERE id=?').run(
+  agedSession.createdAt.getTime() - sessionAge,
+  agedSession.updatedAt.getTime() - sessionAge,
+  agedSession.expiresAt.getTime() - sessionAge,
+  agedSession.id,
+);
+const agedCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(agedSession.token + '.' + createHmac('sha256', secret).update(agedSession.token).digest('base64'))}`;
 const logoutSession = await context.internalAdapter.createSession('original-user-id');
 assert.ok(logoutSession);
 const logoutCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(logoutSession.token + '.' + createHmac('sha256', secret).update(logoutSession.token).digest('base64'))}`;
@@ -818,7 +832,10 @@ try {
       assert.equal(failure.headers.get('cache-control'), 'no-store');
       const html = await failure.text();
       assert.ok(html.includes(`<h1>${title}</h1>`));
-      assert.match(html, /href="\/login">Try sign-in again/);
+      if (error === 'state_mismatch') {
+        assert.doesNotMatch(html, /Try sign-in again/);
+        assert.match(html, /Close this window/);
+      } else assert.match(html, /href="\/login">Try sign-in again/);
       assert.doesNotMatch(html, /evil\.example|stale-state|<script>/);
       const nonce = html.match(/<style nonce="([^"]+)"/)?.[1];
       assert.ok(nonce);
@@ -874,6 +891,48 @@ try {
   assert.equal(appleURL.hostname, 'appleid.apple.com');
   assert.equal(appleURL.searchParams.get('redirect_uri'), `${issuer}/broker/apple/endpoint`);
   assert.match(apple.headers.get('set-cookie') ?? '', /SameSite=None/i);
+  const appleState = appleURL.searchParams.get('state');
+  assert.ok(appleState);
+  const appleCookies = apple.headers
+    .getSetCookie()
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  const appleCancelled = await fetch(`${issuer}/broker/apple/endpoint`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: {
+      Origin: 'https://appleid.apple.com',
+      Cookie: appleCookies,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ state: appleState, error: 'access_denied' }),
+  });
+  assert.equal(appleCancelled.status, 302);
+  const appleCanonical = new URL(appleCancelled.headers.get('location') ?? '');
+  assert.equal(appleCanonical.pathname, `${new URL(issuer).pathname}/callback/apple`);
+  const appleReturned = await fetch(appleCanonical, {
+    redirect: 'manual',
+    headers: { Cookie: appleCookies, Accept: 'text/html' },
+  });
+  const appleReturnURL = new URL(appleReturned.headers.get('location') ?? '');
+  assert.equal(appleReturnURL.protocol, 'myselfmd:');
+  assert.equal(appleReturnURL.host, 'oauth');
+  assert.equal(appleReturnURL.searchParams.get('state'), 'fixture-state');
+  assert.equal(appleReturnURL.searchParams.get('error'), 'access_denied');
+  const replayedApple = await fetch(appleCanonical, {
+    redirect: 'manual',
+    headers: { Cookie: appleCookies, Accept: 'text/html' },
+  });
+  const replayedAppleURL = new URL(replayedApple.headers.get('location') ?? '');
+  assert.equal(replayedAppleURL.protocol, 'myselfmd:');
+  assert.equal(replayedAppleURL.searchParams.get('state'), 'fixture-state');
+  assert.equal(replayedAppleURL.searchParams.get('error'), 'state_mismatch');
+  assert.equal(replayedAppleURL.searchParams.has('code'), false);
+  const unrecoverableState = await fetch(`${issuer}/error?error=state_mismatch`);
+  const unrecoverableHTML = await unrecoverableState.text();
+  assert.doesNotMatch(unrecoverableHTML, /Try sign-in again/);
+  assert.match(unrecoverableHTML, /Close this window and start sign-in again in the app/);
+  console.log('PASS Apple form POST and callback error return to the original native OAuth state.');
   // Isolate Google's redirect assertion from the earlier provider rate-limit bucket.
   const google = await post(
     '/login',
@@ -945,6 +1004,65 @@ try {
     ).status,
     404,
   );
+  /** @param {string} selectionPrompt */
+  async function verifyCookiePrompt(selectionPrompt) {
+    const selected = await authorize(
+      'myselfmd-phone',
+      true,
+      'openid profile myselfmd offline_access',
+      `${origin}/mcp`,
+      agedCookie,
+      selectionPrompt,
+      'apple',
+    );
+    const selectedURL = new URL(selected.response.headers.get('location') ?? '');
+    assert.equal(selectedURL.pathname, '/login', 'Cookie renewal cannot bypass provider selection');
+    assert.equal(selectedURL.searchParams.get('kc_idp_hint'), 'apple');
+    assert.equal(selectedURL.searchParams.get('state'), 'fixture-state');
+  }
+  await verifyCookiePrompt('select_account');
+  await verifyCookiePrompt('login');
+  const restored = await authorize(
+    'myselfmd-dashboard',
+    true,
+    'openid profile email myselfmd offline_access',
+    `${origin}/mcp`,
+    cookie,
+    'none',
+  );
+  const restoredURL = new URL(restored.response.headers.get('location') ?? '');
+  assert.equal(restoredURL.pathname, '/dashboard/callback');
+  assert.ok(
+    restoredURL.searchParams.get('code'),
+    'A surviving identity cookie restores web login silently',
+  );
+  const restoredToken = await post('/protocol/openid-connect/token', {
+    grant_type: 'authorization_code',
+    client_id: 'myselfmd-dashboard',
+    code: restoredURL.searchParams.get('code') ?? '',
+    redirect_uri: restored.redirect,
+    code_verifier: restored.verifier,
+  });
+  assert.equal(restoredToken.status, 200, await restoredToken.clone().text());
+  const restoredCredentials = z
+    .object({ access_token: z.string(), refresh_token: z.string() })
+    .parse(await restoredToken.json());
+  const restoredAccount = await fetch(`${origin}/api/dashboard`, {
+    headers: { Authorization: `Bearer ${restoredCredentials.access_token}` },
+  });
+  assert.equal(restoredAccount.status, 200, await restoredAccount.clone().text());
+  const signedOutRestore = await authorize(
+    'myselfmd-dashboard',
+    false,
+    'openid profile email myselfmd offline_access',
+    `${origin}/mcp`,
+    cookie,
+    'none',
+  );
+  assert.equal(
+    new URL(signedOutRestore.response.headers.get('location') ?? '').searchParams.get('error'),
+    'login_required',
+  );
   const phone = await authorize('myselfmd-phone', true);
   const code = new URL(phone.response.headers.get('location') ?? '').searchParams.get('code');
   assert.ok(code);
@@ -961,6 +1079,36 @@ try {
   const tokenSchema = z.object({ access_token: z.string(), refresh_token: z.string() });
   const tokens = tokenSchema.parse(await tokenResponse.json());
   assert.ok(tokens.refresh_token);
+  let checkedRefreshLifetime = false;
+  for (const entry of readdirSync(join(directory, 'state'), {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
+    const persisted = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+    try {
+      if (
+        !persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='oauthRefreshToken'")
+          .get()
+      )
+        continue;
+      const refreshRow = persisted
+        .prepare(
+          'SELECT expiresAt FROM oauthRefreshToken WHERE clientId=? AND revoked IS NULL ORDER BY expiresAt DESC LIMIT 1',
+        )
+        .get('myselfmd-phone');
+      assert.ok(
+        Date.parse(String(refreshRow?.expiresAt)) - Date.now() > 364 * 86400000,
+        'Issued phone refresh tokens last one year',
+      );
+      checkedRefreshLifetime = true;
+    } finally {
+      persisted.close();
+    }
+  }
+  assert.ok(checkedRefreshLifetime);
+
   const certs = await fetch(`${issuer}/protocol/openid-connect/certs`);
   assert.equal(certs.status, 200, await certs.clone().text());
   const jwks = createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`));
@@ -1553,14 +1701,22 @@ try {
           await errorTab.emulateMedia({ colorScheme: 'dark' });
           assert.ok(await errorTab.evaluate('document.documentElement.scrollWidth <= innerWidth'));
           await errorTab.screenshot({ path: join(errorScreenshots, `${error}-dark-mobile.png`) });
-          await errorTab.getByRole('link', { name: 'Try sign-in again', exact: true }).click();
-          await errorTab.waitForURL(`${origin}/login`);
-          assert.equal(
-            await errorTab
-              .getByRole('button', { name: 'Continue with Google', exact: true })
-              .count(),
-            1,
-          );
+          if (error === 'state_mismatch') {
+            assert.equal(
+              await errorTab.getByRole('link', { name: 'Try sign-in again', exact: true }).count(),
+              0,
+            );
+            assert.ok(await errorTab.getByText('Close this window', { exact: false }).isVisible());
+          } else {
+            await errorTab.getByRole('link', { name: 'Try sign-in again', exact: true }).click();
+            await errorTab.waitForURL(`${origin}/login`);
+            assert.equal(
+              await errorTab
+                .getByRole('button', { name: 'Continue with Google', exact: true })
+                .count(),
+              1,
+            );
+          }
           await errorTab.close();
         }),
       );

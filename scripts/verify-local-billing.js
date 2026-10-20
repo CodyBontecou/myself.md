@@ -185,6 +185,41 @@ try {
     if (previousPreview === undefined) delete process.env.EXPO_PUBLIC_PREVIEW_LIFETIME;
     else process.env.EXPO_PUBLIC_PREVIEW_LIFETIME = previousPreview;
   }
+  const subscriptionAllowance = {
+    used: 5,
+    reserved: 0,
+    remaining: 0,
+    unlocked: true,
+    lifetime: false,
+    accessUntil: Date.now() + 60_000,
+  };
+  billing.acceptAllowance(subscriptionAllowance);
+  billing = await load();
+  assert.equal(billing.allowance().unlocked, true, 'Cloud access survives restart before expiry');
+  assert.equal(secure.has('lifetime-purchase-proof'), false);
+  billing.acceptAllowance({ ...subscriptionAllowance, accessUntil: Date.now() - 1 });
+  billing = await load();
+  assert.equal(
+    billing.allowance().unlocked,
+    false,
+    'Expired cached Cloud access cannot become Lifetime',
+  );
+  billing.acceptAllowance({
+    ...subscriptionAllowance,
+    lifetime: true,
+    accessUntil: Date.now() - 1,
+  });
+  assert.equal(billing.allowance().unlocked, true, 'Lifetime survives Cloud expiry');
+  billing.acceptAllowance({ ...subscriptionAllowance, lifetime: true });
+  secure.set('lifetime-purchase-proof', 'fixture');
+  await billing.clearNativePurchase();
+  assert.equal(
+    billing.allowance().unlocked,
+    true,
+    'A native Lifetime refund preserves unexpired Cloud access',
+  );
+  billing.clearAccountAllowance();
+  assert.equal(billing.allowance().unlocked, false, 'Signing out removes Cloud account access');
   console.log(
     'Local billing: shared counter, blocked prompts, reminder persistence, offline lifetime access across process restarts, and refund clearing passed.',
   );
