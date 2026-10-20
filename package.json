@@ -127,7 +127,7 @@
     "worker:dev": "wrangler dev",
     "worker:deploy": "npm run blog:check-source && npm run dashboard:build && wrangler deploy",
     "worker:check": "tsc -p worker/jsconfig.json",
-    "verify:analytics": "node --experimental-vm-modules scripts/verify-native-analytics.js && npm run verify:worker",
+    "verify:analytics": "node scripts/verify-web-analytics-storage.js && node --experimental-vm-modules scripts/verify-native-analytics.js && npm run verify:worker",
     "verify:worker": "npm run dashboard:build && node scripts/verify-worker.js",
     "verify:worker-fetch": "node scripts/verify-worker-fetch.js",
     "verify:identity": "npm run dashboard:build && node scripts/verify-identity.js",

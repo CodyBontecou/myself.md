@@ -24,6 +24,10 @@ Runtime verification covers saved versus unsaved destinations, first-use/retry/c
 
 # UI and MCP parity
 
+## Embedded preview analytics consent — 20 October 2026
+
+Website/dashboard analytics choices tolerate blocked browser storage by falling back from local storage to session storage and finally page memory. With no browser storage, consent is lost on reload and must be requested again; explicit consent is still required before event delivery. Authenticated choices still use the same account preference HTTP service as `get_usage_analytics_preference` / `set_usage_analytics_preference`, with unchanged ownership, confirmation and erasure. Browser-local choices remain a handoff in that browser because MCP cannot persist another browser's state. Mobile behavior is unchanged. Runtime regressions cover blocked storage, opt-in/opt-out delivery, reload persistence and real Worker HTTP/MCP account preferences.
+
 ## Homepage rotating context examples (19 October 2026)
 
 The hero's visible definition paragraph is replaced by a typewriter line with three decorative agent icons and health-record, screen-time and recorded-location examples. A stable accessible sentence exposes every example; the initial HTML/Markdown retains the complete product definition and use-case content. The animation has no pause button; reduced-motion preferences show a static example. This presentation initiates no phone query or account operation. Existing public documentation/catalog MCP reads and mobile/dashboard capabilities, grants and handoffs are unchanged.

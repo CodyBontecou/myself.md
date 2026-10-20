@@ -1,5 +1,39 @@
 import { createAnalyticsClient } from '../core/analytics-client.js';
 import { browserTrafficExcluded } from './analytics-exclusion.js';
+// Embedded previews may deny storage. Consent can still last for this page;
+// never assume it survives a reload when the browser cannot persist it.
+/** @type {Map<string,string>} */
+const memory = new Map();
+/** @param {'localStorage'|'sessionStorage'} storage @param {string} key */
+function readStorage(storage, key) {
+  if (memory.has(key)) return memory.get(key) ?? null;
+  try {
+    return window[storage].getItem(key);
+  } catch {
+    return null;
+  }
+}
+/** @param {'localStorage'|'sessionStorage'} storage @param {string} key @param {string} value */
+function writeStorage(storage, key, value) {
+  memory.set(key, value);
+  try {
+    window[storage].setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function browserChoice() {
+  return (
+    readStorage('localStorage', 'myself-analytics-choice') ??
+    readStorage('sessionStorage', 'myself-analytics-choice')
+  );
+}
+/** @param {boolean} enabled */
+function saveBrowserChoice(enabled) {
+  if (!writeStorage('localStorage', 'myself-analytics-choice', String(enabled)))
+    writeStorage('sessionStorage', 'myself-analytics-choice', String(enabled));
+}
 function excludedPath() {
   return (
     /^\/(demo|share\/profile|delete-account|claim|operator)(\/|$)/.test(location.pathname) ||
@@ -16,21 +50,16 @@ let account = null;
 const collector = createAnalyticsClient({
   read: () =>
     available
-      ? (sessionStorage.getItem('myself-usage-analytics-v1') ??
+      ? (readStorage('sessionStorage', 'myself-usage-analytics-v1') ??
         JSON.stringify({
-          enabled:
-            localStorage.getItem('myself-analytics-choice') === 'true'
-              ? true
-              : localStorage.getItem('myself-analytics-choice') === 'false'
-                ? false
-                : null,
+          enabled: browserChoice() === 'true' ? true : browserChoice() === 'false' ? false : null,
           anonymousId: '',
           scope: '',
           events: [],
         }))
       : null,
   write: (value) => {
-    if (available) sessionStorage.setItem('myself-usage-analytics-v1', value);
+    if (available) writeStorage('sessionStorage', 'myself-usage-analytics-v1', value);
   },
   id: () => crypto.randomUUID().replaceAll('-', ''),
   now: Date.now,
@@ -48,7 +77,7 @@ const collector = createAnalyticsClient({
         await target.api('/api/analytics/preferences')
       );
       if (!preference.enabled) {
-        localStorage.setItem('myself-analytics-choice', 'false');
+        saveBrowserChoice(false);
         return { enabled: false };
       }
       return target.api('/api/analytics/events', 'POST', batch);
@@ -100,7 +129,7 @@ export function resetWebAnalytics() {
 }
 /** @param {boolean} enabled */
 async function choose(enabled) {
-  localStorage.setItem('myself-analytics-choice', String(enabled));
+  saveBrowserChoice(enabled);
   if (!enabled) collector.choose(false);
   const target = account;
   if (target)
