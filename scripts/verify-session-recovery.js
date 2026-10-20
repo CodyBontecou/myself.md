@@ -4,22 +4,38 @@ import vm from 'node:vm';
 import { readJSONResponse } from '../packages/support-chat/errors.js';
 
 let refreshes = 0;
+let refreshFailure = '';
+let savedSession = '';
 /** @type {string[]} */
 const tokens = [];
 let status = 401;
 const context = vm.createContext({
+  canonicalServiceOrigin: (/** @type {string} */ value) => value,
   Headers,
   readJSONResponse,
   recordDebug: () => {},
   debugOperation: () => 'support',
   saveExportContext: () => {},
   WebBrowser: { maybeCompleteAuthSession() {} },
-  SecureStore: { setItemAsync: async () => {} },
+  SecureStore: {
+    setItemAsync: async (/** @type {string} */ _key, /** @type {string} */ value) => {
+      savedSession = value;
+    },
+  },
   AuthSession: {
     fetchDiscoveryAsync: async () => ({}),
     refreshAsync: async () => {
       refreshes++;
       await new Promise((resolve) => setImmediate(resolve));
+      if (refreshFailure)
+        throw Object.assign(
+          new Error(
+            refreshFailure === 'invalid_grant'
+              ? 'More info: session not found'
+              : 'Network unavailable',
+          ),
+          { code: refreshFailure },
+        );
       return {
         accessToken: 'fresh',
         refreshToken: 'rotated',
@@ -44,6 +60,7 @@ vm.runInContext(
   context,
 );
 const session = () => ({
+  requiresSignIn: false,
   server: 'https://fixture.test',
   issuer: 'https://fixture.test/auth',
   resource: 'https://fixture.test/mcp',
@@ -78,6 +95,64 @@ await assert.rejects(context.api(session(), '/api/support/v1'), /Still unauthori
 assert.equal(refreshes, before + 1, 'An unsuccessful refresh is retried only once');
 console.log(
   'PASS session 401 recovery, concurrent refresh, permission isolation, missing credentials and bounded retry. No live credentials used.',
+);
+
+// A revoked OAuth lineage must stop retrying while preserving phone ownership.
+const expired = session();
+expired.deviceId = 'retained-phone';
+expired.expires = 0;
+await context.saveSession(expired);
+refreshFailure = 'invalid_grant';
+const beforeRevocation = refreshes;
+const revoked = await Promise.allSettled([
+  context.api(expired, '/api/devices'),
+  context.api(expired, '/api/cloud/status'),
+]);
+assert.ok(
+  revoked.every(
+    (result) => result.status === 'rejected' && /sign in again/i.test(result.reason.message),
+  ),
+);
+assert.equal(refreshes, beforeRevocation + 1);
+assert.equal(expired.accessToken, '');
+assert.equal(expired.refreshToken, '');
+assert.ok(
+  !expired.requiresSignIn,
+  'Revoked login must not switch the UI to an unpaired data partition',
+);
+assert.equal(expired.deviceId, 'retained-phone');
+assert.equal(expired.owner, 'fixture');
+assert.equal(await context.loadSession(), expired);
+assert.equal(
+  JSON.parse(savedSession).refreshToken,
+  '',
+  'Revoked credentials must retire from secure storage',
+);
+assert.equal(JSON.parse(savedSession).deviceId, 'retained-phone');
+await assert.rejects(context.api(expired, '/api/devices'), /sign in again/i);
+assert.equal(refreshes, beforeRevocation + 1, 'Revoked credentials must not be replayed');
+const stale = session();
+stale.expires = 0;
+await context.saveSession(stale);
+const staleFailure = assert.rejects(context.api(stale, '/api/devices'), /signed out or replaced/);
+const replacement = session();
+replacement.owner = 'replacement-owner';
+await context.saveSession(replacement);
+await staleFailure;
+assert.equal(await context.loadSession(), replacement);
+assert.equal(
+  replacement.refreshToken,
+  'fixture',
+  'A stale grant rejection cannot retire a newer login',
+);
+const offline = session();
+offline.expires = 0;
+refreshFailure = 'network';
+await assert.rejects(context.api(offline, '/api/devices'), /Network unavailable/);
+assert.ok(!offline.requiresSignIn, 'Transient network failures must remain retryable');
+refreshFailure = '';
+console.log(
+  'PASS revoked refresh recovery preserves pairing, stops replay and distinguishes network failures.',
 );
 
 // Drive the real browser-return -> token exchange -> account read -> UI commit path.

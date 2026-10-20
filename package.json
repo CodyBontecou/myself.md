@@ -110,6 +110,7 @@
     "cloud:domain:setup": "node --env-file=.env.cloud scripts/setup-domain.js",
     "verify:history": "node scripts/verify-history.js && node --experimental-vm-modules scripts/verify-local-history.js",
     "verify:disconnect": "node scripts/verify-disconnect.js && node scripts/verify-session.js && node scripts/verify-session-recovery.js && node scripts/verify-session-reauth.js",
+    "verify:toast": "node scripts/verify-poll-feedback.js && node scripts/verify-toast-ui.js",
     "web": "expo start --web",
     "dashboard:auth": "node --env-file=.env.cloud scripts/setup-dashboard.js --cloud",
     "dashboard:build": "node scripts/build-dashboard.js",

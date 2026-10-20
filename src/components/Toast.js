@@ -1,5 +1,13 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme.js';
 import { Copy, Icon } from './ui.js';
@@ -39,6 +47,18 @@ function snapshot() {
   return notification;
 }
 
+/** Keep native navigation screens from intercepting toast touches on iOS.
+ * @param {{children:import('react').ReactNode}} props */
+function ToastOverlay({ children }) {
+  return Platform.OS === 'ios' ? (
+    <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
+      {children}
+    </FullWindowOverlay>
+  ) : (
+    children
+  );
+}
+
 /** @param {{children:import('react').ReactNode}} props */
 export function ToastProvider({ children }) {
   const { colors } = useTheme();
@@ -61,122 +81,134 @@ export function ToastProvider({ children }) {
     <View style={styles.root}>
       {children}
       {toast && (
-        <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 64 }]}>
-          <View
-            testID="action-toast"
-            style={[styles.toast, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Pressable
-              testID="action-toast-content"
-              accessible={Boolean(toast.onPress)}
-              accessibilityRole={toast.onPress ? 'button' : undefined}
-              accessibilityLabel={toast.accessibilityLabel}
-              disabled={!toast.onPress}
-              onPress={() => {
-                setToast(null);
-                toast.onPress?.();
-              }}
-              style={styles.content}
+        <ToastOverlay>
+          <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 64 }]}>
+            <View
+              testID="action-toast"
+              style={[
+                styles.toast,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
             >
-              {toast.kind === 'loading' ? (
-                <ActivityIndicator size="small" color={colors.text} />
-              ) : (
-                <Icon
-                  name={
-                    toast.icon ??
-                    (toast.kind === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline')
-                  }
-                  size={18}
-                  color={toast.kind === 'error' ? colors.danger : colors.text}
-                />
-              )}
-              <View style={styles.message}>
-                <View style={styles.heading}>
-                  <Copy
-                    testID="action-toast-message"
-                    accessibilityRole="alert"
-                    style={styles.title}
-                  >
-                    {toast.message}
-                  </Copy>
-                  {percentage !== undefined && (
-                    <Copy testID="action-toast-percentage" style={styles.percentage}>
-                      {percentage}%
+              <Pressable
+                testID="action-toast-content"
+                accessibilityRole="button"
+                accessibilityLabel={
+                  toast.accessibilityLabel ?? `${toast.message}. Dismiss notification`
+                }
+                onPress={() => {
+                  setToast(null);
+                  toast.onPress?.();
+                }}
+                style={styles.content}
+              >
+                {toast.kind === 'loading' ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <Icon
+                    name={
+                      toast.icon ??
+                      (toast.kind === 'success'
+                        ? 'checkmark-circle-outline'
+                        : 'alert-circle-outline')
+                    }
+                    size={18}
+                    color={toast.kind === 'error' ? colors.danger : colors.text}
+                  />
+                )}
+                <View style={styles.message}>
+                  <View style={styles.heading}>
+                    <Copy
+                      testID="action-toast-message"
+                      accessibilityRole="alert"
+                      style={styles.title}
+                    >
+                      {toast.message}
                     </Copy>
+                    {percentage !== undefined && (
+                      <Copy testID="action-toast-percentage" style={styles.percentage}>
+                        {percentage}%
+                      </Copy>
+                    )}
+                  </View>
+                  {toast.detail ? (
+                    <Copy
+                      testID="action-toast-detail"
+                      variant="caption"
+                      muted
+                      style={styles.detail}
+                    >
+                      {toast.detail}
+                    </Copy>
+                  ) : null}
+                  {percentage !== undefined && (
+                    <View
+                      testID="action-toast-progress"
+                      accessibilityRole="progressbar"
+                      accessibilityLabel="Export progress"
+                      accessibilityValue={{ min: 0, max: 100, now: percentage }}
+                      style={[styles.track, { backgroundColor: colors.subtle }]}
+                    >
+                      <View
+                        style={[
+                          styles.fill,
+                          { backgroundColor: colors.accent, width: `${percentage}%` },
+                        ]}
+                      />
+                    </View>
                   )}
                 </View>
-                {toast.detail ? (
-                  <Copy testID="action-toast-detail" variant="caption" muted style={styles.detail}>
-                    {toast.detail}
-                  </Copy>
-                ) : null}
-                {percentage !== undefined && (
-                  <View
-                    testID="action-toast-progress"
-                    accessibilityRole="progressbar"
-                    accessibilityLabel="Export progress"
-                    accessibilityValue={{ min: 0, max: 100, now: percentage }}
-                    style={[styles.track, { backgroundColor: colors.subtle }]}
-                  >
-                    <View
-                      style={[
-                        styles.fill,
-                        { backgroundColor: colors.accent, width: `${percentage}%` },
-                      ]}
-                    />
-                  </View>
-                )}
-              </View>
-            </Pressable>
-            {Boolean(toast.actions?.length) && (
-              <View style={styles.actions}>
-                {toast.actions?.map((action, index) => (
-                  <Pressable
-                    key={action.label}
-                    testID={`action-toast-action-${index}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={action.label}
-                    onPress={() => {
-                      setToast(null);
-                      action.onPress();
-                    }}
-                    style={({ pressed }) => [
-                      styles.action,
-                      {
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.actionPill,
-                        { backgroundColor: action.primary ? colors.accent : colors.subtle },
+              </Pressable>
+              {Boolean(toast.actions?.length) && (
+                <View style={styles.actions}>
+                  {toast.actions?.map((action, index) => (
+                    <Pressable
+                      key={action.label}
+                      testID={`action-toast-action-${index}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={action.label}
+                      onPress={() => {
+                        setToast(null);
+                        action.onPress();
+                      }}
+                      style={({ pressed }) => [
+                        styles.action,
+                        {
+                          opacity: pressed ? 0.7 : 1,
+                        },
                       ]}
                     >
-                      <Copy
+                      <View
                         style={[
-                          styles.actionLabel,
-                          { color: action.primary ? colors.onAccent : colors.text },
+                          styles.actionPill,
+                          { backgroundColor: action.primary ? colors.accent : colors.subtle },
                         ]}
                       >
-                        {action.label}
-                      </Copy>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            <Pressable
-              testID="action-toast-dismiss"
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss notification"
-              onPress={() => setToast(null)}
-              style={({ pressed }) => [styles.dismiss, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Icon name="close" size={18} />
-            </Pressable>
+                        <Copy
+                          style={[
+                            styles.actionLabel,
+                            { color: action.primary ? colors.onAccent : colors.text },
+                          ]}
+                        >
+                          {action.label}
+                        </Copy>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              <Pressable
+                testID="action-toast-dismiss"
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss notification"
+                onPress={() => setToast(null)}
+                style={({ pressed }) => [styles.dismiss, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Icon name="close" size={18} />
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </ToastOverlay>
       )}
     </View>
   );

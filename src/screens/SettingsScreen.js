@@ -11,7 +11,7 @@ export default function SettingsScreen() {
   const billing = useBilling();
   return (
     <Screen testID="settings-screen">
-      <Stack.Screen options={{ headerRight: SettingsAccountAvatar }} />
+      <Stack.Screen options={{ headerRight: renderSettingsAccountAvatar }} />
       {qaEnabled && (
         <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
       )}
@@ -64,6 +64,10 @@ export default function SettingsScreen() {
       </Group>
     </Screen>
   );
+}
+
+function renderSettingsAccountAvatar() {
+  return <SettingsAccountAvatar />;
 }
 
 function SettingsAccountAvatar() {

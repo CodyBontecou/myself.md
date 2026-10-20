@@ -382,13 +382,15 @@ function browserRequest(path, sessionCookie, body, requestOrigin = origin) {
     request.end(body);
   });
 }
-/** @param {string} clientId @param {boolean} loggedIn @param {string} [scope] @param {string} [resource] @param {string} [sessionCookie] */
+/** @param {string} clientId @param {boolean} loggedIn @param {string} [scope] @param {string} [resource] @param {string} [sessionCookie] @param {string} [prompt] @param {string} [provider] */
 async function authorize(
   clientId,
   loggedIn,
   scope = 'openid profile email myselfmd offline_access',
   resource = `${origin}/mcp`,
   sessionCookie = cookie,
+  prompt,
+  provider,
 ) {
   const verifier = randomBytes(32).toString('base64url');
   const redirect =
@@ -404,6 +406,8 @@ async function authorize(
     scope,
     resource,
     ...(resource.endsWith(chatgptMcpPath) ? { prompt: 'consent' } : {}),
+    ...(prompt ? { prompt } : {}),
+    ...(provider ? { kc_idp_hint: provider } : {}),
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
     state: 'fixture-state',
@@ -767,7 +771,15 @@ try {
   assert.equal(expiredLogout.status, 400, expiredLogout.text);
   assert.match(expiredLogout.text, /Sign-out could not finish/);
   assert.match(expiredLogout.text, /invalid or expired/);
-  const login = await authorize('myselfmd-phone', false);
+  const login = await authorize(
+    'myselfmd-phone',
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'github',
+  );
   const nativeReviewerQuery = new URLSearchParams({
     client_id: 'myselfmd-phone',
     redirect_uri: 'myselfmd://oauth',
@@ -818,6 +830,11 @@ try {
   assert.equal((await fetch(`${issuer}/error`, { method: 'POST' })).status, 405);
   const loginURL = new URL(login.response.headers.get('location') ?? '');
   assert.equal(loginURL.pathname, '/login');
+  assert.equal(
+    loginURL.searchParams.get('kc_idp_hint'),
+    'github',
+    'Native provider choice must survive the signed web redirect',
+  );
   assert.equal(
     Number(loginURL.searchParams.get('exp')) -
       Math.floor(Number(loginURL.searchParams.get('ba_iat')) / 1000),

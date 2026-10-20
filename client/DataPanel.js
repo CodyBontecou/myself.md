@@ -4,7 +4,7 @@ import { mergeProfileStates, sameProfileValue } from '../core/profile-sync.js';
 import { trackAnalytics } from './analytics.js';
 import { exportFolderStatus } from './export-folder.js';
 import { showToast } from '../src/components/Toast.js';
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { errorJSON, errorMessage } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
@@ -290,6 +290,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     let active = true,
       running = false;
+    let lastPollError = '';
     /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
     const poll = async () => {
       if (!active || running) return;
@@ -362,9 +363,14 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
             setMessage('Answered your chat. The server clears responses after five minutes.');
           }
         }
+        lastPollError = '';
       } catch (error) {
         recordDebug(session, 'connection', 'failed', { error });
-        if (active) showToast({ message: errorJSON(error), kind: 'error' });
+        const pollError = errorMessage(error);
+        if (active && pollError !== lastPollError) {
+          lastPollError = pollError;
+          showToast({ message: pollError, kind: 'error' });
+        }
       } finally {
         running = false;
         if (active) timer = setTimeout(() => void poll(), 2000);

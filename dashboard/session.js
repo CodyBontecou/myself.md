@@ -5,6 +5,7 @@ import { readJSONResponse } from '../packages/support-chat/errors.js';
   null;
 let expires = 0;
 /** @type {Promise<void>|null} */ let refreshing = null;
+let continuedProviderQuery = '';
 function reset() {
   resetWebAnalytics();
   tokens = null;
@@ -132,6 +133,23 @@ export async function signIn(provider) {
 export async function initializeSession() {
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
   config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
+  const loginQuery = new URLSearchParams(location.search);
+  const selectedProvider = loginQuery.get('kc_idp_hint');
+  if (
+    ['/login', '/login/'].includes(location.pathname) &&
+    ['myselfmd-phone', 'myselfmd-dashboard'].includes(loginQuery.get('client_id') ?? '') &&
+    loginQuery.has('sig') &&
+    loginQuery.has('exp') &&
+    (selectedProvider === 'apple' || selectedProvider === 'github' || selectedProvider === 'google')
+  ) {
+    // Submit the original signed query; the server verifies it before starting the provider.
+    // Initialization can run twice; a failure leaves the ordinary picker available for retry.
+    if (continuedProviderQuery !== location.search) {
+      continuedProviderQuery = location.search;
+      await signIn(selectedProvider);
+    }
+    return false;
+  }
   if (
     location.pathname === '/login' &&
     new URLSearchParams(location.search).has('client_id') &&

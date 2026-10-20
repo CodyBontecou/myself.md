@@ -28,6 +28,7 @@ let exchangeCount = 0;
 let returnedTo = '';
 let pendingOAuth = '';
 let socialError = '';
+let socialRequests = 0;
 const context = {
   module: exports,
   crypto: webcrypto,
@@ -64,15 +65,18 @@ const context = {
         clientId: 'myselfmd-dashboard',
       });
     if (url === 'https://identity.example/realm/sign-in/social') {
+      socialRequests++;
       const body = JSON.parse(String(options.body));
       assert.equal(body.oauth_query, pendingOAuth);
-      assert.ok(['github', 'google'].includes(body.provider));
+      assert.ok(['apple', 'github', 'google'].includes(body.provider));
       if (socialError) return Response.json({ error: socialError }, { status: 401 });
       return Response.json({
         url:
           body.provider === 'google'
             ? 'https://accounts.google.com/o/oauth2/v2/auth'
-            : 'https://github.com/login/oauth/authorize',
+            : body.provider === 'apple'
+              ? 'https://appleid.apple.com/auth/authorize'
+              : 'https://github.com/login/oauth/authorize',
       });
     }
     assert.equal(url, 'https://identity.example/realm/protocol/openid-connect/token');
@@ -159,6 +163,65 @@ await session.signIn('google');
 assert.equal(destination.hostname, 'accounts.google.com');
 assert.equal(storage.has('myselfmd-dashboard-login'), false);
 assert.equal(exchangeCount, 6, 'Phone login must retain its own native token exchange');
+// A provider already chosen on the phone continues automatically on the web page.
+/** @param {'apple'|'github'|'google'} provider */
+async function verifyAutomaticProvider(provider) {
+  const query = new URLSearchParams(pendingOAuth);
+  query.set('kc_idp_hint', provider);
+  pendingOAuth = query.toString();
+  location.search = `?${pendingOAuth}`;
+  destination = new URL('https://workspace.example/login');
+  const before = socialRequests;
+  await Promise.all([session.initializeSession(), session.initializeSession()]);
+  assert.equal(
+    socialRequests,
+    before + 1,
+    'Repeated initialization must not start competing provider flows',
+  );
+  assert.notEqual(
+    destination.hostname,
+    'workspace.example',
+    'Selected native provider must start without a second web click',
+  );
+  assert.equal(storage.has('myselfmd-dashboard-login'), false);
+}
+await verifyAutomaticProvider('apple');
+await verifyAutomaticProvider('github');
+await verifyAutomaticProvider('google');
+assert.equal(exchangeCount, 6, 'Automatic continuation must preserve the native exchange');
+/** @param {string} provider */
+async function verifyIgnoredHint(provider) {
+  const query = new URLSearchParams(pendingOAuth);
+  query.set('kc_idp_hint', provider);
+  location.search = `?${query}`;
+  const before = socialRequests;
+  await session.initializeSession();
+  assert.equal(socialRequests, before, 'Unsupported hints keep the provider picker');
+}
+await verifyIgnoredHint('reviewer');
+await verifyIgnoredHint('unknown');
+const unsigned = new URLSearchParams(pendingOAuth);
+unsigned.delete('sig');
+location.search = `?${unsigned}`;
+const beforeUnsigned = socialRequests;
+await session.initializeSession();
+assert.equal(socialRequests, beforeUnsigned, 'Unsigned hints must not start automatically');
+location.search = `?${pendingOAuth}`;
+const failedContinuation = new URLSearchParams(pendingOAuth);
+failedContinuation.set('state', 'rejected-continuation');
+pendingOAuth = failedContinuation.toString();
+location.search = `?${pendingOAuth}`;
+socialError = 'invalid_signature';
+await assert.rejects(session.initializeSession());
+const failedContinuationRequests = socialRequests;
+assert.equal(await session.initializeSession(), false);
+assert.equal(socialRequests, failedContinuationRequests, 'A failed automatic flow must not loop');
+await assert.rejects(session.signIn('google'));
+assert.equal(
+  socialRequests,
+  failedContinuationRequests + 1,
+  'The picker must allow an explicit retry',
+);
 socialError = 'invalid_signature';
 const previousDestination = destination.href;
 await assert.rejects(session.signIn('google'), (reason) => {

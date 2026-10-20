@@ -440,7 +440,8 @@ export async function api(session, path, options) {
 async function refreshSession(session, rejectedToken) {
   activeSession(session);
   if (rejectedToken !== undefined && session.accessToken !== rejectedToken) return;
-  if (!session.refreshToken) throw new Error('Please sign in again.');
+  if (!session.refreshToken)
+    throw new Error('Your sign-in has expired. Open Settings → Account → Sign in again.');
   const refreshKey = `${session.issuer}|${session.resource}|${session.refreshToken}`;
   let pending = refreshes.get(refreshKey);
   if (!pending) {
@@ -457,7 +458,23 @@ async function refreshSession(session, rejectedToken) {
     })().finally(() => refreshes.delete(refreshKey));
     refreshes.set(refreshKey, pending);
   }
-  const token = await pending;
+  let token;
+  try {
+    token = await pending;
+  } catch (error) {
+    activeSession(session);
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'invalid_grant') {
+      // Retain the owner and paired data partition; only the revoked credentials retire.
+      session.accessToken = '';
+      session.refreshToken = '';
+      session.expires = 0;
+      await updateSession(session);
+      throw new Error('Your sign-in has expired. Open Settings → Account → Sign in again.', {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   activeSession(session);
   session.accessToken = token.accessToken;
   session.refreshToken = token.refreshToken ?? session.refreshToken;
