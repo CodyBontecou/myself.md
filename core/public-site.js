@@ -1,3 +1,4 @@
+import { documentationGuides } from './documentation.js';
 import { exportSchemas } from './export-schemas.js';
 import { serviceTerms } from './terms.js';
 import { freeExports, lifetimePurchaseGuide } from './billing.js';
@@ -194,6 +195,8 @@ Connect the phone data you choose to share to a compatible AI assistant through 
 
 ## Choose your starting point
 
+Already connected? Follow [MCP workflows](/docs/mcp-workflows) for filtered discovery, raw records or scalar summaries, bounded waiting, cloud pagination and owner-reviewed file exports.
+
 Public App Store and Google Play downloads are coming soon. Live queries require an installed myself.md app or authorized test build. Developers can follow the [source setup instructions](https://github.com/CodyBontecou/myself.md#run-locally). The CLI connects to the service; it does not install the phone app.
 
 - No installed app: explore the [supported datasets](/datasets), without an account or API key.
@@ -307,12 +310,20 @@ Private requests need an agent OAuth bearer token. Missing or expired tokens ret
 
 ## Discover available data
 
+For a step-by-step agent workflow and examples, read [Query and export approved data with MCP](/docs/mcp-workflows).
+
 After MCP initialization, call \`tools/list\` for the current schemas, inputs and limits.
 
 1. Discover the owner’s paired phones.
 2. Call \`get_phone_data_catalog\` for available data types and approved profiles.
 3. Choose a supported type covered by the profile and its data grants.
 4. Call \`query_phone_data\`, then poll \`get_phone_request\` for the result.
+
+Filter \`get_phone_data_catalog\` with optional \`domains\`, \`profileId\`, and \`detail: "summary"\` to inspect type counts and grants; request full detail to obtain exact type IDs. Cloud discovery \`list_cloud_exports\` accepts device/profile and inclusive-start/exclusive-end day filters and returns \`{exports, nextCursor}\` metadata pages.
+
+Use \`waitMs\` (0–25000 milliseconds) on query initiation or asynchronous status tools to wait for a pending state change. Owner-action states return immediately; follow \`retryAfterMs\`. Waiting does not reserve another allowance or change retry identity. REST query status accepts \`?waitMs=25000\`.
+
+For scalar summaries, pass \`aggregation: {operation: "sum", field: "quantity", groupBy: "day"}\` to \`query_phone_data\`. Operations are count, sum, avg, min and max; numeric operations require an explicit scalar field path inside native. Optional unitField defaults to native unit; different sources and units remain separate buckets. Count counts records, avg is unweighted, UTC buckets use record start, and intervals are not prorated or deduplicated. Nested series are not flattened. Empty days are omitted, not zero-filled. Each page reports scanned/skipped counts and coverage; keep warnings and follow nextCursor. Daily pages cover up to 31 days; interval grouping supports at most 31 days. A scan exceeding 10000 records, 200 source pages or 50 source/unit buckets fails without partial totals. Requires catalog dataQuery.aggregation version 1; older phones need an app update.
 
 Use the returned identifiers rather than guessing them. \`create_phone_export_profile\` submits a profile for owner review; it does not grant access.
 
@@ -518,7 +529,7 @@ export const publicPages = new Map([
   ['/', `${home}\n## Pricing\n\n${publicPricing}\n\n${faqMarkdown}`],
   ['/docs', overview],
   ['/docs/reference', guide],
-  ...healthGuides.map(
+  ...documentationGuides.map(
     (entry) => /** @type {[string,string]} */ ([`/docs/${entry.slug}`, entry.markdown]),
   ),
   ['/pricing', `# myself.md pricing\n\n${publicPricing}`],
@@ -537,6 +548,8 @@ export const publicPages = new Map([
 export const agentIndex = `# myself.md — Personal data for AI agents
 
 > Work with the health, screen time and recorded location data a person chooses to share. Discover their available sources, query an approved phone profile, or read an authorized cloud export. The owner controls access; native and provider permissions still apply.
+
+Already connected? Read [MCP workflows](https://myself.md/docs/mcp-workflows) for filtered discovery, scalar summaries, bounded waiting, pagination and export receipts.
 
 Website: https://myself.md
 Remote MCP server (Streamable HTTP): https://myself.md/mcp
@@ -584,6 +597,7 @@ Read these before requesting private access:
 
 - [Dataset catalog](https://myself.md/v1/dataset-catalog): question-first workflows, starter prompts, platform-specific required types, prerequisites, query tools, supported sources and limitations. Examples are fictional; discover actual approved phone data and coverage before answering. Omit limit for the default page, or use an integer from 1 to 3. Follow nextCursor as cursor until hasMore is false.
 - [Getting started](https://myself.md/v1/docs): connection, pairing, SDK and CLI guidance. Send Accept: text/markdown for Markdown; ordinary browser/curl requests return HTML.
+- [MCP workflows](https://myself.md/docs/mcp-workflows): filtered catalogs, aggregation, bounded waiting, safe retries, cloud pagination and file export receipts.
 - [API reference](https://myself.md/docs/reference): authentication, request formats, pagination and limits.
 - [Pricing](https://myself.md/pricing): the app includes ${freeExports} free exports or queries, then an optional Lifetime unlock. Successful phone captures consume allowance; discovering data is not a capture. Lifetime removes export/query usage limits and includes ${includedCloud} of cloud storage; Cloud is a single 100 GB subscription at $7.99/month or $79.99/year, including app access while subscribed with no Lifetime purchase required, purchased in the phone app.
 
@@ -596,23 +610,19 @@ curl -fsS -H 'Accept: text/markdown' https://myself.md/v1/docs
 
 ## First approved phone query
 
-Use live tool schemas for arguments. Do not invent IDs, native type names or client capabilities.
+For filtered catalogs, scalar aggregation, bounded waiting, cursors and file exports, read [MCP workflows](https://myself.md/docs/mcp-workflows). Read it through MCP with get_public_documentation and {"guide":"mcp-workflows"}. Both MCP resources serve the same workflow; tools/list determines what this connection exposes.
 
-1. Call list_connected_phones and select the intended owned phone. If several could match, resolve the choice with the owner.
-2. Call get_phone_data_catalog with its deviceId. Inspect online status, domains, collection limits and catalog.profiles. Resolve a profile name to its current stable ID; names can be duplicated. An offline catalog may be stale.
-3. Intersect the profile's selected types, relevant individual agentPermissions and available phone sources. Reuse a suitable approved profile. If one is missing, create_phone_export_profile can propose one for owner review where exposed. Delivery does not mean it was saved or approved. Access-review tools initiate owner handoffs; refresh the catalog to verify the saved permissions.
-For an All Time Health file export, discover export_all_time_health on a supporting phone. Supply its saved profile ID and a caller-chosen request UUID, then have the owner review the destination and Health selection on the phone. Poll status until terminal; accepted/awaiting_user/running do not mean files were delivered. Read receipt.partial and check history before retrying interrupted work with a new UUID. Export approval does not grant record-read access.
-
-4. Choose one needed type and a bounded interval. Convert the person's dates using their timezone to UTC ISO 8601 start/end values. Phone queries allow at most 31 days, but a source can impose a smaller capture window. Explain any uncovered period before presenting a comparison.
-5. Call query_phone_data with the discovered deviceId, profileId, domain and type, interval, and a caller-chosen requestKey. Save the returned requestId.
-6. Poll get_phone_request. queued and running mean wait; complete means inspect the result; failed means inspect and report the error. Request metadata and results expire after five minutes. Stop on an expired or missing request. Accepted or queued work is not a completed read.
-7. Follow every returned nextCursor by querying the next page with the same selection and interval. Each new page is new work and needs a new requestKey; reuse that page's key only for an identical retry. Preserve native units, source metadata and capture warnings. State the actual source, interval and any gaps in the answer.
-
-Profile selection, OS access and agent permission are distinct. An empty HealthKit result can mean no records or limited permission; it does not establish authorization or a zero measurement. Request only the records needed for the task.
+1. Select an intended owned phone from list_connected_phones.
+2. Filter get_phone_data_catalog by needed domains; use detail summary for counts and full for exact type IDs. Resolve current profile names to stable IDs and disambiguate duplicates.
+3. Intersect source availability, profile selections and individual agentPermissions. Refresh after an owner handoff; an offline catalog may be stale. Pairing, OS consent and agent permission are separate.
+4. Convert the person's dates to explicit UTC start/end. Use raw records or scalar aggregation according to the task. Aggregation requires catalog.dataQuery.aggregation equal to 1; a backend update alone does not update the phone.
+5. Call query_phone_data with a new requestKey for the page and optional waitMs up to 25000. Retain requestId and honor retryAfterMs while queued or running. A state change can return running; use records only after complete. Stop on failed, expired or missing work.
+6. Follow result.page.nextCursor with the same query configuration and a new page key. Preserve source/unit separation, coverage, skipped counts and warnings. Missing days and empty HealthKit results are not zero measurements or proof of authorization.
+7. Report the verified effect and any gaps. For files, export_phone_data requires owner review and a delivery receipt; null export bounds select earliest readable history through now, while Screen Time requires a start. Export approval does not grant record reads.
 
 ## Read existing cloud exports
 
-Use list_cloud_exports and read_cloud_export where exposed, following their live schemas and existing profile/source grants. Confirm the export's source and date range; a stored file does not prove a fresh phone query. If the client lacks these operations, report the limitation and use the documented owner handoff. Do not claim a tool exists solely because it is named here.
+Use list_cloud_exports with task-relevant device/profile/day filters. It returns {exports,nextCursor} metadata pages. Read a chosen exportId with read_cloud_export and its separate record cursor; list cursors and query cursors are not interchangeable. Each successful cloud record read can consume allowance, including retries. Follow live schemas and existing profile/source grants. Confirm the export's source and date range; a stored file does not prove a fresh phone query. If the client lacks these operations, report the limitation and use the documented owner handoff. Do not claim a tool exists solely because it is named here.
 
 ## Terminal and JavaScript access
 

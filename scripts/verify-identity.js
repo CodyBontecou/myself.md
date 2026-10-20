@@ -1,3 +1,5 @@
+import { mcpGuide } from '../core/mcp-guide.js';
+import { serviceTerms } from '../core/terms.js';
 import { chatgptMcpPath, chatgptToolNames } from '../server/chatgpt-tools.js';
 import { parseProfile } from '../core/profiles.js';
 import { Buffer } from 'node:buffer';
@@ -25,7 +27,7 @@ import {
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createHmac, createHash, randomBytes } from 'node:crypto';
+import { createHmac, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { generateKeyPair, exportPKCS8, createRemoteJWKSet, jwtVerify } from 'jose';
 import { createIdentity } from '../server/identity.js';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -588,8 +590,8 @@ try {
                 'android',
                 'deletion-cloud-fixture',
                 fixtureSubject,
-                'myself_md_cloud_10gb',
-                'cloud_10gb',
+                'myself_md_cloud_100gb',
+                'cloud_100gb',
                 'monthly',
                 'expired',
                 Date.now() - 90 * 86400000,
@@ -1237,8 +1239,47 @@ try {
     assert.ok(Array.isArray(listed.content));
     const text = listed.content[0];
     assert.ok(text && text.type === 'text');
-    const files = z.array(z.object({ id: z.string() })).parse(JSON.parse(text.text));
+    const files = z.array(z.object({ id: z.string() })).parse(JSON.parse(text.text).exports);
     assert.equal(files.length, 4);
+    const firstListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { limit: 1 },
+    });
+    const firstListText = firstListPage.content.find((part) => part.type === 'text');
+    assert.ok(firstListText && firstListText.type === 'text');
+    const firstList = z
+      .object({
+        exports: z.array(z.object({ id: z.string(), profileId: z.string() })),
+        nextCursor: z.string(),
+      })
+      .parse(JSON.parse(firstListText.text));
+    assert.equal(firstList.exports.length, 1);
+    const secondListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { limit: 1, cursor: firstList.nextCursor },
+    });
+    const secondListText = secondListPage.content.find((part) => part.type === 'text');
+    assert.ok(secondListText && secondListText.type === 'text');
+    const secondList = z
+      .object({ exports: z.array(z.object({ id: z.string() })) })
+      .parse(JSON.parse(secondListText.text));
+    assert.notEqual(secondList.exports[0]?.id, firstList.exports[0]?.id);
+    assert.equal(
+      (
+        await reviewerClient.callTool({
+          name: 'list_cloud_exports',
+          arguments: { cursor: firstList.nextCursor, profileId: 'different' },
+        })
+      ).isError,
+      true,
+    );
+    const emptyListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { start: '2099-01-01' },
+    });
+    const emptyListText = emptyListPage.content.find((part) => part.type === 'text');
+    assert.ok(emptyListText && emptyListText.type === 'text');
+    assert.deepEqual(JSON.parse(emptyListText.text), { exports: [], nextCursor: null });
     const fileId = files[0]?.id;
     assert.ok(fileId);
     const page = await reviewerClient.callTool({
@@ -1375,6 +1416,23 @@ try {
       // oxlint-disable-next-line eslint/no-await-in-loop
       await assert.rejects(() => restrictedClient.callTool({ name, arguments: {} }), /not found/);
     }
+    const workflow = await restrictedClient.callTool({
+      name: 'get_public_documentation',
+      arguments: { guide: mcpGuide.slug },
+    });
+    assert.notEqual(workflow.isError, true);
+    assert.ok(
+      workflow.content.some((part) => part.type === 'text' && part.text === mcpGuide.markdown),
+    );
+    assert.equal(
+      (
+        await restrictedClient.callTool({
+          name: 'get_public_documentation',
+          arguments: { guide: 'https://example.com/private' },
+        })
+      ).isError,
+      true,
+    );
     const documentation = await restrictedClient.callTool({
       name: 'get_public_documentation',
       arguments: {},
@@ -1387,16 +1445,31 @@ try {
     );
     assert.ok(
       !documentation.content.some(
-        (value) => value.type === 'text' && /\$\d|timemd\.app|planned US price/.test(value.text),
+        (value) =>
+          value.type === 'text' &&
+          /\$\d|timemd\.app|planned US price/.test(value.text.replace(serviceTerms, '')),
       ),
     );
+    assert.ok(
+      documentation.content.some(
+        (value) =>
+          value.type === 'text' &&
+          value.text.includes(serviceTerms) &&
+          value.text.includes('export_phone_data'),
+      ),
+    );
+    const unownedPhoneExport = await restrictedClient.callTool({
+      name: 'export_phone_data',
+      arguments: { deviceId: randomUUID(), profileId: 'unowned', requestId: randomUUID() },
+    });
+    assert.equal(unownedPhoneExport.isError, true);
     const restrictedList = await restrictedClient.callTool({
       name: 'list_cloud_exports',
       arguments: {},
     });
     const text = restrictedList.content.find((value) => value.type === 'text');
     assert.ok(text && text.type === 'text');
-    assert.equal(JSON.parse(text.text).length, 4);
+    assert.equal(JSON.parse(text.text).exports.length, 4);
     assert.equal(
       (
         await restrictedClient.callTool({

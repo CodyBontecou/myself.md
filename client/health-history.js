@@ -65,21 +65,7 @@ async function earliestType(owner, type, end, check) {
     return earliest;
   }
   if (Platform.OS === 'android') {
-    if (!(await HC.initialize())) throw new Error('Install or update Health Connect, then retry.');
-    let permissions = await HC.getGrantedPermissions();
-    if (
-      !permissions.some((p) => p.recordType === 'ReadHealthDataHistory' && p.accessType === 'read')
-    ) {
-      await HC.requestPermission([{ accessType: 'read', recordType: 'ReadHealthDataHistory' }]);
-      await check();
-      permissions = await HC.getGrantedPermissions();
-    }
-    if (
-      !permissions.some((p) => p.recordType === 'ReadHealthDataHistory' && p.accessType === 'read')
-    )
-      throw new Error(
-        'All Time requires Health Connect past-data access. Enable it in Health Connect app permissions, then retry.',
-      );
+    await requireHealthHistory(check);
     const page = await HC.readRecords(
       /** @type {import('react-native-health-connect').RecordType} */ (type),
       {
@@ -122,4 +108,22 @@ async function earliestType(owner, type, end, check) {
   const first = samples[0];
   if (!first) return null;
   return new Date(first.startDate).toISOString();
+}
+
+/** @param {()=>Promise<void>} check */
+export async function requireHealthHistory(check) {
+  if (Platform.OS !== 'android') return;
+  if (!(await HC.initialize())) throw new Error('Install or update Health Connect, then retry.');
+  let permissions = await HC.getGrantedPermissions();
+  if (
+    !permissions.some((p) => p.recordType === 'ReadHealthDataHistory' && p.accessType === 'read')
+  ) {
+    await HC.requestPermission([{ accessType: 'read', recordType: 'ReadHealthDataHistory' }]);
+    await check();
+    permissions = await HC.getGrantedPermissions();
+  }
+  if (!permissions.some((p) => p.recordType === 'ReadHealthDataHistory' && p.accessType === 'read'))
+    throw new Error(
+      'Historical export requires Health Connect past-data access. Enable it in Health Connect app permissions, then retry.',
+    );
 }

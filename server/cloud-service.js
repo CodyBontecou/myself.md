@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 const content = (/** @type {unknown} */ value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
@@ -41,8 +41,36 @@ export function createCloudService({
       {
         title: 'List shared cloud exports',
         description:
-          'List stored exports shared with MCP under the phone profile’s last confirmed Health, Screen time and Location Agent permissions. Includes those permissions; all-off or unsynced profiles are hidden. Agent permissions are the sole profile access gate; no separate cloud-sharing switch is required. Works while your phone is offline after permission synchronization.',
-        inputSchema: z.object({}),
+          'List a filtered, paginated metadata page of stored exports shared with MCP under the phone profile’s last confirmed Health, Screen time and Location Agent permissions. Includes those permissions; all-off or unsynced profiles are hidden. Agent permissions are the sole profile access gate; no separate cloud-sharing switch is required. Works while your phone is offline after permission synchronization.',
+        inputSchema: z
+          .object({
+            deviceId: z.string().uuid().optional().describe('Filter by an owned phone ID.'),
+            profileId: z
+              .string()
+              .min(1)
+              .max(100)
+              .optional()
+              .describe('Filter by an exact saved profile ID.'),
+            start: z.iso.date().optional().describe('Inclusive export day, YYYY-MM-DD.'),
+            end: z.iso.date().optional().describe('Exclusive export day, YYYY-MM-DD.'),
+            limit: z
+              .number()
+              .int()
+              .min(1)
+              .max(100)
+              .default(50)
+              .describe('Maximum export metadata entries per page.'),
+            cursor: z
+              .string()
+              .max(500)
+              .default('')
+              .describe('Opaque nextCursor from this same filtered list; omit on the first page.'),
+          })
+          .strict()
+          .refine(
+            (input) => !input.start || !input.end || input.end > input.start,
+            'End must be later than start.',
+          ),
         annotations: {
           title: 'List shared cloud exports',
           readOnlyHint: true,
@@ -51,7 +79,39 @@ export function createCloudService({
           openWorldHint: false,
         },
       },
-      async () => content(cloud.list(subject, true)),
+      async ({ deviceId, profileId, start, end, limit, cursor }) => {
+        if (client) cloud.observeAgent(subject, client);
+        const identity = createHash('sha256')
+          .update(JSON.stringify([deviceId, profileId, start, end]))
+          .digest('hex');
+        const rows = cloud
+          .list(subject, true)
+          .filter(
+            (row) =>
+              (!deviceId || row.deviceId === deviceId) &&
+              (!profileId || row.profileId === profileId) &&
+              (!start || row.day >= start) &&
+              (!end || row.day < end),
+          );
+        let offset = 0;
+        if (cursor) {
+          const previous = JSON.parse(cursor);
+          if (previous.identity !== identity || typeof previous.id !== 'string')
+            throw new Error('Cursor belongs to a different export list.');
+          const index = rows.findIndex((row) => row.id === previous.id);
+          if (index < 0)
+            throw new Error('Export list changed or access was revoked; restart discovery.');
+          offset = index + 1;
+        }
+        const exports = rows.slice(offset, offset + limit);
+        return content({
+          exports,
+          nextCursor:
+            offset + limit < rows.length
+              ? JSON.stringify({ identity, id: exports.at(-1)?.id })
+              : null,
+        });
+      },
     );
     mcp.registerTool(
       'read_cloud_export',

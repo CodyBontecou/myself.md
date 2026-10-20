@@ -119,7 +119,7 @@ function ProfileExportControls({
               progress,
             });
           },
-          { allTimeHealth },
+          allTimeHealth ? { domains: ['health'], range: { start: null, end: null } } : {},
         );
         updateToast({
           detail: result.failedSources

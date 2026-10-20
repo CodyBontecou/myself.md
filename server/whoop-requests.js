@@ -1,8 +1,10 @@
+import { waitMsInput } from './bounded-wait.js';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
 /** @typedef {{requestId:string,subject:string,client:string|null,deviceId:string,operation:'connect'|'disconnect',status:'accepted'|'awaiting_user'|'running'|'completed'|'failed'|'cancelled'|'expired',createdAt:number,expiresAt:number}} WhoopRequest */
 export const whoopRequestInput = z
   .object({
+    waitMs: waitMsInput,
     action: z
       .enum(['request', 'status', 'cancel'])
       .default('request')

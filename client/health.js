@@ -28,9 +28,31 @@ export async function healthTypes(selectable = false) {
   }
   return [];
 }
-export async function authorizeHealth() {
+/** @param {string[]} [selected] Profile source keys; omitted for source-wide review. */
+export async function authorizeHealth(selected) {
+  const chosen = selected
+    ?.filter((key) => key.startsWith('native:') && !key.startsWith('native:whoop.'))
+    .map((key) => key.slice(7));
+  if (chosen && !chosen.length)
+    throw new Error(
+      'Select a native Health data type in this profile before reviewing permissions.',
+    );
   if (Platform.OS === 'ios') {
-    const types = await healthTypes();
+    const available = await healthTypes();
+    const requested = chosen ? new Set(chosen) : null;
+    if (requested?.has('HKCorrelationTypeIdentifierBloodPressure')) {
+      requested.add('HKQuantityTypeIdentifierBloodPressureSystolic');
+      requested.add('HKQuantityTypeIdentifierBloodPressureDiastolic');
+    }
+    if (requested?.has('HKCorrelationTypeIdentifierFood'))
+      for (const identifier of quantities.filter((type) =>
+        type.startsWith('HKQuantityTypeIdentifierDietary'),
+      ))
+        requested.add(identifier);
+    // Workouts preserve genuinely associated quantity samples and routes.
+    if (requested?.has('HKWorkoutTypeIdentifier'))
+      for (const type of quantities) requested.add(type);
+    const types = available.filter((type) => !requested || requested.has(type));
     if (!types.length)
       throw new Error(
         'HealthKit is unavailable on this device. You can still import health exports.',
@@ -40,16 +62,20 @@ export async function authorizeHealth() {
     await HK.requestAuthorization({
       toRead: /** @type {HKType[]} */ ([
         ...types.filter((t) => !t.startsWith('HKCorrelation')),
-        'HKWorkoutRouteTypeIdentifier',
+        ...(!chosen || chosen.includes('HKWorkoutTypeIdentifier')
+          ? ['HKWorkoutRouteTypeIdentifier']
+          : []),
       ]),
     });
   } else if (Platform.OS === 'android') {
     if (!(await HC.initialize())) throw new Error('Install or update Health Connect, then retry.');
     await HC.requestPermission(
-      androidTypes.map((type) => ({
-        accessType: 'read',
-        recordType: /** @type {import('react-native-health-connect').RecordType} */ (type),
-      })),
+      androidTypes
+        .filter((type) => !chosen || chosen.includes(type))
+        .map((type) => ({
+          accessType: 'read',
+          recordType: /** @type {import('react-native-health-connect').RecordType} */ (type),
+        })),
     );
   }
 }

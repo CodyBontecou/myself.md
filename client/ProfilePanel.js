@@ -34,7 +34,7 @@ import {
   uniqueProfileName,
   parseAgentPermissions,
 } from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,inline?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain,selected?:string[])=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,inline?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,

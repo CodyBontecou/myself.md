@@ -30,12 +30,14 @@ export default function AccountScreen() {
                 : 'App access'
           }
           subtitle={
-            current.unlocked
-              ? 'Active · unlimited exports and queries'
-              : 'No lifetime access linked yet'
+            current.accountUnlocked
+              ? 'Active · unlimited exports and agent queries'
+              : current.unlocked
+                ? 'Unlocked on this phone · account access not verified for agent queries'
+                : 'No lifetime access linked yet'
           }
         />
-        {!current.unlocked && (
+        {!current.accountUnlocked && (
           <>
             <Divider />
             <Row

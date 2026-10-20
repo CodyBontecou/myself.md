@@ -1,4 +1,5 @@
-import { createHealthExports, healthExportInput } from './health-export.js';
+import { boundedWait, waitMsInput } from './bounded-wait.js';
+import { createPhoneExports, phoneExportInput } from './phone-export.js';
 import { createWhoopRequests, whoopRequestInput } from './whoop-requests.js';
 import { exportSchemas, defaultExportSchema } from '../core/export-schemas.js';
 import { randomUUID, createHash } from 'node:crypto';
@@ -28,6 +29,42 @@ const ttl = 300000;
 const domainSchema = z.enum(domains);
 const exportSchema = z.enum(exportSchemas().versions.map((version) => version.id));
 const queryFields = {
+  waitMs: waitMsInput,
+  aggregation: z
+    .object({
+      operation: z
+        .enum(['count', 'sum', 'avg', 'min', 'max'])
+        .describe(
+          'Aggregate native records; count counts records, avg is an unweighted arithmetic mean.',
+        ),
+      field: z
+        .string()
+        .regex(/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/)
+        .max(160)
+        .optional()
+        .describe(
+          'Explicit scalar numeric path inside native, such as quantity or energy.inKilocalories; required except for count. Nested series are not flattened.',
+        ),
+      unitField: z
+        .string()
+        .regex(/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/)
+        .max(160)
+        .optional()
+        .describe(
+          'Native unit path; defaults to unit. Different units and record sources form separate buckets; missing units remain null.',
+        ),
+      groupBy: z
+        .enum(['day', 'interval'])
+        .default('day')
+        .describe(
+          'UTC day buckets, or one interval of at most 31 days. Buckets use record start, without proration or deduplication.',
+        ),
+    })
+    .strict()
+    .optional()
+    .describe(
+      'Optional bounded scalar aggregation instead of raw records. A page covers at most 31 days and 50 source/unit buckets, scanning at most 10000 records/200 source pages. Limits or partial capture fail without partial totals. Follow nextCursor for remaining days.',
+    ),
   requestKey: z
     .string()
     .min(1)
@@ -68,13 +105,11 @@ const queryFields = {
   start: z.iso
     .datetime()
     .describe(
-      'Inclusive start of the query interval as a UTC ISO 8601 timestamp. The positive interval must be at most 31 days.',
+      'Inclusive start of the query interval as a UTC ISO 8601 timestamp. Long intervals are paginated in bounded provider windows.',
     ),
   end: z.iso
     .datetime()
-    .describe(
-      'End of the query interval as a UTC ISO 8601 timestamp, later than start and no more than 31 days after it.',
-    ),
+    .describe('End of the query interval as a UTC ISO 8601 timestamp, later than start.'),
   cursor: z
     .string()
     .max(16000)
@@ -89,7 +124,7 @@ const queryFields = {
     .max(50)
     .default(50)
     .describe(
-      'Maximum records in this page, up to 50. Follow the returned nextCursor to continue.',
+      'Raw record limit up to 50; for daily aggregation, maximum UTC days scanned (capped at 31), with up to 50 source/unit buckets. Follow nextCursor.',
     ),
   format: z
     .enum(['json', 'jsonl'])
@@ -112,8 +147,8 @@ const querySchema = z
   .refine(
     (q) =>
       Date.parse(q.end) > Date.parse(q.start) &&
-      Date.parse(q.end) - Date.parse(q.start) <= 31 * 86400000,
-    { message: 'Use a positive range of at most 31 days; paginate longer exports.' },
+      Date.parse(q.end) - Date.parse(q.start) <= 100000 * 86400000,
+    { message: 'Use a positive interval within the supported calendar range.' },
   );
 const profileSchema = z.object({
   schema: z
@@ -300,7 +335,11 @@ const catalogSchema = z.object({
     .optional(),
   profileSync: z.object({ base: z.unknown().nullable() }).optional(),
   locationTracking: z.boolean().optional(),
-  allTimeHealthExport: z
+  dataQuery: z
+    .object({ version: z.literal(1), aggregation: z.literal(1).optional() })
+    .strict()
+    .optional(),
+  dataExport: z
     .object({ version: z.literal(1) })
     .strict()
     .optional(),
@@ -362,7 +401,7 @@ const content = (value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
   structuredContent: /** @type {Record<string,unknown>} */ (value),
 });
-/** @typedef {z.infer<typeof querySchema>} Query */
+/** @typedef {Omit<z.infer<typeof querySchema>,'waitMs'>} Query */
 /** @typedef {{subject:string,deviceId:string,seen:number,catalog:z.infer<typeof catalogSchema>}} Phone */
 /** @typedef {{id:string,subject:string,deviceId:string,expires:number,client:string|null,state:'queued'|'running'|'complete'|'failed',query:Query,result?:{schema:import('../core/export-schemas.js').ExportSchema,format:Query['format'],page:import('../core/data.js').DataPage,export:string|null},error?:string}} Job */
 /** @typedef {{id:string,subject:string,deviceId:string,profile:import('../core/profiles.js').ProfileDraft,expires:number,state:'queued'|'delivered'}} Proposal */
@@ -379,7 +418,7 @@ function phoneCatalogAllows(catalog, query) {
     query,
   );
 }
-/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,whoopRequests?:Map<string,import('./whoop-requests.js').WhoopRequest>,captures?:Map<string,import('./location-capture.js').LocationCapture>,healthExports?:Map<string,import('./health-export.js').HealthExport>}} dependencies */
+/** @param {{cloud:Pick<import('./cloud-store.js').CloudStore,'syncAgentPermissions'> & Partial<Pick<import('./cloud-store.js').CloudStore,'profileSync'|'observeAgent'>>,billing:import('./billing-store.js').BillingStore,refreshEntitlement:(subject:string)=>Promise<void>,devices:(subject:string)=>ReturnType<import('./pairing-store.js').PairingStore['devices']>,history:import('./history-store.js').HistoryStore,phones?:Map<string,Phone>,jobs?:Map<string,Job>,proposals?:Map<string,Proposal>,whoopRequests?:Map<string,import('./whoop-requests.js').WhoopRequest>,captures?:Map<string,import('./location-capture.js').LocationCapture>,phoneExports?:Map<string,import('./phone-export.js').PhoneExport>}} dependencies */
 export function createDataService({
   cloud,
   billing,
@@ -391,7 +430,7 @@ export function createDataService({
   proposals = new Map(),
   captures = new Map(),
   whoopRequests = new Map(),
-  healthExports = new Map(),
+  phoneExports = new Map(),
 }) {
   const whoopOperations = createWhoopRequests({
     requests: whoopRequests,
@@ -409,14 +448,42 @@ export function createDataService({
       if (client) cloud.observeAgent?.(subject, client);
     },
   });
-  const healthExportOperations = createHealthExports({
-    requests: healthExports,
+  const phoneExportOperations = createPhoneExports({
+    requests: phoneExports,
     own,
     phone: (deviceId) => phones.get(deviceId),
     authorize: (subject, client) => {
       if (client) cloud.observeAgent?.(subject, client);
     },
   });
+
+  /** @param {string} subject @param {string|null} client @param {string} requestId @param {boolean} chatgpt */
+  function queryResult(subject, client, requestId, chatgpt) {
+    const job = jobs.get(requestId);
+    if (!job || job.subject !== subject || job.expires <= Date.now())
+      throw new PairingError(404, 'Request expired or not found.');
+    own(job.deviceId, subject);
+    if (client) cloud.observeAgent?.(subject, client);
+    if (job.client !== client) throw new PairingError(404, 'Request expired or not found.');
+    if (!queryAllowed(job.query)) {
+      revokeQueries(subject, job.deviceId);
+      throw new PairingError(404, 'Request expired or not found.');
+    }
+    if (job.state === 'complete')
+      history.update(subject, requestId, {
+        status: job.result?.page.complete === false ? 'partial' : 'complete',
+      });
+    return {
+      requestId,
+      status: job.state,
+      expiresAt: job.expires,
+      result: job.result ?? null,
+      error:
+        chatgpt && job.error
+          ? 'Phone capture failed. Review the failure on your device.'
+          : (job.error ?? null),
+    };
+  }
   /** Completed capture outcomes survive payload expiry and grant revocation.
    * @param {string} subject @param {string} id */
   function captured(subject, id) {
@@ -480,7 +547,7 @@ export function createDataService({
   function cancelPhone(deviceId, subject) {
     whoopOperations.cancel(subject, deviceId);
     locationCaptures.cancel(subject, deviceId);
-    healthExportOperations.cancel(subject, deviceId);
+    phoneExportOperations.cancel(subject, deviceId);
     phones.delete(deviceId);
     for (const [id, p] of proposals)
       if (p.deviceId === deviceId && p.subject === subject) proposals.delete(id);
@@ -497,7 +564,7 @@ export function createDataService({
   function cancelAccount(subject) {
     whoopOperations.cancel(subject);
     locationCaptures.cancel(subject);
-    healthExportOperations.cancel(subject);
+    phoneExportOperations.cancel(subject);
     for (const [id, phone] of phones) if (phone.subject === subject) phones.delete(id);
     for (const [id, proposal] of proposals) if (proposal.subject === subject) proposals.delete(id);
     for (const [id, job] of jobs)
@@ -511,7 +578,7 @@ export function createDataService({
   function cancelAgent(subject, client) {
     whoopOperations.cancel(subject, undefined, client);
     locationCaptures.cancel(subject, undefined, client);
-    healthExportOperations.cancel(subject, undefined, client);
+    phoneExportOperations.cancel(subject, undefined, client);
     for (const [id, job] of jobs) {
       if (job.subject === subject && job.client === client) {
         if (!captured(subject, id) && job.state !== 'failed')
@@ -539,24 +606,48 @@ export function createDataService({
           openWorldHint: true,
         },
       },
-      (input) => content(whoopOperations.tool(subject, client, input)),
+      async (input) => {
+        whoopOperations.tool(subject, client, input);
+        return content(
+          await boundedWait(
+            () => {
+              own(input.deviceId, subject);
+              if (client) cloud.observeAgent?.(subject, client);
+              return whoopOperations.tool(subject, client, { ...input, action: 'status' });
+            },
+            input.action === 'cancel' ? 0 : input.waitMs,
+          ),
+        );
+      },
     );
     mcp.registerTool(
-      'export_all_time_health',
+      'export_phone_data',
       {
-        title: 'Export all readable Health history',
+        title: 'Export phone data',
         description:
-          'Request, inspect or cancel an owner-reviewed All Time Health export on a supported online phone. Exports only the saved profile Health selection, from its earliest readable record through today, to its saved local, HTTPS or cloud destination in daily files. Uses the same export engine, billing and history as the phone action. Does not grant agent read access. OS history permission and phone owner approval are required; keep the app open. Poll this tool with action status. Accepted, awaiting_user and running are not delivery. Completed requires a phone delivery receipt; receipt.partial reports source failures. Cancellation/expiry retain already-written files. Reusing the same requestId never starts a second export; use a new ID only after checking phone history for interrupted effects.',
-        inputSchema: healthExportInput,
+          'Request, inspect or cancel an owner-reviewed file export from a saved profile. Choose domains and date bounds; null bounds use earliest readable history and the current time. Uses saved formats, destination and file behavior with shared billing/history. Requires a compatible online phone, native permissions and owner review. Returns lifecycle status and delivery receipts, never grants record access. Reuse requestId with identical parameters for safe retries. Poll status until terminal; cancellation retains existing files.',
+        inputSchema: phoneExportInput,
         annotations: {
-          title: 'Export all readable Health history',
+          title: 'Export phone data',
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: true,
           openWorldHint: true,
         },
       },
-      (input) => content(healthExportOperations.tool(subject, client, input)),
+      async (input) => {
+        phoneExportOperations.tool(subject, client, input);
+        return content(
+          await boundedWait(
+            () => {
+              own(input.deviceId, subject);
+              if (client) cloud.observeAgent?.(subject, client);
+              return phoneExportOperations.tool(subject, client, { ...input, action: 'status' });
+            },
+            input.action === 'cancel' ? 0 : input.waitMs,
+          ),
+        );
+      },
     );
     mcp.registerTool(
       'request_phone_location_capture',
@@ -573,7 +664,19 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      (input) => content(locationCaptures.tool(subject, client, input)),
+      async (input) => {
+        locationCaptures.tool(subject, client, input);
+        return content(
+          await boundedWait(
+            () => {
+              own(input.deviceId, subject);
+              if (client) cloud.observeAgent?.(subject, client);
+              return locationCaptures.tool(subject, client, { ...input, action: 'status' });
+            },
+            input.action === 'cancel' ? 0 : input.waitMs,
+          ),
+        );
+      },
     );
     mcp.registerTool(
       'manage_phone_profiles',
@@ -582,6 +685,7 @@ export function createDataService({
         description:
           'Read the full synchronized profile configuration and last phone confirmation for an owned device, propose an existing-profile update for explicit owner review, or inspect its outcome. Proposals never change configuration, grant agent access or start exports. The owner reviews and saves the suggestion under Profiles & permissions in the web dashboard; the paired phone must then sync before completion. Saving Cloud as the destination allows uploads, with upload credentials managed automatically on the signed-in phone. OS permissions, local folders, automatic-export opt-in and secure HTTP credentials remain phone handoffs. Reuse requestId when checking status. Stored configuration contains no source records.',
         inputSchema: z.object({
+          waitMs: waitMsInput,
           action: z
             .enum(['list', 'propose', 'status'])
             .describe(
@@ -614,7 +718,7 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      async ({ action, deviceId, profileId, profile, requestId }) => {
+      async ({ action, deviceId, profileId, profile, requestId, waitMs }) => {
         own(deviceId, subject);
         const store = cloud.profileSync;
         if (!store) throw new PairingError(409, 'Profile synchronization is unavailable.');
@@ -630,9 +734,17 @@ export function createDataService({
                 },
           );
         if (action === 'status') {
-          const request = value?.requests.find((r) => r.id === requestId);
-          if (!request) throw new PairingError(404, 'Profile suggestion not found.');
-          return content(request);
+          return content(
+            await boundedWait(() => {
+              own(deviceId, subject);
+              if (client) cloud.observeAgent?.(subject, client);
+              const request = store
+                .get(subject, deviceId)
+                ?.requests.find((r) => r.id === requestId);
+              if (!request) throw new PairingError(404, 'Profile suggestion not found.');
+              return request;
+            }, waitMs),
+          );
         }
         if (!profileId || !profile)
           throw new PairingError(
@@ -955,6 +1067,7 @@ export function createDataService({
         description:
           'Check whether a generated profile was received for review on the phone. Delivered does not mean saved or granted. Pending deliveries expire after five minutes.',
         inputSchema: z.object({
+          waitMs: waitMsInput,
           deliveryId: z
             .string()
             .uuid()
@@ -970,13 +1083,17 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      async ({ deliveryId }) => {
-        const p = proposals.get(deliveryId);
-        if (!p || p.subject !== subject || p.expires <= Date.now())
-          throw new PairingError(404, 'Profile delivery expired or not found.');
-        own(p.deviceId, subject);
-        return content({ deliveryId, status: p.state, expiresAt: p.expires });
-      },
+      async ({ deliveryId, waitMs }) =>
+        content(
+          await boundedWait(() => {
+            if (client) cloud.observeAgent?.(subject, client);
+            const p = proposals.get(deliveryId);
+            if (!p || p.subject !== subject || p.expires <= Date.now())
+              throw new PairingError(404, 'Profile delivery expired or not found.');
+            own(p.deviceId, subject);
+            return { deliveryId, status: p.state, expiresAt: p.expires };
+          }, waitMs),
+        ),
     );
     mcp.registerTool(
       'get_phone_data_catalog',
@@ -985,6 +1102,26 @@ export function createDataService({
         description:
           'Discover phone data types, profiles with independent agentPermissions (agentAccess is a compatibility summary), profile-derived source availability and collection limits before querying. Select an approved profile and intersect its selections with domain types. When the user refers to a profile by name, match that name against catalog.profiles[].name and use the corresponding stable id for subsequent tools. Names can change and are not unique: refresh the catalog for each new name reference; if multiple profiles match, ask the user to disambiguate, and if none match, report that instead of guessing an ID. Online means a heartbeat within 15 seconds; offline catalogs may be stale. Keep myself.md open. No tool can grant permissions.',
         inputSchema: z.object({
+          domains: z
+            .array(domainSchema)
+            .min(1)
+            .max(3)
+            .optional()
+            .describe('Return only these domains and their profile selections.'),
+          profileId: z
+            .string()
+            .min(1)
+            .max(100)
+            .optional()
+            .describe(
+              'Return this exact profile ID; unknown IDs fail instead of widening the catalog.',
+            ),
+          detail: z
+            .enum(['summary', 'full'])
+            .default('full')
+            .describe(
+              'Summary returns type counts and grants without type lists, notes or diagnostics. Full returns the selected details.',
+            ),
           deviceId: z
             .string()
             .uuid()
@@ -1000,10 +1137,10 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      async ({ deviceId }) => {
+      async ({ deviceId, domains: selectedDomains, profileId, detail }) => {
         own(deviceId, subject);
         const p = phones.get(deviceId);
-        return content({
+        const output = {
           deviceId,
           online: Boolean(p && p.seen > Date.now() - 15000),
           lastSeen: p?.seen ?? null,
@@ -1012,6 +1149,8 @@ export function createDataService({
               ? {
                   domains: p.catalog.domains,
                   locationTracking: p.catalog.locationTracking,
+                  dataExport: p.catalog.dataExport,
+                  dataQuery: p.catalog.dataQuery,
                   whoop: p.catalog.whoop,
                   profiles: p.catalog.profiles.map(
                     ({
@@ -1035,6 +1174,52 @@ export function createDataService({
                 }
               : { ...p.catalog, diagnostics: phoneDebugState(deviceId, p).report ?? undefined }
             : null,
+        };
+        if (profileId && !p?.catalog.profiles.some((profile) => profile.id === profileId))
+          throw new PairingError(404, 'Profile not found.');
+        if (!output.catalog) return content(output);
+        const selected = selectedDomains ?? [...domains];
+        const catalog = output.catalog;
+        return content({
+          ...output,
+          catalog: {
+            ...catalog,
+            diagnostics:
+              detail === 'summary' || selectedDomains || profileId
+                ? undefined
+                : 'diagnostics' in catalog
+                  ? catalog.diagnostics
+                  : undefined,
+            whoop: selected.includes('health') ? catalog.whoop : undefined,
+            locationTracking: selected.includes('location') ? catalog.locationTracking : undefined,
+            domains: catalog.domains
+              .filter((domain) => selected.includes(domain.domain))
+              .map((domain) =>
+                detail === 'summary'
+                  ? {
+                      domain: domain.domain,
+                      enabled: domain.enabled,
+                      permission: domain.permission,
+                      permissionHandoff: domain.permissionHandoff,
+                      typeCount: domain.types.length,
+                    }
+                  : domain,
+              ),
+            profiles: catalog.profiles
+              .filter((profile) => !profileId || profile.id === profileId)
+              .map((profile) =>
+                Object.assign({}, profile, {
+                  selection: Object.fromEntries(
+                    selected.map((domain) => [
+                      domain,
+                      detail === 'summary'
+                        ? { typeCount: profile.selection[domain].length }
+                        : profile.selection[domain],
+                    ]),
+                  ),
+                }),
+              ),
+          },
         });
       },
     );
@@ -1190,7 +1375,7 @@ export function createDataService({
       {
         title: 'Queue approved phone query',
         description:
-          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with the relevant individual permission enabled. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; ranges are limited to 31 days. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
+          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with the relevant individual permission enabled. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; long intervals continue through opaque cursors. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
         inputSchema: querySchema,
         annotations: {
           title: 'Queue approved phone query',
@@ -1200,7 +1385,7 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      async (query) => {
+      async ({ waitMs, ...query }) => {
         own(query.deviceId, subject);
         const phone = phones.get(query.deviceId);
         const domain = phone?.catalog.domains.find((d) => d.domain === query.domain);
@@ -1232,7 +1417,9 @@ export function createDataService({
                 410,
                 'The original request is no longer available; it will not be dispatched again.',
               );
-            return content({ requestId: id, status: existing.state, expiresAt: existing.expires });
+            return content(
+              await boundedWait(() => queryResult(subject, client, id, chatgpt), waitMs),
+            );
           }
         }
         const profile = phone?.catalog.profiles.find((p) => p.id === query.profileId);
@@ -1266,6 +1453,24 @@ export function createDataService({
         try {
           if (!phone || phone.subject !== subject || phone.seen < Date.now() - 15000)
             throw new PairingError(409, 'Phone is offline. Open myself.md first.');
+          if (
+            Date.parse(query.end) - Date.parse(query.start) > 31 * 86400000 &&
+            phone.catalog.dataQuery?.version !== 1
+          )
+            throw new PairingError(409, 'Update the phone app to query longer intervals.');
+          if (query.aggregation && phone.catalog.dataQuery?.aggregation !== 1)
+            throw new PairingError(409, 'Update the phone app to support query aggregation.');
+          if (
+            query.aggregation?.operation !== undefined &&
+            query.aggregation.operation !== 'count' &&
+            !query.aggregation.field
+          )
+            throw new PairingError(400, 'Numeric aggregation requires a native field.');
+          if (
+            query.aggregation?.groupBy === 'interval' &&
+            Date.parse(query.end) - Date.parse(query.start) > 31 * 86400000
+          )
+            throw new PairingError(400, 'Use daily grouping for intervals longer than 31 days.');
           if (!catalogAllows(phone.catalog, query))
             throw new PairingError(
               403,
@@ -1297,7 +1502,9 @@ export function createDataService({
             expires,
             state: 'queued',
           });
-          return content({ requestId: id, status: 'queued', expiresAt: expires });
+          return content(
+            await boundedWait(() => queryResult(subject, client, id, chatgpt), waitMs),
+          );
         } catch (error) {
           history.update(subject, id, {
             status: 'failed',
@@ -1315,6 +1522,7 @@ export function createDataService({
         description:
           'Retrieve a live phone query/export page under the current profile permissions. Owner revocation discards queued work and retained results, including a dashboard denial before phone acknowledgment; reapproval cannot restore the discarded response. Poll while queued/running; stop on failed or expired. Complete results include source fields, capture warnings, and a nextCursor. Never interpret a partial/permission-limited page as all phone data.',
         inputSchema: z.object({
+          waitMs: waitMsInput,
           requestId: z
             .string()
             .uuid()
@@ -1330,30 +1538,8 @@ export function createDataService({
           openWorldHint: false,
         },
       },
-      async ({ requestId }) => {
-        const job = jobs.get(requestId);
-        if (!job || job.subject !== subject || job.expires <= Date.now())
-          throw new PairingError(404, 'Request expired or not found.');
-        own(job.deviceId, subject);
-        if (!queryAllowed(job.query)) {
-          revokeQueries(subject, job.deviceId);
-          throw new PairingError(404, 'Request expired or not found.');
-        }
-        if (job.state === 'complete')
-          history.update(subject, requestId, {
-            status: job.result?.page.complete === false ? 'partial' : 'complete',
-          });
-        return content({
-          requestId,
-          status: job.state,
-          expiresAt: job.expires,
-          result: job.result ?? null,
-          error:
-            chatgpt && job.error
-              ? 'Phone capture failed. Review the failure on your device.'
-              : (job.error ?? null),
-        });
-      },
+      async ({ requestId, waitMs }) =>
+        content(await boundedWait(() => queryResult(subject, client, requestId, chatgpt), waitMs)),
     );
     mcp.registerTool(
       'forget_phone_request',
@@ -1425,18 +1611,31 @@ export function createDataService({
     warnings: z.array(z.string().max(1000)).max(20),
     capture: z.string().max(200),
     complete: z.boolean().optional(),
+    aggregation: z
+      .object({
+        operation: z.enum(['count', 'sum', 'avg', 'min', 'max']),
+        groupBy: z.enum(['day', 'interval']),
+        field: z.string().nullable(),
+        unitField: z.string().nullable(),
+        start: z.iso.datetime(),
+        end: z.iso.datetime(),
+        scannedRecords: z.number().int().min(0).max(10000),
+        skippedRecords: z.number().int().min(0).max(10000),
+      })
+      .strict()
+      .optional(),
   });
   /** @param {string} path @param {string} method @param {string} subject @param {unknown} body */
   function phoneApi(path, method, subject, body) {
     const match = path.match(
-      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture|health-export|whoop)$/,
+      /^\/api\/phones\/([a-f0-9-]{36})\/(poll|result|diagnostics|location-capture|export|whoop)$/,
     );
     if (!match) return undefined;
     if (method !== 'POST') throw new PairingError(405, 'POST required.');
     const deviceId = z.string().uuid().parse(match[1]);
     own(deviceId, subject);
     if (match[2] === 'whoop') return whoopOperations.report(subject, deviceId, body);
-    if (match[2] === 'health-export') return healthExportOperations.report(subject, deviceId, body);
+    if (match[2] === 'export') return phoneExportOperations.report(subject, deviceId, body);
     if (match[2] === 'location-capture') return locationCaptures.report(subject, deviceId, body);
     if (match[2] === 'diagnostics') return publishDebugReport(phones.get(deviceId), body);
     if (match[2] === 'poll') {
@@ -1533,9 +1732,9 @@ export function createDataService({
         profileSync: sync,
         whoopRequest:
           catalog.dispatch && catalog.whoop ? whoopOperations.dispatch(subject, deviceId) : null,
-        healthExport:
-          catalog.dispatch && catalog.allTimeHealthExport?.version === 1
-            ? healthExportOperations.dispatch(subject, deviceId)
+        phoneExport:
+          catalog.dispatch && catalog.dataExport?.version === 1
+            ? phoneExportOperations.dispatch(subject, deviceId)
             : null,
         locationCapture:
           catalog.dispatch && catalog.locationCapture?.version === 1
@@ -1572,6 +1771,13 @@ export function createDataService({
         error: 'The phone could not read the requested data.',
       });
     } else if (input.page) {
+      if (
+        Boolean(job.query.aggregation) !== Boolean(input.page.aggregation) ||
+        (job.query.aggregation &&
+          (input.page.aggregation?.operation !== job.query.aggregation.operation ||
+            input.page.aggregation?.groupBy !== job.query.aggregation.groupBy))
+      )
+        throw new PairingError(400, 'Response aggregation does not match the query.');
       if (
         input.page.records.some((r) => r.domain !== job.query.domain || r.type !== job.query.type)
       )

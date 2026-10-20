@@ -24,7 +24,11 @@ export function lifetimeEntitlement(lifetime) {
 }
 /** @param {CloudSubscription|null} subscription */
 export function subscriptionEntitled(subscription) {
-  return subscription?.status === 'active' || subscription?.status === 'grace';
+  return Boolean(
+    subscription &&
+    cloudPlan(subscription.plan) &&
+    (subscription.status === 'active' || subscription.status === 'grace'),
+  );
 }
 /** @param {CloudEntitlement} entitlement @returns {CloudPlanState} */
 function cloudPlanState(entitlement) {
@@ -39,7 +43,7 @@ function cloudCapacity(entitlement) {
   const plan = cloudPlanState(entitlement);
   if (plan === 'none') return 0;
   if (plan === 'included') return lifetimeCloudBytes;
-  return cloudPlan(plan)?.capacityBytes ?? lifetimeCloudBytes;
+  return cloudPlan(plan)?.capacityBytes ?? 0;
 }
 /** @param {CloudEntitlement} entitlement @param {number} usedBytes @returns {CloudAllowance} */
 export function cloudAllowance(entitlement, usedBytes) {

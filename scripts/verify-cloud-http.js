@@ -1169,6 +1169,11 @@ try {
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#52796f"/><text x="16" y="22" text-anchor="middle" fill="white" font-size="20">A</text></svg>',
       }),
     );
+    await usagePage.goto(`${origin}/pricing`);
+    await usagePage.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
+    await usagePage
+      .getByRole('complementary', { name: 'Usage analytics privacy' })
+      .waitFor({ state: 'hidden' });
     await usagePage.goto(`${origin}/dashboard/callback?code=fixture&state=usage-fixture`);
     await usagePage.getByText('0.0 MB of 100 MB used', { exact: true }).first().waitFor();
     const accountButton = usagePage.getByRole('button', {

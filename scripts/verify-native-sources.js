@@ -1,8 +1,12 @@
+import * as dataAggregation from '../core/data-aggregation.js';
+import * as dataRange from '../core/data-range.js';
+import * as hosting from '../core/hosting.js';
 import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { SourceTextModule, SyntheticModule } from 'node:vm';
+import { SourceTextModule, SyntheticModule, createContext, runInContext } from 'node:vm';
+import ts from 'typescript';
 import * as profiles from '../core/profiles.js';
 import * as data from '../core/data.js';
 import * as healthTypeCatalog from '../client/health-types.js';
@@ -40,7 +44,7 @@ async function load(path, dependencies) {
   return module.namespace;
 }
 const library =
-  /** @type {{loadGrants:(owner:string)=>Record<import('../core/data.js').Domain,boolean>,saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
+  /** @type {{loadGrants:(owner:string)=>Record<import('../core/data.js').Domain,boolean>,saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void,localPage:(owner:string,query:import('../core/data.js').DataQuery,token:string)=>import('../core/data.js').DataPage,earliestLocationDate:(owner:string,types:string[],end:string)=>string|null}} */ (
     await load('../client/library.js', {
       '../core/time-series.js': timeSeries,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
@@ -49,6 +53,7 @@ const library =
 const storedProfiles =
   /** @type {{saveProfiles:(owner:string,state:import('../core/profiles.js').ProfileState)=>void,loadProfiles:(owner:string)=>import('../core/profiles.js').ProfileState|null}} */ (
     await load('../client/profiles.js', {
+      '../core/hosting.js': hosting,
       './library.js': library,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/profiles.js': profiles,
@@ -358,13 +363,17 @@ let healthConnectAvailable = true;
 /** @type {{accessType:string,recordType:string}[]} */
 let healthPermissions = [];
 let healthReads = 0;
+/** @type {unknown} */ let requestedAndroidHealth;
 const androidHealth =
-  /** @type {{healthTypes:(selectable?:boolean)=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
+  /** @type {{authorizeHealth:(selected?:string[])=>Promise<void>,healthTypes:(selectable?:boolean)=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/health.js', {
       'react-native': { Platform: { OS: 'android' } },
       '@kingstinct/react-native-healthkit': {},
       'react-native-health-connect': {
         initialize: async () => healthConnectAvailable,
+        requestPermission: async (/** @type {unknown} */ permissions) => {
+          requestedAndroidHealth = permissions;
+        },
         getGrantedPermissions: async () => healthPermissions,
         readRecords: async () => {
           healthReads++;
@@ -380,14 +389,89 @@ const androidHealth =
       './workout-series.js': { captureWorkout: async () => ({}) },
     })
   );
+await androidHealth.authorizeHealth(['native:Steps']);
+assert.deepEqual(
+  requestedAndroidHealth,
+  [{ accessType: 'read', recordType: 'Steps' }],
+  'Profile consent must request only selected Android records',
+);
+await assert.rejects(androidHealth.authorizeHealth([]), /Select.*Health/);
+// Run the editor's real handlers through successive selections, including a
+// domain reported as authorized when only its first type has OS permission.
+const editorSource = await readFile('client/ProfileDataEditor.js', 'utf8');
+const editorTree = ts.createSourceFile(
+  'ProfileDataEditor.js',
+  editorSource,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.JSX,
+);
+/** @type {string[][]} */
+const reviewedHealth = [];
+const editorContext = createContext({
+  selection: { health: [], time: [], location: [] },
+  inline: true,
+  locked: false,
+  domains: data.domains,
+  permissions: { health: 'unknown' },
+  requestedHealth: { current: new Set() },
+  setRequesting: () => {},
+  setAccessMessage: () => {},
+  onSelection: async () => {},
+  onAuthorize: async (/** @type {string} */ domain, /** @type {string[]} */ selected) => {
+    assert.equal(domain, 'health');
+    reviewedHealth.push([...selected]);
+    return { message: 'Reviewed selected Health types.' };
+  },
+  showToast: () => assert.fail('The selection handler must not fail.'),
+  errorMessage: String,
+});
+/** @param {import('typescript').Node} node */
+function loadEditorHandlers(node) {
+  if (ts.isFunctionDeclaration(node) && ['select', 'authorize'].includes(node.name?.text ?? ''))
+    runInContext(node.getText(editorTree), editorContext);
+  ts.forEachChild(node, loadEditorHandlers);
+}
+loadEditorHandlers(editorTree);
+/** @param {string[]} health */
+async function selectHealth(health) {
+  const next = { health, time: [], location: [] };
+  await editorContext.select(next);
+  editorContext.selection = next;
+}
+await selectHealth(['native:Steps']);
+await selectHealth(['native:Steps', 'native:SleepSession']);
+editorContext.permissions.health = 'authorized';
+await selectHealth(['native:Steps', 'native:SleepSession', 'native:HeartRate']);
+await selectHealth([
+  'native:Steps',
+  'native:SleepSession',
+  'native:HeartRate',
+  'native:whoop.sleep',
+]);
+await selectHealth(['native:Steps']);
+await selectHealth(['native:Steps', 'native:HeartRate']);
+assert.deepEqual(
+  reviewedHealth,
+  [
+    ['native:Steps'],
+    ['native:Steps', 'native:SleepSession'],
+    ['native:Steps', 'native:SleepSession', 'native:HeartRate'],
+  ],
+  'Each newly selected native Health type needs consent; reviewed types and WHOOP do not reprompt.',
+);
 let androidCatalog = false;
 const catalogPlatform = { OS: 'ios' };
 let foregroundGranted = true;
 let usageAuthorization = 'authorized';
 let locationTracking = false;
+/** @type {import('../core/data.js').DataPage|null} */
+let forcedHealthPage = null;
 const phone =
   /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{locationTracking:boolean,domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      '../core/data-aggregation.js': dataAggregation,
+      '../core/data-range.js': dataRange,
       './whoop.js': disconnectedWhoop,
       'expo-location': {
         getForegroundPermissionsAsync: async () => ({ granted: foregroundGranted }),
@@ -403,6 +487,7 @@ const phone =
             ? androidHealth.healthTypes(selectable)
             : ['HKQuantityTypeIdentifierStepCount'],
         healthPage: async () => {
+          if (forcedHealthPage) return forcedHealthPage;
           throw new Error('Unexpected health read');
         },
       },
@@ -681,6 +766,193 @@ assert.ok(profile);
 const page = await phone.readPage('alice', query, profile);
 assert.equal(page.records.length, 1);
 assert.equal(page.records[0]?.source, 'expo-location');
+// Aggregate real SQLite pages, including >50 records and an empty intervening day.
+for (let index = 0; index < 65; index++)
+  library.saveRecord(
+    'aggregate-owner',
+    data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 2, unit: 'm' }),
+  );
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 100, unit: 'cm' }),
+);
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', {
+    timestamp: stamp,
+    value: 'missing',
+    unit: 'm',
+  }),
+);
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', {
+    timestamp: '2026-10-10T08:00:00.000Z',
+    value: 4,
+    unit: 'm',
+  }),
+);
+const aggregateQuery = {
+  ...query,
+  end: '2026-10-11T00:00:00.000Z',
+  limit: 2,
+  aggregation: {
+    operation: /** @type {const} */ ('sum'),
+    field: 'value',
+    groupBy: /** @type {const} */ ('day'),
+  },
+};
+const aggregated = await phone.readPage('aggregate-owner', aggregateQuery, profile);
+assert.deepEqual(
+  aggregated.records.map((row) => row.native),
+  [
+    { aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'cm', count: 1, value: 100 },
+    { aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'm', count: 65, value: 130 },
+  ],
+);
+assert.equal(aggregated.aggregation?.scannedRecords, 67);
+assert.equal(aggregated.aggregation?.skippedRecords, 1);
+assert.ok(aggregated.nextCursor);
+const aggregateTail = await phone.readPage(
+  'aggregate-owner',
+  { ...aggregateQuery, cursor: aggregated.nextCursor },
+  profile,
+);
+assert.equal(aggregateTail.nextCursor, null);
+assert.deepEqual(
+  aggregateTail.records.map((row) => row.native),
+  [{ aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'm', count: 1, value: 4 }],
+);
+await assert.rejects(
+  phone.readPage(
+    'aggregate-owner',
+    {
+      ...aggregateQuery,
+      cursor: aggregated.nextCursor,
+      aggregation: { ...aggregateQuery.aggregation, operation: 'avg' },
+    },
+    profile,
+  ),
+  /different/,
+);
+const intervalQuery = {
+  ...aggregateQuery,
+  aggregation: {
+    ...aggregateQuery.aggregation,
+    operation: /** @type {const} */ ('avg'),
+    groupBy: /** @type {const} */ ('interval'),
+  },
+};
+const averaged = await phone.readPage('aggregate-owner', intervalQuery, profile);
+assert.equal(averaged.records.length, 2);
+const averagedMeters = averaged.records[1];
+assert.ok(averagedMeters);
+assert.equal(/** @type {{value:number}} */ (averagedMeters.native).value, 134 / 66);
+await Promise.all(
+  /** @type {const} */ (['min', 'max', 'count']).map(async (operation) => {
+    const result = await phone.readPage(
+      'aggregate-owner',
+      { ...intervalQuery, aggregation: { ...intervalQuery.aggregation, operation } },
+      profile,
+    );
+    const last = result.records.at(-1);
+    assert.ok(last);
+    assert.equal(
+      /** @type {{value:number}} */ (last.native).value,
+      operation === 'min' ? 2 : operation === 'max' ? 4 : 68,
+    );
+  }),
+);
+const blockedAggregation = {
+  ...profile,
+  agentPermissions: { health: false, time: false, location: false, logs: false },
+};
+await assert.rejects(
+  phone.readPage('aggregate-owner', aggregateQuery, blockedAggregation),
+  /approved/,
+);
+const capped = dataAggregation.aggregateRecords(aggregateQuery, {
+  start: query.start,
+  end: query.end,
+});
+assert.throws(
+  () =>
+    capped.add(
+      Array.from({ length: 10001 }, () =>
+        data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 1 }),
+      ),
+    ),
+  /10000/,
+);
+forcedHealthPage = {
+  records: [],
+  nextCursor: null,
+  warnings: ['Native source failed'],
+  capture: 'fixture',
+  complete: false,
+};
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    {
+      ...query,
+      domain: 'health',
+      type: 'HKQuantityTypeIdentifierStepCount',
+      aggregation: { operation: 'count', groupBy: 'day' },
+    },
+    profile,
+  ),
+  /partial/,
+);
+forcedHealthPage = null;
+const bucketCap = dataAggregation.aggregateRecords(aggregateQuery, {
+  start: query.start,
+  end: query.end,
+});
+assert.throws(
+  () =>
+    bucketCap.add(
+      Array.from({ length: 51 }, (_, index) =>
+        data.record('location', 'points', 'expo-location', {
+          timestamp: stamp,
+          value: 1,
+          unit: String(index),
+        }),
+      ),
+    ),
+  /50.*buckets/,
+);
+const longQuery = { ...query, start: '2026-09-01T00:00:00.000Z', end: '2026-11-01T00:00:00.000Z' };
+const emptyWindow = await phone.readPage('alice', longQuery, profile);
+assert.equal(emptyWindow.records.length, 0);
+assert.ok(emptyWindow.nextCursor, 'An empty provider window must continue to the next window');
+const lastWindow = await phone.readPage(
+  'alice',
+  { ...longQuery, cursor: emptyWindow.nextCursor },
+  profile,
+);
+assert.equal(lastWindow.records.length, library.localPage('alice', longQuery, '').records.length);
+assert.equal(lastWindow.nextCursor, null);
+assert.equal(
+  library.earliestLocationDate('alice', ['native:points'], query.end),
+  '2026-10-07T08:00:00.000Z',
+);
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    { ...longQuery, end: '2026-12-01T00:00:00.000Z', cursor: emptyWindow.nextCursor },
+    profile,
+  ),
+  /different query/,
+);
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    { ...longQuery, cursor: emptyWindow.nextCursor },
+    { ...profile, agentAccess: false },
+  ),
+  /approved/,
+);
 const blocked = {
   ...profile,
   agentPermissions: { health: true, time: true, location: false, logs: false },
@@ -736,7 +1008,13 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
-      './health-history.js': { earliestHealthDate: async () => null },
+      '../core/data-range.js': dataRange,
+      '../core/data.js': data,
+      './library.js': { earliestLocationDate: () => null },
+      './health-history.js': {
+        earliestHealthDate: async () => null,
+        requireHealthHistory: async () => {},
+      },
       './export-notification-registration.js': { reconcileExportNotificationTask: async () => {} },
       './destinations.js': { requireCloudAuthorization: async () => {} },
       'expo-constants': { default: { expoConfig: {} } },

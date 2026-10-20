@@ -1,4 +1,7 @@
-import { earliestHealthDate } from './health-history.js';
+import { exportIntervals } from '../core/data-range.js';
+import { domains } from '../core/data.js';
+import { earliestLocationDate } from './library.js';
+import { earliestHealthDate, requireHealthHistory } from './health-history.js';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Alert, Platform } from 'react-native';
@@ -335,7 +338,7 @@ export async function stopAccountExports() {
   }
   throw new Error('An export is still stopping. Retry account cleanup shortly.');
 }
-/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{allTimeHealth?:boolean,requestId?:string,check?:()=>Promise<void>}} [options] */
+/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{range?:import('../core/data-range.js').DataRange,domains?:import('../core/data.js').Domain[],requestId?:string,check?:()=>Promise<void>}} [options] */
 export async function exportNow(session, profile, progress, options = {}) {
   if (running) throw new Error('An export is already running.');
   running = true;
@@ -347,6 +350,8 @@ export async function exportNow(session, profile, progress, options = {}) {
     addDays(day, i - profile.export.lookbackDays),
   );
   if (profile.export.includeToday) dates.push(day);
+  let intervalStart = localCalendar.instant(dates[0] ?? day, 0, 0);
+  let intervalEnd = profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0);
   const valid = () =>
     epoch === generation &&
     loadExportContext()?.deviceId === session.deviceId &&
@@ -368,20 +373,58 @@ export async function exportNow(session, profile, progress, options = {}) {
   try {
     await check();
     await requireCloudAuthorization(session, profile);
-    if (options.allTimeHealth) {
-      if (!profile.selection.health.length) throw new Error('Select at least one Health type.');
-      progress('Finding earliest readable Health data…', 0);
-      const start = await earliestHealthDate(session.owner, profile.selection.health, stamp, check);
-      dates.length = 0;
-      for (let d = start ? localCalendar.day(start) : day; d <= day; d = addDays(d, 1)) {
-        if (dates.length >= 100000)
-          throw new Error('Health history exceeds the supported calendar range.');
-        dates.push(d);
+    const selected =
+      options.domains ?? domains.filter((domain) => profile.selection[domain].length);
+    if (!selected.length || selected.some((domain) => !profile.selection[domain].length))
+      throw new Error('Select at least one data type in each requested domain.');
+    profile = {
+      ...profile,
+      selection: {
+        health: selected.includes('health') ? profile.selection.health : [],
+        time: selected.includes('time') ? profile.selection.time : [],
+        location: selected.includes('location') ? profile.selection.location : [],
+      },
+    };
+    if (options.range) {
+      intervalEnd = options.range.end ?? stamp;
+      if (Date.parse(intervalEnd) > Date.parse(stamp))
+        throw new Error('Export end cannot be in the future.');
+      let start = options.range.start;
+      if (start === null) {
+        if (profile.selection.time.length)
+          throw new Error(
+            'Choose a start date for Screen Time; the OS does not expose its earliest retained date.',
+          );
+        progress('Finding earliest readable data…', 0);
+        const healthStart = profile.selection.health.length
+          ? await earliestHealthDate(session.owner, profile.selection.health, intervalEnd, check)
+          : null;
+        const locationStart = earliestLocationDate(
+          session.owner,
+          profile.selection.location,
+          intervalEnd,
+        );
+        start = healthStart;
+        if (locationStart && (!start || Date.parse(locationStart) < Date.parse(start)))
+          start = locationStart;
+        start = localCalendar.instant(
+          start ? localCalendar.day(start) : localCalendar.day(intervalEnd),
+          0,
+          0,
+        );
+        // An exact midnight cutoff has no partial day; choose the preceding day when no history exists.
+        if (Date.parse(start) >= Date.parse(intervalEnd))
+          start = localCalendar.instant(addDays(localCalendar.day(intervalEnd), -1), 0, 0);
+      } else if (
+        profile.selection.health.some((key) => !key.includes(':whoop.')) &&
+        Date.parse(stamp) - Date.parse(start) > 30 * 86400000
+      ) {
+        await requireHealthHistory(check);
       }
-      profile = {
-        ...profile,
-        selection: { health: profile.selection.health, time: [], location: [] },
-      };
+      const intervals = exportIntervals(start, intervalEnd, localCalendar);
+      dates.length = 0;
+      for (const interval of intervals) dates.push(interval.day);
+      intervalStart = intervals[0]?.start ?? start;
     }
     await check();
     historyId = beginExport(
@@ -389,14 +432,8 @@ export async function exportNow(session, profile, progress, options = {}) {
       profile,
       'manual',
       {
-        start: localCalendar.instant(dates[0] ?? day, 0, 0),
-        end: options.allTimeHealth
-          ? dates[30]
-            ? localCalendar.instant(dates[30], 0, 0)
-            : stamp
-          : profile.export.includeToday
-            ? stamp
-            : localCalendar.instant(day, 0, 0),
+        start: intervalStart,
+        end: dates[30] ? localCalendar.instant(dates[30], 0, 0) : intervalEnd,
       },
       options.requestId,
     );
@@ -411,7 +448,7 @@ export async function exportNow(session, profile, progress, options = {}) {
     let failedSources = 0;
     for (const [index, d] of dates.entries()) {
       // Keep history events bounded even for decades of daily files.
-      if (options.allTimeHealth && index > 0 && index % 30 === 0) {
+      if (index > 0 && index % 30 === 0) {
         finishExport(session, historyId, 'complete');
         state.files = []; // Share controls show the final batch; all files remain in the destination.
         historyId = beginExport(
@@ -420,7 +457,9 @@ export async function exportNow(session, profile, progress, options = {}) {
           'manual',
           {
             start: localCalendar.instant(d, 0, 0),
-            end: dates[index + 30] ? localCalendar.instant(dates[index + 30] ?? day, 0, 0) : stamp,
+            end: dates[index + 30]
+              ? localCalendar.instant(dates[index + 30] ?? day, 0, 0)
+              : intervalEnd,
           },
           `${billingId}-part-${++batches}`,
         );
@@ -431,7 +470,7 @@ export async function exportNow(session, profile, progress, options = {}) {
       // oxlint-disable-next-line eslint/no-await-in-loop
       const result = await exportProfileDay(
         session,
-        options.allTimeHealth && d !== day
+        options.range && d !== day
           ? {
               ...profile,
               selection: {
@@ -446,8 +485,15 @@ export async function exportNow(session, profile, progress, options = {}) {
           : profile,
         {
           day: d,
-          start: localCalendar.instant(d, 0, 0),
-          end: d === day ? stamp : localCalendar.instant(addDays(d, 1), 0, 0),
+          start: new Date(
+            Math.max(Date.parse(intervalStart), Date.parse(localCalendar.instant(d, 0, 0))),
+          ).toISOString(),
+          end: new Date(
+            Math.min(
+              Date.parse(intervalEnd),
+              Date.parse(localCalendar.instant(addDays(d, 1), 0, 0)),
+            ),
+          ).toISOString(),
         },
         valid,
         (message) => progress(message, Math.floor((index / dates.length) * 100)),
@@ -479,11 +525,8 @@ export async function exportNow(session, profile, progress, options = {}) {
       recordCount,
       historyId: billingId,
       batches,
-      start: localCalendar.instant(dates[0] ?? day, 0, 0),
-      end:
-        options.allTimeHealth || profile.export.includeToday
-          ? stamp
-          : localCalendar.instant(day, 0, 0),
+      start: intervalStart,
+      end: intervalEnd,
     };
   } catch (error) {
     if (billingId) await settleExport(session, billingId, produced).catch(() => {});

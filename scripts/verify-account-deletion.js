@@ -39,7 +39,7 @@ db.exec(
   `CREATE TABLE records(owner TEXT); CREATE TABLE settings(owner TEXT); CREATE TABLE export_profiles(owner TEXT); CREATE TABLE profile_schedules(device TEXT); CREATE TABLE activity_history(owner TEXT,device TEXT,value TEXT);`,
 );
 db.exec(
-  'CREATE TABLE debug_content(owner TEXT,device TEXT); CREATE TABLE debug_log(owner TEXT,device TEXT); CREATE TABLE debug_sharing(owner TEXT,device TEXT); CREATE TABLE profile_log_consent(owner TEXT,device TEXT); CREATE TABLE export_folders(owner TEXT,device TEXT)',
+  'CREATE TABLE debug_content(owner TEXT,device TEXT); CREATE TABLE debug_log(owner TEXT,device TEXT); CREATE TABLE debug_sharing(owner TEXT,device TEXT); CREATE TABLE profile_log_consent(owner TEXT,device TEXT); CREATE TABLE export_folders(owner TEXT,device TEXT); CREATE TABLE profile_connections(owner TEXT,device TEXT PRIMARY KEY)',
 );
 for (const table of [
   'debug_log',
@@ -47,10 +47,27 @@ for (const table of [
   'debug_content',
   'profile_log_consent',
   'export_folders',
+  'profile_connections',
 ]) {
   db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('alice', 'phone-a');
   db.prepare(`INSERT INTO ${table} VALUES(?,?)`).run('bob', 'phone-b');
 }
+db.prepare('INSERT INTO profile_connections VALUES(?,?)').run('alice', 'old-phone-a');
+db.prepare('INSERT INTO export_profiles VALUES(?)').run('old-phone-a');
+db.exec("ALTER TABLE profile_connections ADD COLUMN scope TEXT NOT NULL DEFAULT ''");
+db.prepare('UPDATE profile_connections SET scope=? WHERE owner=?').run('service-a', 'alice');
+db.prepare('INSERT INTO profile_connections VALUES(?,?,?)').run(
+  'alice',
+  'other-service-phone',
+  'service-b',
+);
+db.prepare('INSERT INTO export_profiles VALUES(?)').run('other-service-phone');
+db.exec('CREATE TABLE profile_pairing(id INTEGER PRIMARY KEY,owner TEXT,device TEXT,scope TEXT)');
+db.prepare('INSERT INTO profile_pairing VALUES(1,?,?,?)').run(
+  'alice',
+  'other-service-pending',
+  'service-b',
+);
 for (const table of ['records', 'settings', 'export_profiles'])
   for (const owner of ['alice', 'phone-a', 'bob', 'phone-b'])
     db.prepare(`INSERT INTO ${table} VALUES(?)`).run(owner);
@@ -192,6 +209,21 @@ assert.equal(
   db.prepare("SELECT count(*) n FROM records WHERE owner='alice' OR owner='phone-a'").get()?.n,
   0,
 );
+assert.equal(
+  db.prepare("SELECT count(*) n FROM export_profiles WHERE owner='old-phone-a'").get()?.n,
+  0,
+  'Deletion clears configurations retained under earlier verified registrations.',
+);
+assert.equal(
+  db.prepare("SELECT count(*) n FROM export_profiles WHERE owner='other-service-phone'").get()?.n,
+  1,
+  'Deletion preserves retained profiles for the same subject on another service/issuer.',
+);
+assert.equal(
+  db.prepare("SELECT count(*) n FROM profile_connections WHERE scope='service-b'").get()?.n,
+  1,
+);
+assert.equal(db.prepare('SELECT scope FROM profile_pairing WHERE id=1').get()?.scope, 'service-b');
 assert.equal(db.prepare("SELECT count(*) n FROM records WHERE owner='bob'").get()?.n, 1);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='alice'").get()?.n, 0);
 assert.equal(db.prepare("SELECT count(*) n FROM activity_history WHERE owner='bob'").get()?.n, 1);
@@ -205,6 +237,10 @@ for (const table of [
   assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='alice'`).get()?.n, 0);
   assert.equal(db.prepare(`SELECT count(*) n FROM ${table} WHERE owner='bob'`).get()?.n, 1);
 }
+assert.equal(
+  db.prepare("SELECT count(*) n FROM profile_connections WHERE scope='service-a'").get()?.n,
+  0,
+);
 assert.deepEqual(
   files,
   new Set(['file:///document/exports/phone-b/current', 'file:///external/user-owned.json']),

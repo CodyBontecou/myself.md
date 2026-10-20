@@ -1,8 +1,16 @@
 # Beta release preparation
 
+## MCP optimization builds — 20 October 2026
+
+Both signed store build 21 artifacts come from canonical local main including current uncommitted/untracked source. Filtered catalogs, scalar aggregation and bounded waiting are deployed in backend `0112d4e0-5edb-44b2-adf0-959a1a63c63d`, verified on both live MCP resources. iOS build 21 is VALID, APPROVED and IN_BETA_TESTING in the existing Internal QA and Demo Beta groups; tester/production-store state is preserved. Android build 21 is verified and uploaded, but Google validation and protected commit reject it with the Health declaration error even though Console shows the declaration completed and published; internal build 18 remains the pre-upload published baseline. No review or unrelated track was changed. The owner-authorized fresh release edit reuploaded the exact build 21 and preserved other tracks/tester resources, but validation and protected commit still return the same Health declaration HTTP 403. See [artifact hashes and store receipts](mobile-updates.md#mcp-optimization-release--20-october-2026). No phone installation or physical aggregation was observed.
+
+## Flexible MCP release — 20 October 2026
+
+The matched generic export/query backend is deployed. iOS **20** is available in both existing TestFlight groups. Android **20** is signed, verified and uploaded, but Google blocks publication with its Health declaration check; the corrected declaration is submitted for review. Build **18** remains the published Android internal baseline pending a successful commit. [Release evidence and limits](mobile-updates.md#flexible-mcp-coordinated-release--20-october-2026).
+
 ## All Time Health exports — 20 October 2026
 
-The backend is deployed and iOS 1.0.0 build **19** is available in the existing Internal QA and Demo Beta TestFlight groups, with owner-reviewed All Time Health exports through full MCP. Android publication and release evidence are tracked in [the store release record](mobile-updates.md#all-time-health-store-release--20-october-2026). This release has artifact and isolated lifecycle coverage; physical-device full-history completion was not observed.
+The backend is deployed and iOS 1.0.0 build **19** is available in the existing Internal QA and Demo Beta TestFlight groups, with owner-reviewed All Time Health exports through full MCP. Android build **19** is verified and uploaded, but Google blocks publication pending its Health apps declaration; the updated declaration is submitted for review. Release evidence is tracked in [the store release record](mobile-updates.md#all-time-health-store-release--20-october-2026). This release has artifact and isolated lifecycle coverage; physical-device full-history completion was not observed.
 
 ## Pixel Health follow-up — partial verification, 19 October 2026
 

@@ -1,3 +1,4 @@
+import { boundedWait, waitMsInput } from './bounded-wait.js';
 import { whoopOAuth } from './whoop.js';
 import { registerAnalyticsTools } from './analytics-tools.js';
 import { chatgptMcpPath, restrictChatgptTools } from './chatgpt-tools.js';
@@ -14,7 +15,7 @@ import {
 } from './public-site.js';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { privacyPolicy } from '../core/privacy.js';
-import { healthGuideSlugs } from '../core/health-guides.js';
+import { documentationGuideSlugs } from '../core/documentation.js';
 import { existingCustomerGuide, lifetimePurchaseGuide } from '../core/billing.js';
 import { parseHistoryEvent } from '../core/history.js';
 import { Buffer } from 'node:buffer';
@@ -239,14 +240,14 @@ export function createApplication(
       {
         title: 'Read setup and API documentation',
         description:
-          'Read public setup, API reference and terms. Select guide for Apple Health with Claude, Android Health Connect or WHOOP with Claude instructions and official project identity. Contains no personal records.',
+          'Read public setup, API reference and terms. Select guide mcp-workflows for filtered discovery, aggregation, bounded waiting, safe retries and exports; source-specific guides cover Apple Health, Android Health Connect and WHOOP. Contains no personal records.',
         inputSchema: z
           .object({
             guide: z
-              .enum(healthGuideSlugs)
+              .enum(documentationGuideSlugs)
               .optional()
               .describe(
-                'Optional source-specific guide. Omit for the getting-started guide, API reference and terms.',
+                'Use mcp-workflows for filtered discovery, aggregation, waiting, retries and file exports; other values are source-specific guides. Omit for the getting-started guide, API reference and terms.',
               ),
           })
           .strict(),
@@ -537,6 +538,7 @@ export function createApplication(
         },
         description: 'Check whether a QR pairing was confirmed.',
         inputSchema: z.object({
+          waitMs: waitMsInput,
           pairingId: z
             .string()
             .uuid()
@@ -545,9 +547,27 @@ export function createApplication(
             ),
         }),
       },
-      async ({ pairingId }) => ({
-        content: [{ type: 'text', text: JSON.stringify(status(pairingId, subject)) }],
-      }),
+      async ({ pairingId, waitMs }) => {
+        const result = await boundedWait(() => {
+          if (client) cloud.observeAgent(subject, client);
+          const pairing = status(pairingId, subject);
+          return {
+            ...pairing,
+            status:
+              !pairing || Number(pairing.expires) <= Date.now()
+                ? 'expired'
+                : pairing.device
+                  ? devices(subject).some((device) => device.id === pairing.device)
+                    ? 'connected'
+                    : 'disconnected'
+                  : 'pending',
+          };
+        }, waitMs);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      },
     );
     mcp.registerTool(
       'list_connected_phones',
@@ -964,6 +984,9 @@ export function createApplication(
           name = 'get_phone_request';
           args = {
             requestId: z.string().uuid().parse(url.pathname.slice('/api/v1/queries/'.length)),
+            waitMs: waitMsInput.parse(
+              url.searchParams.has('waitMs') ? Number(url.searchParams.get('waitMs')) : undefined,
+            ),
           };
         } else {
           res.setHeader('Allow', url.pathname === '/api/v1/queries' ? 'POST' : 'GET');

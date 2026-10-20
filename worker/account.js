@@ -174,11 +174,11 @@ export class Account extends DurableObject {
           : request,
       (/** @type {import('../server/whoop-requests.js').WhoopRequest} */ request) => request,
     );
-    const healthExports = new DurableMap(
+    const phoneExports = new DurableMap(
       this.db,
       this.cloud,
-      'health-exports',
-      (/** @type {import('../server/health-export.js').HealthExport} */ request) =>
+      'phone-exports',
+      (/** @type {import('../server/phone-export.js').PhoneExport} */ request) =>
         request.status === 'running'
           ? {
               ...request,
@@ -186,10 +186,10 @@ export class Account extends DurableObject {
               error: /** @type {const} */ ('interrupted'),
             }
           : request,
-      (/** @type {import('../server/health-export.js').HealthExport} */ request) => request,
+      (/** @type {import('../server/phone-export.js').PhoneExport} */ request) => request,
     );
     this.data = createDataService({
-      healthExports,
+      phoneExports,
       whoopRequests,
       cloud: this.cloud,
       jobs,

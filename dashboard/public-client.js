@@ -1,4 +1,4 @@
-import { healthGuideSlugs } from '../core/health-guides.js';
+import { documentationGuideSlugs } from '../core/documentation.js';
 
 /** @typedef {{origin?:string,token?:string,fetch?:typeof globalThis.fetch}} ClientOptions */
 /** Public reads and owner-approved asynchronous queries. @param {ClientOptions} [options] */
@@ -44,9 +44,9 @@ export function createMyselfClient(options = {}) {
         typeof input !== 'object' ||
         Array.isArray(input) ||
         Object.keys(input).some((key) => key !== 'guide') ||
-        (input.guide !== undefined && !healthGuideSlugs.some((slug) => slug === input.guide))
+        (input.guide !== undefined && !documentationGuideSlugs.some((slug) => slug === input.guide))
       )
-        throw new Error('Choose a supported public health guide.');
+        throw new Error('Choose a supported public documentation guide.');
       return read(input.guide ? `/v1/docs/${input.guide}` : '/v1/docs', { text: true });
     },
     /** @param {{limit?:number,cursor?:string}} [input] */

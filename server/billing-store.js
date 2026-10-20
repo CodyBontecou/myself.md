@@ -312,17 +312,19 @@ export class BillingStore {
    * @param {string} subject @param {number} [now] @returns {import('../core/cloud-allowance.js').CloudSubscription|null} */
   cloudSubscription(subject, now = Date.now()) {
     const [best] = sorted(
-      this.subscriptions(subject).map((row) => ({
-        plan: row.plan,
-        period: row.period,
-        store: row.store,
-        status:
-          subscriptionEntitled(row) && (row.expiresAt === null || row.expiresAt <= now)
-            ? /** @type {const} */ ('expired')
-            : row.status,
-        expiresAt: row.expiresAt,
-        autoRenew: row.autoRenew,
-      })),
+      this.subscriptions(subject)
+        .filter((row) => cloudPlan(row.plan))
+        .map((row) => ({
+          plan: row.plan,
+          period: row.period,
+          store: row.store,
+          status:
+            subscriptionEntitled(row) && (row.expiresAt === null || row.expiresAt <= now)
+              ? /** @type {const} */ ('expired')
+              : row.status,
+          expiresAt: row.expiresAt,
+          autoRenew: row.autoRenew,
+        })),
       (a, b) =>
         Number(subscriptionEntitled(b)) - Number(subscriptionEntitled(a)) ||
         (subscriptionEntitled(a)

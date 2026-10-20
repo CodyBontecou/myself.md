@@ -1,4 +1,4 @@
-import { reviewHealthExport } from './health-export-request.js';
+import { reviewPhoneExport } from './phone-export-request.js';
 import { reviewWhoopRequest } from './whoop-request.js';
 import { profileSyncBase, saveProfileSyncBase, commitSyncedProfiles } from './profile-sync.js';
 import { mergeProfileStates, sameProfileValue } from '../core/profile-sync.js';
@@ -131,7 +131,8 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     return {
       ...raw,
       locationCapture: { version: 1 },
-      allTimeHealthExport: { version: 1 },
+      dataExport: { version: 1 },
+      dataQuery: { version: 1, aggregation: 1 },
       diagnostics,
       profiles: profileState.current.profiles.map((profile) =>
         Object.assign({}, profile, { localExportFolder: exportFolderStatus(session, profile) }),
@@ -305,7 +306,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{healthExport?:import('./health-export-request.js').HealthExportRequest|null,whoopRequest?:import('./whoop-request.js').WhoopRequest|null,locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{phoneExport?:import('./phone-export-request.js').PhoneExportRequest|null,whoopRequest?:import('./whoop-request.js').WhoopRequest|null,locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
@@ -313,7 +314,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
           );
         if (active) {
           await reviewWhoopRequest(session, response.whoopRequest, () => active);
-          await reviewHealthExport(session, response.healthExport, () => active);
+          await reviewPhoneExport(session, response.phoneExport, () => active);
           acceptAllowance(response.allowance);
           acceptProfileSync(response.profileSync, { profiles: info.profiles });
           await reviewLocationCapture(
@@ -419,10 +420,11 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     );
   }
   /** Request device access without expanding agent grants or starting recording.
-   * @param {import('../core/data.js').Domain} domain */
-  async function reviewSourceAccess(domain) {
+   * @param {import('../core/data.js').Domain} domain
+   * @param {string[]} [selected] */
+  async function reviewSourceAccess(domain, selected) {
     try {
-      return await requestSourceAccess(domain);
+      return await requestSourceAccess(domain, selected);
     } finally {
       await publish();
     }

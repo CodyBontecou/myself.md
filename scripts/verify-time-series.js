@@ -1,3 +1,5 @@
+import * as dataAggregation from '../core/data-aggregation.js';
+import * as dataRange from '../core/data-range.js';
 import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -205,13 +207,13 @@ const nativeWorkout = {
   getWorkoutPlan: async () => undefined,
 };
 let childQueries = 0;
+/** @type {string[]} */ let requestedHealthTypes = [];
 const hk = {
   WorkoutActivityType: { running: 37, cycling: 13 },
   isObjectTypeAvailable: () => true,
   isHealthDataAvailable: () => true,
   requestAuthorization: async (/** @type {{toRead:string[]}} */ request) => {
-    assert.ok(request.toRead.includes('HKWorkoutRouteTypeIdentifier'));
-    for (const type of types.characteristics) assert.ok(request.toRead.includes(type));
+    requestedHealthTypes = request.toRead;
     assert.ok(!request.toRead.some((type) => type.startsWith('HKCorrelation')));
   },
   queryQuantitySamples: async (
@@ -288,7 +290,7 @@ assert.ok(failed);
 assert.equal(failed.quantity, sample.quantity, 'Retain parent on nested failure');
 assert.ok(failed.captureFailures);
 const health =
-  /** @type {{authorizeHealth:()=>Promise<void>,healthTypes:()=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
+  /** @type {{authorizeHealth:(selected?:string[])=>Promise<void>,healthTypes:()=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/health.js', {
       'react-native': { Platform: { OS: 'ios' } },
       '@kingstinct/react-native-healthkit': hk,
@@ -300,6 +302,28 @@ const health =
     })
   );
 await health.authorizeHealth();
+assert.ok(requestedHealthTypes.includes('HKWorkoutRouteTypeIdentifier'));
+for (const type of types.characteristics) assert.ok(requestedHealthTypes.includes(type));
+await health.authorizeHealth(['native:HKQuantityTypeIdentifierStepCount']);
+assert.deepEqual(
+  requestedHealthTypes,
+  ['HKQuantityTypeIdentifierStepCount'],
+  'A Steps-only profile must not request every Health permission',
+);
+await assert.rejects(health.authorizeHealth([]), /Select.*Health/);
+await health.authorizeHealth(['native:HKCorrelationTypeIdentifierBloodPressure']);
+assert.deepEqual(
+  new Set(requestedHealthTypes),
+  new Set([
+    'HKQuantityTypeIdentifierBloodPressureDiastolic',
+    'HKQuantityTypeIdentifierBloodPressureSystolic',
+  ]),
+);
+await health.authorizeHealth(['native:HKWorkoutTypeIdentifier']);
+assert.ok(requestedHealthTypes.includes('HKWorkoutRouteTypeIdentifier'));
+for (const type of types.quantities) assert.ok(requestedHealthTypes.includes(type));
+assert.ok(!requestedHealthTypes.includes(types.characteristics[0] ?? ''));
+
 const snapshotQuery = {
   domain: /** @type {const} */ ('health'),
   type: types.characteristics[0] ?? '',
@@ -345,6 +369,8 @@ assert.ok(partial.warnings.some((warning) => warning.includes('nested')));
 const phone =
   /** @type {{readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      '../core/data-aggregation.js': dataAggregation,
+      '../core/data-range.js': dataRange,
       './whoop.js': disconnectedWhoop,
       './location-task.js': { locationStatus: async () => ({ tracking: false }) },
       'expo-location': {},

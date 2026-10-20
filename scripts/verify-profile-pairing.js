@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { SourceTextModule, SyntheticModule, createContext, runInContext } from 'node:vm';
 import * as policy from '../core/profiles.js';
+import * as hosting from '../core/hosting.js';
 
-/** @typedef {{owner:string,deviceId:string}} PairingIdentity */
+/** @typedef {{owner:string,deviceId:string,server:string,issuer:string}} PairingIdentity */
 /** @typedef {{loadProfiles:(owner:string)=>import('../core/profiles.js').ProfileState|null,saveProfiles:(owner:string,state:import('../core/profiles.js').ProfileState)=>void,prepareProfilePairing:(session:PairingIdentity)=>void,completeProfilePairing:(session:PairingIdentity)=>void}} ProfileStorage */
 /** @typedef {PairingIdentity & {server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,account:string,lastActiveAt:number}} SavedSession */
-/** @typedef {{loadSession:()=>Promise<SavedSession|null>,saveSession:(session:SavedSession)=>Promise<void>}} SessionStorage */
+/** @typedef {{loadSession:()=>Promise<SavedSession|null>,saveSession:(session:SavedSession)=>Promise<void>,clearSession:(session?:SavedSession)=>Promise<void>}} SessionStorage */
 
 const db = new DatabaseSync(':memory:');
 /** @type {RegExp|null} */
@@ -58,10 +59,11 @@ const profiles = /** @type {ProfileStorage} */ (
     './phone-database.js': { phoneDatabase: () => storage },
     './qa-runtime.js': qa,
     '../core/profiles.js': policy,
+    '../core/hosting.js': hosting,
   })
 );
 const agentProfiles =
-  /** @type {{loadAgentProfiles:(session:PairingIdentity)=>import('../core/profiles.js').ProfileState|null,saveAgentProfiles:(session:PairingIdentity,state:import('../core/profiles.js').ProfileState)=>void}} */ (
+  /** @type {{loadAgentProfiles:(session:{owner:string,deviceId:string})=>import('../core/profiles.js').ProfileState|null,saveAgentProfiles:(session:{owner:string,deviceId:string},state:import('../core/profiles.js').ProfileState)=>void}} */ (
     await load('../client/profile-logs.js', {
       './profiles.js': profiles,
       './debug-log.js': { debugSharing: () => ({ shared: false }), setDebugSharing: () => {} },
@@ -70,8 +72,13 @@ const agentProfiles =
       '../core/profiles.js': policy,
     })
   );
-const localSession = { server: '', owner: 'local-device', deviceId: 'local-device' };
-const account = { server: 'https://synthetic.invalid', owner: 'owner-a', deviceId: '' };
+const localSession = { server: '', issuer: '', owner: 'local-device', deviceId: 'local-device' };
+const account = {
+  server: 'https://synthetic.invalid',
+  issuer: 'https://synthetic.invalid/auth/realms/myselfmd',
+  owner: 'owner-a',
+  deviceId: '',
+};
 const configured = policy.parseProfileState({
   profiles: [
     {
@@ -91,11 +98,12 @@ agentProfiles.saveAgentProfiles(localSession, configured);
 const provider = await readFile(new URL('../client/PhoneProvider.js', import.meta.url), 'utf8');
 const selector = provider.match(/const dataSession = (.*);/)?.[1];
 const confirm = provider.match(/  async function confirm\(\) \{[\s\S]*?\n  \}/)?.[0];
+const disconnect = provider.match(/  async function disconnect\(\) \{[\s\S]*?\n  \}/)?.[0];
 const startup = provider.match(
   /loadSession\(\)\s*\.then\((async \(loaded\) => \{[\s\S]*?\n      \})\)/,
 )?.[1];
 assert.ok(
-  selector && confirm && startup,
+  selector && confirm && startup && disconnect,
   'Exercise the actual pairing, startup and displayed-partition boundaries.',
 );
 /** @type {Record<string, unknown>} */
@@ -232,7 +240,7 @@ const rich = policy.parseProfileState({
 function resetProfiles() {
   failSql = null;
   db.exec(
-    'DELETE FROM export_profiles; DELETE FROM profile_pairing; DELETE FROM profile_log_consent',
+    'DELETE FROM export_profiles; DELETE FROM profile_pairing; DELETE FROM profile_connections; DELETE FROM profile_log_consent',
   );
 }
 function intent() {
@@ -246,10 +254,10 @@ function profileRows() {
 
 resetProfiles();
 for (const invalid of [
-  { owner: '', deviceId: 'paired-a' },
-  { owner: 'local-device', deviceId: 'paired-a' },
-  { owner: 'owner-a', deviceId: '' },
-  { owner: 'owner-a', deviceId: 'local-device' },
+  { ...account, owner: '', deviceId: 'paired-a' },
+  { ...account, owner: 'local-device', deviceId: 'paired-a' },
+  { ...account, owner: 'owner-a', deviceId: '' },
+  { ...account, owner: 'owner-a', deviceId: 'local-device' },
 ]) {
   assert.throws(() => profiles.prepareProfilePairing(invalid), /signed-in paired phone/);
   assert.equal(intent(), null, 'An invalid identity cannot create a handoff intent.');
@@ -269,9 +277,9 @@ assert.deepEqual(
 );
 assert.deepEqual(plain(intent()), { owner: paired.owner, device: paired.deviceId });
 for (const foreign of [
-  { owner: 'owner-b', deviceId: paired.deviceId },
-  { owner: paired.owner, deviceId: 'paired-b' },
-  { owner: 'owner-b', deviceId: 'paired-b' },
+  { ...account, owner: 'owner-b', deviceId: paired.deviceId },
+  { ...account, owner: paired.owner, deviceId: 'paired-b' },
+  { ...account, owner: 'owner-b', deviceId: 'paired-b' },
 ]) {
   profiles.completeProfilePairing(foreign);
   assert.deepEqual(profileRows(), beforePrepare, 'A different owner/device cannot consume setup.');
@@ -318,7 +326,7 @@ assert.deepEqual(
 const completedRows = profileRows();
 profiles.completeProfilePairing(paired);
 assert.deepEqual(profileRows(), completedRows, 'Repeated completion is idempotent.');
-const later = { owner: 'owner-b', deviceId: 'paired-b' };
+const later = { ...account, owner: 'owner-b', deviceId: 'paired-b' };
 profiles.prepareProfilePairing(later);
 profiles.completeProfilePairing(later);
 assert.equal(
@@ -553,6 +561,229 @@ assert.equal(profiles.loadProfiles(paired.deviceId), null);
 assert.deepEqual(plain(intent()), { owner: paired.owner, device: paired.deviceId });
 assert.equal(await failedSessions.loadSession(), null);
 assert.deepEqual(unrelated(), beforeUnrelated);
+
+// Reproduce the physical disconnect/re-pair symptom through the real provider confirmation.
+resetProfiles();
+profiles.saveProfiles(paired.deviceId, rich);
+profiles.completeProfilePairing(paired);
+const priorSecure = new Map([['myselfmd-session', JSON.stringify(fullSession)]]);
+const priorSessions = await sessions(priorSecure);
+const priorSession = await priorSessions.loadSession();
+const disconnectContext = createContext({
+  session: priorSession,
+  cancelExports: () => {},
+  clearSession: priorSessions.clearSession,
+  setSession: () => {},
+  clearAccountAllowance: () => {},
+  reset: () => {},
+  stopTracking: async () => {},
+  revokeDevice: async () => {},
+  showToast: () => assert.fail('Disconnect should succeed.'),
+});
+await runInContext(
+  `(${disconnect.replace('async function disconnect', 'async function')})()`,
+  disconnectContext,
+);
+assert.equal(await priorSessions.loadSession(), null, 'Disconnect clears the real secure session.');
+const reconnectContext = createContext({
+  ...profiles,
+  session: { ...fullSession, deviceId: '' },
+  pairing: { ticket: 'synthetic-reconnect-ticket' },
+  api: async () => ({ id: 'reconnected-a' }),
+  Platform: { OS: 'ios' },
+  saveSession: async () => {},
+  setSession: (/** @type {SavedSession} */ value) => {
+    assert.deepEqual(
+      savedProfiles(value.deviceId),
+      privateState(rich),
+      'Re-pairing the same account must show its saved profiles before mounting the new partition.',
+    );
+  },
+  reset: () => {},
+  router: { dismissTo: () => {} },
+  syncBilling: async () => {},
+});
+await runInContext(
+  `(${confirm.replace('async function confirm', 'async function')})()`,
+  reconnectContext,
+);
+
+assert.deepEqual(
+  savedProfiles(paired.deviceId),
+  rich,
+  'Recovery leaves the old partition untouched.',
+);
+assert.deepEqual(
+  unrelated(),
+  beforeUnrelated,
+  'Recovery never transfers source records, folder grants or schedule progress.',
+);
+const reconnected = { ...account, owner: paired.owner, deviceId: 'reconnected-a' };
+profiles.saveProfiles(reconnected.deviceId, rich);
+profiles.completeProfilePairing(reconnected);
+assert.deepEqual(
+  savedProfiles(reconnected.deviceId),
+  rich,
+  'Ordinary startup preserves consent for an unchanged registration.',
+);
+
+// A supplied subject does not establish identity across actual issuers or services.
+for (const differentScope of [
+  { issuer: 'https://other.synthetic.invalid/auth/realms/myselfmd' },
+  { server: 'https://other.synthetic.invalid' },
+]) {
+  const other = {
+    ...paired,
+    ...differentScope,
+    deviceId: `scoped-${Object.keys(differentScope)[0]}`,
+  };
+  profiles.completeProfilePairing(other);
+  assert.equal(
+    savedProfiles(other.deviceId),
+    null,
+    'Equal subjects across services cannot recover configuration.',
+  );
+  assert.throws(
+    () => profiles.completeProfilePairing({ ...paired, ...differentScope }),
+    /another account/,
+  );
+}
+// The explicit anonymous handoff is bound to the service which requested it too.
+profiles.saveProfiles('local-device', configured);
+profiles.prepareProfilePairing({ ...paired, deviceId: 'scope-pending' });
+const pendingRows = profileRows();
+for (const differentScope of [
+  { issuer: 'https://other.synthetic.invalid/auth/realms/myselfmd' },
+  { server: 'https://other.synthetic.invalid' },
+]) {
+  profiles.completeProfilePairing({ ...paired, deviceId: 'scope-pending', ...differentScope });
+  assert.deepEqual(profileRows(), pendingRows);
+  assert.ok(intent(), 'A different service cannot consume the pending handoff.');
+}
+db.exec("DELETE FROM profile_pairing; DELETE FROM export_profiles WHERE owner='local-device'");
+
+// Switching accounts (including another issuer) cannot inherit a remembered partition.
+for (const owner of ['owner-b', 'https://other.synthetic.invalid|owner-a']) {
+  const other = { ...account, owner, deviceId: `${owner}-phone` };
+  profiles.completeProfilePairing(other);
+  assert.equal(savedProfiles(other.deviceId), null);
+  profiles.saveProfiles(other.deviceId, configured);
+}
+const returned = { ...account, owner: paired.owner, deviceId: 'returned-a' };
+profiles.prepareProfilePairing(returned);
+profiles.completeProfilePairing(returned);
+assert.deepEqual(
+  savedProfiles(returned.deviceId),
+  privateState(rich),
+  'Returning after another account still restores only the original owner’s configuration.',
+);
+
+profiles.saveProfiles('local-device', configured);
+const withLocal = { ...account, owner: paired.owner, deviceId: 'returned-with-local-a' };
+profiles.prepareProfilePairing(withLocal);
+profiles.completeProfilePairing(withLocal);
+assert.deepEqual(savedProfiles(withLocal.deviceId), privateState(rich));
+assert.deepEqual(
+  savedProfiles('local-device'),
+  configured,
+  'Returning accounts do not consume unrelated signed-out setup.',
+);
+assert.equal(intent(), null);
+// Existing target configuration is authoritative, even if a prior registration was remembered.
+profiles.completeProfilePairing({
+  ...account,
+  owner: paired.owner,
+  deviceId: reconnected.deviceId,
+});
+assert.deepEqual(savedProfiles(reconnected.deviceId), rich);
+assert.throws(
+  () =>
+    profiles.completeProfilePairing({
+      ...account,
+      owner: 'owner-foreign',
+      deviceId: reconnected.deviceId,
+    }),
+  /another account/,
+);
+assert.deepEqual(savedProfiles(reconnected.deviceId), rich);
+assert.throws(
+  () =>
+    profiles.completeProfilePairing({
+      ...account,
+      owner: 'owner-foreign',
+      deviceId: paired.deviceId,
+    }),
+  /another account/,
+  'Old registration ownership remains bound after reconnecting.',
+);
+
+resetProfiles();
+profiles.saveProfiles('legacy-scope-phone', rich);
+db.prepare('INSERT INTO profile_connections (owner,device) VALUES (?,?)').run(
+  paired.owner,
+  'legacy-scope-phone',
+);
+profiles.completeProfilePairing(paired);
+assert.equal(
+  savedProfiles(paired.deviceId),
+  null,
+  'Unscoped old associations cannot recover configuration.',
+);
+profiles.saveProfiles('local-device', configured);
+db.prepare('INSERT INTO profile_pairing (id,owner,device) VALUES (1,?,?)').run(
+  paired.owner,
+  paired.deviceId,
+);
+profiles.completeProfilePairing(paired);
+assert.ok(intent(), 'Unscoped old intents cannot consume anonymous configuration.');
+assert.equal(savedProfiles(paired.deviceId), null);
+
+resetProfiles();
+profiles.saveProfiles(paired.deviceId, rich);
+db.prepare('INSERT INTO profile_connections (owner,device) VALUES (?,?)').run(
+  paired.owner,
+  paired.deviceId,
+);
+profiles.completeProfilePairing(paired);
+assert.deepEqual(
+  savedProfiles(paired.deviceId),
+  rich,
+  'Verified unchanged-registration startup preserves existing configuration during scope migration.',
+);
+assert.notEqual(
+  db.prepare('SELECT scope FROM profile_connections WHERE device=?').get(paired.deviceId)?.scope,
+  '',
+);
+
+resetProfiles();
+profiles.saveProfiles('unbound-old-phone', rich);
+profiles.completeProfilePairing(paired);
+assert.equal(
+  savedProfiles(paired.deviceId),
+  null,
+  'Legacy orphaned partitions are never guessed to belong to a signed-in account.',
+);
+assert.deepEqual(savedProfiles('unbound-old-phone'), rich);
+
+for (const fault of [/INSERT OR REPLACE INTO profile_connections/, /DELETE FROM profile_pairing/]) {
+  resetProfiles();
+  profiles.saveProfiles(paired.deviceId, rich);
+  profiles.completeProfilePairing(paired);
+  profiles.saveProfiles('local-device', configured);
+  profiles.prepareProfilePairing(returned);
+  const rows = profileRows();
+  failSql = fault;
+  assert.throws(() => profiles.completeProfilePairing(returned), /Synthetic transaction fault/);
+  failSql = null;
+  assert.deepEqual(profileRows(), rows, 'A recovery failure rolls back the copied configuration.');
+  assert.equal(
+    db.prepare('SELECT device FROM profile_connections WHERE owner=?').get(paired.owner)?.device,
+    paired.deviceId,
+  );
+  profiles.completeProfilePairing(returned);
+  assert.deepEqual(savedProfiles(returned.deviceId), privateState(rich));
+  assert.deepEqual(savedProfiles('local-device'), configured);
+}
 
 console.log(
   'Profile pairing: actual confirmation and restart recovery preserve configuration once; private grants, owner/device isolation, existing targets, native folder/credential handoffs and transactional failures verified.',

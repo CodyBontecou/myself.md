@@ -2,8 +2,8 @@ import { defaultExportSchema, parseExportSchema, serializeExportRecord } from '.
 /** @typedef {'health'|'time'|'location'} Domain */
 import { explicitTimeSeries } from './time-series.js';
 /** @typedef {{domain:Domain,type:string,source:string,start:string|null,end:string|null,native:unknown,timeSeries?:import('./time-series.js').TimeSeries|undefined}} DataRecord */
-/** @typedef {{domain:Domain,type:string,source:'native',start:string,end:string,cursor:string,limit:number,format:'json'|'jsonl',schema?:import('./export-schemas.js').ExportSchema}} DataQuery */
-/** @typedef {{records:DataRecord[],nextCursor:string|null,warnings:string[],capture:string,complete?:boolean|undefined}} DataPage */
+/** @typedef {{domain:Domain,type:string,source:'native',start:string,end:string,cursor:string,limit:number,format:'json'|'jsonl',schema?:import('./export-schemas.js').ExportSchema,aggregation?:import('./data-aggregation.js').Aggregation|undefined}} DataQuery */
+/** @typedef {{records:DataRecord[],nextCursor:string|null,warnings:string[],capture:string,aggregation?:import('./data-aggregation.js').AggregateCoverage|undefined,complete?:boolean|undefined}} DataPage */
 export const domains = /** @type {const} */ (['health', 'time', 'location']);
 /** Preserve platform fields; only the envelope is shared across domains.
  * @param {Domain} domain @param {string} type @param {string} source @param {unknown} native */

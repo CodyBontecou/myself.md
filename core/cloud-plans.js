@@ -1,5 +1,5 @@
-/** One purchasable Cloud subscription; legacy products remain verifiable for existing owners. */
-/** @typedef {'cloud_100gb'|'cloud_10gb'|'cloud_1tb'} CloudPlanId */
+/** The single supported Cloud subscription. */
+/** @typedef {'cloud_100gb'} CloudPlanId */
 /** @typedef {'monthly'|'yearly'} CloudPeriod */
 /** @typedef {{id:CloudPlanId,capacityBytes:number,label:string,usPrice:Record<CloudPeriod,string>,ios:Record<CloudPeriod,string>,android:{productId:string,basePlans:Record<CloudPeriod,string>}}} CloudPlan */
 
@@ -17,40 +17,15 @@ export const cloudPlans = [
     },
   },
 ];
-/** Restore/notification compatibility only; never offered for new checkout. @type {readonly CloudPlan[]} */
-export const legacyCloudPlans = [
-  {
-    id: 'cloud_10gb',
-    capacityBytes: 10_000_000_000,
-    label: '10 GB',
-    usPrice: { monthly: '$2.99', yearly: '$29.99' },
-    ios: { monthly: 'myself_md_cloud_10gb_monthly', yearly: 'myself_md_cloud_10gb_yearly' },
-    android: {
-      productId: 'myself_md_cloud_10gb',
-      basePlans: { monthly: 'monthly', yearly: 'yearly' },
-    },
-  },
-  {
-    id: 'cloud_1tb',
-    capacityBytes: 1_000_000_000_000,
-    label: '1 TB',
-    usPrice: { monthly: '$24.99', yearly: '$249.99' },
-    ios: { monthly: 'myself_md_cloud_1tb_monthly', yearly: 'myself_md_cloud_1tb_yearly' },
-    android: {
-      productId: 'myself_md_cloud_1tb',
-      basePlans: { monthly: 'monthly', yearly: 'yearly' },
-    },
-  },
-];
 /** @param {unknown} id */
 export function cloudPlan(id) {
-  return [...cloudPlans, ...legacyCloudPlans].find((plan) => plan.id === id) ?? null;
+  return cloudPlans.find((plan) => plan.id === id) ?? null;
 }
-/** Map a store product to its tier. Android requires the base plan; iOS product IDs are period-specific.
+/** Map a store product to the Cloud plan. Android requires the base plan; iOS product IDs are period-specific.
  * @param {'ios'|'android'} store @param {string} productId @param {string} [basePlanId]
  * @returns {{plan:CloudPlan,period:CloudPeriod}|null} */
 export function cloudPlanForProduct(store, productId, basePlanId) {
-  for (const plan of [...cloudPlans, ...legacyCloudPlans])
+  for (const plan of cloudPlans)
     for (const period of /** @type {CloudPeriod[]} */ (['monthly', 'yearly'])) {
       if (store === 'ios' && plan.ios[period] === productId) return { plan, period };
       if (

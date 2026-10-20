@@ -3,10 +3,11 @@ import { authorizeHealth } from './health.js';
 import { authorizeUsage, usageStatus } from './usage.js';
 
 /** Request OS access only; profile selection, agent grants and recording are separate.
- * @param {import('../core/data.js').Domain} domain */
-export async function requestSourceAccess(domain) {
+ * @param {import('../core/data.js').Domain} domain
+ * @param {string[]} [selected] */
+export async function requestSourceAccess(domain, selected) {
   if (domain === 'health') {
-    await authorizeHealth();
+    await authorizeHealth(selected);
     return { message: 'Health permissions reviewed. Read access is managed by the system.' };
   }
   if (domain === 'time') {

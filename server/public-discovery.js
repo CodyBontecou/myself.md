@@ -1,6 +1,6 @@
 import { phoneQueryBodySchema } from './data-service.js';
 import { privacyPolicy } from '../core/privacy.js';
-import { healthGuides } from '../core/health-guides.js';
+import { documentationGuides } from '../core/documentation.js';
 
 const origin = 'https://myself.md';
 const card = {
@@ -326,6 +326,13 @@ const openapi = {
         security: [{ agentBearer: [] }],
         parameters: [
           {
+            name: 'waitMs',
+            in: 'query',
+            description:
+              'Wait for a pending state change, up to 25000 milliseconds. Honor retryAfterMs.',
+            schema: { type: 'integer', minimum: 0, maximum: 25000, default: 0 },
+          },
+          {
             name: 'requestId',
             in: 'path',
             required: true,
@@ -348,6 +355,11 @@ const openapi = {
                       type: ['object', 'null'],
                       description:
                         'Completed export page, schema and format. Follow result.page.nextCursor with a new query.',
+                    },
+                    retryAfterMs: {
+                      type: ['integer', 'null'],
+                      description:
+                        'Suggested delay for pending work; null after completion or an owner handoff.',
                     },
                     error: { type: ['string', 'null'] },
                   },
@@ -446,7 +458,7 @@ const openapi = {
       textContent,
     ),
     ...Object.fromEntries(
-      healthGuides.map((guide) => [
+      documentationGuides.map((guide) => [
         `/v1/docs/${guide.slug}`,
         readOperation(guide.operationId, guide.description, textContent),
       ]),

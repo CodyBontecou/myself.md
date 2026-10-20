@@ -12,11 +12,11 @@ import {
 } from '../core/dataset-workflows.js';
 import { publicDiscovery } from './public-discovery.js';
 import { agentIndex, publicPages, publicFAQs } from '../core/public-site.js';
-import { healthGuides } from '../core/health-guides.js';
+import { documentationGuides } from '../core/documentation.js';
 import { projectSchema } from '../core/project-identity.js';
 
 const pageDescriptions = new Map([
-  ...healthGuides.map(
+  ...documentationGuides.map(
     (guide) => /** @type {[string,string]} */ ([`/docs/${guide.slug}`, guide.description]),
   ),
   [
@@ -262,7 +262,7 @@ export function notFoundResponse(accept) {
 }
 
 const apiPaths = new Set([
-  ...healthGuides.map((guide) => `/docs/${guide.slug}`),
+  ...documentationGuides.map((guide) => `/docs/${guide.slug}`),
   '/dataset-catalog',
   '/health',
   '/config',

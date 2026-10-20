@@ -1,3 +1,4 @@
+import { waitMsInput } from './bounded-wait.js';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
 
@@ -17,6 +18,7 @@ const descriptions = {
 };
 export const locationCaptureInput = z
   .object({
+    waitMs: waitMsInput,
     action: z
       .enum(['request', 'status', 'cancel'])
       .default('request')

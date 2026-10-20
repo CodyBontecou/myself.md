@@ -73,3 +73,21 @@ export function localPage(owner, query, token) {
     ],
   };
 }
+
+/** @param {string} owner @param {string[]} types @param {string} end @returns {string|null} */
+export function earliestLocationDate(owner, types, end) {
+  let earliest = null;
+  for (const type of types) {
+    const row = /** @type {{start:string|null}|null} */ (
+      db.getFirstSync(
+        "SELECT MIN(start) AS start FROM records WHERE owner=? AND domain='location' AND type=? AND source='expo-location' AND start<?",
+        owner,
+        type.slice(type.indexOf(':') + 1),
+        end,
+      )
+    );
+    if (row?.start && (!earliest || Date.parse(row.start) < Date.parse(earliest)))
+      earliest = row.start;
+  }
+  return earliest;
+}

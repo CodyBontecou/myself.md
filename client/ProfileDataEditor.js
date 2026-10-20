@@ -15,7 +15,7 @@ import { categories } from './health-types.js';
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
 /** @typedef {{kind:'location-controls',key:string}} LocationControlsRow */
 /** @typedef {{kind:'domain',domain:import('../core/data.js').Domain,key:string,expanded:boolean}} DomainRow */
-/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onAuthorize:(domain:import('../core/data.js').Domain)=>Promise<{message:string}>,onOpenLocation?:()=>void,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
+/** @param {{types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,onAuthorize:(domain:import('../core/data.js').Domain,selected?:string[])=>Promise<{message:string}>,onOpenLocation?:()=>void,selection:import('../core/profiles.js').ProfileDraft['selection'],onSelection:(value:import('../core/profiles.js').ProfileDraft['selection'])=>void|Promise<void>,disabled:boolean,inline?:boolean,domain?:import('../core/data.js').Domain}} props */
 export default function ProfileDataEditor({
   types,
   permissions,
@@ -31,18 +31,22 @@ export default function ProfileDataEditor({
 }) {
   const [requesting, setRequesting] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
-  const [requestedDomains, setRequestedDomains] = useState(/** @type {string[]} */ ([]));
+  const requestedHealth = useRef(new Set());
   const locked = disabled || requesting;
   const [iosMajor = 0, iosMinor = 0] = String(Platform.Version).split('.').map(Number);
   const unsupportedIosTime =
     Platform.OS === 'ios' && (iosMajor < 26 || (iosMajor === 26 && iosMinor < 4));
-  /** @param {import('../core/data.js').Domain} domain */
-  async function authorize(domain) {
+  /** @param {import('../core/data.js').Domain} domain
+   * @param {string[]} [selected] */
+  async function authorize(domain, selected = selection[domain]) {
     setRequesting(true);
     try {
-      const result = await onAuthorize(domain);
+      const result = await onAuthorize(domain, selected);
       setAccessMessage(domain === 'location' ? '' : result.message);
-      setRequestedDomains((current) => [...new Set([...current, domain])]);
+      if (domain === 'health')
+        for (const key of selected)
+          if (key.startsWith('native:') && !key.startsWith('native:whoop.'))
+            requestedHealth.current.add(key);
     } catch (error) {
       showToast({ message: errorMessage(error), kind: 'error' });
     } finally {
@@ -66,10 +70,16 @@ export default function ProfileDataEditor({
       );
       if (
         added &&
-        permissions[added] !== 'authorized' &&
-        !(added === 'health' && requestedDomains.includes(added))
+        (added === 'health'
+          ? next.health.some(
+              (key) =>
+                key.startsWith('native:') &&
+                !key.startsWith('native:whoop.') &&
+                !requestedHealth.current.has(key),
+            )
+          : permissions[added] !== 'authorized')
       )
-        await authorize(added);
+        await authorize(added, next[added]);
     } catch (error) {
       showToast({ message: errorMessage(error), kind: 'error' });
     } finally {

@@ -16,8 +16,12 @@ import {
   verifyGooglePush,
   googleNotificationEvent,
 } from '../server/store-subscriptions.js';
-import { cloudPlan } from '../core/cloud-plans.js';
+import { cloudPlan, cloudPlanForProduct } from '../core/cloud-plans.js';
 import { createBillingService } from '../server/billing-service.js';
+assert.equal(cloudPlan('cloud_10gb'), null);
+assert.equal(cloudPlan('cloud_1tb'), null);
+assert.equal(cloudPlanForProduct('ios', 'myself_md_cloud_10gb_monthly'), null);
+assert.equal(cloudPlanForProduct('android', 'myself_md_cloud_1tb', 'monthly'), null);
 const billing = new BillingStore(':memory:');
 const objects = new Map();
 /** @type {(()=>void)|null} */
@@ -262,8 +266,8 @@ function purchase(id, subject, changes = {}) {
   const value = {
     store: /** @type {const} */ ('android'),
     id,
-    product: 'myself_md_cloud_10gb',
-    plan: /** @type {const} */ ('cloud_10gb'),
+    product: 'myself_md_cloud_100gb',
+    plan: /** @type {const} */ ('cloud_100gb'),
     period: /** @type {const} */ ('monthly'),
     status: /** @type {const} */ ('active'),
     expiresAt: clock + 365 * 86400000,
@@ -292,6 +296,17 @@ async function archive(subject, day, size, created) {
   return item.id;
 }
 try {
+  subscriptionsBilling.saveSubscription(
+    'unsupported-plan',
+    purchase('unsupported', 'unsupported-plan'),
+    clock,
+  );
+  subscriptionsBilling.db
+    .prepare('UPDATE cloud_subscriptions SET plan=? WHERE id=?')
+    .run('cloud_10gb', 'unsupported');
+  assert.equal(subscriptionsBilling.cloudSubscription('unsupported-plan'), null);
+  assert.equal(subscriptionsBilling.snapshot('unsupported-plan').unlocked, false);
+  assert.equal((await lifecycle.status('unsupported-plan')).limitBytes, 0);
   const independent = purchase('unpaid', 'free', {
     plan: 'cloud_100gb',
     product: 'myself_md_cloud_100gb',
@@ -309,11 +324,11 @@ try {
     subscriptionsBilling.reserve('free', `subscription-use-${i}`);
     subscriptionsBilling.complete('free', `subscription-use-${i}`);
   }
-  const independentFile = await archive('free', '2026-10-01', 50_000_000_000, clock);
+  const independentFile = await archive('free', '2026-10-01', 150_000_000_000, clock);
   await lifecycle.lifetimeRevoked('free');
   assert.equal(
     subscriptionCloud.row('free', independentFile).size,
-    50_000_000_000,
+    150_000_000_000,
     'Lifetime revocation cannot delete an active subscriber archive',
   );
   values.set(independent.id, { ...independent, status: 'expired' });
@@ -363,7 +378,7 @@ try {
   });
   assert.equal(
     status.limitBytes,
-    cloudPlan('cloud_10gb')?.capacityBytes,
+    cloudPlan('cloud_100gb')?.capacityBytes,
     'Tier replaces, rather than adds to, 100 MB',
   );
   const oldest = await archive('subscriber', '2026-10-01', 90_000_000, clock - 2000);
@@ -379,7 +394,7 @@ try {
   });
   assert.equal(
     (await lifecycle.status('subscriber')).plan,
-    'cloud_10gb',
+    'cloud_100gb',
     'Store grace preserves paid capacity',
   );
   values.set('first', { ...firstSubscription, status: 'billing_retry' });
@@ -512,30 +527,37 @@ try {
     null,
     'Paid expiry below included capacity starts no lapse',
   );
-  subscriptionsBilling.grant('downgrade', 'fixture', 'downgrade');
-  const large = purchase('large', 'downgrade', {
-    plan: 'cloud_1tb',
-    product: 'myself_md_cloud_1tb',
+  subscriptionsBilling.grant('over-capacity', 'fixture', 'over-capacity');
+  const large = purchase('large', 'over-capacity', {
+    plan: 'cloud_100gb',
+    product: 'myself_md_cloud_100gb',
   });
-  await lifecycle.subscribe('downgrade', {
+  await lifecycle.subscribe('over-capacity', {
     store: 'android',
     proof: large.id,
     productId: large.product,
   });
-  const largeExport = await archive('downgrade', '2026-10-01', 50_000_000_000, clock);
-  const small = purchase('small', 'downgrade', { linkedId: large.id });
-  const downgraded = await lifecycle.subscribe('downgrade', {
+  const largeExport = await archive('over-capacity', '2026-10-01', 150_000_000_000, clock);
+  const small = purchase('small', 'over-capacity', { linkedId: large.id });
+  const overCapacityStatus = await lifecycle.subscribe('over-capacity', {
     store: 'android',
     proof: small.id,
     productId: small.product,
   });
-  assert.equal(downgraded.overLimit, true);
-  assert.equal(downgraded.lapse, null, 'Paid downgrade never starts destructive lapse');
-  assert.equal(subscriptionCloud.row('downgrade', largeExport).size, 50_000_000_000);
-  assert.equal((await subscriptionCloud.page('downgrade', largeExport, 0, 50)).records.length, 1);
+  assert.equal(overCapacityStatus.overLimit, true);
+  assert.equal(
+    overCapacityStatus.lapse,
+    null,
+    'Active Cloud capacity never starts destructive lapse',
+  );
+  assert.equal(subscriptionCloud.row('over-capacity', largeExport).size, 150_000_000_000);
+  assert.equal(
+    (await subscriptionCloud.page('over-capacity', largeExport, 0, 50)).records.length,
+    1,
+  );
   assert.throws(
     () =>
-      subscriptionCloud.begin('downgrade', 'device', profile.id, {
+      subscriptionCloud.begin('over-capacity', 'device', profile.id, {
         profile,
         day: '2026-10-02',
         format: 'jsonl',
@@ -543,7 +565,7 @@ try {
       }),
     /quota/,
   );
-  await lifecycle.notification('downgrade', {
+  await lifecycle.notification('over-capacity', {
     kind: 'subscription',
     store: 'android',
     id: small.id,
@@ -551,7 +573,7 @@ try {
     linkedId: null,
     revoked: true,
   });
-  await lifecycle.notification('downgrade', {
+  await lifecycle.notification('over-capacity', {
     kind: 'subscription',
     store: 'android',
     id: small.id,
@@ -560,7 +582,7 @@ try {
     revoked: false,
   });
   assert.equal(
-    subscriptionsBilling.subscriptions('downgrade').find((row) => row.id === small.id)?.status,
+    subscriptionsBilling.subscriptions('over-capacity').find((row) => row.id === small.id)?.status,
     'revoked',
     'A stale duplicate callback cannot resurrect revoked capacity',
   );
@@ -681,13 +703,13 @@ try {
   const concurrentPurchase = lifecycle.subscribe('racing', {
     store: 'android',
     proof: 'racing-subscription',
-    productId: 'myself_md_cloud_10gb',
+    productId: 'myself_md_cloud_100gb',
   });
   releaseDeletion();
   await refund;
-  assert.equal((await concurrentPurchase).plan, 'cloud_10gb');
+  assert.equal((await concurrentPurchase).plan, 'cloud_100gb');
   subscriptionCloud.delete = normalDelete;
-  for (const plan of /** @type {const} */ (['cloud_10gb', 'cloud_1tb'])) {
+  for (const plan of /** @type {const} */ (['cloud_100gb'])) {
     const tier = cloudPlan(plan);
     assert.ok(tier);
     const subject = `bytes-${plan}`;
@@ -697,7 +719,7 @@ try {
       purchase(subject, subject, { plan, product: tier.android.productId }),
       clock,
     );
-    // Model a nearly full paid archive without allocating gigabytes or a terabyte.
+    // Model a nearly full paid archive without allocating 100 GB.
     // oxlint-disable-next-line eslint/no-await-in-loop -- Each tier has its own sequential capacity boundary.
     await archive(subject, '2026-10-01', tier.capacityBytes - bytes.length, clock);
     const final = subscriptionCloud.begin(subject, 'device', profile.id, {
@@ -723,11 +745,10 @@ try {
     );
   }
 
-  // Count staged and completed exports together across both paid capacities.
+  // Count staged and completed exports together for included storage and the Cloud plan.
   for (const [subject, plan, count] of /** @type {const} */ ([
     ['count-included', null, 128],
-    ['count-10gb', 'cloud_10gb', 1280],
-    ['count-1tb', 'cloud_1tb', 128000],
+    ['count-cloud', 'cloud_100gb', 12800],
   ])) {
     subscriptionsBilling.grant(subject, 'fixture', subject);
     if (plan) {
@@ -809,22 +830,9 @@ try {
       );
       const replacement = stage(0);
       assert.throws(() => stage(1), /quota/, 'Only one bounded replacement overlap is allowed');
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Finish this tier's replacement before asserting its persisted count and downgrade.
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Finish this tier's replacement before asserting its persisted count.
       await subscriptionCloud.commit(subject, 'device', profile.id, replacement.id, bytes);
       assert.equal(subscriptionCloud.list(subject).length, 129);
-      if (plan === 'cloud_1tb') {
-        subscriptionsBilling.saveSubscription(
-          subject,
-          purchase(`${subject}-smaller`, subject, { linkedId: subject }),
-          clock,
-        );
-        assert.equal(
-          subscriptionCloud.list(subject).length,
-          129,
-          'Downgrade retains all existing files',
-        );
-        assert.throws(() => stage(count), /quota/, 'Reduced count cap blocks additional uploads');
-      }
     }
   }
   console.log(

@@ -9,11 +9,11 @@ import { phoneDatabase } from './phone-database.js';
 import { qaEnabled } from './qa-runtime.js';
 import { showToast } from '../src/components/Toast.js';
 
-/** @typedef {{requestId:string,profileId:string,configuration:string,expiresAt:string}} HealthExportRequest */
+/** @typedef {{requestId:string,profileId:string,configuration:string,expiresAt:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string}}} PhoneExportRequest */
 /** @typedef {{status:string}} Outcome */
 const db = phoneDatabase();
 db.execSync(
-  'CREATE TABLE IF NOT EXISTS health_export_receipts (owner TEXT, device TEXT, request TEXT, value TEXT, PRIMARY KEY(owner,device,request))',
+  'CREATE TABLE IF NOT EXISTS phone_export_receipts (owner TEXT, device TEXT, request TEXT, value TEXT, PRIMARY KEY(owner,device,request))',
 );
 const activeRequests = new Set();
 let showing = false;
@@ -22,7 +22,7 @@ function save(session, requestId, value) {
   const context = loadExportContext();
   if (context?.owner !== session.owner || context.deviceId !== session.deviceId) return;
   db.runSync(
-    'INSERT OR REPLACE INTO health_export_receipts VALUES (?,?,?,?)',
+    'INSERT OR REPLACE INTO phone_export_receipts VALUES (?,?,?,?)',
     session.owner,
     session.deviceId,
     requestId,
@@ -30,8 +30,8 @@ function save(session, requestId, value) {
   );
 }
 /** Request retries replay delivery receipts; a runtime restart never repeats an approved export.
- * @param {import('./session.js').Session} session @param {HealthExportRequest|null|undefined} request @param {()=>boolean} active */
-export async function reviewHealthExport(session, request, active) {
+ * @param {import('./session.js').Session} session @param {PhoneExportRequest|null|undefined} request @param {()=>boolean} active */
+export async function reviewPhoneExport(session, request, active) {
   if (qaEnabled) return;
   const current = () => {
     const context = loadExportContext();
@@ -45,7 +45,7 @@ export async function reviewHealthExport(session, request, active) {
   /** @param {string} requestId @param {Record<string,unknown>} value */
   const report = (requestId, value) =>
     /** @type {Promise<Outcome>} */ (
-      api(session, `/api/phones/${session.deviceId}/health-export`, {
+      api(session, `/api/phones/${session.deviceId}/export`, {
         method: 'POST',
         body: JSON.stringify({ requestId, ...value }),
       })
@@ -53,7 +53,7 @@ export async function reviewHealthExport(session, request, active) {
   // Recover unacknowledged outcomes after network loss without repeating file delivery.
   for (const row of /** @type {{request:string,value:string}[]} */ (
     db.getAllSync(
-      'SELECT request,value FROM health_export_receipts WHERE owner=? AND device=?',
+      'SELECT request,value FROM phone_export_receipts WHERE owner=? AND device=?',
       session.owner,
       session.deviceId,
     )
@@ -84,7 +84,7 @@ export async function reviewHealthExport(session, request, active) {
     return;
   if (
     db.getFirstSync(
-      'SELECT request FROM health_export_receipts WHERE owner=? AND device=? AND request=?',
+      'SELECT request FROM phone_export_receipts WHERE owner=? AND device=? AND request=?',
       session.owner,
       session.deviceId,
       request.requestId,
@@ -104,8 +104,8 @@ export async function reviewHealthExport(session, request, active) {
         ? 'in your myself.md cloud storage'
         : `at ${new URL(profile.export.httpUrl ?? '').host}`;
   Alert.alert(
-    'Export All Time Health?',
-    `${profile.name}: export ${profile.selection.health.length} selected Health types from the earliest readable record through today ${destination}. This uses the profile’s formats and file replacement settings and your export allowance. Existing files may be replaced. Keep the app open; a large history can take a long time. Health permissions still apply. This does not give the agent permission to read your records.`,
+    'Export phone data?',
+    `${profile.name}: export selected ${request.domains.join(', ')} data from ${request.range.start ?? 'the earliest readable record'} until ${request.range.end} ${destination}. This uses the profile’s formats and file replacement settings and your export allowance. Existing files may be replaced. Keep the app open. System permissions still apply. This does not give the agent permission to read your records.`,
     [
       {
         text: 'Cancel',
@@ -117,13 +117,13 @@ export async function reviewHealthExport(session, request, active) {
         },
       },
       {
-        text: 'Export All Time',
+        text: 'Export',
         onPress: () => {
           showing = false;
           activeRequests.add(request.requestId);
           save(session, request.requestId, { action: 'running' });
           const toast = showToast({
-            message: 'Exporting All Time Health',
+            message: 'Exporting phone data',
             kind: 'loading',
             progress: 0,
           });
@@ -144,8 +144,9 @@ export async function reviewHealthExport(session, request, active) {
                 latest,
                 (detail, progress) => toast({ detail, progress }),
                 {
-                  allTimeHealth: true,
-                  requestId: `health-${request.requestId}`,
+                  domains: request.domains,
+                  range: request.range,
+                  requestId: `export-${request.requestId}`,
                   check: async () => {
                     if (!current())
                       throw new Error('Phone account, connection or foreground changed.');
@@ -157,7 +158,7 @@ export async function reviewHealthExport(session, request, active) {
               );
               save(session, request.requestId, { action: 'complete', receipt });
               toast({
-                message: receipt.failedSources ? 'Health partially exported' : 'Health exported',
+                message: receipt.failedSources ? 'Data partially exported' : 'Data exported',
                 detail: `${receipt.days} days · ${receipt.recordCount} records`,
                 kind: receipt.failedSources ? 'warning' : 'success',
                 progress: 100,

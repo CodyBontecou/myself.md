@@ -1,3 +1,5 @@
+import * as dataAggregation from '../core/data-aggregation.js';
+import * as dataRange from '../core/data-range.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
@@ -296,6 +298,8 @@ mode = 'collection';
 const reader =
   /** @type {{readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>,catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>,profile:import('../core/profiles.js').ExportProfile)=>Promise<{domains:{types:string[]}[]}>}} */ (
     await load('../client/data.js', {
+      '../core/data-aggregation.js': dataAggregation,
+      '../core/data-range.js': dataRange,
       './whoop.js': { ...adapter },
       '../core/data.js': data,
       '../core/profiles.js': profiles,
@@ -383,6 +387,7 @@ const service = createDataService({
     subject === account ? [{ id: deviceId, name: 'Fictional phone', created: 0 }] : [],
 });
 const pollBody = {
+  dataQuery: { version: 1, aggregation: 1 },
   profiles: [
     {
       ...profiles.parseProfile({
@@ -503,6 +508,31 @@ try {
     !completed.isError && JSON.stringify(completed).includes('sleep-fixture'),
     'WHOOP phone record reaches authorized MCP result',
   );
+  // Run an aggregate through executable MCP, the real phone reader/provider adapter,
+  // the phone receipt endpoint, and the final authorized MCP response.
+  mode = 'collection';
+  await adapter.connectWhoop(owner);
+  const aggregateQueued = await client.callTool({
+    name: 'query_phone_data',
+    arguments: { ...queryArgs, aggregation: { operation: 'count', groupBy: 'day' } },
+  });
+  assert.ok(!aggregateQueued.isError, JSON.stringify(aggregateQueued));
+  const aggregateDispatch = poll().request;
+  assert.ok(aggregateDispatch?.query.aggregation);
+  const nativeAggregate = await reader.readPage(owner, aggregateDispatch.query, profile);
+  service.phoneApi(`/api/phones/${deviceId}/result`, 'POST', account, {
+    id: aggregateDispatch.id,
+    page: nativeAggregate,
+  });
+  const aggregateCompleted = await client.callTool({
+    name: 'get_phone_request',
+    arguments: { requestId: aggregateDispatch.id, waitMs: 1000 },
+  });
+  assert.ok(!aggregateCompleted.isError, JSON.stringify(aggregateCompleted));
+  const aggregateRecord = nativeAggregate.records[0];
+  assert.ok(aggregateRecord);
+  assert.equal(/** @type {{value:number}} */ (aggregateRecord.native).value, 2);
+  assert.ok(JSON.stringify(aggregateCompleted.structuredContent).includes('scannedRecords'));
   selected.agentAccess = false;
   selected.agentPermissions.health = false;
   poll();

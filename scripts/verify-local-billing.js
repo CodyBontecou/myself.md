@@ -64,7 +64,7 @@ async function load() {
     });
   });
   await module.evaluate();
-  return /** @type {{allowance:()=>{used:number,unlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string)=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
+  return /** @type {{allowance:()=>{used:number,unlocked:boolean,accountUnlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string)=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
     module.namespace
   );
 }
@@ -91,6 +91,11 @@ try {
   await billing.savePurchase({ store: 'ios', proof: 'native-store-fixture' });
   billing = await load();
   assert.equal(billing.allowance().unlocked, true);
+  assert.equal(
+    billing.allowance().accountUnlocked,
+    false,
+    'A native-only purchase cannot claim verified account query access',
+  );
   await billing.reserveExport(context, 'paid-export');
   await billing.settleExport(context, 'paid-export', true);
   await billing.clearNativePurchase();
@@ -196,6 +201,7 @@ try {
   billing.acceptAllowance(subscriptionAllowance);
   billing = await load();
   assert.equal(billing.allowance().unlocked, true, 'Cloud access survives restart before expiry');
+  assert.equal(billing.allowance().accountUnlocked, true);
   assert.equal(secure.has('lifetime-purchase-proof'), false);
   billing.acceptAllowance({ ...subscriptionAllowance, accessUntil: Date.now() - 1 });
   billing = await load();

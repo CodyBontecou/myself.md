@@ -1,3 +1,5 @@
+import * as dataRange from '../core/data-range.js';
+import { domains } from '../core/data.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
@@ -11,7 +13,7 @@ const profiles = ['a', 'b'].map((id) =>
     parseProfile({
       schema: 'myself.md.profile.v1',
       name: id,
-      selection: { health: [], time: [], location: [] },
+      selection: { health: ['native:steps'], time: [], location: [] },
     }),
     { id },
   ),
@@ -42,6 +44,7 @@ let historyStarts = 0;
 const backgroundTasks = new Map();
 const mocks = {
   earliestHealthDate: async () => null,
+  requireHealthHistory: async () => {},
   phoneDatabase: () => ({
     execSync() {},
     /** @param {string} _sql @param {string} device @param {string} id */
@@ -125,11 +128,17 @@ const module = new SourceTextModule(
 );
 await module.link((specifier) => {
   const values =
-    specifier === '../core/schedules.js'
-      ? schedules
-      : specifier === './calendar.js'
-        ? { localCalendar }
-        : mocks;
+    specifier === '../core/data-range.js'
+      ? dataRange
+      : specifier === '../core/data.js'
+        ? { domains }
+        : specifier === './library.js'
+          ? { earliestLocationDate: () => null }
+          : specifier === '../core/schedules.js'
+            ? schedules
+            : specifier === './calendar.js'
+              ? { localCalendar }
+              : mocks;
   return new SyntheticModule(Object.keys(values), function () {
     for (const [key, value] of Object.entries(values)) this.setExport(key, value);
   });

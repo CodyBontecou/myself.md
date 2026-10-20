@@ -35,17 +35,19 @@ export function allowance() {
   const row = db.getFirstSync(
     "SELECT COALESCE(SUM(state='complete'),0) used, COALESCE(SUM(state='reserved'),0) reserved FROM export_allowance",
   );
+  const accountUnlocked = Boolean(
+    remote.unlocked &&
+    (remote.lifetime ||
+      remote.accessUntil === null ||
+      remote.accessUntil === undefined ||
+      remote.accessUntil > Date.now()),
+  );
   return {
+    accountUnlocked,
     ...exportAllowance(
       Math.max(Number(row?.used ?? 0), remote.used),
       Math.max(Number(row?.reserved ?? 0), remote.reserved),
-      previewLifetime ||
-        nativeUnlocked ||
-        (remote.unlocked &&
-          (remote.lifetime ||
-            remote.accessUntil === null ||
-            remote.accessUntil === undefined ||
-            remote.accessUntil > Date.now())),
+      previewLifetime || nativeUnlocked || accountUnlocked,
     ),
     lifetime:
       previewLifetime ||

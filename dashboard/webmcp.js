@@ -1,4 +1,4 @@
-import { healthGuideSlugs } from '../core/health-guides.js';
+import { documentationGuideSlugs } from '../core/documentation.js';
 
 /** @typedef {{name:string,description:string,inputSchema:Record<string,unknown>,annotations:{readOnlyHint:boolean},execute:(input:Record<string,unknown>)=>Promise<unknown>}} BrowserTool */
 /** @typedef {{registerTool:(tool:BrowserTool)=>void|Promise<void>}} ModelContext */
@@ -8,14 +8,15 @@ export async function registerPublicTools(context, client) {
   await context.registerTool({
     name: 'myself_public_documentation',
     description:
-      'Read myself.md public setup documentation. Select guide for Apple Health with Claude, Android Health Connect or WHOOP with Claude instructions and official project identity. Contains no account records.',
+      'Read public setup documentation. Select mcp-workflows for filtered catalogs, aggregation, bounded waiting, retries and exports; other guides cover source setup. Contains no account records.',
     inputSchema: {
       type: 'object',
       properties: {
         guide: {
           type: 'string',
-          enum: [...healthGuideSlugs],
-          description: 'Optional source-specific guide. Omit for getting started.',
+          enum: [...documentationGuideSlugs],
+          description:
+            'Use mcp-workflows for filtered discovery, aggregation, waiting, retries and file exports; other values are source-specific guides. Omit for getting started.',
         },
       },
       additionalProperties: false,
@@ -29,7 +30,7 @@ export async function registerPublicTools(context, client) {
         Object.keys(input).some((key) => key !== 'guide') ||
         (input.guide !== undefined && typeof input.guide !== 'string')
       )
-        throw new Error('Choose a supported public health guide.');
+        throw new Error('Choose a supported public documentation guide.');
       return {
         markdown: await client.docs(typeof input.guide === 'string' ? { guide: input.guide } : {}),
       };

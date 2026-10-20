@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { z } from 'zod';
 import { datasetPage } from '../server/dataset-pages.js';
-import { healthGuides } from '../core/health-guides.js';
+import { documentationGuides } from '../core/documentation.js';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
 import {
@@ -51,7 +51,7 @@ function verifyWorkflows(value) {
  */
 export async function verifyDatasetMCP(client) {
   await Promise.all(
-    healthGuides.map(async (guide) => {
+    documentationGuides.map(async (guide) => {
       const read = await client.callTool({
         name: 'get_public_documentation',
         arguments: { guide: guide.slug },
@@ -104,8 +104,8 @@ export async function verifyDatasetHTTP(origin) {
     .object({ paths: z.record(z.string(), z.unknown()) })
     .parse(await (await fetch(origin + '/openapi.json')).json());
   assert.equal(
-    new Set(healthGuides.map((guide) => guide.operationId)).size,
-    healthGuides.length,
+    new Set(documentationGuides.map((guide) => guide.operationId)).size,
+    documentationGuides.length,
     'Each guide must have a distinct OpenAPI operation ID.',
   );
   const sdk = createMyselfClient({ origin });
@@ -132,7 +132,7 @@ export async function verifyDatasetHTTP(origin) {
     'location',
   );
   await Promise.all(
-    healthGuides.map(async (guide) => {
+    documentationGuides.map(async (guide) => {
       const path = `/docs/${guide.slug}`;
       const response = await fetch(origin + path);
       assert.equal(response.status, 200);

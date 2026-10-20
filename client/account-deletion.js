@@ -136,8 +136,44 @@ export async function deleteLocalAccount(session) {
   await clearNativePurchase();
   clearAccountAllowance();
   db.withTransactionSync(() => {
+    if (
+      db.getFirstSync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='profile_connections'",
+      )
+    ) {
+      const connection = /** @type {{scope:string}|null} */ (
+        db.getFirstSync(
+          'SELECT scope FROM profile_connections WHERE owner=? AND device=?',
+          session.owner,
+          device,
+        )
+      );
+      if (connection?.scope) {
+        db.runSync(
+          'DELETE FROM export_profiles WHERE owner IN (SELECT device FROM profile_connections WHERE owner=? AND scope=?)',
+          session.owner,
+          connection.scope,
+        );
+        for (const table of ['profile_connections', 'profile_pairing'])
+          if (
+            db.getFirstSync("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table)
+          )
+            db.runSync(
+              `DELETE FROM ${table} WHERE owner=? AND scope=?`,
+              session.owner,
+              connection.scope,
+            );
+      }
+      db.runSync(
+        'DELETE FROM profile_connections WHERE owner=? AND device=?',
+        session.owner,
+        device,
+      );
+    }
     for (const [table, column, value] of [
       ['whoop_receipts', 'owner', session.owner],
+      ['phone_export_receipts', 'owner', session.owner],
+      // Remove retained metadata from the retired export interface on account deletion.
       ['health_export_receipts', 'owner', session.owner],
       ['records', 'owner', session.owner],
       ['records', 'owner', device],
@@ -147,7 +183,6 @@ export async function deleteLocalAccount(session) {
       ['profile_sync_base', 'owner', session.owner],
       ['profile_sync_base', 'device', device],
       ['export_profiles', 'owner', session.deviceId || 'local-device'],
-      ['profile_pairing', 'owner', session.owner],
       ['profile_pairing', 'device', device],
       ['export_folders', 'owner', session.owner],
       ['export_folders', 'device', device],
