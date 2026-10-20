@@ -48,6 +48,13 @@ export function docsHTML(markdown, path) {
         .split(/\n\s*\n/)
         .filter(Boolean)
         .map((block) => {
+          const screenshot = block.match(
+            /^!\[([^\]]+)\]\((https:\/\/myself\.md\/dashboard\/guide-images\/[a-z-]+\.png)\)$/,
+          );
+          if (screenshot?.[1] && screenshot[2]) {
+            const android = screenshot[2].includes('/android-');
+            return `<figure class="docs-screenshot"><a href="${escape(screenshot[2])}"><img src="${escape(screenshot[2])}" alt="${escape(screenshot[1])}" width="${android ? 1080 : 1206}" height="${android ? 2400 : 2622}" loading="lazy" decoding="async"></a><figcaption>${escape(screenshot[1])}</figcaption></figure>`;
+          }
           const heading = block.match(/^(#{1,2}) (.+)$/);
           if (heading?.[1] && heading[2])
             return `<h${heading[1].length} id="${anchor(heading[2])}">${inline(heading[2])}</h${heading[1].length}>`;
@@ -82,7 +89,7 @@ export function docsHTML(markdown, path) {
     })
     .join('');
   const startLinks = documentation
-    ? `<p>Start here</p>${[['/docs', 'Getting started'], ['/docs/reference', 'API reference'], ...healthGuides.map((guide) => [`/docs/${guide.slug}`, guide.title])].map(([href, title]) => `<a href="${href}"${path === href ? ' aria-current="page"' : ''}>${escape(title ?? '')}</a>`).join('')}`
+    ? `<p>Start here</p>${[['/docs', 'Getting started'], ['/docs/reference', 'API reference'], ...healthGuides.map((guide) => [`/docs/${guide.slug}`, guide.navigationTitle])].map(([href, title]) => `<a href="${href}"${path === href ? ' aria-current="page"' : ''}>${escape(title ?? '')}</a>`).join('')}`
     : '';
   const contents = headings.length
     ? `<p>On this page</p>${headings.map((heading) => `<a href="#${anchor(heading)}">${escape(heading)}</a>`).join('')}`

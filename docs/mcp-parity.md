@@ -1710,3 +1710,35 @@ Published at 100% traffic in Worker version `4ae386d9-f65a-44f5-8919-ce2119eeda8
 The public analytics consent popup is positioned at the bottom-left to leave the hero download badges visible. Its shortened copy states the purpose of basic usage statistics and the excluded personal content, omitting the default “Usage analytics is off” introduction. Enabled, browser exclusion and browser privacy-signal statuses remain explicit when applicable. Account synchronization and deletion details remain in the shared privacy policy available through `get_privacy_policy`. Consent choices, account synchronization, analytics MCP operations and mobile behavior are unchanged.
 
 The homepage shows compact Apple App Store and Google Play badges at the bottom-right of the hero, beside the agent prompt on wide screens and in normal flow below it on narrower screens. Both explicitly say “Coming soon” and are disabled because public store listings are not available. These badges introduce no install action or queue, account change, grant or mobile capability. The same availability and installed-app prerequisite remain discoverable through the shared public FAQs and setup documentation returned by `get_public_documentation` and WebMCP `myself_public_documentation`. Installation remains a future owner store handoff; no download or installation completion is claimed.
+
+## Three source connection guides — 20 October 2026
+
+The Apple Health/Claude and Android Health Connect guides are revised at their existing canonical URLs. The new `/docs/whoop-claude-mcp` guide covers phone WHOOP consent, selected provider types, individual Health Agent permission, pairing, bounded query verification and revocation. It discloses current installation and provider availability limits without claiming new live integration verification. All three link from the docs navigation, setup index, dataset guide and agent instructions.
+
+Shared dependency-free `core/health-guides.js` supplies initial HTML, negotiated Markdown, `.md` aliases, versioned HTTP reads, sitemap entries and guide metadata. Each versioned read has a distinct OpenAPI operation ID. Full MCP `get_public_documentation({guide})`, WebMCP `myself_public_documentation({guide})` and the bundled SDK's `docs({guide})` accept all three validated slugs and return that exact Markdown. The restricted ChatGPT connector retains its existing documentation contract; public HTTP reads provide the guides independently.
+
+This content adds no phone or dashboard action, authorization change or private-data access. Existing pairing, OS/provider consent, profile approval and purchase handoffs remain owner steps. Runtime coverage in the existing dataset checks exercises every guide through real HTTP, SDK, MCP and WebMCP reads, checks canonical metadata, sitemap and OpenAPI operation IDs, and rejects invalid selectors. Documentation reads do not establish a completed private query or provider connection.
+
+## Connection guide production verification — 20 October 2026
+
+Worker version `f1f095c0-c8c4-44fe-a6fd-002e3b63b633` serves the revised Apple Health and Android Health Connect guides and new WHOOP guide at 100% traffic. The release patches the captured production bundle and only three public JavaScript assets for the guide selector/description; existing production bindings, runtime and settings were compared before activation and preserved. The exact package passed the real workerd HTTP/MCP regression suite before upload.
+
+Live verification returned HTTP 200 for all three canonical pages and confirmed expected titles/descriptions, shared navigation, exact negotiated Markdown, `.md` aliases, versioned reads, SDK/WebMCP reads, distinct OpenAPI operation IDs and sitemap entries. Setup, dataset and llms links include all three. Checks matched 53 deployed static asset hashes and retained health/OAuth discovery plus unauthenticated MCP denials. This verifies public documentation delivery, not new private phone/provider effects. The private release receipt, package scope and live verification are under ignored `.local/connection-guides-release-20261020/`.
+
+## Compact connection guide navigation — 20 October 2026
+
+Desktop and mobile documentation navigation use short labels: Apple Health → Claude, Android Health Connect and WHOOP → Claude. Guide URLs, full page titles, content and public read operations remain the same. This label-only presentation change adds no mobile/dashboard action or platform handoff; agents continue to discover and read all three guides through public HTTP, `get_public_documentation`, SDK and WebMCP.
+
+## Concise connection guide copy — 20 October 2026
+
+All three connection guides now use shorter introductions, four setup steps, one query prompt and compact data-limit/revocation guidance. They retain installed-app and provider availability prerequisites, same-account pairing and confirmation, selected types, separate OS/provider consent and Health Agent permission, completed/paginated read verification, source-specific interpretation limits and revocation scope. Repeated project-identity text is replaced by About and repository links. Navigation labels, URLs, full titles and operation IDs are unchanged.
+
+The shared guide Markdown continues to supply HTML, HTTP/SDK, full MCP `get_public_documentation({guide})` and WebMCP reads. This is an editorial change with no new mobile/dashboard action or changed authorization; existing owner and platform handoffs remain in the steps.
+
+## Illustrated connection guides — 20 October 2026
+
+The shared guide Markdown includes public screenshot URLs and descriptive captions; HTML renders them as responsive, linked figures with alt text. HTTP/SDK, full MCP and WebMCP documentation reads retain the same image references and setup text. Apple Health and WHOOP use normal-build iPhone 17 Pro captures. The Android guide labels its shared pairing screenshot as an iPhone example; no Android permission capture or completed Android integration is implied. WHOOP Connected was observed after owner sign-in and consent; screenshots explicitly show selections and agent grants before approval, not a completed data query. No mobile/dashboard action or authorization behavior changes.
+
+## Android connection guide captures — 20 October 2026
+
+The Health Connect guide now uses Android 16 emulator captures for Steps selection, the actual system Health Connect consent sheet, separate profile Health agent permission and pairing. The iPhone pairing example is replaced. Captions identify unapproved states and emulator provenance; no records were seeded/read, no account was signed in, and no agent permission or completed pairing/query is implied. The system consent was cancelled after capture; only Steps remained selected in the isolated emulator profile. The guide explicitly says to leave Allow all off and approve only intended categories. Shared Markdown exposes the same captions and image URLs through HTTP/SDK, full MCP and WebMCP; HTML figures use the Android captures’ actual dimensions. No application actions or authorization behavior changed.

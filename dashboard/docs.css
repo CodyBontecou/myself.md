@@ -32,6 +32,33 @@
   text-decoration: none;
   color: inherit;
 }
+.docs-screenshot {
+  display: grid;
+  grid-template-columns: minmax(0, 170px) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  max-width: 520px;
+  margin: 24px 0;
+}
+.docs-screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.docs-screenshot figcaption {
+  max-width: 28ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+@media (max-width: 600px) {
+  .docs-screenshot {
+    grid-template-columns: minmax(0, 128px) minmax(0, 1fr);
+    gap: 16px;
+  }
+}
 .docs-page a:focus-visible,
 .docs-page pre:focus-visible {
   outline: 2px solid currentColor;

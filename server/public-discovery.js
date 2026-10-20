@@ -448,13 +448,7 @@ const openapi = {
     ...Object.fromEntries(
       healthGuides.map((guide) => [
         `/v1/docs/${guide.slug}`,
-        readOperation(
-          guide.slug === 'apple-health-claude-mcp'
-            ? 'getAppleHealthClaudeGuide'
-            : 'getHealthConnectGuide',
-          guide.description,
-          textContent,
-        ),
+        readOperation(guide.operationId, guide.description, textContent),
       ]),
     ),
   },

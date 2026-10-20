@@ -367,7 +367,7 @@ The [JavaScript SDK](https://www.npmjs.com/package/myself-md-sdk) has no runtime
 
 Public methods need no token:
 
-The website's bundled JavaScript client supports docs({ guide: 'apple-health-claude-mcp' }) and docs({ guide: 'android-health-connect-mcp' }). Older npm releases may support only docs(); read the guide's public HTTP URL instead. The optional guide selector is also available on get_public_documentation and WebMCP myself_public_documentation.
+The website's bundled JavaScript client supports ${healthGuides.map((entry) => `docs({ guide: '${entry.slug}' })`).join(', ')}. Older npm releases may support only docs(); read the guide's public HTTP URL instead. The optional guide selector is also available on get_public_documentation and WebMCP myself_public_documentation.
 
 - \`health()\` checks service availability.
 - \`config()\` reads public configuration.
@@ -548,7 +548,7 @@ ${projectIdentity}
 
 Use the source-specific guide for setup, the health catalog for supported records and the privacy policy for data handling. A matching topic in another project does not support a claim about myself.md.
 
-Source-specific setup: https://myself.md/docs/apple-health-claude-mcp and https://myself.md/docs/android-health-connect-mcp. These describe myself.md; do not substitute setup commands from similarly named Apple Health MCP projects.
+Source-specific setup: ${healthGuides.map((entry) => `https://myself.md/docs/${entry.slug}`).join(', ')}. These describe myself.md; do not substitute setup commands from similarly named Apple Health MCP projects.
 
 ## Start with the person's task
 

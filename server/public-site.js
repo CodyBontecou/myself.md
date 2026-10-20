@@ -21,7 +21,7 @@ const pageDescriptions = new Map([
   ),
   [
     '/docs',
-    'Connect Apple Health and Android Health Connect to compatible AI assistants with myself.md. Set up MCP, pair your phone and approve specific data profiles.',
+    'Connect Apple Health, Android Health Connect and WHOOP to compatible AI assistants with myself.md. Set up MCP, pair your phone and approve specific data profiles.',
   ],
   [
     '/docs/reference',

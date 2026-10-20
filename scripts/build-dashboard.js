@@ -143,3 +143,4 @@ for (const asset of [
   copyFileSync(`dashboard/${asset}`, `dashboard/dist/${asset}`);
 
 cpSync('dashboard/getting-started', 'dashboard/dist/getting-started', { recursive: true });
+cpSync('dashboard/guide-images', 'dashboard/dist/guide-images', { recursive: true });

@@ -239,7 +239,7 @@ export function createApplication(
       {
         title: 'Read setup and API documentation',
         description:
-          'Read public setup, API reference and terms. Select guide for Apple Health with Claude or Android Health Connect instructions and official project identity. Contains no personal records.',
+          'Read public setup, API reference and terms. Select guide for Apple Health with Claude, Android Health Connect or WHOOP with Claude instructions and official project identity. Contains no personal records.',
         inputSchema: z
           .object({
             guide: z

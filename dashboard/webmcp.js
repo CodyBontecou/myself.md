@@ -8,7 +8,7 @@ export async function registerPublicTools(context, client) {
   await context.registerTool({
     name: 'myself_public_documentation',
     description:
-      'Read myself.md public setup documentation. Select guide for Apple Health with Claude or Android Health Connect instructions and official project identity. Contains no account records.',
+      'Read myself.md public setup documentation. Select guide for Apple Health with Claude, Android Health Connect or WHOOP with Claude instructions and official project identity. Contains no account records.',
     inputSchema: {
       type: 'object',
       properties: {

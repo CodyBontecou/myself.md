@@ -103,6 +103,11 @@ export async function verifyDatasetHTTP(origin) {
   const openapi = z
     .object({ paths: z.record(z.string(), z.unknown()) })
     .parse(await (await fetch(origin + '/openapi.json')).json());
+  assert.equal(
+    new Set(healthGuides.map((guide) => guide.operationId)).size,
+    healthGuides.length,
+    'Each guide must have a distinct OpenAPI operation ID.',
+  );
   const sdk = createMyselfClient({ origin });
   /** @type {import('../dashboard/webmcp.js').BrowserTool[]} */
   const browserTools = [];
@@ -156,6 +161,11 @@ export async function verifyDatasetHTTP(origin) {
       );
       assert.ok(sitemap.includes(`<loc>https://myself.md${path}</loc>`));
       assert.ok(openapi.paths['/v1' + path]);
+      assert.equal(
+        z.object({ get: z.object({ operationId: z.string() }) }).parse(openapi.paths['/v1' + path])
+          .get.operationId,
+        guide.operationId,
+      );
       assert.equal(await sdk.docs({ guide: guide.slug }), guide.markdown);
       assert.deepEqual(await documentationTool.execute({ guide: guide.slug }), {
         markdown: guide.markdown,

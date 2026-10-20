@@ -118,7 +118,7 @@ Add https://myself.md/mcp as a remote MCP server in a compatible client and comp
 
 Read [getting started](/docs), the [API reference](/docs/reference), [pricing](/pricing) and [privacy](/privacy).
 
-For source-specific instructions, read [Apple Health with Claude and scoped MCP access](/docs/apple-health-claude-mcp) or [Android Health Connect exports and MCP queries](/docs/android-health-connect-mcp).
+For source-specific instructions, read [Apple Health with Claude and scoped MCP access](/docs/apple-health-claude-mcp), [Android Health Connect exports and MCP queries](/docs/android-health-connect-mcp) or [WHOOP with Claude and MCP](/docs/whoop-claude-mcp).
 
 ## Explore other datasets
 

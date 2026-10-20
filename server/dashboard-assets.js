@@ -1,5 +1,22 @@
 /** @type {Map<string, [string, string]>} */
 export const assets = new Map([
+  ...[
+    'android-health-connect-permissions',
+    'android-health-data-selection',
+    'android-agent-permissions',
+    'android-agent-pairing',
+    'iphone-whoop-connected',
+    'iphone-whoop-data-types',
+    'iphone-agent-permissions',
+    'iphone-health-data-selection',
+    'iphone-agent-pairing',
+  ].map(
+    (name) =>
+      /** @type {[string, [string, string]]} */ ([
+        `/dashboard/guide-images/${name}.png`,
+        [`guide-images/${name}.png`, 'image/png'],
+      ]),
+  ),
   ['/dashboard/blog.css', ['blog.css', 'text/css']],
   ['/share/profile', ['profile-share/share/profile/index.html', 'text/html']],
   ['/share/profile/', ['profile-share/share/profile/index.html', 'text/html']],
