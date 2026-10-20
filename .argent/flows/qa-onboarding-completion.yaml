@@ -50,7 +50,12 @@ steps:
       text:
         in:
           identifier: profile-row-qa-profile
-        contains: QA profile, Private
+        contains: QA profile
+  - await:
+      text:
+        in:
+          identifier: profile-section-permissions-qa-profile
+        contains: Agents disabled
   - await:
       idle: true
   - launch:
@@ -60,6 +65,11 @@ steps:
       text:
         in:
           identifier: profile-row-qa-profile
-        contains: QA profile, Private
+        contains: QA profile
+  - await:
+      text:
+        in:
+          identifier: profile-section-permissions-qa-profile
+        contains: Agents disabled
   - await:
       idle: true

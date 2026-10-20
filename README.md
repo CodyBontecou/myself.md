@@ -300,6 +300,8 @@ npm run android -- --variant release
 
 Native builds require Xcode/CocoaPods or Android SDK/JDK. Store distribution requires your signing credentials. `bundle` validates Metro resolution, not native compilation. Metro includes the SQLite WebAssembly asset extension; web hosting still needs the isolation headers required by Expo SQLite. App and server source remain plain JavaScript with JSDoc. The OS usage bridge is necessarily Swift/Kotlin; native compilation validates it outside the fast JavaScript gate.
 
+`npm run build:ios:debug` builds the simulator app with build-time Keychain entitlements derived from `app.json` and the Expo-generated entitlements. The generated simulator-only plist is kept under `.local/ios-simulator/`; generated native files and phone-release signing are unchanged. A simulator build without these entitlements cannot persist OAuth credentials through SecureStore. Post-build signing is not a substitute for embedding simulator entitlements during linking.
+
 Distributable phone builds must use the current `/Users/codybontecou/dev/myself.md` checkout on local `main`, including its uncommitted and untracked source, through the standard [local-phone-build runner](../local-phone-builds/README.md). This bridge worktree is for isolated source and simulator validation: do not distribute builds from it, a Git HEAD archive, another worktree or an older snapshot unless the owner explicitly requests that source.
 
 ## Fast static checking

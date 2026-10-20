@@ -1,3 +1,7 @@
+## Fresh-user integration verification — 20 October 2026
+
+No application capability or authorization policy changed in this onboarding QA pass. The simulator build helper now supplies build-time Keychain entitlements so normal-build authentication can be tested. Runtime verification used a fictional OAuth issuer with the normal phone adapter and real MCP SDK: `create_phone_pairing` plus owner confirmation, catalog discovery of a private first profile, native Location permission and explicit profile grant, `request_phone_location_capture` plus owner approval, and `query_phone_data`/`get_phone_request` returning one simulated GPS record with terminal completion. Restart preserved the connection and grant. Owner revocation then denied retained-result retrieval and new queries after sync. Background recording and unrelated domain grants remained off. See [the QA evidence and limits](argent-qa.md#fresh-user-first-agent-query--20-october-2026); real social providers, physical records, Android and hosted production were not covered by this fixture.
+
 ## Single Cloud subscription — 20 October 2026 (source)
 
 Mobile Settings, Account, Lifetime paywall, Cloud purchase screen, dashboard storage/pricing and public pricing/docs now offer one 100 GB Cloud subscription: $7.99/month or $79.99/year (US). Cloud includes unlimited exports/queries while subscribed without Lifetime; Lifetime still independently includes 100 MB. New checkout lists only `cloud_100gb`; old product identifiers remain verifiable/restorable with unchanged capacity and store billing terms.
