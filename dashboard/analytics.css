@@ -1,7 +1,7 @@
 .analytics-consent {
   position: fixed;
   bottom: 1rem;
-  right: 1rem;
+  left: 1rem;
   z-index: 40;
   max-width: min(25rem, calc(100vw - 2rem));
   border: 1px solid var(--border, var(--line, #ccc));

@@ -250,14 +250,14 @@ function InstallButtons() {
   return (
     <div className="install-buttons" role="group" aria-label="App downloads coming soon">
       <button className="install-badge" type="button" disabled>
-        <IconBrandAppleFilled size={30} aria-hidden="true" />
+        <IconBrandAppleFilled size={20} aria-hidden="true" />
         <span>
           <span className="install-badge-caption">Coming soon on the</span>
           <span className="install-badge-store">App Store</span>
         </span>
       </button>
       <button className="install-badge" type="button" disabled>
-        <IconBrandGooglePlay size={30} aria-hidden="true" />
+        <IconBrandGooglePlay size={20} aria-hidden="true" />
         <span>
           <span className="install-badge-caption">Coming soon on</span>
           <span className="install-badge-store">Google Play</span>
@@ -358,7 +358,6 @@ export function Landing() {
               <br className="mobile-break" /> Now with your context.
             </h1>
             <HeroContext />
-            <InstallButtons />
           </div>
           <div className="story-picker" role="group" aria-label="Explore example workflows">
             {stories.map((item, index) => (
@@ -442,6 +441,7 @@ export function Landing() {
             </div>
           </div>
           <AgentPrompt />
+          <InstallButtons />
           <div className="hero-bottom">
             <span>MCP · REST · JavaScript SDK · CLI</span>
             <a href="/docs">
@@ -603,7 +603,6 @@ export function Landing() {
             <br />a little more yours.
           </h2>
           <p>Choose your data. Connect your agent.</p>
-          <InstallButtons />
           <div>
             <a className="closing-secondary" href="/docs">
               Connect your agent <IconArrowRight size={15} />

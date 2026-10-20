@@ -163,8 +163,6 @@ export function initializeWebAnalytics() {
     : null;
   let reviewing = false;
   const message = document.createElement('p');
-  message.textContent =
-    'Optional setup and export events; no health records, locations, file contents or recordings. While signed in, changes also update your account choice. An existing account choice can be restored on sign-in. Turning account analytics off erases linked usage events.';
   const enable = document.createElement('button'),
     disable = document.createElement('button'),
     settings = document.createElement('button');
@@ -177,7 +175,7 @@ export function initializeWebAnalytics() {
       navigator.doNotTrack === '1' ||
       /** @type {Navigator & {globalPrivacyControl?:boolean}} */ (navigator)
         .globalPrivacyControl === true;
-    message.textContent = `${browserTrafficExcluded() ? 'This browser is excluded from analytics.' : privacySignal ? 'Analytics is off because of your browser privacy signal.' : collector.choice() === true ? 'Usage analytics is on.' : 'Usage analytics is off.'} Optional setup and export events; no health records, locations, file contents or recordings. While signed in, changes also update your account choice. An existing account choice can be restored on sign-in. Turning account analytics off erases linked usage events.`;
+    message.textContent = `${browserTrafficExcluded() ? 'This browser is excluded from analytics. ' : privacySignal ? 'Analytics is off because of your browser privacy signal. ' : collector.choice() === true ? 'Usage analytics is on. ' : ''}Basic usage stats help improve myself.md. No health data, locations, file contents or recordings.`;
     enable.disabled = privacySignal;
     const expanded = reviewing || collector.choice() === null;
     controls.hidden = excludedPath() || (!expanded && !privacyHeading);
