@@ -2,17 +2,17 @@
 
 Review packet revised October 19, 2026. The copy and five mobile gallery images were saved to the existing Product Hunt draft and verified that day. The launch remains unpublished and unscheduled.
 
-This revision focuses on the current iPhone app, using cream, charcoal and the app's existing neutral interface. The full iPhone frames are larger, with enlarged control details and a single short headline per slide. [Copy](copy.md) and [listing](listing.json) are included. Edit the source listing one directory above, then run `npm run product-hunt:render` to regenerate this version.
+This revision focuses on the current iPhone app, using cream, charcoal and the app's existing neutral interface. The full iPhone frames are larger, with enlarged control details and a single short headline per slide. Copy (local-only: `.local/product-hunt/v2/copy.md`) and listing (local-only: `.local/product-hunt/v2/listing.json`) are included. Edit `distribution/product-hunt/listing.json`, then run `npm run product-hunt:render` to regenerate the gallery, thumbnail, preview, copy, asset inventory and ZIP under ignored `.local/product-hunt/v2/`. The renderer copies this README into the generated packet. Node, the Remotion browser and the `zip` command are required.
 
-![Gallery preview](preview.png)
+Gallery preview (local-only: `.local/product-hunt/v2/preview.png`)
 
-| Order | Image                                             | Message                                                    |
-| ----- | ------------------------------------------------- | ---------------------------------------------------------- |
-| 1     | [Cover](gallery/01-cover.png)                     | Your phone data. On your terms.                            |
-| 2     | [Data selection](gallery/02-data-selection.png)   | Select individual types such as Step Count.                |
-| 3     | [Private permissions](gallery/03-permissions.png) | Selecting export data leaves agent access private.         |
-| 4     | [Owner approval](gallery/04-owner-approval.png)   | Review the actual app confirmation before allowing Health. |
-| 5     | [Health only](gallery/05-health-only.png)         | Health enabled; Screen time, Location and Logs remain off. |
+| Order | Image                                                                                 | Message                                                    |
+| ----- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1     | Cover (local-only: `.local/product-hunt/v2/gallery/01-cover.png`)                     | Your phone data. On your terms.                            |
+| 2     | Data selection (local-only: `.local/product-hunt/v2/gallery/02-data-selection.png`)   | Select individual types such as Step Count.                |
+| 3     | Private permissions (local-only: `.local/product-hunt/v2/gallery/03-permissions.png`) | Selecting export data leaves agent access private.         |
+| 4     | Owner approval (local-only: `.local/product-hunt/v2/gallery/04-owner-approval.png`)   | Review the actual app confirmation before allowing Health. |
+| 5     | Health only (local-only: `.local/product-hunt/v2/gallery/05-health-only.png`)         | Health enabled; Screen time, Location and Logs remain off. |
 
 Each gallery PNG is 1270×760. The square thumbnail is 240×240. `assets.json` records dimensions and sizes. `preview.png` is a review sheet, not an additional gallery image.
 

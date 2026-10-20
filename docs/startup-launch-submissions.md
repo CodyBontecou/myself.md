@@ -1,6 +1,6 @@
 # myself.md startup launch submissions
 
-Prepared October 16, 2026. **Preparation only: nothing published or scheduled.** Product Hunt has an explicitly authorized [saved, unpublished draft](../distribution/product-hunt/draft-status.json); every other launch packet here remains local, with no post, submission or outreach sent. Existing MCP directory submissions have their own [status ledger](mcp-listing-readiness.md); this packet does not change those submissions.
+Prepared October 16, 2026. **Preparation only: nothing published or scheduled.** Product Hunt has an explicitly authorized saved, unpublished draft (local-only: `.local/reports/distribution/product-hunt/draft-status.json`); every other launch packet here remains local, with no post, submission or outreach sent. Existing MCP directory submissions have their own [status ledger](mcp-listing-readiness.md); this packet does not change those submissions.
 
 Start with a small feedback round, use the results to sharpen the demo and onboarding, then launch on Show HN and Product Hunt when readers can complete the advertised workflow. The initial audience is people already using AI assistants who want to analyze selected phone data, plus developers building personal-data workflows. Channel priorities below are editorial judgments, not traffic forecasts.
 
@@ -19,7 +19,7 @@ Updated October 16, 2026, from the saved packets, asset inventories and Product 
 - [x] Titles, descriptions, destination links and channel-specific notes saved in this document; the approved Show HN copy also has its [own packet](../distribution/show-hn/README.md).
 - [x] Demo copy states fictional data, no signup, sharing reset on reload and no phone connection/live agent session; saved browser views are excluded from the reset claim.
 - [x] Original Product Hunt gallery, thumbnail and frozen approved bundle exist. The illustrated MCP result is identified as synthetic-example evidence, not a real user's phone session.
-- [x] Product Hunt draft saved with the original approved assets and copy; [recorded platform confirmation](../distribution/product-hunt/draft-status.json) says unpublished and unscheduled. This is recorded evidence from October 16, not a fresh remote audit in this checklist pass.
+- [x] Product Hunt draft saved with the original approved assets and copy; recorded platform confirmation (local-only: `.local/reports/distribution/product-hunt/draft-status.json`) says unpublished and unscheduled. This is recorded evidence from October 16, not a fresh remote audit in this checklist pass.
 - [x] [Newer local Product Hunt v2 assets](../distribution/product-hunt/v2/README.md) are preserved separately. They have not replaced the approved remote draft.
 - [x] Known form/rule constraints, provisional routes, paid options and weaker-fit exclusions documented.
 - [x] No posting, submission, scheduling, moderator outreach, tester recruitment or paid purchase performed in these preparation passes.
@@ -187,7 +187,7 @@ The [subreddit exclusions](#source-communities-excluded-from-this-launch-packet)
 
 ## Channel queue
 
-The [source directory](https://github.com/mmccaff/PlacesToPostYourStartup) is a discovery list, not evidence that every destination still accepts relevant submissions. See the [channel research](startup-launch-channel-research.md) for current sources, exclusions and supplemental discoveries.
+The [source directory](https://github.com/mmccaff/PlacesToPostYourStartup) is a discovery list, not evidence that every destination still accepts relevant submissions. See the channel research (local-only: `.local/reports/startup-launch-channel-research.md`) for current sources, exclusions and supplemental discoveries.
 
 | Channel             | Purpose and angle                                   | Prepared material                             | Release condition                                                       |
 | ------------------- | --------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------- |
@@ -249,7 +249,7 @@ The [current HN guidelines](https://news.ycombinator.com/newsguidelines.html) ex
 
 ## Product Hunt
 
-The current [Product Hunt packet](../distribution/product-hunt/README.md) contains polished listing copy, the maker comment, five rendered 1270×760 gallery images, a 240px thumbnail and a contact sheet. Use its [copy](../distribution/product-hunt/v2/copy.md) and [editable listing source](../distribution/product-hunt/listing.json) for the next review.
+The current [Product Hunt packet](../distribution/product-hunt/README.md) contains polished listing copy, the maker comment, five rendered 1270×760 gallery images, a 240px thumbnail and a contact sheet. Use its copy (local-only: `.local/product-hunt/v2/copy.md`) and [editable listing source](../distribution/product-hunt/listing.json) for the next review.
 
 The latest gallery uses current iPhone simulator captures of an isolated sample profile, with Step Count selection, private agent permissions, the actual approval dialog and Health-only access. Cream and charcoal layouts replace the earlier colorful dashboard version. The original approved gallery and copy are saved in the unpublished, unscheduled Product Hunt draft. The newer v2 revision remains local. The maker account is verified in the draft ledger; public mobile availability and released pricing remain checks before eventual publication.
 
@@ -1156,7 +1156,7 @@ This pass creates 38 additional local copy packets: 25 directory candidates, six
 | Icon                | `assets/myself-icon.png`; inspect quality and export platform-required sizes from the original                                           |
 | Connector icon      | `distribution/claude/icon.png` is an existing 256px listing asset; AlternativeTo recommends at least 280px                               |
 | Video               | `.local/launch-video/myself-md-launch-word-highlight.mp4` is the documented output; verify file and review current content before upload |
-| Gallery             | Five rendered PNGs, thumbnail and review sheet in distribution/product-hunt/v2; locally reviewed                                         |
+| Gallery             | Five rendered PNGs, thumbnail and review sheet in .local/product-hunt/v2; locally reviewed                                               |
 | Mobile availability | Supply actual public install or tester URLs, supported OS versions and region availability                                               |
 | Offer               | Confirm deployed allowances, localized store prices and whether any launch offer exists                                                  |
 | Maker details       | Confirm personal story, business classification and any required location/founding-date fields                                           |
@@ -1173,6 +1173,6 @@ This pass creates 38 additional local copy packets: 25 directory candidates, six
 
 Use clean destination links for HN, Product Hunt and AlternativeTo. For channels allowing campaign parameters, proposed tags are `utm_source=sideproject|indiehackers|launchingnext|saashub`, `utm_medium=launch`, `utm_campaign=myself_md_launch`. These are a naming proposal, not proof the existing analytics preserve attribution. Use referrers and a manual channel log where campaign attribution is unavailable.
 
-**Publishing ledger:** Product Hunt has the authorized saved draft recorded in its [status ledger](../distribution/product-hunt/draft-status.json), with no publication or schedule. All other launch packets here remain local. No public launch post URLs or scheduled times are recorded. When publishing is later authorized, recheck availability and rules, then record the exact final copy, timestamp, destination, fee if any, receipt and observed outcome. A submitted form is not an approved listing.
+**Publishing ledger:** Product Hunt has the authorized saved draft recorded in its status ledger (local-only: `.local/reports/distribution/product-hunt/draft-status.json`), with no publication or schedule. All other launch packets here remain local. No public launch post URLs or scheduled times are recorded. When publishing is later authorized, recheck availability and rules, then record the exact final copy, timestamp, destination, fee if any, receipt and observed outcome. A submitted form is not an approved listing.
 
 This documentation adds no mobile/dashboard capability or MCP action; the parity inventory is unaffected.

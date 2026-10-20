@@ -1,29 +1,23 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createNarration } from './narration.js';
-import { createSoundtrack } from './soundtrack.js';
+import { prepareLaunchVideo } from './prepare.js';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 
-const root = path.dirname(fileURLToPath(import.meta.url));
-const output = path.resolve(root, '../.local/launch-video');
-await mkdir(output, { recursive: true });
-const narration = await createNarration(path.join(root, 'public'), output);
-await createSoundtrack(path.join(root, 'public'), narration);
+const { root, output, publicDirectory } = await prepareLaunchVideo();
 const alignment = JSON.parse(await readFile(path.join(root, 'public/word-cues.json'), 'utf8'));
 assert.equal(
   alignment.audioSha256,
   createHash('sha256')
-    .update(await readFile(path.join(root, 'public/narration.wav')))
+    .update(await readFile(path.join(publicDirectory, 'narration.wav')))
     .digest('hex'),
   'Narration changed: regenerate word cues with scripts/align-launch-captions.js.',
 );
 const serveUrl = await bundle({
   entryPoint: path.join(root, 'index.js'),
-  publicDir: path.join(root, 'public'),
+  publicDir: publicDirectory,
 });
 const composition = await selectComposition({ serveUrl, id: 'MyselfLaunch' });
 const frames = [

@@ -1,4 +1,6 @@
-import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat, copyFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +8,7 @@ import { bundle } from '@remotion/bundler';
 import { renderStill, selectComposition } from '@remotion/renderer';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'distribution/product-hunt/v2');
+const output = path.join(root, '.local/product-hunt/v2');
 await mkdir(output, { recursive: true });
 const listing = JSON.parse(
   await readFile(path.join(root, 'distribution/product-hunt/listing.json'), 'utf8'),
@@ -57,6 +59,28 @@ await jobs.reduce(
 await writeFile(
   path.join(output, 'assets.json'),
   `${JSON.stringify({ status: 'local-draft', assets }, null, 2)}\n`,
+);
+await copyFile(
+  path.join(root, 'distribution/product-hunt/v2/README.md'),
+  path.join(output, 'README.md'),
+);
+const archive = path.join(output, 'myself-md-product-hunt-v2.zip');
+await rm(archive, { force: true });
+await promisify(execFile)(
+  'zip',
+  [
+    '-X',
+    '-r',
+    archive,
+    'README.md',
+    'assets.json',
+    'copy.md',
+    'listing.json',
+    'gallery',
+    'preview.png',
+    'thumbnail.png',
+  ],
+  { cwd: output },
 );
 console.log(
   `Copy limits: tagline ${listing.tagline.length}/60; description ${listing.description.length}/500.`,

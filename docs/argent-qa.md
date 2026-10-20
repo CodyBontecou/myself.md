@@ -885,7 +885,7 @@ All session-owned device services and Metro servers were stopped. The iOS simula
 
 ## Product Hunt mobile captures (October 16, 2026)
 
-The local gallery in `distribution/product-hunt/v2` uses current iPhone simulator screenshots with the isolated populated fixture and documented clean preview mode. The recorded `product-hunt-iphone-screens-v2` flow replayed with 57 checks passing, covering Step Count selection, the Health approval dialog and Health-only agent access. The sample profile was renamed My week. These are presentation captures, not evidence of native source reads or public installation. Direct `simctl` screenshots were used after UI verification because some automation frames retained a stale refresh overlay. No selectors or application behavior changed. The dedicated capture simulator was reset and shut down, and its QA Metro server stopped.
+The local gallery in `.local/product-hunt/v2` uses current iPhone simulator screenshots with the isolated populated fixture and documented clean preview mode. The recorded `product-hunt-iphone-screens-v2` flow replayed with 57 checks passing, covering Step Count selection, the Health approval dialog and Health-only agent access. The sample profile was renamed My week. These are presentation captures, not evidence of native source reads or public installation. Direct `simctl` screenshots were used after UI verification because some automation frames retained a stale refresh overlay. No selectors or application behavior changed. The dedicated capture simulator was reset and shut down, and its QA Metro server stopped.
 
 ## Export schema viewer
 

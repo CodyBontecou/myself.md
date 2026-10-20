@@ -2,7 +2,7 @@
 
 Updated October 16, 2026. Glama's public listing is ownership-verified and its authenticated test passed with 43 tools. Renewable reviewer authorization and a successful health check beyond the original token expiry are verified, with one transient renewal failure recorded below. Smithery’s historical successful release scanned 43 tools at 86/100. The latest authorized refresh timed out awaiting OAuth and the portal now shows 60/100; the current 37-tool scan is not complete.
 
-Current reconciliation (16 October): the authenticated upstream exposes **37 tools**, and its sanitized metadata matches Node and workerd fixtures. Feedback/debug-content and legacy Discord tools are removed; public blog and automatic-export schedule tools are added. [Current inventory](mcp-tool-reconciliation.md). The 43-tool scans, platform health and Smithery 86/100 score below remain dated platform evidence; no fresh Smithery/Glama release scan or quality score is claimed.
+Current reconciliation (16 October): the authenticated upstream exposes **37 tools**, and its sanitized metadata matches Node and workerd fixtures. Feedback/debug-content and legacy Discord tools are removed; public blog and automatic-export schedule tools are added. Current inventory (local-only: `.local/reports/mcp-tool-reconciliation.md`). The 43-tool scans, platform health and Smithery 86/100 score below remain dated platform evidence; no fresh Smithery/Glama release scan or quality score is claimed.
 
 ## Listing materials
 
@@ -92,7 +92,7 @@ Smithery public client metadata at https://connect.smithery.ai/.well-known/oauth
 
 ## October 16 scan reconciliation
 
-Use the 37-tool [current upstream inventory](../distribution/mcp/tool-inventory.json) for new scans. Retained logs contain consented errors/metadata only, approved in phone Settings. Isobot support approvals use web dashboard Support. Schedule changes await owner confirmation on the phone. Existing ownership proofs remain valid; the Smithery paid-workspace/badge issue is separate. A platform rescan and OAuth/health check remain to refresh directory-cached tool definitions; the upstream scan alone does not update their cached score.
+Use the 37-tool current upstream inventory (local-only: `.local/reports/distribution/mcp/tool-inventory.json`) for new scans. Retained logs contain consented errors/metadata only, approved in phone Settings. Isobot support approvals use web dashboard Support. Schedule changes await owner confirmation on the phone. Existing ownership proofs remain valid; the Smithery paid-workspace/badge issue is separate. A platform rescan and OAuth/health check remain to refresh directory-cached tool definitions; the upstream scan alone does not update their cached score.
 
 ## Directory-side refresh attempt — October 16, 2026
 

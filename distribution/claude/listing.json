@@ -74,7 +74,7 @@
     "fictionalMarkersVerified": true,
     "allToolsExecutedInClaude": false,
     "publisherPortal": "Submission received; listing detail confirms In review on October 14, 2026",
-    "testLedger": "./tool-test-ledger.md",
+    "testLedger": "../../.local/reports/distribution/claude/tool-test-ledger.md",
     "allToolsInvokedThroughInspector": true,
     "inspectorCalls": 47,
     "nativePositiveCapture": false,
@@ -104,7 +104,7 @@
     "readOnly": 28,
     "modifying": 12,
     "sourceNodeWorkerMetadataMatch": false,
-    "report": "../mcp/tool-inventory.json",
+    "report": "../../.local/reports/distribution/mcp/tool-inventory.json",
     "added": [
       "get_phone_export_schedules",
       "get_usage_analytics_preference",

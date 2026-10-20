@@ -476,7 +476,7 @@ See [Beta release preparation](docs/beta-release.md) for verified Apple capabili
 
 The [launch video](launch-video/README.md) is an editable SnapCN/Remotion composition. `npm run video:studio` opens its timeline; `npm run video:render` creates the 26-second agent walkthrough 1080p MP4 under `.local/launch-video`. Video source joins the aggregate strict checkJs, lint and unused-code checks. Its DOM markup is excluded only from native text/style rules.
 
-MCP listing reconciliation: authenticated integration suites emit sanitized MCP_REVIEW_METADATA lines with names, titles and annotations only. See [the current inventory and dated platform evidence](docs/mcp-tool-reconciliation.md). Schemas, account subjects, credentials and records are excluded from public scan artifacts.
+MCP listing reconciliation: authenticated integration suites emit sanitized MCP_REVIEW_METADATA lines with names, titles and annotations only. See the current inventory and dated platform evidence (local-only: `.local/reports/mcp-tool-reconciliation.md`). Schemas, account subjects, credentials and records are excluded from public scan artifacts.
 
 ## Product analytics
 
@@ -489,3 +489,9 @@ WHOOP is available as an optional phone Health provider. It follows Health.md’
 ### Scheduled Android export network jobs
 
 The Expo 57 notifications and task-manager patches route only `profile-export-notifications` through a persisted, network-constrained Android JobScheduler job. The original notification payload reaches the same JavaScript ownership/opt-in/occurrence validation; unrelated notification tasks keep the SDK path. The job stays active until JavaScript completion, capped at 180 seconds, and falls back to ordinary scheduling if expedited quota is unavailable. `expo.autolinking.android.buildFromSource` opts these two packages and their `unimodules-app-loader` project dependency out of Expo 57 prebuilt AARs so the patches reach the binary. Android must be rebuilt; OTA updates cannot apply this native patch. Physical verification is pending; see `docs/argent-qa.md`.
+
+## Local artifacts
+
+Keep research reports, downloaded references, design experiments, agent task state and run evidence under ignored `.local/`. Preserved research and design files live in `.local/research/`, `.local/design/` and `.local/icon-variants/`; dated reports live in `.local/reports/`. These files are not required for an app build.
+
+`npm run video:prepare` stages video inputs and generates audio in `.local/launch-video/public/`; Studio and the video renderer prepare it automatically. `npm run product-hunt:render` writes gallery images, copy snapshots, inventory and a ZIP to `.local/product-hunt/v2/`. Retain production assets, source footage, voice takes, measured caption timing, the synthetic agent transcript, listing source and reusable QA fixtures in Git. See [video rendering](launch-video/README.md) and [Product Hunt rendering](distribution/product-hunt/README.md) for prerequisites.

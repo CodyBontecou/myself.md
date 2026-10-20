@@ -52,4 +52,4 @@ The [import/ownership inquiry](../distribution/community/mcp-directory-inquiry.t
 
 ## October 16 upstream reconciliation
 
-The full endpoint now exposes 37 tools; current Node, workerd and authenticated production metadata agree. The restricted ChatGPT endpoint retains 13. Existing generic approved-data/phone/cloud listing copy remains accurate. [Current inventory and platform follow-ups](mcp-tool-reconciliation.md). This does not establish fresh Cursor, Grok Bot or Vercel client execution, publication, or an ownership claim. Zapier remains paused. No submitted answers or review state were changed.
+The full endpoint now exposes 37 tools; current Node, workerd and authenticated production metadata agree. The restricted ChatGPT endpoint retains 13. Existing generic approved-data/phone/cloud listing copy remains accurate. Current inventory and platform follow-ups (local-only: `.local/reports/mcp-tool-reconciliation.md`). This does not establish fresh Cursor, Grok Bot or Vercel client execution, publication, or an ownership claim. Zapier remains paused. No submitted answers or review state were changed.

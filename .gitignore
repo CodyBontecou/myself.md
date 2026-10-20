@@ -100,3 +100,30 @@ modules/*/android/build/
 # AEO reports and research belong in ignored .local/reports/aeo/.
 /docs/aeo-*.json
 /docs/aeo-*.md
+
+# Local research, design experiments and agent task state.
+/research/
+/design/
+/assets/icon-variants/
+/.pi/
+
+# Generated video assets are staged under .local/launch-video/public/.
+/launch-video/public/score.wav
+/launch-video/public/music.wav
+/launch-video/public/effects.wav
+/launch-video/public/narration.wav
+/launch-video/public/narration-cues.json
+/launch-video/public/sound-cues.json
+
+# Generated Product Hunt packets and dated platform evidence.
+/distribution/product-hunt/v2/*
+!/distribution/product-hunt/v2/README.md
+/distribution/product-hunt/thumbnail.png
+/distribution/product-hunt/draft-status.json
+/distribution/product-hunt/saved-draft-copy.json
+/distribution/mcp/tool-inventory.json
+/distribution/claude/tool-test-ledger.md
+/docs/mcp-tool-reconciliation.md
+/docs/mcp-directory-research.md
+/docs/startup-launch-channel-research.md
+/docs/reviewer-auth-research.md

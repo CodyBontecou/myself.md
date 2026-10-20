@@ -18,7 +18,7 @@ const narration = z
       z.object({ start: z.number(), end: z.number(), text: z.string(), speed: z.number() }),
     ),
   })
-  .parse(JSON.parse(await readFile('launch-video/public/narration-cues.json', 'utf8')));
+  .parse(JSON.parse(await readFile('.local/launch-video/public/narration-cues.json', 'utf8')));
 const tokenSchema = z.object({ text: z.string(), t_dtw: z.number() });
 const resultSchema = z.object({
   transcription: z.array(z.object({ text: z.string(), tokens: z.array(tokenSchema) })),
@@ -39,7 +39,7 @@ await narration.segments.reduce(
         '-t',
         String(segment.end - segment.start),
         '-i',
-        'launch-video/public/narration.wav',
+        '.local/launch-video/public/narration.wav',
         '-af',
         'apad=pad_dur=1',
         '-ar',
@@ -127,7 +127,7 @@ await writeFile(
       method: 'Whisper base.en constrained-transcript DTW',
       audio: 'narration.wav',
       audioSha256: createHash('sha256')
-        .update(await readFile('launch-video/public/narration.wav'))
+        .update(await readFile('.local/launch-video/public/narration.wav'))
         .digest('hex'),
       segments,
     },
