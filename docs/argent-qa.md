@@ -1,3 +1,9 @@
+## Collapsed profile export shortcut — 21 October 2026 (local source)
+
+Closed mobile profile rows expose `profile-export-{profileId}` as a compact download-icon button (accessible label: Export) alongside `profile-row-{profileId}`. It uses the same mounted controller as expanded exports, preserves busy state across expansion and does not toggle the row. The component regression starts an export while closed, checks duplicate prevention after expansion/collapse, and verifies Cancel after reopening.
+
+The dedicated QA iPhone 17 Pro simulator loaded current QA Metro 8082 through an argument-only launch override. The compact button rendered in the closed row; tapping it displayed the expected QA-only export warning while leaving the row closed. Tapping the profile name opened its existing settings and removed the header shortcut. No source reads, real export, grant or account change occurred. This targeted light-mode check does not verify Android, dark/XL layouts, full motion or actual file delivery. The temporary Metro and scoped Argent services were stopped afterward.
+
 ## Restored header Settings navigation — 21 October 2026 (local source)
 
 `settings-open` is again a main-header navigation button. Settings is a separate view with `settings-back`, and `settings-account-avatar` opens the restored Account/Sign in route. `account-screen` and `account-account` are restored; `header-account-avatar` is retired. The Settings accordion is removed. Existing profile accordions and motion remain. Earlier consolidation and header-avatar evidence below describes superseded UI.

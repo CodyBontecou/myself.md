@@ -2,7 +2,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { Copy, Icon } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 
-/** @param {{label:string,icon:import('../src/components/ui.js').IconName,onPress:()=>void,onDisabledPress?:()=>void,disabled:boolean,busy?:boolean,roomy?:boolean,compact?:boolean,testID:string}} props */
+/** @param {{label:string,icon:import('../src/components/ui.js').IconName,onPress:()=>void,onDisabledPress?:()=>void,disabled:boolean,busy?:boolean,roomy?:boolean,compact?:boolean,iconOnly?:boolean,testID:string}} props */
 export default function ProfileQuickAction({
   label,
   icon,
@@ -12,6 +12,7 @@ export default function ProfileQuickAction({
   busy = false,
   roomy = false,
   compact = false,
+  iconOnly = false,
   testID,
 }) {
   const { colors } = useTheme();
@@ -33,16 +34,19 @@ export default function ProfileQuickAction({
       style={({ pressed }) => [
         compact ? styles.compact : styles.action,
         roomy && styles.roomy,
-        compact && { backgroundColor: colors.subtle, borderColor: colors.border },
+        iconOnly && styles.iconOnly,
+        compact && !iconOnly && { backgroundColor: colors.subtle, borderColor: colors.border },
         {
           opacity: disabled ? 0.45 : pressed ? 0.5 : 1,
         },
       ]}
     >
-      {!compact && <Icon name={icon} size={roomy ? 20 : 16} />}
-      <Copy variant={roomy ? 'body' : 'caption'} style={styles.label}>
-        {label}
-      </Copy>
+      {(!compact || iconOnly) && <Icon name={icon} size={roomy ? 20 : iconOnly ? 18 : 16} />}
+      {!iconOnly && (
+        <Copy variant={roomy ? 'body' : 'caption'} style={styles.label}>
+          {label}
+        </Copy>
+      )}
     </Pressable>
   );
 }
@@ -59,6 +63,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  iconOnly: { width: 44, minHeight: 44, borderWidth: 0 },
   label: { fontWeight: '500', flexShrink: 1 },
   roomy: { minHeight: 56, padding: 16 },
   compact: {

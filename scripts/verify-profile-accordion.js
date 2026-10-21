@@ -129,6 +129,7 @@ function load(path) {
 }
 const motion = load('src/components/AccordionMotion.js');
 imports['../src/components/AccordionMotion.js'] = motion;
+imports['./ProfileQuickAction.js'] = load('client/ProfileQuickAction.js');
 const exportsModule = load('client/ProfileExports.js');
 imports['./ProfileExports.js'] = exportsModule;
 const feedModule = load('client/ProfileFeed.js');
@@ -202,20 +203,51 @@ function controller(tree) {
   return node;
 }
 let tree = renderPanel();
-call(control(tree, 'profile-row-fixture').props.onPress, {});
+const initialExports = renderExports(controller(tree));
+const initialAction = control(initialExports, 'profile-export-fixture');
+const initialButton = call(initialAction.type, initialAction.props);
+call(control(initialButton, 'profile-export-fixture').props.onPress, { stopPropagation: noop });
+assert.equal(controller(renderPanel()).props.visible, false, 'Export leaves the row closed.');
+
+call(
+  control(
+    controller(tree).props.visible ? tree : renderExports(controller(tree)),
+    'profile-row-fixture',
+  ).props.onPress,
+  {},
+);
 tree = renderPanel();
 let exportTree = renderExports(controller(tree));
-call(control(exportTree, 'export-now').props.onPress, {});
+call(control(exportTree, 'export-now').props.onDisabledPress, {});
 exportTree = renderExports(controller(tree));
 control(exportTree, 'export-cancel');
-call(control(tree, 'profile-row-fixture').props.onPress, {});
-tree = renderPanel();
-assert.equal(
-  renderExports(controller(tree)),
-  null,
-  'Closed profile hides controls without unmounting their controller.',
+call(
+  control(
+    controller(tree).props.visible ? tree : renderExports(controller(tree)),
+    'profile-row-fixture',
+  ).props.onPress,
+  {},
 );
-call(control(tree, 'profile-row-fixture').props.onPress, {});
+tree = renderPanel();
+exportTree = renderExports(controller(tree));
+const collapsedExport = control(exportTree, 'profile-export-fixture');
+assert.equal(collapsedExport.props.busy, true);
+const collapsedButton = call(collapsedExport.type, collapsedExport.props);
+let stopped = false;
+call(control(collapsedButton, 'profile-export-fixture').props.onPress, {
+  stopPropagation: () => {
+    stopped = true;
+  },
+});
+assert.equal(stopped, true, 'Export does not toggle the profile row.');
+assert.equal(started, 1, 'A collapsed busy export cannot start a second operation.');
+call(
+  control(
+    controller(tree).props.visible ? tree : renderExports(controller(tree)),
+    'profile-row-fixture',
+  ).props.onPress,
+  {},
+);
 tree = renderPanel();
 exportTree = renderExports(controller(tree));
 call(control(exportTree, 'export-cancel').props.onPress, {});

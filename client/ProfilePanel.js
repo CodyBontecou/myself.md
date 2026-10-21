@@ -342,6 +342,48 @@ export default function ProfilePanel({
       </Group>
     </View>
   );
+  function toggleProfile() {
+    leaveForm(() => {
+      setEditing(null);
+      setExpanded((value) => !value);
+    });
+  }
+  /** @param {import('react').ReactNode} [action] */
+  function profileHeader(action) {
+    if (!profile || !inline) return null;
+    return (
+      <View style={styles.cardHeader}>
+        <Pressable
+          testID={`profile-row-${profile.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={profile.name}
+          accessibilityState={{ expanded, disabled }}
+          disabled={disabled}
+          onPress={toggleProfile}
+          style={({ pressed }) => [styles.cardToggle, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <View style={styles.profileIdentity}>
+            <Copy variant="heading">{profile.name}</Copy>
+            <Copy variant="caption" muted>
+              {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
+            </Copy>
+          </View>
+        </Pressable>
+        {action}
+        <Pressable
+          testID={`profile-disclosure-${profile.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${profile.name}`}
+          accessibilityState={{ expanded, disabled }}
+          disabled={disabled}
+          onPress={toggleProfile}
+          style={({ pressed }) => [styles.disclosure, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <AccordionChevron open={expanded} color={colors.secondary} />
+        </Pressable>
+      </View>
+    );
+  }
   const content = (
     <AccordionLayout
       enabled={inline}
@@ -353,34 +395,12 @@ export default function ProfilePanel({
       )}
       {profile && (
         <>
-          {inline && (
-            <Pressable
-              testID={`profile-row-${profile.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={profile.name}
-              accessibilityState={{ expanded, disabled }}
-              disabled={disabled}
-              onPress={() =>
-                leaveForm(() => {
-                  setEditing(null);
-                  setExpanded((value) => !value);
-                })
-              }
-              style={({ pressed }) => [styles.cardHeader, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <View style={styles.profileIdentity}>
-                <Copy variant="heading">{profile.name}</Copy>
-                <Copy variant="caption" muted>
-                  {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
-                </Copy>
-              </View>
-              <AccordionChevron open={expanded} color={colors.secondary} />
-            </Pressable>
-          )}
+          {inline && expanded && profileHeader()}
           {exportFirst && (
             <ProfileExports
               key={profile.id}
               visible={!inline || expanded}
+              renderCollapsed={profileHeader}
               session={session}
               profile={profile}
               disabled={disabled}
@@ -560,6 +580,7 @@ export default function ProfilePanel({
             <ProfileExports
               key={profile.id}
               visible={!inline || expanded}
+              renderCollapsed={profileHeader}
               session={session}
               profile={profile}
               disabled={disabled}
@@ -729,6 +750,8 @@ function changedFields(before, after) {
 const styles = StyleSheet.create({
   profileCard: { gap: 16, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
+  disclosure: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  cardToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
   profileIdentity: { flex: 1, minHeight: 52, justifyContent: 'center', gap: 4, padding: 4 },
   reviewActions: { gap: 4 },
   settingRow: {
