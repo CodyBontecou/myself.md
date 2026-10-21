@@ -82,6 +82,7 @@ export default function QaPhoneProvider({ children }) {
         incoming: null,
         dismissIncoming: () => {},
         session: fixture.accountSignedIn ? qaSession : null,
+        accountProfile: null,
         connected: false,
         permission: null,
         requestPermission: async () => {

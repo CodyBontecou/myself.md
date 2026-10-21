@@ -18,6 +18,7 @@ import {
 import { stopTracking, migrateLocationTask } from './location-task.js';
 import { saveExportContext } from './export-context.js';
 import { prepareProfilePairing, completeProfilePairing } from './profiles.js';
+import { useAccountProfile } from './use-account-profile.js';
 import { renewCloudAuthorizations } from './destinations.js';
 import { profileFromLink } from '../core/profiles.js';
 import { parsePairingQr } from '../core/index.js';
@@ -115,6 +116,7 @@ function usePhoneState() {
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState(/** @type {import('./session.js').Session|null} */ (null));
+  const accountProfile = useAccountProfile(session);
   const [pairing, setPairing] = useState(
     /** @type {import('../core/index.js').PairingQr|null} */ (null),
   );
@@ -364,6 +366,7 @@ function usePhoneState() {
     incoming,
     dismissIncoming: () => setIncoming(null),
     session,
+    accountProfile,
     connected,
     permission,
     requestPermission,

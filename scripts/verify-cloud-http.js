@@ -128,9 +128,14 @@ const child = spawn(process.execPath, ['server/index.js'], {
 });
 const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
 const accessClient = new Client({ name: 'synthetic-access-test', version: '1' });
-/** @param {string} subject @param {string} azp @param {string} [audience] */
-async function token(subject, azp, audience = `${origin}/mcp`) {
-  return new SignJWT({ scope: 'openid profile email myselfmd', azp })
+/** @param {string} subject @param {string} azp @param {string} [audience] @param {string} [scope] */
+async function token(
+  subject,
+  azp,
+  audience = `${origin}/mcp`,
+  scope = 'openid profile email myselfmd',
+) {
+  return new SignJWT({ scope, azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(issuer)
     .setAudience(audience)
@@ -408,6 +413,16 @@ try {
     expectedAccountProfile,
   );
   assert.equal((await request('/api/account-profile', null)).status, 401);
+  const nativeProfileToken = await token(
+    'alice',
+    'myselfmd-phone',
+    undefined,
+    'openid profile myselfmd offline_access',
+  );
+  assert.deepEqual((await request('/api/account-profile', nativeProfileToken)).value, {
+    ...expectedAccountProfile,
+    email: null,
+  });
   assert.deepEqual(
     (await request('/api/account-profile', dashboardToken)).value,
     expectedAccountProfile,
@@ -420,6 +435,7 @@ try {
   );
   profileSubjectOverride = 'bob';
   assert.equal((await request('/api/account-profile', dashboardToken)).status, 502);
+  assert.equal((await request('/api/account-profile', nativeProfileToken)).status, 502);
   profileSubjectOverride = '';
 
   const association = await request('/.well-known/apple-app-site-association', null);

@@ -6,17 +6,23 @@ import AccountAvatar from '../components/AccountAvatar.js';
 import { usePhone } from '../../client/PhoneProvider.js';
 import { useBilling } from '../../client/BillingPaywalls.js';
 export default function AccountScreen() {
-  const { session, busy, run, disconnect, deleteAccount, deletionStatusUrl } = usePhone();
+  const { session, accountProfile, busy, run, disconnect, deleteAccount, deletionStatusUrl } =
+    usePhone();
   const current = useBilling();
   if (!session?.owner || session.requiresSignIn) return <Redirect href="/login" />;
   return (
     <Screen compact testID="account-screen">
       <Stack.Screen options={{ title: 'Account' }} />
       <View style={styles.identity}>
-        <AccountAvatar account={session.account} />
+        <AccountAvatar signedIn picture={accountProfile?.picture} size={72} />
         <Copy testID="account-account" variant="heading" selectable style={styles.center}>
-          {session.account}
+          {accountProfile?.name || accountProfile?.email || 'Your account'}
         </Copy>
+        {accountProfile?.name && accountProfile.email && (
+          <Copy muted selectable style={styles.center}>
+            {accountProfile.email}
+          </Copy>
+        )}
       </View>
       <SectionHeader title="Access" />
       <Group>

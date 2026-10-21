@@ -79,12 +79,13 @@ function renderSettingsAccountAvatar() {
 }
 
 function SettingsAccountAvatar() {
-  const { session } = usePhone();
+  const { session, accountProfile } = usePhone();
   const signedIn = Boolean(session?.owner && !session.requiresSignIn);
   return (
     <AccountAvatar
       testID="settings-account-avatar"
-      account={signedIn ? session?.account : undefined}
+      signedIn={signedIn}
+      picture={signedIn ? accountProfile?.picture : null}
       onPress={() => router.push(signedIn ? '/account' : '/login')}
     />
   );
