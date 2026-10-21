@@ -39,6 +39,19 @@ final class WatchContractTests: XCTestCase {
     XCTAssertEqual(interval.day, "2026-03-08")
     XCTAssertEqual(interval.start, "2026-03-08T05:00:00.000Z")
   }
+  func testNextDayBoundaryAcrossDaylightSavingChanges() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    for (stamp, expected) in [
+      ("2026-11-01T04:30:00.000Z", "2026-11-02T05:00:00.000Z"),
+      ("2026-03-09T03:30:00.000Z", "2026-03-09T04:00:00.000Z"),
+      ("2026-10-21T16:00:00.000Z", "2026-10-22T04:00:00.000Z")
+    ] {
+      let now = try XCTUnwrap(WatchTimestamp.date(stamp))
+      let midnight = WatchInterval.nextDay(after: now, timezone: zone)
+      XCTAssertGreaterThan(midnight, now)
+      XCTAssertEqual(WatchTimestamp.string(midnight), expected)
+    }
+  }
   func testNullableWireFieldsAreExplicit() throws {
     let summary = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(WatchSummary())) as? [String: Any])
     XCTAssertTrue(summary["steps"] is NSNull)

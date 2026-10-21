@@ -11,7 +11,7 @@ import WatchKit
   let health = WatchHealth()
   private var started = false
   private let transferDelegate = WatchTransferDelegate()
-  private lazy var transfers: URLSession = {
+  @ObservationIgnored private lazy var transfers: URLSession = {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.waitsForConnectivity = true
     configuration.timeoutIntervalForResource = 60
@@ -74,7 +74,7 @@ import WatchKit
     UserDefaults.standard.removeObject(forKey: "watchDeviceId")
     do { try persist(); message = nil } catch { message = WatchFailure.storage.localizedDescription }
   }
-  private lazy var controls = URLSession(configuration: .ephemeral, delegate: transferDelegate, delegateQueue: nil)
+  @ObservationIgnored private lazy var controls = URLSession(configuration: .ephemeral, delegate: transferDelegate, delegateQueue: nil)
   func request<T: Decodable>(_ value: [String: Any], as type: T.Type) async throws -> T {
     guard let configuration = snapshot.configuration, (configuration.expiresAt > Date().timeIntervalSince1970 * 1000 || value["action"] as? String == "revoke"),
           let secrets = try WatchKeychain.read(), secrets.revision == configuration.revision,

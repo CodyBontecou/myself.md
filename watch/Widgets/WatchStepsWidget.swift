@@ -11,7 +11,7 @@ struct StepsProvider: TimelineProvider {
   func placeholder(in context: Context) -> StepsEntry { .init(date: Date(), snapshot: WatchSnapshot(), requests: 0) }
   func getSnapshot(in context: Context, completion: @escaping (StepsEntry) -> Void) { completion(read()) }
   func getTimeline(in context: Context, completion: @escaping (Timeline<StepsEntry>) -> Void) {
-    let now = Date(), midnight = Calendar.current.startOfDay(for: now.addingTimeInterval(86400))
+    let now = Date(), midnight = WatchInterval.nextDay(after: now)
     let current = read()
     let nextDay = StepsEntry(date: midnight, snapshot: current.snapshot, requests: current.requests)
     completion(Timeline(entries: [current, nextDay], policy: .after(min(now.addingTimeInterval(900), midnight))))

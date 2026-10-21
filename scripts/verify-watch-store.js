@@ -178,6 +178,158 @@ assert.equal(
   'completed',
 );
 
+// A request ID on another watch must never release this watch's reservation.
+/** @param {string} cleanup */
+async function verifyBillingCleanup(cleanup) {
+  const owner = await configure(false),
+    other = await configure(false),
+    requestId = randomUUID();
+  await service.watchRuntimeApi(owner.token, { action: 'enqueue', requestId, interval });
+  await service.watchRuntimeApi(owner.token, { action: 'start', requestId, interval });
+  await service.watchRuntimeApi(other.token, { action: 'enqueue', requestId, interval });
+  assert.equal(billing.snapshot(subject).reserved, 1);
+  if (cleanup === 'expire') {
+    const clock = Date.now;
+    try {
+      Date.now = () => clock() + 2 * 86400000;
+      await service.watchRuntimeApi(other.token, { action: 'poll' });
+    } finally {
+      Date.now = clock;
+    }
+  } else if (cleanup === 'configure') {
+    await service.watchOwnerApi(subject, null, {
+      action: 'configure',
+      deviceId: other.deviceId,
+      parentDeviceId: parent.id,
+      name: 'Replacement',
+      endpoint: 'https://example.test/replacement',
+      agentAccess: false,
+    });
+  } else {
+    await service.watchOwnerApi(subject, null, {
+      action: cleanup,
+      deviceId: other.deviceId,
+      ...(cleanup === 'cancel' ? { requestId } : {}),
+    });
+  }
+  assert.equal(
+    billing.snapshot(subject).reserved,
+    1,
+    `${cleanup} must preserve the other watch's reservation.`,
+  );
+  const settled = z.object({ status: z.string() }).parse(
+    await service.watchRuntimeApi(owner.token, {
+      action: 'settle',
+      requestId,
+      status: cleanup === 'cancel' ? 'completed' : 'failed',
+      recordCount: 1,
+      bytes: 100,
+      httpStatus: cleanup === 'cancel' ? 200 : 500,
+      partial: false,
+      error: null,
+    }),
+  );
+  assert.equal(settled.status, cleanup === 'cancel' ? 'completed' : 'failed');
+  assert.equal(billing.snapshot(subject).reserved, 0);
+}
+await verifyBillingCleanup('cancel');
+await verifyBillingCleanup('revoke');
+await verifyBillingCleanup('configure');
+await verifyBillingCleanup('expire');
+// A colliding phone reservation has no watch authority either.
+const phoneRequest = randomUUID(),
+  collisionWatch = await configure(false);
+billing.reserve(
+  subject,
+  phoneRequest,
+  JSON.stringify({ profileId: 'phone', days: [interval.day], formats: ['json'] }),
+);
+await service.watchRuntimeApi(collisionWatch.token, {
+  action: 'enqueue',
+  requestId: phoneRequest,
+  interval,
+});
+await service.watchOwnerApi(subject, null, {
+  action: 'cancel',
+  deviceId: collisionWatch.deviceId,
+  requestId: phoneRequest,
+});
+assert.equal(
+  billing.snapshot(subject).reserved,
+  1,
+  'Watch cancellation must preserve a phone reservation.',
+);
+billing.release(subject, phoneRequest);
+
+// An already approved upload can retry its exact frozen interval after the new-request age limit.
+const interrupted = await configure(false),
+  retryId = randomUUID();
+await service.watchRuntimeApi(interrupted.token, {
+  action: 'enqueue',
+  requestId: retryId,
+  interval,
+});
+await service.watchRuntimeApi(interrupted.token, { action: 'start', requestId: retryId, interval });
+const clock = Date.now,
+  later = clock() + 9 * 86400000;
+try {
+  Date.now = () => later;
+  await service.watchRuntimeApi(interrupted.token, { action: 'poll', foreground: true });
+  const retried = z.object({ status: z.string() }).parse(
+    await service.watchRuntimeApi(interrupted.token, {
+      action: 'enqueue',
+      requestId: retryId,
+      interval,
+    }),
+  );
+  assert.equal(retried.status, 'running');
+  await assert.rejects(
+    service.watchRuntimeApi(interrupted.token, {
+      action: 'start',
+      requestId: retryId,
+      interval: { ...interval, end: new Date(end.getTime() - 1000).toISOString() },
+    }),
+    (error) => error instanceof PairingError && error.status === 409,
+  );
+  const restarted = z
+    .object({ job: z.object({ status: z.string(), interval: z.unknown() }) })
+    .parse(
+      await service.watchRuntimeApi(interrupted.token, {
+        action: 'start',
+        requestId: retryId,
+        interval,
+      }),
+    );
+  assert.equal(restarted.job.status, 'running');
+  assert.deepEqual(restarted.job.interval, interval);
+  assert.equal(
+    billing.snapshot(subject).reserved,
+    1,
+    'A retry must reuse its original reservation.',
+  );
+  await assert.rejects(
+    service.watchRuntimeApi(interrupted.token, {
+      action: 'enqueue',
+      requestId: randomUUID(),
+      interval,
+    }),
+    (error) => error instanceof PairingError && error.status === 400,
+  );
+  await service.watchRuntimeApi(interrupted.token, {
+    action: 'settle',
+    requestId: retryId,
+    status: 'completed',
+    recordCount: 1,
+    bytes: 100,
+    httpStatus: 200,
+    partial: false,
+    error: null,
+  });
+  assert.equal(billing.snapshot(subject).reserved, 0);
+} finally {
+  Date.now = clock;
+}
+
 const disconnected = await configure(false),
   pending = randomUUID();
 await service.watchRuntimeApi(disconnected.token, {
@@ -200,5 +352,5 @@ await assert.rejects(inFlight, (error) => error instanceof PairingError && error
 assert.equal(billing.snapshot(subject).reserved, 0);
 db.close();
 console.log(
-  'PASS watch concurrent interval freeze, agent blocking during entitlement verification, independent session renewal, expiry, self-revocation and parent disconnect race',
+  'PASS watch concurrent interval freeze, agent blocking during entitlement verification, independent session renewal, expiry, self-revocation, scoped billing cleanup, frozen retries after nine days and parent disconnect race',
 );

@@ -40,6 +40,16 @@ function verifyInterval(interval) {
     throw new PairingError(400, 'Use a valid recent local-day interval and timezone.');
   }
 }
+/** @param {import('../core/watch.js').WatchDevice} device @param {import('../core/watch.js').WatchInterval} interval */
+function reservationScope(device, interval) {
+  return JSON.stringify({
+    profileId: device.profile.id,
+    days: [interval.day],
+    formats: ['json'],
+    watchDeviceId: device.id,
+    watchRevision: device.revision,
+  });
+}
 /** One scoped session per watch. Metadata is encrypted; only credential hashes are indexed.
  * @param {{source:string|import('./database.js').SqlDatabase,cloud:import('./cloud-store.js').CloudStore,billing:import('./billing-store.js').BillingStore,history:import('./history-store.js').HistoryStore,devices:import('./pairing-store.js').PairingStore['devices'],refreshEntitlement:(subject:string)=>Promise<void>,registerTicket:(token:string,subject:string,expires:number)=>Promise<void>}} dependencies */
 export function createWatchService({
@@ -128,13 +138,26 @@ export function createWatchService({
         'Approve watch agent access in Settings before requesting exports.',
       );
   }
+  /** @param {string} subject @param {import('../core/watch.js').WatchDevice} device @param {import('../core/watch.js').WatchJob} job */
+  function ownsReservation(subject, device, job) {
+    if (!job.interval) return false;
+    const reserved = billing.db
+      .prepare('SELECT scope FROM billing_uses WHERE subject=? AND id=?')
+      .get(subject, job.id);
+    return reserved?.scope === reservationScope(device, job.interval);
+  }
+  /** Request IDs are caller supplied and may also exist on another watch or phone.
+   * @param {string} subject @param {import('../core/watch.js').WatchDevice} device @param {import('../core/watch.js').WatchJob} job */
+  function releaseReservation(subject, device, job) {
+    if (ownsReservation(subject, device, job)) billing.release(subject, job.id);
+  }
   /** @param {string} subject @param {import('../core/watch.js').WatchDevice} device */
   function expire(subject, device) {
     for (const job of device.jobs) {
       if (!terminal.has(job.status) && job.expiresAt <= Date.now() && job.status !== 'running') {
         job.status = 'expired';
         job.updatedAt = Date.now();
-        billing.release(subject, job.id);
+        releaseReservation(subject, device, job);
       }
     }
     save(subject, device);
@@ -245,7 +268,7 @@ export function createWatchService({
       if (!terminal.has(job.status)) {
         job.status = 'cancelled';
         job.updatedAt = Date.now();
-        billing.release(subject, job.id);
+        releaseReservation(subject, device, job);
         recordHistory(subject, device, job);
       }
     save(subject, device);
@@ -325,8 +348,9 @@ export function createWatchService({
         revoked: false,
       });
       if (previous) {
-        for (const job of read(subject, input.deviceId).jobs)
-          if (!terminal.has(job.status)) billing.release(subject, job.id);
+        const oldDevice = read(subject, input.deviceId);
+        for (const job of oldDevice.jobs)
+          if (!terminal.has(job.status)) releaseReservation(subject, oldDevice, job);
       }
       db.prepare('INSERT OR REPLACE INTO watches VALUES(?,?,?,?,?,?)').run(
         device.id,
@@ -351,7 +375,7 @@ export function createWatchService({
       job.status = 'cancelled';
       job.updatedAt = Date.now();
       job.error = 'Cancelled. A transfer already in flight may have reached the destination.';
-      billing.release(subject, job.id);
+      releaseReservation(subject, device, job);
       save(subject, device);
       recordHistory(subject, device, job);
     }
@@ -433,9 +457,9 @@ export function createWatchService({
       };
     }
     if (input.action === 'enqueue') {
-      verifyInterval(input.interval);
       const existing = device.jobs.find((job) => job.id === input.requestId);
       if (existing) return existing;
+      verifyInterval(input.interval);
       return request(subject, device, input.requestId, null, input.interval);
     }
     if (input.action === 'cancel')
@@ -456,7 +480,11 @@ export function createWatchService({
     }
     if (input.action === 'start') {
       requireAgentGrant(subject, device, job);
-      verifyInterval(input.interval);
+      if (job.interval && JSON.stringify(job.interval) !== JSON.stringify(input.interval))
+        throw new PairingError(409, 'Export interval is already frozen.');
+      // A reserved export already passed the recent-day check. Retry only its exact frozen bounds,
+      // including after an extended interruption; active session/ownership/grant checks still apply.
+      if (!ownsReservation(subject, device, job)) verifyInterval(input.interval);
       const local = new Intl.DateTimeFormat('en-CA', {
         timeZone: input.interval.timezone,
         year: 'numeric',
@@ -465,8 +493,6 @@ export function createWatchService({
       }).format(new Date(input.interval.start));
       if (local !== input.interval.day)
         throw new PairingError(400, 'Watch day does not match its timezone.');
-      if (job.interval && JSON.stringify(job.interval) !== JSON.stringify(input.interval))
-        throw new PairingError(409, 'Export interval is already frozen.');
       await refreshEntitlement(subject);
       // Recheck after entitlement verification; revocation may occur during I/O.
       const current = read(subject, device.id),
@@ -480,13 +506,7 @@ export function createWatchService({
       )
         throw new PairingError(409, 'Export interval is already frozen.');
       if (current.expiresAt <= Date.now()) throw new PairingError(401, 'Watch session expired.');
-      const scope = JSON.stringify({
-        profileId: device.profile.id,
-        days: [input.interval.day],
-        formats: ['json'],
-        watchDeviceId: device.id,
-        watchRevision: device.revision,
-      });
+      const scope = reservationScope(current, input.interval);
       const reserved = billing.db
         .prepare('SELECT scope FROM billing_uses WHERE subject=? AND id=?')
         .get(subject, job.id);
@@ -515,7 +535,7 @@ export function createWatchService({
     job.partial = input.partial;
     job.error = input.error;
     if (job.status === 'completed') billing.complete(subject, job.id);
-    else billing.release(subject, job.id);
+    else releaseReservation(subject, device, job);
     save(subject, device);
     recordHistory(subject, device, job);
     return job;

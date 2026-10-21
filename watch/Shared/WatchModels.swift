@@ -36,6 +36,10 @@ struct WatchProvision: Codable {
 struct WatchSecrets: Codable { var token: String; var destinationBearer: String; var endpoint: String; var revision: String }
 struct WatchInterval: Codable, Equatable {
   var start: String; var end: String; var day: String; var timezone: String
+  static func nextDay(after date: Date, timezone: TimeZone = .current) -> Date {
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timezone
+    return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: date))!
+  }
   static func today(at date: Date = Date(), timezone: TimeZone = .current) -> WatchInterval {
     var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timezone
     let formatter = DateFormatter(); formatter.calendar = calendar; formatter.locale = Locale(identifier: "en_US_POSIX")
