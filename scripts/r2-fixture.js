@@ -6,7 +6,12 @@ import assert from 'node:assert/strict';
 export async function r2Fixture() {
   /** @type {Map<string,Buffer>} */
   const files = new Map();
-  const state = { failPut: false, failGet: false, failDelete: false };
+  const state = {
+    failPut: false,
+    failGet: false,
+    failDelete: false,
+    beforeGet: /** @type {null|(()=>Promise<void>)} */ (null),
+  };
   const server = createServer(async (req, res) => {
     assert.match(req.headers.authorization ?? '', /^AWS4-HMAC-SHA256 Credential=fixture\//);
     const key = new URL(req.url ?? '/', 'http://fixture').pathname;
@@ -26,6 +31,7 @@ export async function r2Fixture() {
       res.setHeader('ETag', '"fixture"');
       res.end();
     } else if (req.method === 'GET') {
+      if (state.beforeGet) await state.beforeGet();
       const bytes = files.get(key);
       if (!bytes) {
         res.writeHead(404, { 'Content-Type': 'application/xml' });

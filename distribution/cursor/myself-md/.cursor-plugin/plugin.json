@@ -1,0 +1,15 @@
+{
+  "name": "myself-md",
+  "version": "1.0.0",
+  "description": "Connect agents to owner-approved phone data and explicitly shared cloud exports.",
+  "author": {
+    "name": "Isotech",
+    "email": "cody@isolated.tech"
+  },
+  "homepage": "https://myself.md",
+  "repository": "https://github.com/CodyBontecou/myself-md-cursor-plugin",
+  "license": "MIT",
+  "keywords": ["mcp", "phone", "health", "screen-time", "location", "exports"],
+  "logo": "assets/icon.png",
+  "mcpServers": "mcp.json"
+}

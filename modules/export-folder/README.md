@@ -1,0 +1,3 @@
+# Export folder access
+
+This iOS-only Expo bridge serializes a directory selected in the system picker as a minimal security-scoped bookmark and resolves it after restart. Resolved scopes stay active for Expo file operations and stop when the module is destroyed. Bookmarks are stored only in account/device-partitioned SQLite by `client/export-folder.js`. The module never picks a directory or grants access itself; restoration fails when the OS denies access. Android uses Expo FileSystem’s persisted document-tree picker. Run `npm run prebuild -- --platform ios`, install pods, then `npm run build:ios:debug` after native changes.

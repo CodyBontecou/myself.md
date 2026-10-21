@@ -2,12 +2,19 @@ import { errorJSON } from '../packages/support-chat/errors.js';
 import { recordDebug } from './debug-log.js';
 import { Directory, File, Paths } from 'expo-file-system';
 import { domains } from '../core/data.js';
-import { exportBasename, fileHeader, recordChunk, fileFooter } from '../core/export-files.js';
+import {
+  deliveredFormats,
+  exportBasename,
+  fileHeader,
+  recordChunk,
+  fileFooter,
+} from '../core/export-files.js';
+import { saveInExportFolder } from './export-folder.js';
 import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] */
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {()=>Promise<void>} [check] */
 export async function exportProfileDay(
   session,
   profile,
@@ -16,19 +23,20 @@ export async function exportProfileDay(
   progress,
   onArtifact = () => {},
   billingOperationId = '',
+  check = async () => {},
 ) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
     throw new Error('Select at least one data type.');
   const settings = profile.export;
   const root = new Directory(
-    settings.destination === 'local' ? Paths.document : Paths.cache,
+    Paths.cache,
     settings.folderName,
     encodeURIComponent(session.deviceId),
     encodeURIComponent(profile.id),
   );
   root.create({ intermediates: true, idempotent: true });
-  const files = settings.formats.map((format) => {
+  const files = deliveredFormats(settings).map((format) => {
     const folder = settings.formatFolders ? new Directory(root, format) : root;
     folder.create({ intermediates: true, idempotent: true });
     const target = new File(folder, `${exportBasename(settings, interval.day)}.${format}`);
@@ -64,6 +72,9 @@ export async function exportProfileDay(
         let cursor = '';
         do {
           if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
+          // Revalidate a remote request before reading each page.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          await check();
           progress(`${interval.day}: ${type} · ${count} records`);
           /** @type {import('../core/data.js').DataPage} */ let page;
           try {
@@ -84,9 +95,7 @@ export async function exportProfileDay(
               profile,
               false,
             );
-            recordDebug(session, 'export', 'succeeded', {
-              records: { domain, type, profileId: profile.id, values: page.records },
-            });
+            recordDebug(session, 'export', 'succeeded');
           } catch (error) {
             recordDebug(session, 'export', 'failed', { error });
             if (!valid())
@@ -151,6 +160,10 @@ export async function exportProfileDay(
       const bytes = f.target.size;
       if (!Number.isSafeInteger(bytes) || bytes < 0)
         throw new Error('Could not read export file size.');
+      // Revalidate before publishing each file, including after slow native reads.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      await check();
+      if (!valid()) throw new Error('Export cancelled: profile changed.');
       if (settings.destination !== 'local') {
         // Destinations acknowledge each complete daily file before progress advances.
         // oxlint-disable-next-line eslint/no-await-in-loop
@@ -167,18 +180,30 @@ export async function exportProfileDay(
           name: f.target.name,
           format: f.format,
           schema: settings.schema,
-          recordCount: count,
-          bytes,
+          recordCount: delivered?.recordCount ?? count,
+          bytes: delivered?.bytes ?? bytes,
           uri: null,
           cloudId: delivered?.id ?? null,
           checksum: null,
-          partial: failures.length > 0,
+          partial: delivered?.partial ?? failures.length > 0,
           warnings,
         });
         f.target.delete();
         continue;
       }
-      saved.push(f.target.uri);
+      let appended = false;
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      const localFile = await saveInExportFolder(session, profile, f.target, f.format, {
+        onAppend: () => {
+          appended = true;
+        },
+      });
+      if (!localFile) {
+        progress(`${interval.day}: existing ${f.format.toUpperCase()} file skipped.`);
+        f.target.delete();
+        continue;
+      }
+      saved.push(localFile.uri);
       if (f.format === 'jsonl') {
         const metadata = new File(
           f.target.parentDirectory,
@@ -188,21 +213,28 @@ export async function exportProfileDay(
         stagedMetadata.write(JSON.stringify(manifest));
         // oxlint-disable-next-line eslint/no-await-in-loop
         await stagedMetadata.move(metadata, { overwrite: true });
-        saved.push(metadata.uri);
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        const localMetadata = await saveInExportFolder(session, profile, metadata, f.format, {
+          filename: `${localFile.name}.manifest.json`,
+          writeMode: appended ? 'append' : 'replace',
+        });
+        if (localMetadata) saved.push(localMetadata.uri);
+        metadata.delete();
       }
       onArtifact({
         day: interval.day,
-        name: f.target.name,
+        name: localFile.name,
         format: f.format,
         schema: settings.schema,
         recordCount: count,
-        bytes,
-        uri: f.target.uri,
+        bytes: localFile.size,
+        uri: localFile.uri,
         cloudId: null,
-        checksum: f.target.md5,
+        checksum: localFile.md5,
         partial: failures.length > 0,
         warnings,
       });
+      f.target.delete();
     }
     return {
       count,

@@ -1,26 +1,35 @@
+import { reviewPhoneExport } from './phone-export-request.js';
+import { reviewWhoopRequest } from './whoop-request.js';
+import { profileSyncBase, saveProfileSyncBase, commitSyncedProfiles } from './profile-sync.js';
+import { mergeProfileStates, sameProfileValue } from '../core/profile-sync.js';
+import { trackAnalytics } from './analytics.js';
+import { exportFolderStatus } from './export-folder.js';
 import { showToast } from '../src/components/Toast.js';
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { errorJSON, errorMessage } from '../packages/support-chat/errors.js';
 import { acceptAllowance } from './billing.js';
 import { debugReport, recordDebug } from './debug-log.js';
-import { feedbackState, requestFeedback } from './gripe.js';
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
 import { useTheme } from '../src/lib/theme';
 import { router } from 'expo-router';
-import { Button, Checkbox, Text } from './Terminal.js';
+import { Button, Text } from './Terminal.js';
 import { domains } from '../core/data.js';
 import { api } from './session.js';
 import { catalog, readPage } from './data.js';
-import { loadGrants, saveGrants } from './library.js';
 import { requestSourceAccess } from './source-access.js';
 import { startTracking, stopTracking, locationStatus } from './location-task.js';
-import { cloudAccess } from './destinations.js';
+import { reviewLocationCapture } from './location-capture.js';
 import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
 import LocationSettings from './LocationSettings.js';
-import { loadProfiles, saveProfiles } from './profiles.js';
-import { parseProfile, parseProfileState, agentProfileAllows } from '../core/profiles.js';
+import { loadAgentProfiles, saveAgentProfiles } from './profile-logs.js';
+import {
+  parseProfile,
+  parseProfileState,
+  agentProfileAllows,
+  parseAgentPermissions,
+} from '../core/profiles.js';
 /** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
 const PhoneDataContext = createContext(
   /** @type {ReturnType<typeof usePhoneDataState>|null} */ (null),
@@ -44,9 +53,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   useEffect(() => {
     recordDebug(session, 'app', 'started');
   }, [session]);
-  const [grants, setGrants] = useState(() => loadGrants(session.deviceId));
-  const allowed = useRef(grants);
-  const [profiles, setProfiles] = useState(() => loadProfiles(session.deviceId));
+  const [profiles, setProfiles] = useState(() => loadAgentProfiles(session));
   const profileState = useRef(profiles);
   const [types, setTypes] = useState(
     /** @type {Record<import('../core/data.js').Domain,string[]>} */ ({
@@ -59,6 +66,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     /** @type {{id:string,profile:import('../core/profiles.js').ProfileDraft}|null} */ (null),
   );
   const reviewing = useRef(false);
+  const resolvingSync = useRef(false);
   const receivedProfileId = useRef('');
   useEffect(() => {
     if (!session.server) return;
@@ -87,7 +95,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
   );
   const [sourceNotes, setSourceNotes] = useState(/** @type {Record<string,string>} */ ({}));
   const phoneCatalog = useCallback(async () => {
-    const raw = await catalog(session.owner, allowed.current);
+    const raw = await catalog(session.owner, { health: true, time: true, location: true });
     setSourcePermissions(Object.fromEntries(raw.domains.map((d) => [d.domain, d.permission])));
     setSourceNotes(Object.fromEntries(raw.domains.map((d) => [d.domain, d.notes.join(' ')])));
     setTypes({
@@ -102,16 +110,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
             ...parseProfile({
               schema: 'myself.md.profile.v1',
               name: 'Default',
-              selection: Object.fromEntries(
-                raw.domains.map((d) => [d.domain, allowed.current[d.domain] ? d.types : []]),
-              ),
+              selection: Object.fromEntries(raw.domains.map((d) => [d.domain, []])),
             }),
             id: 'default',
             agentAccess: false,
+            agentPermissions: { health: false, time: false, location: false, logs: false },
           },
         ],
       };
-      saveProfiles(session.deviceId, initial);
+      saveAgentProfiles(session, initial);
       profileState.current = initial;
       setProfiles(initial);
     }
@@ -123,14 +130,25 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     return {
       ...raw,
+      locationCapture: { version: 1 },
+      dataExport: { version: 1 },
+      dataQuery: { version: 1, aggregation: 1 },
       diagnostics,
-      feedback: await feedbackState(),
-      profiles: profileState.current.profiles,
+      profiles: profileState.current.profiles.map((profile) =>
+        Object.assign({}, profile, { localExportFolder: exportFolderStatus(session, profile) }),
+      ),
+      profileSync: { base: profileSyncBase(session) },
       acceptProfiles: !reviewing.current,
       receivedProfileId: receivedProfileId.current,
       domains: raw.domains.map((d) =>
         Object.assign({}, d, {
-          enabled: allowed.current[d.domain],
+          enabled:
+            profileState.current?.profiles.some(
+              (p) =>
+                p.agentAccess === true &&
+                parseAgentPermissions(p.agentPermissions)[d.domain] &&
+                p.selection[d.domain].length > 0,
+            ) ?? false,
           availableTypes: d.types,
           types: d.types.filter((key) =>
             profileState.current?.profiles.some((p) =>
@@ -161,7 +179,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     const status = await locationStatus(session.owner);
     setTracking(status.tracking);
     setLocationInfo(
-      `${status.permission}. ${status.count} recorded points.${status.last ? ` Last point: ${new Date(status.last).toLocaleString()}.` : ''}`,
+      `${status.permission}. ${status.count} recorded points.${status.last ? ` Last point: ${new Date(status.last).toLocaleString()}.` : ''}${status.notificationPermission === 'required' || status.notificationPermission === 'blocked' ? ' Allow recording notifications in Android Settings before starting background recording.' : ''}`,
     );
     return status;
   }, [session.owner]);
@@ -172,9 +190,13 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         if (resume && resumeFromSettings.current) {
           resumeFromSettings.current = false;
           if (status.backgroundGranted) {
-            await startTracking(session.owner);
+            const started = await startTracking(session.owner);
             await refreshLocation();
-            setMessage('Location recording is on, including while your phone is locked.');
+            setMessage(
+              started
+                ? 'Location recording is on, including while your phone is locked.'
+                : 'Location recording was not started.',
+            );
           } else setMessage('Choose Always in location settings, then start recording again.');
         }
       } catch (error) {
@@ -193,6 +215,48 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       clearInterval(timer);
     };
   }, [refreshLocation, session.owner]);
+  const acceptProfileSync = useCallback(
+    /** @param {{state:import('../core/profiles.js').ProfileState,conflicts:string[]}|undefined} remote @param {import('../core/profiles.js').ProfileState} sent */
+    (remote, sent) => {
+      if (!remote || !profileState.current || resolvingSync.current) return;
+      const merged = mergeProfileStates(sent, profileState.current, remote.state);
+      /** @param {import('../core/profiles.js').ProfileState} next */
+      const apply = (next) => {
+        if (!sameProfileValue(profileState.current, next)) {
+          version.current++;
+          commitSyncedProfiles(session, next, remote.state);
+          profileState.current = next;
+          setProfiles(next);
+          void reconcileExports().catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));
+        } else saveProfileSyncBase(session, remote.state);
+      };
+      if (remote.conflicts.length || merged.conflicts.length) {
+        resolvingSync.current = true;
+        Alert.alert(
+          'Profiles changed in both clients',
+          'Web and phone edits overlap. Choose which profiles to keep. Your phone edits have not been replaced.',
+          [
+            {
+              text: 'Use web profiles',
+              onPress: () => {
+                apply(remote.state);
+                resolvingSync.current = false;
+              },
+            },
+            {
+              text: 'Keep phone profiles',
+              onPress: () => {
+                saveProfileSyncBase(session, remote.state);
+                resolvingSync.current = false;
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      } else apply(merged.state);
+    },
+    [session],
+  );
   const publish = useCallback(async () => {
     const info = await phoneCatalog();
     setNotes(
@@ -204,11 +268,15 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       ),
     );
     if (!session.server) return;
-    await api(session, `/api/phones/${session.deviceId}/poll`, {
-      method: 'POST',
-      body: JSON.stringify({ ...info, dispatch: false }),
-    });
-  }, [session, phoneCatalog]);
+    const response =
+      /** @type {{profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]}}} */ (
+        await api(session, `/api/phones/${session.deviceId}/poll`, {
+          method: 'POST',
+          body: JSON.stringify({ ...info, dispatch: false }),
+        })
+      );
+    acceptProfileSync(response.profileSync, { profiles: info.profiles });
+  }, [session, phoneCatalog, acceptProfileSync]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active')
@@ -225,6 +293,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     }
     let active = true,
       running = false;
+    let lastPollError = '';
     /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
     const poll = async () => {
       if (!active || running) return;
@@ -237,20 +306,26 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       try {
         const info = await phoneCatalog();
         const response =
-          /** @type {{feedback?:import('./gripe.js').FeedbackRequest|null,request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
+          /** @type {{phoneExport?:import('./phone-export-request.js').PhoneExportRequest|null,whoopRequest?:import('./whoop-request.js').WhoopRequest|null,locationCapture?:import('./location-capture.js').CaptureRequest|null,profileSync?:{state:import('../core/profiles.js').ProfileState,conflicts:string[]},request:null|{id:string,query:import('../core/data.js').DataQuery & {profileId:string}},profile?:{id:string,profile:import('../core/profiles.js').ProfileDraft}|null,allowance:import('../core/billing.js').ExportAllowance}} */ (
             await api(session, `/api/phones/${session.deviceId}/poll`, {
               method: 'POST',
               body: JSON.stringify(info),
             })
           );
         if (active) {
-          await requestFeedback(response.feedback ?? null, () =>
-            api(session, `/api/phones/${session.deviceId}/feedback`, {
-              method: 'POST',
-              body: JSON.stringify({ id: response.feedback?.id }),
-            }),
-          );
+          await reviewWhoopRequest(session, response.whoopRequest, () => active);
+          await reviewPhoneExport(session, response.phoneExport, () => active);
           acceptAllowance(response.allowance);
+          acceptProfileSync(response.profileSync, { profiles: info.profiles });
+          await reviewLocationCapture(
+            session,
+            response.locationCapture,
+            async () => {
+              await refreshLocation();
+              setMessage('Recorded one owner-approved Location point on this phone.');
+            },
+            () => active,
+          );
           setNotes(
             Object.fromEntries(
               info.domains.map((d) => [
@@ -269,26 +344,13 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
         const profile = profileState.current?.profiles.find(
           (p) => p.id === request?.query.profileId,
         );
-        if (
-          request &&
-          active &&
-          profile &&
-          allowed.current[request.query.domain] &&
-          agentProfileAllows(profile, request.query)
-        ) {
+        if (request && active && profile && agentProfileAllows(profile, request.query)) {
           setMessage(`Your chat requested ${request.query.domain} data.`);
           let body;
           recordDebug(session, 'query', 'started');
           try {
             const page = await readPage(session.owner, request.query, profile);
-            recordDebug(session, 'query', 'succeeded', {
-              records: {
-                domain: request.query.domain,
-                type: request.query.type,
-                profileId: profile.id,
-                values: page.records,
-              },
-            });
+            recordDebug(session, 'query', 'succeeded');
             body = { id: request.id, page };
           } catch (error) {
             recordDebug(session, 'query', 'failed', { error });
@@ -297,7 +359,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
               error: errorJSON(error),
             };
           }
-          if (active && current === version.current && allowed.current[request.query.domain]) {
+          if (active && current === version.current && agentProfileAllows(profile, request.query)) {
             await api(session, `/api/phones/${session.deviceId}/result`, {
               method: 'POST',
               body: JSON.stringify(body),
@@ -305,9 +367,14 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
             setMessage('Answered your chat. The server clears responses after five minutes.');
           }
         }
+        lastPollError = '';
       } catch (error) {
         recordDebug(session, 'connection', 'failed', { error });
-        if (active) showToast({ message: errorJSON(error), kind: 'error' });
+        const pollError = errorMessage(error);
+        if (active && pollError !== lastPollError) {
+          lastPollError = pollError;
+          showToast({ message: pollError, kind: 'error' });
+        }
       } finally {
         running = false;
         if (active) timer = setTimeout(() => void poll(), 2000);
@@ -318,7 +385,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [session, phoneCatalog, publish]);
+  }, [session, phoneCatalog, publish, acceptProfileSync, refreshLocation]);
   /** @param {()=>Promise<void>} action */
   async function run(action) {
     setBusy(true);
@@ -337,58 +404,38 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       await stopTracking();
       await refreshLocation();
       setMessage('Location recording stopped.');
+      await publish();
       return;
     }
     const started = await startTracking(session.owner);
     await refreshLocation();
-    resumeFromSettings.current = !started;
+    resumeFromSettings.current = started === false;
+    await publish();
     setMessage(
-      started
-        ? 'Location recording is on, including while your phone is locked.'
-        : 'Use Location permissions to allow Always/background access and precise location, then return. Recording will start when access is granted.',
+      started === null
+        ? 'Location recording cancelled.'
+        : started
+          ? 'Location recording is on, including while your phone is locked.'
+          : 'Use Location permissions to allow Always/background access and precise location, then return. Recording will start when access is granted.',
     );
   }
   /** Request device access without expanding agent grants or starting recording.
-   * @param {import('../core/data.js').Domain} domain */
-  async function reviewSourceAccess(domain) {
+   * @param {import('../core/data.js').Domain} domain
+   * @param {string[]} [selected] */
+  async function reviewSourceAccess(domain, selected) {
     try {
-      return await requestSourceAccess(domain);
+      return await requestSourceAccess(domain, selected);
     } finally {
-      await publish();
-    }
-  }
-  /** @param {import('../core/data.js').Domain} domain @param {boolean} enabled */
-  async function changeGrant(domain, enabled) {
-    version.current++;
-    const next = { ...allowed.current, [domain]: enabled };
-    allowed.current = next;
-    saveGrants(session.deviceId, next);
-    setGrants(next);
-    await publish();
-    if (enabled) {
-      if (domain !== 'location') await reviewSourceAccess(domain);
       await publish();
     }
   }
   /** @param {import('../core/profiles.js').ProfileState} next */
   async function changeProfiles(next) {
     next = parseProfileState(next);
-    for (const previous of profiles?.profiles ?? []) {
-      const changed = next.profiles.find((p) => p.id === previous.id);
-      if (
-        session.server &&
-        previous.export.destination === 'cloud' &&
-        (!changed ||
-          JSON.stringify(parseProfile(changed)) !== JSON.stringify(parseProfile(previous)))
-      ) {
-        // Revoke stored-data sharing before accepting changed profile permissions.
-        // oxlint-disable-next-line eslint/no-await-in-loop
-        await cloudAccess(session, previous, false);
-      }
-    }
     version.current++;
-    saveProfiles(session.deviceId, next);
+    saveAgentProfiles(session, next);
     recordDebug(session, 'profile', 'succeeded');
+    trackAnalytics('profile_saved');
     profileState.current = next;
     setProfiles(next);
     void reconcileExports().catch((e) => showToast({ message: errorJSON(e), kind: 'error' }));
@@ -407,7 +454,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     busy,
     proposal,
     setProposal,
-    grants,
     isTracking,
     locationInfo,
     notes,
@@ -416,7 +462,6 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     reviewSourceAccess,
     message,
     run,
-    changeGrant,
     changeRecording,
     changeProfiles,
     setMessage,
@@ -437,15 +482,13 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
     types,
     sourcePermissions,
     busy,
+    isTracking,
     proposal,
     setProposal,
-    grants,
-    notes,
     sourceNotes,
     reviewSourceAccess,
     message,
     run,
-    changeGrant,
     changeProfiles,
     setMessage,
   } = data;
@@ -462,9 +505,10 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           state={profiles}
           types={types}
           permissions={sourcePermissions}
-          grants={grants}
           onAuthorize={reviewSourceAccess}
           busy={busy}
+          isTracking={isTracking}
+          onRecordingChange={(enabled) => void run(() => data.changeRecording(enabled))}
           draft={incoming ?? proposal?.profile ?? null}
           onDismiss={() => {
             if (incoming) onDismiss();
@@ -490,20 +534,6 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
         >
           <Text style={styles.title}>
             {domain === 'health' ? 'Health' : domain === 'time' ? 'Screen time' : 'Location'}
-          </Text>
-          <View style={styles.row}>
-            <Text style={styles.description}>Agent access</Text>
-            <Checkbox
-              testID={`source-grant-${domain}`}
-              accessibilityLabel={`Allow chat to read ${domain} data`}
-              value={grants[domain]}
-              disabled={busy || !session.server}
-              onValueChange={(value) => void run(() => changeGrant(domain, value))}
-            />
-          </View>
-          <Text style={styles.description}>
-            {grants[domain] ? 'Shared with your paired agent' : 'Private'} ·{' '}
-            {notes[domain] ?? 'Checking data sources…'}
           </Text>
           {domain !== 'location' && (
             <Button
@@ -554,13 +584,6 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    flexWrap: 'wrap',
   },
   title: { fontSize: 19, lineHeight: 27 },
   status: {

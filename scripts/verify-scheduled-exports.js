@@ -1,0 +1,830 @@
+import * as dataRange from '../core/data-range.js';
+import { domains } from '../core/data.js';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { SourceTextModule, SyntheticModule } from 'node:vm';
+import * as schedules from '../core/schedules.js';
+import { localCalendar } from '../client/calendar.js';
+import { parseProfile } from '../core/profiles.js';
+import { deliveredFormats } from '../core/export-files.js';
+const session = { deviceId: 'phone-a', owner: 'owner-a', server: 'https://example.com' };
+const profiles = ['a', 'b'].map((id) =>
+  Object.assign(
+    parseProfile({
+      schema: 'myself.md.profile.v1',
+      name: id,
+      selection: { health: ['native:steps'], time: [], location: [] },
+    }),
+    { id },
+  ),
+);
+/** @type {Map<string,string>} */
+const rows = new Map();
+/** @type {{profiles:{profileId:string,enabledAt:string}[],token?:string|null,notificationError?:string|null}[]} */
+const registrations = [];
+/** @type {{profile:string,day:string,writeMode:import('../core/export-files.js').ExportWriteMode|undefined}[]} */
+const exported = [];
+let authorizationFailure = '';
+let notificationPermission = { granted: true, canAskAgain: true };
+let permissionRequests = 0;
+let blockedPermissionRequest = false;
+let pushRegistrationFailure = false;
+let workerRegistrations = 0;
+let workerIsRegistered = false;
+let notificationTaskRegistered = false;
+/** @type {Promise<void>|null} */
+let pendingNotificationRegistration = null;
+/** @type {Promise<{data:string}>|null} */
+let pendingPushToken = null;
+/** @type {Promise<void>|null} */
+let pendingDayExport = null;
+let reservations = 0;
+let historyStarts = 0;
+/** @type {Map<string,()=>Promise<number>>} */
+const backgroundTasks = new Map();
+const mocks = {
+  earliestHealthDate: async () => null,
+  requireHealthHistory: async () => {},
+  phoneDatabase: () => ({
+    execSync() {},
+    /** @param {string} _sql @param {string} device @param {string} id */
+    getFirstSync: (_sql, device, id) =>
+      rows.has(`${device}/${id}`) ? { value: rows.get(`${device}/${id}`) } : null,
+    /** @param {string} _sql @param {string} device @param {string} id @param {string} value */
+    runSync: (_sql, device, id, value) => rows.set(`${device}/${id}`, value),
+  }),
+  loadExportContext: () => session,
+  loadSession: async () => session,
+  loadProfiles: () => ({ profiles }),
+  /** @param {unknown} _session @param {string} _path @param {{body:string}} options */
+  api: async (_session, _path, options) => {
+    registrations.push(JSON.parse(options.body));
+    return { requests: [] };
+  },
+  default: { expoConfig: { extra: { eas: { projectId: 'project' } } } },
+  Alert: { alert() {} },
+  Platform: { OS: 'ios' },
+  qaEnabled: false,
+  getPermissionsAsync: async () => notificationPermission,
+  requestPermissionsAsync: async () => {
+    permissionRequests++;
+    if (blockedPermissionRequest) return new Promise(() => {});
+    return notificationPermission;
+  },
+  getExpoPushTokenAsync: async () => {
+    if (pendingPushToken) return pendingPushToken;
+    if (pushRegistrationFailure) throw new Error('FCM token unavailable');
+    return { data: 'ExponentPushToken[test]' };
+  },
+  setNotificationChannelAsync: async () => {},
+  AndroidImportance: { DEFAULT: 3 },
+  /** @param {string} name */
+  isTaskRegisteredAsync: async (name) =>
+    name === 'profile-export-notifications' ? notificationTaskRegistered : workerIsRegistered,
+  getStatusAsync: async () => 1,
+  BackgroundTaskStatus: { Available: 1 },
+  registerTaskAsync: async () => {
+    workerRegistrations++;
+    workerIsRegistered = true;
+  },
+  unregisterTaskAsync: async () => {
+    workerIsRegistered = false;
+  },
+  /** @param {string} name @param {()=>Promise<number>} handler */
+  defineTask(name, handler) {
+    backgroundTasks.set(name, handler);
+  },
+  BackgroundTaskResult: { Success: 1, Failed: 2 },
+  /** @param {boolean} enabled */
+  reconcileExportNotificationTask: async (enabled) => {
+    await pendingNotificationRegistration;
+    notificationTaskRegistered = enabled;
+  },
+  requireCloudAuthorization: async () => {
+    if (authorizationFailure) throw new Error(authorizationFailure);
+  },
+  reserveExport: async () => {
+    reservations++;
+  },
+  settleExport: async () => {},
+  beginExport: () => {
+    historyStarts++;
+    return 'history';
+  },
+  recordArtifact() {},
+  finishExport() {},
+  errorJSON: String,
+  exportFailureMessage: String,
+  deliveredFormats,
+  /** @param {unknown} _session @param {import("../core/profiles.js").ExportProfile} profile @param {{day:string}} day */
+  exportProfileDay: async (_session, profile, day) => {
+    exported.push({ profile: profile.id, day: day.day, writeMode: profile.export.writeMode });
+    await pendingDayExport;
+    return { files: [], count: 0, failedSources: 0 };
+  },
+};
+const module = new SourceTextModule(
+  await readFile(new URL('../client/export-task.js', import.meta.url), 'utf8'),
+);
+await module.link((specifier) => {
+  const values =
+    specifier === '../core/data-range.js'
+      ? dataRange
+      : specifier === '../core/data.js'
+        ? { domains }
+        : specifier === './library.js'
+          ? { earliestLocationDate: () => null }
+          : specifier === '../core/schedules.js'
+            ? schedules
+            : specifier === './calendar.js'
+              ? { localCalendar }
+              : mocks;
+  return new SyntheticModule(Object.keys(values), function () {
+    for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+  });
+});
+// A headless launch evaluates the entry module without mounting the router or PhoneProvider.
+const headlessEntry = new SourceTextModule(
+  await readFile(new URL('../index.js', import.meta.url), 'utf8'),
+);
+await headlessEntry.link((specifier) =>
+  specifier === './client/export-task.js' ? module : new SyntheticModule([], function () {}),
+);
+await headlessEntry.evaluate();
+assert.ok(
+  backgroundTasks.has('profile-file-exports'),
+  'A cold headless launch must define scheduled exports before the UI mounts.',
+);
+const task =
+  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void)=>Promise<unknown>,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,reminderError?:string|null},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>,reconcileExports:()=>Promise<void>}} */ (
+    /** @type {unknown} */ (module.namespace)
+  );
+const first = profiles[0];
+assert.ok(first);
+// A permanently denied Android request can leave Expo's native promise unresolved.
+// Exercise the actual opt-in boundary, including the unchanged persisted toggle.
+mocks.Platform.OS = 'android';
+notificationPermission = { granted: false, canAskAgain: false };
+blockedPermissionRequest = true;
+/** @type {ReturnType<typeof setTimeout>|undefined} */
+let permissionDeadline;
+try {
+  await assert.rejects(
+    Promise.race([
+      task.setScheduleEnabled(session.deviceId, first, true),
+      new Promise((_, reject) => {
+        permissionDeadline = setTimeout(() => reject(new Error('Opt-in remained busy')), 100);
+      }),
+    ]),
+    /Allow notifications in Settings/,
+    'Blocked notifications must finish with an actionable error, not leave setup busy',
+  );
+} finally {
+  clearTimeout(permissionDeadline);
+}
+assert.equal(permissionRequests, 0, 'Do not request a permission that Android cannot ask for');
+assert.equal(task.scheduleState(session.deviceId, first).progress.enabled, false);
+assert.equal(registrations.length, 0, 'A denied opt-in must not publish an enabled schedule');
+notificationPermission = { granted: false, canAskAgain: true };
+blockedPermissionRequest = false;
+await assert.rejects(task.setScheduleEnabled(session.deviceId, first, true), /Allow notifications/);
+assert.equal(permissionRequests, 1, 'Requestable denial uses the native prompt once');
+assert.equal(task.scheduleState(session.deviceId, first).progress.enabled, false);
+notificationPermission = { granted: true, canAskAgain: true };
+await task.setScheduleEnabled(session.deviceId, first, true);
+assert.equal(permissionRequests, 1, 'Settings recovery retries without another prompt');
+mocks.Platform.OS = 'ios';
+assert.equal(
+  registrations.length > 0,
+  true,
+  'Enabling a schedule must register cloud notifications',
+);
+console.log('Cloud schedule registration passed.');
+
+const second = profiles[1];
+assert.ok(second);
+await task.setScheduleEnabled(session.deviceId, second, true);
+const fireDate = localCalendar.instant(localCalendar.day(new Date().toISOString()), 8, 0);
+for (const profile of profiles) {
+  const state = task.scheduleState(session.deviceId, profile);
+  state.progress.enabledAt = new Date(Date.parse(fireDate) - 172800000).toISOString();
+  rows.set(`${session.deviceId}/${profile.id}`, JSON.stringify(state));
+}
+const payload = {
+  deviceId: session.deviceId,
+  profileId: second.id,
+  enabledAt: task.scheduleState(session.deviceId, second).progress.enabledAt,
+  fireDate,
+  kind: 'completed-day',
+};
+// Anchor to yesterday if this command is run before today's scheduled time.
+if (Date.parse(fireDate) > Date.now())
+  payload.fireDate = new Date(Date.parse(fireDate) - 86400000).toISOString();
+assert.equal(await task.openScheduledExport({ ...payload, deviceId: 'another-phone' }), false);
+assert.equal(await task.openScheduledExport({ ...payload, enabledAt: 'stale' }), false);
+assert.equal(await task.openScheduledExport(payload), true);
+assert.equal(exported.length, second.export.lookbackDays);
+assert.ok(exported.every((entry) => entry.profile === second.id));
+const count = exported.length;
+assert.equal(await task.openScheduledExport(payload), false);
+assert.equal(exported.length, count, 'A duplicate tap must not export twice');
+await task.setScheduleEnabled(session.deviceId, second, false);
+assert.equal(await task.openScheduledExport(payload), false);
+console.log('Correct-profile tap, stale/device rejection, disable and duplicate delivery passed.');
+
+// Elapsed cadence executes the current day even if its latest missed slot was yesterday.
+second.schedule = schedules.parseSchedule({ frequency: 'custom', unit: 'hour', interval: 365 });
+await task.setScheduleEnabled(session.deviceId, second, true);
+const elapsedState = task.scheduleState(session.deviceId, second);
+elapsedState.progress.enabledAt = new Date(Date.now() - (365 + 24) * 3600000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(elapsedState));
+const beforeElapsed = exported.length;
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeElapsed + 1);
+assert.equal(
+  exported.at(-1)?.day,
+  localCalendar.day(new Date().toISOString()),
+  'Frequent cadence refreshes execution day, not the missed slot day',
+);
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeElapsed + 1, 'Checkpoint prevents a duplicate interval export');
+await task.setScheduleEnabled(session.deviceId, second, false);
+// Calendar schedules include today when requested and retain the saved local file policy.
+const beforeMultiple = exported.length;
+const oldExport = second.export;
+second.schedule = schedules.parseSchedule({ dailyTimes: ['00:00', '12:00', '23:59'] });
+second.export = {
+  ...second.export,
+  includeToday: true,
+  lookbackDays: 1,
+  writeMode: /** @type {const} */ ('append'),
+};
+await task.setScheduleEnabled(session.deviceId, second, true);
+const multipleState = task.scheduleState(session.deviceId, second);
+multipleState.progress.enabledAt = new Date(Date.now() - 172800000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(multipleState));
+await task.setScheduleEnabled(session.deviceId, first, false);
+const backgroundExport = backgroundTasks.get('profile-file-exports');
+assert.ok(backgroundExport);
+// An OS wake must retain its keepalive while an already-started scheduled export is pending.
+/** @type {()=>void} */
+let releaseDay = () => {};
+pendingDayExport = new Promise((resolve) => {
+  releaseDay = resolve;
+});
+const foregroundExport = task.runScheduledExports(second.id);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(exported.length, beforeMultiple + 1, 'Foreground export reached delivery');
+let backgroundFinished = false;
+const joinedWake = backgroundExport().then((result) => {
+  backgroundFinished = true;
+  return result;
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(
+  backgroundFinished,
+  false,
+  'OS task must await an in-flight scheduled export before releasing its keepalive',
+);
+releaseDay();
+pendingDayExport = null;
+await foregroundExport;
+assert.equal(await joinedWake, mocks.BackgroundTaskResult.Success);
+assert.equal(exported.length, beforeMultiple + 2);
+assert.equal(exported.at(-1)?.day, localCalendar.day(new Date().toISOString()));
+assert.equal(exported.at(-1)?.writeMode, 'append');
+await task.runScheduledExports(second.id);
+assert.equal(
+  exported.length,
+  beforeMultiple + 2,
+  'Repeated scheduler wake does not re-append a completed occurrence',
+);
+await task.setScheduleEnabled(session.deviceId, second, false);
+second.export = oldExport;
+await task.setScheduleEnabled(session.deviceId, first, true);
+console.log(
+  'Multi-time scheduled execution includes today, preserves file policy and checkpoints completion.',
+);
+// Missing/rejected cloud approval must stop before source processing or usage reservations.
+authorizationFailure = 'Cloud credential unavailable.';
+const beforeDenied = { exported: exported.length, reservations, historyStarts };
+const originalDestination = second.export.destination;
+second.export.destination = 'cloud';
+await assert.rejects(
+  task.exportNow(session, second, () => {}),
+  /Cloud credential unavailable/,
+);
+assert.equal(exported.length, beforeDenied.exported);
+assert.equal(reservations, beforeDenied.reservations);
+assert.equal(historyStarts, beforeDenied.historyStarts, 'Manual denial creates no export history');
+await assert.rejects(
+  task.setScheduleEnabled(session.deviceId, second, true),
+  /Cloud credential unavailable/,
+);
+assert.equal(task.scheduleState(session.deviceId, second).progress.enabled, false);
+authorizationFailure = '';
+await task.setScheduleEnabled(session.deviceId, second, true);
+const deniedState = task.scheduleState(session.deviceId, second);
+deniedState.progress.enabledAt = new Date(Date.now() - (365 + 24) * 3600000).toISOString();
+rows.set(`${session.deviceId}/${second.id}`, JSON.stringify(deniedState));
+authorizationFailure = 'Cloud credential unavailable.';
+await task.runScheduledExports(second.id);
+assert.equal(exported.length, beforeDenied.exported);
+assert.equal(reservations, beforeDenied.reservations);
+authorizationFailure = '';
+await task.setScheduleEnabled(session.deviceId, second, false);
+/** @type {{message:string,percentage:number|undefined}[]} */
+const manualProgress = [];
+const beforeManual = exported.length;
+await task.exportNow(session, second, (message, percentage) => {
+  manualProgress.push({ message, percentage });
+  if (message.startsWith('Saved ')) {
+    const total = second.export.lookbackDays + Number(second.export.includeToday);
+    assert.equal(
+      percentage,
+      Math.min(99, Math.floor(((exported.length - beforeManual) / total) * 100)),
+    );
+  }
+});
+assert.deepEqual(manualProgress[0], { message: 'Preparing export…', percentage: 0 });
+assert.deepEqual(manualProgress.at(-1), { message: 'Finishing export…', percentage: 99 });
+assert.ok(
+  manualProgress.every(
+    (entry, index) =>
+      typeof entry.percentage === 'number' &&
+      entry.percentage < 100 &&
+      entry.percentage >= (manualProgress[index - 1]?.percentage ?? 0),
+  ),
+  'Progress is monotonic and never claims completion before settlement',
+);
+assert.equal(
+  manualProgress.filter((entry) => entry.message.startsWith('Saved ')).length,
+  exported.length - beforeManual,
+);
+assert.ok(exported.length > beforeDenied.exported, 'An authorized retry can export');
+console.log(
+  'Authorization preflight blocks manual/scheduled source reads, billing and schedule opt-in; retry passes.',
+);
+
+second.export.destination = originalDestination;
+
+// Exercise the real credential service: saved destination consent, coalesced creation and renewal.
+let storedCredential = '';
+let renewalFails = false;
+let creationFails = false;
+let renewals = 0;
+let creations = 0;
+const cloudProfile = {
+  ...second,
+  export: { ...second.export, destination: /** @type {const} */ ('cloud') },
+};
+/** @type {import('../core/profiles.js').ExportProfile} */
+let savedProfile = cloudProfile;
+const destinationModule = new SourceTextModule(
+  await readFile(new URL('../client/destinations.js', import.meta.url), 'utf8'),
+);
+const credentialMocks = {
+  ...mocks,
+  recordDebug() {},
+  canonicalServiceOrigin: (/** @type {string} */ value) => new URL(value).origin,
+  loadProfiles: () => ({ profiles: [savedProfile] }),
+  getItemAsync: async () => storedCredential || null,
+  setItemAsync: async (/** @type {string} */ _key, /** @type {string} */ value) => {
+    storedCredential = value;
+  },
+  deleteItemAsync: async () => {},
+  fetch: async () => Response.json({}),
+  api: async (/** @type {unknown} */ _session, /** @type {string} */ path) => {
+    if (path === '/api/cloud/credential') {
+      creations++;
+      if (creationFails) throw new Error('Credential creation unavailable');
+      return { token: 'synthetic-upload-token' };
+    }
+    assert.equal(path, '/api/cloud/credential/renew');
+    renewals++;
+    if (renewalFails) throw new Error('Approval revoked');
+    return {};
+  },
+};
+await destinationModule.link(
+  () =>
+    new SyntheticModule(Object.keys(credentialMocks), function () {
+      for (const [key, value] of Object.entries(credentialMocks)) this.setExport(key, value);
+    }),
+);
+await destinationModule.evaluate();
+const credentials =
+  /** @type {{requireCloudAuthorization:(context:typeof session,profile:import('../core/profiles.js').ExportProfile)=>Promise<unknown>}} */ (
+    /** @type {unknown} */ (destinationModule.namespace)
+  );
+await credentials.requireCloudAuthorization(session, second);
+await credentials.requireCloudAuthorization(session, {
+  ...second,
+  export: { ...second.export, destination: 'http' },
+});
+assert.equal(creations + renewals, 0, 'Local/HTTP exports need no cloud credential');
+await assert.rejects(
+  credentials.requireCloudAuthorization({ ...session, owner: 'other' }, cloudProfile),
+  /Sign in again/,
+);
+await assert.rejects(
+  credentials.requireCloudAuthorization({ ...session, deviceId: 'other' }, cloudProfile),
+  /Sign in again/,
+);
+assert.equal(creations, 0, 'Wrong account/device cannot create upload credentials');
+savedProfile = second;
+await assert.rejects(credentials.requireCloudAuthorization(session, cloudProfile), /Save Cloud/);
+assert.equal(creations, 0, 'An unsaved Cloud selection does not authorize uploads');
+savedProfile = cloudProfile;
+creationFails = true;
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /Credential creation unavailable/,
+);
+assert.equal(storedCredential, '', 'Failed creation leaves no credential');
+creationFails = false;
+const beforeCreation = creations;
+await Promise.all([
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  credentials.requireCloudAuthorization(session, cloudProfile),
+]);
+assert.equal(creations, beforeCreation + 1, 'Concurrent first exports share one credential');
+assert.equal(JSON.parse(storedCredential).token, 'synthetic-upload-token');
+await credentials.requireCloudAuthorization(session, cloudProfile);
+assert.equal(creations, beforeCreation + 1, 'Subsequent exports reuse the credential');
+storedCredential = JSON.stringify({ server: session.server, token: '' });
+await credentials.requireCloudAuthorization(session, cloudProfile);
+assert.equal(creations, beforeCreation + 2, 'Empty credentials are replaced automatically');
+storedCredential = JSON.stringify({
+  server: 'https://other.example',
+  token: 'synthetic-upload-token',
+});
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /another server/,
+);
+storedCredential = JSON.stringify({ server: session.server, token: 'synthetic-upload-token' });
+renewalFails = true;
+const beforeRevocation = creations;
+await assert.rejects(
+  credentials.requireCloudAuthorization(session, cloudProfile),
+  /Approval revoked/,
+);
+assert.equal(creations, beforeRevocation, 'Revoked credentials are not silently rotated');
+renewalFails = false;
+await credentials.requireCloudAuthorization(session, cloudProfile);
+console.log(
+  'Cloud destination consent: first-use/retry/concurrent creation, credential reuse, local/HTTP exemption and owner/device/server/revocation boundaries passed.',
+);
+
+const { DatabaseSync } = await import('node:sqlite');
+const { createExportSchedules } = await import('../server/export-schedules.js');
+const { scheduleCalendar } = await import('../server/schedule-calendar.js');
+const database = new DatabaseSync(':memory:');
+let pushes = 0;
+let deliveryFails = false;
+let connected = true;
+/** @type {{exportSchedule:{profileId:string,deviceId:string,fireDate:string}}[]} */
+const notifications = [];
+const cloud = createExportSchedules(
+  database,
+  (subject, device) => {
+    assert.equal(subject, 'owner-a');
+    if (!connected || device !== 'phone-a') throw new Error('Not owned');
+  },
+  async () => {},
+  async (_url, options) => {
+    pushes++;
+    const message = JSON.parse(String(options?.body));
+    notifications.push(message.data);
+    return Response.json({ data: { status: deliveryFails ? 'error' : 'ok' } });
+  },
+);
+const registration = {
+  deviceId: 'phone-a',
+  token: 'ExponentPushToken[test]',
+  timeZone: 'Europe/Berlin',
+  profiles: [
+    {
+      profileId: 'b',
+      enabledAt: '2026-10-13T00:00:00.000Z',
+      schedule: schedules.parseSchedule({ hour: 8 }),
+      lastCompleted: null,
+      lastRefresh: null,
+    },
+  ],
+};
+await assert.rejects(
+  cloud.register('owner-a', { ...registration, deviceId: 'other' }),
+  /Not owned/,
+);
+await cloud.register('owner-a', {
+  ...registration,
+  token: null,
+  notificationError: 'token-unavailable',
+});
+assert.equal(cloud.list('owner-a')[0]?.profiles.length, 1);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registration-failed');
+assert.equal(cloud.list('owner-a')[0]?.profiles[0]?.timing.reminders, 'unavailable');
+assert.match(cloud.list('owner-a')[0]?.lastError ?? '', /independent/);
+await cloud.register('owner-a', registration);
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'registered');
+assert.equal(cloud.list('owner-a')[0]?.lastError, null);
+await cloud.dispatch('2026-10-15T06:01:00.000Z');
+assert.equal(pushes, 1);
+assert.equal(notifications[0]?.exportSchedule.profileId, 'b');
+assert.equal(notifications[0]?.exportSchedule.fireDate, '2026-10-15T06:00:00.000Z');
+await cloud.register('owner-a', registration);
+await cloud.dispatch('2026-10-15T06:02:00.000Z');
+assert.equal(pushes, 1, 'Re-registration must preserve notification checkpoints');
+assert.equal(
+  cloud.list('owner-a')[0]?.profiles[0]?.lastCompleted,
+  null,
+  'Notification acceptance must not claim export completion',
+);
+deliveryFails = true;
+await cloud.dispatch('2026-10-16T06:01:00.000Z');
+assert.equal(cloud.list('owner-a')[0]?.notificationStatus, 'delivery-failed');
+deliveryFails = false;
+await cloud.dispatch('2026-10-16T06:02:00.000Z');
+assert.equal(pushes, 3, 'Failed push must retry');
+await cloud.dispatch('2026-10-16T06:03:00.000Z');
+assert.equal(pushes, 3);
+await cloud.register('owner-a', { ...registration, profiles: [] });
+await cloud.dispatch('2026-10-17T06:01:00.000Z');
+assert.equal(pushes, 3, 'Disabled schedules must stop push delivery');
+assert.equal(
+  scheduleCalendar('Europe/Berlin').instant('2026-10-26', 8, 0),
+  '2026-10-26T07:00:00.000Z',
+);
+assert.equal(
+  scheduleCalendar('Europe/Berlin').instant('2026-03-29', 2, 30),
+  '2026-03-29T01:30:00.000Z',
+);
+assert.equal(
+  scheduleCalendar('America/New_York').instant('2026-11-01', 1, 30),
+  '2026-11-01T05:30:00.000Z',
+);
+/** @type {Map<string,unknown>} */
+const tools = new Map();
+cloud.registerTools(
+  /** @type {import('@modelcontextprotocol/server').McpServer} */ (
+    /** @type {unknown} */ ({
+      /** @param {string} name @param {unknown} _config @param {unknown} callback */
+      registerTool(name, _config, callback) {
+        tools.set(name, callback);
+      },
+    })
+  ),
+  'owner-a',
+);
+const requestSchedule =
+  /** @type {(input:{deviceId:string,profileId:string,enabled:boolean,requestId:string})=>Promise<unknown>} */ (
+    tools.get('set_phone_export_schedule_enabled')
+  );
+const change = { deviceId: 'phone-a', profileId: 'b', enabled: true, requestId: 'retry-key' };
+await requestSchedule(change);
+assert.equal(cloud.requests('owner-a')[0]?.state, 'awaiting-user');
+assert.equal(
+  cloud.list('owner-a')[0]?.profiles.length,
+  0,
+  'Agent requests must not enable schedules before phone approval',
+);
+await requestSchedule(change);
+assert.equal(cloud.requests('owner-a').length, 1);
+await assert.rejects(requestSchedule({ ...change, enabled: false }), /different request/);
+assert.throws(
+  () =>
+    cloud.completeRequest('owner-a', {
+      requestId: change.requestId,
+      deviceId: 'other',
+      state: 'completed',
+    }),
+  /Not owned/,
+);
+cloud.completeRequest('owner-a', {
+  requestId: change.requestId,
+  deviceId: 'phone-a',
+  state: 'running',
+});
+cloud.completeRequest('owner-a', {
+  requestId: change.requestId,
+  deviceId: 'phone-a',
+  state: 'completed',
+});
+assert.equal(cloud.requests('owner-a')[0]?.state, 'completed');
+await requestSchedule({ ...change, requestId: 'cancel-key' });
+cloud.completeRequest('owner-a', {
+  requestId: 'cancel-key',
+  deviceId: 'phone-a',
+  state: 'cancelled',
+});
+assert.equal(
+  cloud.requests('owner-a').find((r) => r.requestId === 'cancel-key')?.state,
+  'cancelled',
+);
+await requestSchedule({ ...change, requestId: 'expire-key' });
+const actualNow = Date.now;
+try {
+  Date.now = () => actualNow() + 600000;
+  assert.equal(
+    cloud.requests('owner-a').find((r) => r.requestId === 'expire-key')?.state,
+    'expired',
+  );
+} finally {
+  Date.now = actualNow;
+}
+console.log('MCP owner review, retry keys, cross-device denial and terminal outcomes passed.');
+assert.equal(
+  scheduleCalendar('Europe/Berlin').instant('2026-10-25', 2, 30),
+  '2026-10-25T00:30:00.000Z',
+);
+const beforeDailyPushes = pushes;
+await cloud.register('owner-a', {
+  ...registration,
+  profiles: [
+    {
+      ...registration.profiles[0],
+      schedule: schedules.parseSchedule({ dailyTimes: ['08:00', '12:30', '18:00'] }),
+    },
+  ],
+});
+assert.deepEqual(cloud.list('owner-a')[0]?.profiles[0]?.schedule.dailyTimes, [
+  '08:00',
+  '12:30',
+  '18:00',
+]);
+await cloud.dispatch('2026-10-17T06:01:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 1);
+await cloud.dispatch('2026-10-17T10:31:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 2, 'A second local daily time sends a reminder');
+await cloud.dispatch('2026-10-17T10:32:00.000Z');
+assert.equal(
+  pushes,
+  beforeDailyPushes + 2,
+  'Completed reminder checkpoints prevent duplicate delivery',
+);
+await cloud.dispatch('2026-10-17T16:01:00.000Z');
+assert.equal(pushes, beforeDailyPushes + 3);
+const beforeFrequentPushes = pushes;
+await cloud.register('owner-a', {
+  ...registration,
+  profiles: [
+    {
+      ...registration.profiles[0],
+      profileId: 'minute-profile',
+      schedule: schedules.parseSchedule({ frequency: 'custom', unit: 'minute', interval: 1 }),
+    },
+  ],
+});
+await cloud.dispatch('2026-10-17T06:01:00.000Z');
+assert.equal(
+  pushes,
+  beforeFrequentPushes,
+  'Elapsed schedules never send per-minute reminder notifications',
+);
+assert.equal(cloud.list('owner-a')[0]?.profiles[0]?.timing.reminders, 'disabled');
+connected = false;
+await cloud.dispatch('2026-10-18T06:01:00.000Z');
+assert.deepEqual(cloud.list('owner-a'), []);
+database.close();
+console.log(
+  'Cloud due delivery, ownership, retries, checkpoints, disable/disconnect and DST passed.',
+);
+
+// Exercise the mounted phone listener as well as the export business logic above.
+/** @typedef {{notification:{request:{identifier:string,content:{data:Record<string,unknown>}}}}} TapResponse */
+/** @type {{listener?: (response:TapResponse)=>void, cleanup?:()=>void, removed:boolean}} */
+const tapState = { removed: false };
+/** @type {unknown[]} */
+const tapRoutes = [];
+/** @type {unknown[]} */
+const tapExports = [];
+const notificationModule = new SourceTextModule(
+  await readFile(new URL('../client/PhoneNotifications.js', import.meta.url), 'utf8'),
+);
+const notificationMocks = {
+  useEffect: (/** @type {()=>()=>void} */ effect) => {
+    tapState.cleanup = effect();
+  },
+  usePhone: () => ({ session }),
+  qaEnabled: false,
+  setNotificationHandler() {},
+  getLastNotificationResponse: () => null,
+  addNotificationResponseReceivedListener: (/** @type {(response:TapResponse)=>void} */ open) => {
+    tapState.listener = open;
+    return {
+      remove: () => {
+        tapState.removed = true;
+      },
+    };
+  },
+  router: { push: (/** @type {unknown} */ route) => tapRoutes.push(route) },
+  openScheduledExport: async (/** @type {unknown} */ tapPayload) => {
+    tapExports.push(tapPayload);
+    return true;
+  },
+};
+await notificationModule.link(
+  () =>
+    new SyntheticModule(Object.keys(notificationMocks), function () {
+      for (const [key, value] of Object.entries(notificationMocks)) this.setExport(key, value);
+    }),
+);
+await notificationModule.evaluate();
+const notificationComponent = /** @type {{default:()=>null}} */ (
+  /** @type {unknown} */ (notificationModule.namespace)
+);
+notificationComponent.default();
+assert.ok(tapState.listener);
+/** @param {Record<string,unknown>} data @param {string} [identifier] */
+const tap = (data, identifier = 'notice') =>
+  tapState.listener?.({
+    notification: { request: { identifier, content: { data } } },
+  });
+tap({ type: 'cloud-storage' });
+tap({ type: 'cloud-storage' });
+assert.deepEqual(tapRoutes, ['/cloud-storage'], 'Cloud notice replay must not navigate twice');
+tap({ exportSchedule: { deviceId: 'another-phone', profileId: 'a' } });
+assert.equal(tapExports.length, 0, 'A foreign phone notification must not execute');
+tap({ exportSchedule: { deviceId: session.deviceId, profileId: 'a' } });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(tapExports.length, 1);
+assert.deepEqual(tapRoutes[1], { pathname: '/profiles/[id]', params: { id: 'a' } });
+tap({ gripeReportId: 'removed-report', conversationId: 'removed-mobile-support' });
+assert.equal(tapRoutes.length, 2, 'Removed mobile routes must not be opened');
+tapState.cleanup?.();
+assert.equal(tapState.removed, true);
+tap({ type: 'cloud-storage' }, 'after-unmount');
+assert.equal(tapRoutes.length, 2);
+console.log(
+  'Phone notification taps: cloud replay, owned exports, foreign-device denial and cleanup pass.',
+);
+
+// Notification delivery must not prevent the independently authorized OS export worker.
+mocks.Platform.OS = 'android';
+pushRegistrationFailure = true;
+workerIsRegistered = false;
+const workersBeforePushFailure = workerRegistrations;
+await task.reconcileExports();
+assert.equal(
+  workerRegistrations,
+  workersBeforePushFailure + 1,
+  'An enabled Android schedule must register its OS worker even when push registration fails',
+);
+console.log('Android OS export registration survives push-token failure.');
+
+assert.equal(registrations.at(-1)?.token, null);
+assert.equal(registrations.at(-1)?.notificationError, 'token-unavailable');
+assert.ok(registrations.at(-1)?.profiles.length);
+assert.equal(task.scheduleState(session.deviceId, first).reminderError, 'token-unavailable');
+pushRegistrationFailure = false;
+workerIsRegistered = false;
+pendingPushToken = new Promise(() => {});
+const stalledRegistration = task.reconcileExports();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  workerIsRegistered,
+  true,
+  'The OS worker registers while push lookup is still pending',
+);
+await task.setScheduleEnabled(session.deviceId, first, false);
+await stalledRegistration;
+assert.ok(
+  !registrations.at(-1)?.profiles.some((p) => p.profileId === first.id),
+  'Disabling during token lookup must not publish a stale enabled schedule',
+);
+pendingPushToken = null;
+await task.reconcileExports();
+assert.equal(registrations.at(-1)?.notificationError, null);
+assert.equal(task.scheduleState(session.deviceId, first).reminderError, null);
+console.log(
+  'Stalled push lookup is bounded, latest opt-in wins and token recovery clears diagnostics.',
+);
+
+let finishNotificationRegistration = () => {};
+pendingNotificationRegistration = new Promise((resolve) => {
+  finishNotificationRegistration = resolve;
+});
+const beforeCapability = registrations.length;
+const enablingNotificationWake = task.setScheduleEnabled(session.deviceId, first, true);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(workerIsRegistered, true, 'Pending notification registration must not block OS work');
+assert.equal(
+  registrations.length,
+  beforeCapability,
+  'Do not advertise an unregistered wake handler',
+);
+finishNotificationRegistration();
+await enablingNotificationWake;
+assert.equal(
+  /** @type {{backgroundNotifications?:boolean}|undefined} */ (registrations.at(-1))
+    ?.backgroundNotifications,
+  true,
+  'First opt-in publishes background wake capability after actual registration',
+);
+pendingNotificationRegistration = null;
+await task.setScheduleEnabled(session.deviceId, first, false);
+console.log(
+  'Delayed notification registration preserves OS work and publishes the first wake capability.',
+);

@@ -65,8 +65,8 @@ try {
     'HTTP export failed (401).',
   );
   assert.equal(
-    exportFailureMessage(new Error('Authorize cloud uploads on this profile first.')),
-    'Authorize cloud uploads on this profile first.',
+    exportFailureMessage(new Error('Save Cloud as this profile’s export destination first.')),
+    'Save Cloud as this profile’s export destination first.',
   );
   assert.ok(
     !exportFailureMessage(new Error('https://private.example/?token=secret')).includes('secret'),

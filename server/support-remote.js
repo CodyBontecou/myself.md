@@ -1,14 +1,10 @@
 import { PairingError } from './errors.js';
-import { z } from 'zod';
-import { acknowledgeSupportNotifications } from '../packages/support-chat/notifications.js';
-/** The host authenticates owners; the bridge credential never reaches the app.
+/** Cleanup of historical conversations during account deletion only. No inbox or messaging API.
  * @param {Record<string,string|undefined>} config
- * @param {(subject:string,agent:string)=>void} authorize
  * @param {typeof fetch} [transport]
  * @param {(subject:string)=>Promise<'owner'|'lifetime'|'guest'>} [resolveRole] */
-export function createRemoteSupport(
+export function createRemoteSupportCleanup(
   config,
-  authorize,
   transport = fetch,
   resolveRole = async () => 'guest',
 ) {
@@ -19,28 +15,22 @@ export function createRemoteSupport(
     if (url.origin !== origin || url.protocol !== 'https:')
       throw new Error('Support origin must be an exact HTTPS origin.');
   }
-  /** @param {string} subject @param {string} method @param {URLSearchParams} query
-   * @param {unknown} body @param {string|null} [agent] */
-  async function supportV1Api(subject, method, query, body, agent = null) {
-    if (!origin || !token) throw new PairingError(503, 'Isobot support is not configured yet.');
-    if (!['GET', 'POST'].includes(method)) throw new PairingError(405, 'Use GET or POST.');
-    const role = subject.startsWith('support-guest:') ? 'guest' : await resolveRole(subject);
-    const response = await transport(
-      `${origin}/api/support/v1${method === 'GET' ? `?${query}` : ''}`,
-      {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'X-Support-Owner': subject,
-          'X-Support-Role': role,
-          'Content-Type': 'application/json',
-          ...(agent ? { 'X-Support-Agent': agent } : {}),
-        },
-        ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
-        redirect: 'manual',
-        signal: AbortSignal.timeout(20000),
+  /** @param {string} subject */
+  async function deleteRemoteSupport(subject) {
+    if (!origin || !token) return;
+    const role = await resolveRole(subject);
+    const response = await transport(`${origin}/api/support/v1`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Support-Owner': subject,
+        'X-Support-Role': role,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({ action: 'deleteAccount' }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20000),
+    });
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel();
       throw new PairingError(502, 'Support redirected unexpectedly.');
@@ -71,96 +61,5 @@ export function createRemoteSupport(
       );
     return data;
   }
-  /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} agent */
-  function registerSupportV1Tools(mcp, subject, agent) {
-    mcp.registerTool(
-      'support_conversations',
-      {
-        description:
-          'List owner-approved support conversations or read/send/request data in one conversation. Data requests await owner review in the app; agents cannot approve uploads or grant themselves access. markAllRead and clearNotifications acknowledge observed unread replies without deleting conversations and return per-conversation outcomes. Archive and deletion are owner actions.',
-        inputSchema: z
-          .object({
-            action: z.enum([
-              'list',
-              'create',
-              'read',
-              'send',
-              'request',
-              'decline',
-              'readCursor',
-              'markAllRead',
-              'clearNotifications',
-              'resolve',
-              'reopen',
-              'ownerHandoff',
-            ]),
-            conversationId: z
-              .string()
-              .regex(/^[A-Za-z0-9_-]{1,100}$/)
-              .optional(),
-            title: z.string().max(120).optional(),
-            ownerAction: z
-              .enum(['archive', 'delete', 'agentAccess', 'autoReply', 'share', 'notifications'])
-              .optional(),
-            id: z.string().optional(),
-            text: z.string().max(1800).optional(),
-            reason: z.string().max(1000).optional(),
-            selector: z
-              .object({
-                category: z.string(),
-                from: z.number().int(),
-                to: z.number().int(),
-                operations: z.array(z.string()).optional(),
-                issuesOnly: z.boolean().optional(),
-              })
-              .optional(),
-            requestId: z.string().optional(),
-            readThrough: z.number().int().optional(),
-            before: z.number().int().optional(),
-          })
-          .strict(),
-      },
-      async (input) => {
-        if (!agent) throw new PairingError(403, 'A connected agent credential is required.');
-        authorize(subject, agent);
-        if (input.action === 'ownerHandoff') {
-          const data = {
-            status: 'awaiting_user',
-            action: input.ownerAction ?? 'agentAccess',
-            url: `myselfmd://support${input.conversationId ? `?conversationId=${encodeURIComponent(input.conversationId)}` : ''}`,
-            verificationTool: 'support_conversations',
-            conversationId: input.conversationId ?? null,
-            requiresUser: true,
-          };
-          return {
-            content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(data) }],
-            structuredContent: data,
-          };
-        }
-        const data =
-          input.action === 'markAllRead' || input.action === 'clearNotifications'
-            ? await acknowledgeSupportNotifications((action, fields = {}) => {
-                authorize(subject, agent);
-                return supportV1Api(
-                  subject,
-                  'POST',
-                  new URLSearchParams(),
-                  { ...fields, action },
-                  agent,
-                );
-              }, input.action)
-            : await supportV1Api(subject, 'POST', new URLSearchParams(), input, agent);
-        return {
-          content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(data) }],
-          structuredContent: data,
-        };
-      },
-    );
-  }
-  /** @param {string} subject */
-  async function deleteRemoteSupport(subject) {
-    if (!origin || !token) return;
-    await supportV1Api(subject, 'POST', new URLSearchParams(), { action: 'deleteAccount' });
-  }
-  return { supportV1Api, registerSupportV1Tools, deleteRemoteSupport };
+  return { deleteRemoteSupport };
 }

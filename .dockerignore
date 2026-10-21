@@ -10,6 +10,10 @@
 !dashboard/**
 !scripts/
 !scripts/build-dashboard.js
+!scripts/build-profile-share.js
+!scripts/build-blog.js
+!assets/
+!assets/myself-portrait.png
 !scripts/cloud-storage.js
 !client/
 !client/health-types.js

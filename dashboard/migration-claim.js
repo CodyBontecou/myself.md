@@ -1,8 +1,9 @@
+import { AccountError } from './account-error.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { Button } from './components/ui/button.js';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card.js';
+import { AccountPage, AccountSignIn } from './account-page.js';
 export function MigrationClaim() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
@@ -42,84 +43,74 @@ export function MigrationClaim() {
   }
   async function claim() {
     const ticket = sessionStorage.getItem('myself-migration-ticket');
-    if (!ticket) throw new Error('Open “Claim myself.md access” in health.md or iso.me to start.');
+    if (!ticket)
+      throw new Error('Open “Claim myself.md access” in health.md, iso.me, or time.md to start.');
     await api('/api/migration/claim', 'POST', { ticket });
     sessionStorage.removeItem('myself-migration-ticket');
     setClaimed(true);
   }
   return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>
-            {claimed ? 'Your lifetime access is ready' : 'Claim free myself.md access'}
-          </CardTitle>
-          <CardDescription>
-            {claimed
-              ? `Lifetime access is linked to ${account}. Sign in with the same account in myself.md on iOS or Android.`
-              : 'Your qualifying health.md or iso.me purchase includes complimentary lifetime access. Sign in to choose the account that will receive it.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <pre
-              role="alert"
-              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
-            >
-              {errorJSON(error)}
-            </pre>
-          )}
-          {claimed ? (
-            <>
-              <a className="block text-center underline" href="myselfmd://account">
-                Open myself.md
-              </a>
-              <a className="block text-center underline" href="/">
-                Download myself.md
-              </a>
-            </>
-          ) : signedIn ? (
-            <>
-              <p className="text-sm">
-                Claim for <strong>{account}</strong>. Each original purchase can be linked to one
-                account.
-              </p>
-              <Button className="w-full" disabled={busy} onClick={() => void run(claim)}>
-                {busy ? 'Claiming…' : 'Claim lifetime access'}
-              </Button>
-              <Button className="w-full" variant="outline" disabled={busy} onClick={signOut}>
-                Use another account
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                className="w-full"
-                disabled={!ready || busy}
-                onClick={() => void run(() => signIn('apple'))}
-              >
-                Sign in with Apple
-              </Button>
-              <Button
-                className="w-full"
-                variant="outline"
-                disabled={!ready || busy}
-                onClick={() => void run(() => signIn('github'))}
-              >
-                Continue with GitHub
-              </Button>
-              <Button
-                className="w-full"
-                variant="outline"
-                disabled={!ready || busy}
-                onClick={() => void run(() => signIn('google'))}
-              >
-                Continue with Google
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+    <AccountPage
+      eyebrow="Existing customers"
+      title={
+        claimed ? 'Your Lifetime access is ready.' : 'A purchase you already made. Access for life.'
+      }
+      description={
+        claimed
+          ? `Lifetime access is linked to ${account}. Sign in with the same account in myself.md on iOS or Android.`
+          : 'Your qualifying health.md, iso.me, or time.md purchase includes complimentary Lifetime access to myself.md.'
+      }
+    >
+      {error && <AccountError error={error} actionHref="/claim" actionLabel="Open claim access" />}
+      {claimed ? (
+        <div className="account-actions">
+          <div className="account-notice">
+            <strong>All set</strong>
+            <p>Your purchase has been verified and access is linked to this account.</p>
+          </div>
+          <Button asChild className="account-action">
+            <a href="myselfmd://account">Open myself.md</a>
+          </Button>
+          <a className="account-text-link" href="/">
+            Get myself.md
+          </a>
+        </div>
+      ) : signedIn ? (
+        <div className="account-actions">
+          <div className="account-notice">
+            <strong>Claim for this account</strong>
+            <p className="account-identity">{account}</p>
+            <p>
+              Each original purchase can be linked to one account. Check this is the account you
+              want to keep.
+            </p>
+          </div>
+          <Button className="account-action" disabled={busy} onClick={() => void run(claim)}>
+            {busy ? 'Claiming…' : 'Claim Lifetime access'}
+          </Button>
+          <Button className="account-action" variant="outline" disabled={busy} onClick={signOut}>
+            Use another account
+          </Button>
+        </div>
+      ) : (
+        <div className="account-actions">
+          <p className="account-section-label">Sign in to choose the account receiving access</p>
+          <AccountSignIn
+            disabled={!ready || busy}
+            onSignIn={(provider) => void run(() => signIn(provider))}
+          />
+          <div className="account-notice">
+            <strong>Start with purchase verification</strong>
+            <p>
+              Verify your eligible purchase through health.md, iso.me, or time.md first. Follow its
+              claim link back here to sign in and confirm your account.
+            </p>
+          </div>
+          <p className="account-fine-print">
+            Signing in alone does not claim access. You’ll review the account before confirming.
+          </p>
+        </div>
+      )}
+    </AccountPage>
   );
 }

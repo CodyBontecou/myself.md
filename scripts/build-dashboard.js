@@ -1,9 +1,15 @@
+import { publicSiteHeaderStyles } from '../core/site-header.js';
+import { projectSchema } from '../core/project-identity.js';
 import { publicFAQs } from '../core/public-site.js';
+import { buildProfileShare } from './build-profile-share.js';
+import { buildBlog } from './build-blog.js';
 import { mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
 mkdirSync('dashboard/dist', { recursive: true });
+await buildBlog();
+await buildProfileShare();
 await build({
   entryPoints: ['dashboard/app.js'],
   outfile: 'dashboard/dist/app.js',
@@ -15,6 +21,15 @@ await build({
   jsx: 'automatic',
   loader: { '.js': 'jsx' },
   define: { 'process.env.NODE_ENV': '"production"' },
+});
+await build({
+  entryPoints: ['dashboard/usage-analytics.js'],
+  outfile: 'dashboard/dist/usage-analytics.js',
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'browser',
+  target: ['es2022'],
 });
 await build({
   entryPoints: ['dashboard/browser-tools.js'],
@@ -86,30 +101,46 @@ const css = spawnSync(
 );
 if (css.status !== 0) throw new Error('Dashboard stylesheet build failed.');
 writeFileSync(
-  'dashboard/dist/index.html',
-  readFileSync('dashboard/index.html', 'utf8').replace(
-    '"__PUBLIC_FAQ_SCHEMA__"',
-    JSON.stringify({
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: publicFAQs.map((item) => ({
-        '@type': 'Question',
-        name: item.question,
-        acceptedAnswer: { '@type': 'Answer', text: item.answer },
-      })),
-    }),
-  ),
+  'dashboard/dist/style.css',
+  readFileSync('dashboard/dist/style.css', 'utf8') + '\n' + publicSiteHeaderStyles,
 );
-copyFileSync('dashboard/favicon.svg', 'dashboard/dist/favicon.svg');
+writeFileSync(
+  'dashboard/dist/index.html',
+  readFileSync('dashboard/index.html', 'utf8')
+    .replace('"__PROJECT_SCHEMA__"', JSON.stringify(projectSchema))
+    .replace(
+      '"__PUBLIC_FAQ_SCHEMA__"',
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: publicFAQs.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: { '@type': 'Answer', text: item.answer },
+        })),
+      }),
+    ),
+);
+copyFileSync('dashboard/favicon.png', 'dashboard/dist/favicon.png');
+copyFileSync('assets/myself-portrait.png', 'dashboard/dist/hero-portrait.png');
 cpSync('dashboard/store-badges', 'dashboard/dist/store-badges', { recursive: true });
 cpSync('dashboard/brand-icons', 'dashboard/dist/brand-icons', { recursive: true });
+cpSync('dashboard/agent-logos', 'dashboard/dist/agent-logos', { recursive: true });
+cpSync('dashboard/showcase', 'dashboard/dist/showcase', { recursive: true });
 console.log('Built dashboard/dist. Start the cloud service to preview /dashboard.');
 
 for (const asset of [
+  'analytics.css',
+  'blog.css',
   'docs.css',
   'geist-regular.ttf',
   'geist-medium.ttf',
   'geist-semibold.ttf',
   'geist-license.txt',
+  'geist-pixel-square.woff2',
+  'geist-pixel-license.txt',
 ])
   copyFileSync(`dashboard/${asset}`, `dashboard/dist/${asset}`);
+
+cpSync('dashboard/getting-started', 'dashboard/dist/getting-started', { recursive: true });
+cpSync('dashboard/guide-images', 'dashboard/dist/guide-images', { recursive: true });

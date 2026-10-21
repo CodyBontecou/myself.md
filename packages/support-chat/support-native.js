@@ -521,7 +521,9 @@ export function NativeSupport({
         style={[
           styles.composerArea,
           {
-            paddingBottom: Math.max(keyboardOpen ? 0 : bottomInset, 10),
+            paddingBottom:
+              Math.max(keyboardOpen ? 0 : bottomInset, 10) +
+              (Platform.OS === 'ios' && !keyboardOpen ? 16 : 0),
             backgroundColor: colors.surface,
           },
         ]}

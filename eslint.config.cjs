@@ -11,6 +11,7 @@ module.exports = defineConfig([
       'dist/**',
       'dashboard/dist/**',
       '.local/**',
+      'content/blog/**',
       '.expo/**',
       'node_modules/**',
       'worker/worker-configuration.d.ts',
@@ -20,12 +21,14 @@ module.exports = defineConfig([
   expoConfig,
   {
     files: ['worker/**/*.js'],
+    languageOptions: { globals: { HTMLRewriter: 'readonly' } },
     settings: { 'import/core-modules': ['cloudflare:workers', 'cloudflare:node'] },
   },
   {
     files: ['**/*.{js,jsx}'],
     ignores: [
       'dashboard/**',
+      'launch-video/**',
       'packages/support-chat/web.js',
       'packages/support-chat/support-web.js',
     ],

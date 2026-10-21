@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1074446552696",
+    "project_id": "myself-md-push",
+    "storage_bucket": "myself-md-push.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1074446552696:android:efebf322473bf37b16e78d",
+        "android_client_info": {
+          "package_name": "com.myself.md"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFUsw8lLjKF4-lgxQDtvyaf9n3CVYw2Nc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1074446552696:android:89e612bacbeecbe016e78d",
+        "android_client_info": {
+          "package_name": "com.myself.md.exportqa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFUsw8lLjKF4-lgxQDtvyaf9n3CVYw2Nc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

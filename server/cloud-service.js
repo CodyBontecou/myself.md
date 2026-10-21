@@ -1,47 +1,156 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 const content = (/** @type {unknown} */ value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 });
-/** @param {{cloud:import('./cloud-store.js').CloudStore,billing:import('./billing-store.js').BillingStore,history:import('./history-store.js').HistoryStore,refreshEntitlement:(subject:string)=>Promise<void>}} dependencies */
-export function createCloudService({ cloud, billing, history, refreshEntitlement }) {
+/** @param {{cloud:import('./cloud-store.js').CloudStore,billing:import('./billing-store.js').BillingStore,history:import('./history-store.js').HistoryStore,refreshEntitlement:(subject:string)=>Promise<void>,cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>}} dependencies */
+export function createCloudService({
+  cloud,
+  billing,
+  history,
+  refreshEntitlement,
+  cloudSubscriptions,
+}) {
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerCloudTools(mcp, subject, client = null) {
     mcp.registerTool(
       'get_cloud_storage',
       {
+        title: 'Check cloud storage',
         description:
-          'Read your verified cloud storage eligibility, used and available bytes, capacity and file retention. Does not enable uploads or sharing.',
+          'Read verified Cloud subscription, app access (including expiry), and store grace/retry state, used/available bytes, lapse deletion deadline and bytes at risk. Includes user handoff to subscribe, restore or manage/cancel in the phone/store; agents cannot purchase or cancel. Does not enable uploads or sharing.',
         inputSchema: z.object({}).strict(),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Check cloud storage',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
       async () => {
-        await refreshEntitlement(subject);
-        const status = cloud.storageStatus(subject);
+        if (!cloudSubscriptions) await refreshEntitlement(subject);
+        const status = cloudSubscriptions
+          ? await cloudSubscriptions.status(subject)
+          : cloud.storageStatus(subject);
         return { ...content(status), structuredContent: status };
       },
     );
     mcp.registerTool(
       'list_cloud_exports',
       {
+        title: 'List shared cloud exports',
         description:
-          'List your stored exports explicitly shared with MCP. Works while your phone is offline.',
-        inputSchema: z.object({}),
-        annotations: { readOnlyHint: true },
+          'List a filtered, paginated metadata page of stored exports shared with MCP under the phone profile’s last confirmed Health, Screen time and Location Agent permissions. Includes those permissions; all-off or unsynced profiles are hidden. Agent permissions are the sole profile access gate; no separate cloud-sharing switch is required. Works while your phone is offline after permission synchronization.',
+        inputSchema: z
+          .object({
+            deviceId: z.string().uuid().optional().describe('Filter by an owned phone ID.'),
+            profileId: z
+              .string()
+              .min(1)
+              .max(100)
+              .optional()
+              .describe('Filter by an exact saved profile ID.'),
+            start: z.iso.date().optional().describe('Inclusive export day, YYYY-MM-DD.'),
+            end: z.iso.date().optional().describe('Exclusive export day, YYYY-MM-DD.'),
+            limit: z
+              .number()
+              .int()
+              .min(1)
+              .max(100)
+              .default(50)
+              .describe('Maximum export metadata entries per page.'),
+            cursor: z
+              .string()
+              .max(500)
+              .default('')
+              .describe('Opaque nextCursor from this same filtered list; omit on the first page.'),
+          })
+          .strict()
+          .refine(
+            (input) => !input.start || !input.end || input.end > input.start,
+            'End must be later than start.',
+          ),
+        annotations: {
+          title: 'List shared cloud exports',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
       },
-      async () => content(cloud.list(subject, true)),
+      async ({ deviceId, profileId, start, end, limit, cursor }) => {
+        if (client) cloud.observeAgent(subject, client);
+        const identity = createHash('sha256')
+          .update(JSON.stringify([deviceId, profileId, start, end]))
+          .digest('hex');
+        const rows = cloud
+          .list(subject, true)
+          .filter(
+            (row) =>
+              (!deviceId || row.deviceId === deviceId) &&
+              (!profileId || row.profileId === profileId) &&
+              (!start || row.day >= start) &&
+              (!end || row.day < end),
+          );
+        let offset = 0;
+        if (cursor) {
+          const previous = JSON.parse(cursor);
+          if (previous.identity !== identity || typeof previous.id !== 'string')
+            throw new Error('Cursor belongs to a different export list.');
+          const index = rows.findIndex((row) => row.id === previous.id);
+          if (index < 0)
+            throw new Error('Export list changed or access was revoked; restart discovery.');
+          offset = index + 1;
+        }
+        const exports = rows.slice(offset, offset + limit);
+        return content({
+          exports,
+          nextCursor:
+            offset + limit < rows.length
+              ? JSON.stringify({ identity, id: exports.at(-1)?.id })
+              : null,
+        });
+      },
     );
     mcp.registerTool(
       'read_cloud_export',
       {
+        title: 'Read shared cloud export',
         description:
-          'Read a bounded page of your shared stored JSON/JSONL records. Cloud profile data selections still apply; exportId and cursor come from cloud tools.',
+          'Read a bounded page of shared stored JSON/JSONL records, filtered by current cloud type selections and the phone profile’s last confirmed per-source Agent permissions. Turning a source off blocks its records in existing files and subsequent pages; the same permission gate controls both phone reads and stored exports. Unsynced and all-off profiles deny reads. Records remain unchanged, but each successful call consumes an export/query allowance and records agent access in activity history. Repeated calls can consume additional allowance. exportId and cursor come from cloud tools.',
         inputSchema: z.object({
-          exportId: z.string().uuid(),
-          cursor: z.string().regex(/^\d*$/).max(8).default(''),
-          limit: z.number().int().min(1).max(50).default(50),
+          exportId: z
+            .string()
+            .uuid()
+            .describe(
+              'Shared export UUID from list_cloud_exports; deletion additionally requires ownership and explicit user confirmation.',
+            ),
+          cursor: z
+            .string()
+            .regex(/^\d*$/)
+            .max(8)
+            .default('')
+            .describe(
+              'Pagination cursor returned by the preceding response. Omit for the first page; preserve the other query arguments when continuing.',
+            ),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(50)
+            .describe(
+              'Maximum records in this page, up to 50. Follow the returned nextCursor to continue.',
+            ),
         }),
-        annotations: { readOnlyHint: true },
+        annotations: {
+          title: 'Read shared cloud export',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
       },
       async ({ exportId, cursor, limit }) => {
         const row = cloud.row(subject, exportId),
@@ -106,9 +215,23 @@ export function createCloudService({ cloud, billing, history, refreshEntitlement
     mcp.registerTool(
       'delete_cloud_export',
       {
+        title: 'Delete cloud export',
         description: 'Permanently delete one of your stored cloud exports.',
-        inputSchema: z.object({ exportId: z.string().uuid() }),
-        annotations: { destructiveHint: true },
+        inputSchema: z.object({
+          exportId: z
+            .string()
+            .uuid()
+            .describe(
+              'Shared export UUID from list_cloud_exports; deletion additionally requires ownership and explicit user confirmation.',
+            ),
+        }),
+        annotations: {
+          title: 'Delete cloud export',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
       },
       async ({ exportId }) => content(await cloud.delete(subject, exportId)),
     );

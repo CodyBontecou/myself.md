@@ -1,123 +1,112 @@
-import { ErrorToast } from '../components/Toast.js';
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, StyleSheet, View } from 'react-native';
 import { accountDeletionNotice } from '../../core/account-deletion.js';
-import { Stack } from 'expo-router';
-import { Screen, Copy, Button, Group, Row, Notice } from '../components/ui';
-import { usePhone } from '../../client/PhoneProvider';
-import { useBilling } from '../../client/BillingPaywalls';
-import { existingCustomerGuide } from '../../core/billing';
+import { Redirect, Stack, router } from 'expo-router';
+import { Screen, Copy, Button, Group, Row, Divider, SectionHeader } from '../components/ui.js';
+import AccountAvatar from '../components/AccountAvatar.js';
+import { usePhone } from '../../client/PhoneProvider.js';
+import { useBilling } from '../../client/BillingPaywalls.js';
 export default function AccountScreen() {
-  const {
-    session,
-    busy,
-    error,
-    run,
-    signInAccount,
-    syncAccount,
-    disconnect,
-    deleteAccount,
-    deletionStatusUrl,
-  } = usePhone();
+  const { session, accountProfile, busy, run, disconnect, deleteAccount, deletionStatusUrl } =
+    usePhone();
   const current = useBilling();
-  const guide = existingCustomerGuide();
+  if (!session?.owner || session.requiresSignIn) return <Redirect href="/login" />;
   return (
-    <Screen testID="account-screen">
+    <Screen compact testID="account-screen">
       <Stack.Screen options={{ title: 'Account' }} />
-      <Copy variant="heading">Your myself.md account</Copy>
-      <Copy muted>
-        Already claimed access through health.md or iso.me, or received a time.md offer? Sign in
-        with the account that received your lifetime access.
-      </Copy>
-      {!current.unlocked && (
-        <>
-          <Copy variant="heading">Claim existing-customer access</Copy>
-          <Copy muted>{guide.summary}</Copy>
-          <Group>
-            {guide.steps.map((step) => (
-              <Row key={step.title} title={step.title} subtitle={step.body} />
-            ))}
-          </Group>
-          <Copy variant="caption" muted>
-            {guide.eligibility}
+      <View style={styles.identity}>
+        <AccountAvatar signedIn picture={accountProfile?.picture} size={72} />
+        <Copy testID="account-account" variant="heading" selectable style={styles.center}>
+          {accountProfile?.name || accountProfile?.email || 'Your account'}
+        </Copy>
+        {accountProfile?.name && accountProfile.email && (
+          <Copy muted selectable style={styles.center}>
+            {accountProfile.email}
           </Copy>
-          <Notice title="Purchased time.md?" body={guide.timeOffer} />
-        </>
-      )}
-      {session?.owner && !session.requiresSignIn ? (
-        <>
-          <Group>
-            <Row testID="account-account" title="Account" subtitle={session.account} />
+        )}
+      </View>
+      <SectionHeader title="Access" />
+      <Group>
+        <Row
+          testID="account-lifetime-access"
+          title={
+            current.lifetime
+              ? 'Lifetime access'
+              : current.unlocked
+                ? 'Cloud subscription access'
+                : 'App access'
+          }
+          subtitle={
+            current.accountUnlocked
+              ? 'Active · unlimited exports and agent queries'
+              : current.unlocked
+                ? 'Unlocked on this phone · account access not verified for agent queries'
+                : 'No lifetime access linked yet'
+          }
+        />
+        {!current.accountUnlocked && (
+          <>
+            <Divider />
             <Row
-              testID="account-lifetime-access"
-              title="Lifetime access"
-              subtitle={
-                current.unlocked
-                  ? 'Active · unlimited exports and queries'
-                  : 'No lifetime access linked yet'
-              }
+              testID="account-claim-existing-access"
+              title="Claim existing-customer access"
+              onPress={() => router.push('/claim-access')}
             />
-          </Group>
-          <Button
-            label={busy ? 'Checking…' : 'Check lifetime access'}
-            disabled={busy}
-            onPress={() => void run(syncAccount)}
-          />
-          <Copy variant="heading">Delete account</Copy>
-          <Copy muted>{accountDeletionNotice}</Copy>
-          <Button
-            testID="account-delete-account"
-            label="Delete account"
-            secondary
-            disabled={busy}
-            onPress={() => {
-              Alert.alert('Permanently delete your account?', accountDeletionNotice, [
+          </>
+        )}
+      </Group>
+      <SectionHeader title="Sign-in methods" />
+      <Group>
+        <Row
+          testID="account-connected-logins"
+          title="Connected logins"
+          subtitle="Connect Apple, GitHub or Google to this account"
+          disabled={busy}
+          onPress={() => router.push('/connected-logins')}
+        />
+      </Group>
+      <Button
+        testID="account-sign-in-again"
+        label="Sign in again"
+        secondary
+        disabled={busy}
+        onPress={() => router.push('/login?reauthenticate=1')}
+      />
+      <Group>
+        <Row
+          testID="account-sign-out"
+          title="Sign out"
+          disabled={busy}
+          onPress={() => {
+            Alert.alert(
+              'Sign out?',
+              'This disconnects your phone and stops background location recording.',
+              [
                 { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete account',
-                  style: 'destructive',
-                  onPress: () => void run(deleteAccount),
-                },
-              ]);
-            }}
-          />
-          <Button
-            testID="account-sign-out"
-            label="Sign out"
-            secondary
-            disabled={busy}
-            onPress={() => void run(disconnect)}
-          />
-        </>
-      ) : (
-        <>
-          {session?.requiresSignIn && (
-            <Notice
-              title="Sign in again"
-              body="Finish the myself.md upgrade using the same account to keep your connected phone and data."
-            />
-          )}
-          <Button
-            testID="account-sign-in-with-apple"
-            label="Sign in with Apple"
-            disabled={busy}
-            onPress={() => void run(() => signInAccount('apple'))}
-          />
-          <Button
-            testID="account-continue-with-github"
-            label="Continue with GitHub"
-            secondary
-            disabled={busy}
-            onPress={() => void run(() => signInAccount('github'))}
-          />
-          <Button
-            testID="account-continue-with-google"
-            label="Continue with Google"
-            secondary
-            disabled={busy}
-            onPress={() => void run(() => signInAccount('google'))}
-          />
-        </>
-      )}
+                { text: 'Sign out', onPress: () => void run(disconnect) },
+              ],
+            );
+          }}
+        />
+      </Group>
+      <SectionHeader title="Account management" />
+      <Group>
+        <Row
+          testID="account-delete-account"
+          title="Delete account"
+          destructive
+          disabled={busy}
+          onPress={() => {
+            Alert.alert('Permanently delete your account?', accountDeletionNotice, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete account',
+                style: 'destructive',
+                onPress: () => void run(deleteAccount),
+              },
+            ]);
+          }}
+        />
+      </Group>
       {deletionStatusUrl && (
         <Button
           testID="account-view-account-deletion-status"
@@ -126,7 +115,10 @@ export default function AccountScreen() {
           onPress={() => void Linking.openURL(deletionStatusUrl)}
         />
       )}
-      <ErrorToast error={error} />
     </Screen>
   );
 }
+const styles = StyleSheet.create({
+  identity: { alignItems: 'center', gap: 12, paddingVertical: 12 },
+  center: { textAlign: 'center' },
+});

@@ -61,6 +61,12 @@ export function resetQa(scenario = 'populated', onboarding = true) {
     onboarding,
   });
 }
+/** Synthetic account presentation only; never creates credentials or grants.
+ * @param {unknown} signedIn */
+export function setQaAccount(signedIn) {
+  if (typeof signedIn !== 'boolean') throw new Error('Use a boolean account state.');
+  return updateQa({ accountSignedIn: signedIn });
+}
 /** Validated, development-only semantic operations available through Argent debugger-evaluate.
  * UI buttons call these exact operations. Reads return synthetic state only. */
 if (qaEnabled)
@@ -68,9 +74,10 @@ if (qaEnabled)
     __myselfQa: {
       getState: () => JSON.parse(JSON.stringify(state)),
       reset: resetQa,
+      setAccount: setQaAccount,
       capabilities: () => ({
         scenarios: qaScenarios,
-        operations: ['getState', 'reset'],
+        operations: ['getState', 'reset', 'setAccount'],
         nativeIntegration: false,
         synthetic: true,
       }),

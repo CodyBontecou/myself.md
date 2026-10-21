@@ -1,9 +1,10 @@
+import { AccountError } from './account-error.js';
 import { errorJSON } from '../packages/support-chat/errors.js';
 import { useEffect, useState } from 'react';
 import { accountDeletionNotice } from '../core/account-deletion.js';
 import { api, initializeSession, hasSession, signIn } from './session.js';
 import { Button } from './components/ui/button.js';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card.js';
+import { AccountPage, AccountSignIn } from './account-page.js';
 export function AccountDeletion() {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -72,69 +73,117 @@ export function AccountDeletion() {
   }
   const started = status && ['running', 'failed', 'completed'].includes(status.state);
   return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle>
-            {status?.state === 'completed' ? 'Account deleted' : 'Delete your myself.md account'}
-          </CardTitle>
-          <CardDescription>{accountDeletionNotice}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <pre
-              role="alert"
-              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
-            >
-              {errorJSON(error)}
-            </pre>
-          )}
+    <AccountPage
+      eyebrow="Account management"
+      title={
+        status?.state === 'completed' ? 'Your account has been deleted.' : 'Delete your account.'
+      }
+      description={
+        status?.state === 'completed'
+          ? 'Your account and cloud data were deleted.'
+          : 'Review what will be removed, then sign in to confirm the account. This cannot be undone.'
+      }
+      wide
+    >
+      {error && (
+        <AccountError
+          error={error}
+          actionHref="/delete-account"
+          actionLabel="Open account deletion"
+        />
+      )}
+      <div className="account-deletion-layout">
+        <section className="account-deletion-notice" aria-labelledby="deletion-details">
+          <h2 id="deletion-details">What account deletion means</h2>
+          <ul className="account-consequences">
+            <li>
+              <strong>Your account and cloud data are removed</strong>
+              <p>
+                This includes cloud exports, sharing permissions, connected phones, history, support
+                conversation and its Discord thread, and account-linked Lifetime access.
+              </p>
+            </li>
+            <li>
+              <strong>Your own files stay where they are</strong>
+              <p>
+                Source data in system apps, files in your own storage, and copies on other phones
+                are outside this cloud account.
+              </p>
+            </li>
+            <li>
+              <strong>Manage subscriptions separately</strong>
+              <p>
+                Deletion does not cancel store subscriptions or issue refunds. Manage them with
+                Apple or Google.
+              </p>
+            </li>
+          </ul>
+          <details className="account-disclosure">
+            <summary>Full deletion and retention notice</summary>
+            <p>{accountDeletionNotice}</p>
+          </details>
+        </section>
+        <section className="account-actions" aria-label="Account verification and deletion">
           {started ? (
             <>
-              <p role="status">
-                {status.state === 'completed'
-                  ? 'Your account and cloud data were deleted.'
-                  : 'Account access is revoked. Cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.'}
-              </p>
+              <div className="account-notice" role="status">
+                <strong>
+                  {status.state === 'completed' ? 'Deletion complete' : 'Cleanup in progress'}
+                </strong>
+                <p>
+                  {status.state === 'completed'
+                    ? 'Your account and cloud data were deleted.'
+                    : 'Account access is revoked. Cleanup retries automatically. An interrupted upload needs at least an hour; provider or storage failures may take longer.'}
+                </p>
+              </div>
               {status.state !== 'completed' && !status.subject && (
-                <Button asChild variant="outline">
+                <Button asChild className="account-action" variant="outline">
                   <a href={location.href}>Refresh deletion status</a>
                 </Button>
               )}
               {status.error && (
-                <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
-                  {errorJSON(status.error)}
-                </pre>
+                <AccountError
+                  error={status.error}
+                  actionHref="/delete-account"
+                  actionLabel="Open account deletion"
+                />
               )}
               {status.state !== 'completed' && status.subject && (
-                <Button disabled={busy} onClick={() => void run(remove)}>
+                <Button className="account-action" disabled={busy} onClick={() => void run(remove)}>
                   Retry deletion
                 </Button>
               )}
             </>
           ) : status ? (
             <>
-              <p className="text-sm">
-                Signed in as {status.subject.slice(status.subject.indexOf('|') + 1)}.
-              </p>
+              <div className="account-notice">
+                <strong>Signed in as</strong>
+                <p className="account-identity">
+                  {status.subject.slice(status.subject.indexOf('|') + 1)}
+                </p>
+              </div>
               {status.state === 'unavailable' ? (
-                <pre role="alert" className="whitespace-pre-wrap break-words font-mono text-xs">
-                  {errorJSON(status.error)}
-                </pre>
+                <AccountError
+                  error={status.error}
+                  actionHref="/delete-account"
+                  actionLabel="Open account deletion"
+                />
               ) : (
                 <>
-                  <label className="flex items-start gap-3 text-sm">
+                  <label className="account-confirmation">
                     <input
                       type="checkbox"
                       checked={confirmed}
                       onChange={(event) => setConfirmed(event.target.checked)}
                     />
-                    I understand this permanently deletes my account and account-linked lifetime
-                    access.
+                    <span>
+                      I understand this permanently deletes my account and account-linked lifetime
+                      access.
+                    </span>
                   </label>
                   <Button
                     variant="destructive"
-                    className="w-full"
+                    className="account-action"
                     disabled={busy || !confirmed}
                     onClick={() => void run(remove)}
                   >
@@ -145,37 +194,23 @@ export function AccountDeletion() {
             </>
           ) : (
             <>
-              <p className="text-sm">Sign in to verify which account you want to delete.</p>
-              <Button
-                className="w-full"
+              <div>
+                <h2>Verify your account</h2>
+                <p className="account-fine-print">
+                  Sign in to verify which account you want to delete.
+                </p>
+              </div>
+              <AccountSignIn
                 disabled={!ready || busy}
-                onClick={() => void run(() => signIn('apple'))}
-              >
-                Sign in with Apple
-              </Button>
-              <Button
-                className="w-full"
-                variant="outline"
-                disabled={!ready || busy}
-                onClick={() => void run(() => signIn('github'))}
-              >
-                Continue with GitHub
-              </Button>
-              <Button
-                className="w-full"
-                variant="outline"
-                disabled={!ready || busy}
-                onClick={() => void run(() => signIn('google'))}
-              >
-                Continue with Google
-              </Button>
+                onSignIn={(provider) => void run(() => signIn(provider))}
+              />
+              <p className="account-fine-print">
+                Signing in does not delete anything. You’ll confirm deletion in a separate step.
+              </p>
             </>
           )}
-          <a className="block text-center underline" href="/">
-            Return to myself.md
-          </a>
-        </CardContent>
-      </Card>
-    </main>
+        </section>
+      </div>
+    </AccountPage>
   );
 }

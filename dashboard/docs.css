@@ -32,6 +32,33 @@
   text-decoration: none;
   color: inherit;
 }
+.docs-screenshot {
+  display: grid;
+  grid-template-columns: minmax(0, 170px) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  max-width: 520px;
+  margin: 24px 0;
+}
+.docs-screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.docs-screenshot figcaption {
+  max-width: 28ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+@media (max-width: 600px) {
+  .docs-screenshot {
+    grid-template-columns: minmax(0, 128px) minmax(0, 1fr);
+    gap: 16px;
+  }
+}
 .docs-page a:focus-visible,
 .docs-page pre:focus-visible {
   outline: 2px solid currentColor;
@@ -191,6 +218,24 @@
   max-width: 68ch;
   overflow-wrap: anywhere;
 }
+.docs-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 18px 0;
+}
+.docs-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.docs-table th,
+.docs-table td {
+  padding: 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
 .docs-content p a,
 .docs-content li a {
   text-decoration: underline;
@@ -265,6 +310,9 @@
     display: block;
     padding: 32px 24px 56px;
   }
+  .docs-sidebar-toc {
+    display: none;
+  }
   .docs-sidebar {
     margin-bottom: 32px;
     border-bottom: 1px solid var(--border);
@@ -298,5 +346,58 @@
   }
   .docs-content > h1 + p {
     margin-bottom: 32px;
+  }
+}
+
+.docs-public-header {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 40px;
+}
+.docs-public-header .public-site-header {
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.docs-mobile-navigation {
+  display: none;
+}
+@media (max-width: 760px) {
+  .docs-public-header {
+    padding: 8px 24px;
+  }
+  .docs-layout {
+    padding-top: 20px;
+  }
+  .docs-sidebar {
+    display: none;
+  }
+  .docs-mobile-navigation {
+    display: block;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .docs-mobile-navigation summary {
+    padding: 12px 14px;
+    min-height: 44px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .docs-mobile-navigation nav {
+    display: grid;
+    padding: 0 14px 14px;
+    font-size: 14px;
+  }
+  .docs-mobile-navigation nav a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 8px;
+    border-radius: 5px;
+  }
+  .docs-mobile-navigation nav p {
+    margin: 16px 8px 8px;
+    color: var(--muted-foreground);
+    font-size: 12px;
   }
 }

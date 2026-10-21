@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as profiles from '../core/profiles.js';
 import * as fixtures from '../client/qa-fixtures.js';
 import * as history from '../core/history.js';
-import * as display from '../core/history-display.js';
+import { qaCloudStatus, qaCloudTime, cloudStatusNotices } from '../client/cloud-storage.js';
 
 /** @param {boolean} dev @param {string} flag */
 async function runtime(dev, flag) {
@@ -76,8 +76,6 @@ for (const scenario of fixtures.qaScenarios) {
   assert.equal(state.scenario, scenario);
   assert.equal(state.onboarding, false);
   assert.equal(state.profiles.profiles.length, 1);
-  assert.equal(state.events.length, scenario === 'empty' ? 0 : 3);
-  assert.ok(state.events.every((event) => event.artifacts.length === 0));
   assert.ok(state.profiles.profiles.every((profile) => profile.agentAccess === false));
   assert.deepEqual(Object.values(state.permissions), ['denied', 'denied', 'denied']);
 }
@@ -126,8 +124,16 @@ async function verifyDatabase(enabled) {
   normal.execSync(
     'CREATE TABLE activity_history (owner TEXT, device TEXT, origin TEXT, id TEXT, started TEXT, value TEXT, PRIMARY KEY(owner,device,origin,id))',
   );
+  assert.ok(profile);
   const running = JSON.stringify({
-    ...fixtures.qaFixture('populated').events[0],
+    ...history.exportEvent({
+      id: 'running',
+      profile,
+      actor: 'manual',
+      interval: { start: '2026-09-30T00:00:00.000Z', end: '2026-10-01T00:00:00.000Z' },
+      stamp: '2026-10-01T00:00:00.000Z',
+      timezone: 'UTC',
+    }),
     status: 'running',
   });
   normal.runSync(
@@ -173,19 +179,15 @@ async function verifyDatabase(enabled) {
   await journal.link((specifier) => {
     if (specifier === './phone-database.js') return boundary;
     const values =
-      specifier === './log-updates.js'
-        ? { notifyLogs: () => {} }
-        : specifier === './debug-log.js'
-          ? { recordDebug: () => {} }
-          : specifier === '../core/history.js'
-            ? history
-            : specifier === '../core/history-display.js'
-              ? display
-              : {
-                  api: () => {
-                    throw new Error('No network in QA startup.');
-                  },
-                };
+      specifier === './debug-log.js'
+        ? { recordDebug: () => {} }
+        : specifier === '../core/history.js'
+          ? history
+          : {
+              api: () => {
+                throw new Error('No network in QA startup.');
+              },
+            };
     return new SyntheticModule(
       Object.keys(values),
       function () {
@@ -207,6 +209,19 @@ async function verifyDatabase(enabled) {
   for (const db of databases.values()) db.close();
 }
 await Promise.all([false, true].map(verifyDatabase));
+
+// A recorded fixture must survive the next day without freezing production notice timing.
+const originalNow = Date.now;
+const lapseFixture = qaCloudStatus('cloud-lapse', 'ios');
+assert.ok(lapseFixture);
+try {
+  Date.now = () => qaCloudTime + 100 * 86_400_000;
+  assert.deepEqual(qaCloudStatus('cloud-lapse', 'ios'), lapseFixture);
+  assert.match(cloudStatusNotices(lapseFixture, qaCloudTime)[0]?.body ?? '', /23 days left/);
+  assert.match(cloudStatusNotices(lapseFixture)[0]?.body ?? '', /0 days left/);
+} finally {
+  Date.now = originalNow;
+}
 console.log(
   'QA release gating, validated resets, persistence, isolated storage/startup recovery, and synthetic fixtures pass.',
 );

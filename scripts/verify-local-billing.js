@@ -18,6 +18,10 @@ const sqlite = {
 };
 /** @type {{owner:string,deviceId:string}|null} */
 let signedInAccount = null;
+let rejectStoredProof = false;
+let accountGranted = true;
+/** @type {string[]} */
+const billingActions = [];
 const mocks = {
   './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
   'expo-secure-store': {
@@ -33,8 +37,16 @@ const mocks = {
   '../core/billing.js': policy,
   './session.js': {
     loadSession: async () => signedInAccount,
-    api: async () => {
+    api: async (
+      /** @type {unknown} */ _session,
+      /** @type {string} */ _path,
+      /** @type {RequestInit} */ options,
+    ) => {
       if (!signedInAccount) throw new Error('Unexpected network call for a local export.');
+      const action = JSON.parse(String(options.body)).action;
+      billingActions.push(action);
+      if (rejectStoredProof && action === 'purchase') throw new Error('Sandbox purchase rejected');
+      if (!accountGranted) return policy.exportAllowance(5, 0, false);
       return { used: 5, reserved: 0, remaining: 0, unlocked: true, complimentary: true };
     },
   },
@@ -52,7 +64,7 @@ async function load() {
     });
   });
   await module.evaluate();
-  return /** @type {{allowance:()=>{used:number,unlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string)=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
+  return /** @type {{allowance:()=>{used:number,unlocked:boolean,accountUnlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string)=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
     module.namespace
   );
 }
@@ -79,6 +91,11 @@ try {
   await billing.savePurchase({ store: 'ios', proof: 'native-store-fixture' });
   billing = await load();
   assert.equal(billing.allowance().unlocked, true);
+  assert.equal(
+    billing.allowance().accountUnlocked,
+    false,
+    'A native-only purchase cannot claim verified account query access',
+  );
   await billing.reserveExport(context, 'paid-export');
   await billing.settleExport(context, 'paid-export', true);
   await billing.clearNativePurchase();
@@ -92,6 +109,32 @@ try {
     true,
     'Account-only sign-in retrieves a grant without agent pairing.',
   );
+  secure.set(
+    'lifetime-purchase-proof',
+    JSON.stringify({ store: 'ios', proof: 'rejected-sandbox-proof' }),
+  );
+  rejectStoredProof = true;
+  billingActions.length = 0;
+  await billing.syncBilling(signedInAccount);
+  assert.equal(billing.allowance().unlocked, true);
+  assert.deepEqual(
+    billingActions,
+    ['sync'],
+    'An account grant must load without retrying rejected local proof.',
+  );
+  accountGranted = false;
+  billingActions.length = 0;
+  await assert.rejects(billing.syncBilling(signedInAccount), /Sandbox purchase rejected/);
+  assert.deepEqual(billingActions, ['sync', 'purchase']);
+  assert.equal(
+    billing.allowance().unlocked,
+    false,
+    'Rejected proof cannot unlock an ungranted account.',
+  );
+  accountGranted = true;
+  await billing.syncBilling(signedInAccount);
+  rejectStoredProof = false;
+  await billing.clearNativePurchase();
   await billing.reserveExport(context, 'account-grant-local');
   await billing.settleExport(context, 'account-grant-local', true);
   signedInAccount = null;
@@ -147,9 +190,49 @@ try {
     if (previousPreview === undefined) delete process.env.EXPO_PUBLIC_PREVIEW_LIFETIME;
     else process.env.EXPO_PUBLIC_PREVIEW_LIFETIME = previousPreview;
   }
+  const subscriptionAllowance = {
+    used: 5,
+    reserved: 0,
+    remaining: 0,
+    unlocked: true,
+    lifetime: false,
+    accessUntil: Date.now() + 60_000,
+  };
+  billing.acceptAllowance(subscriptionAllowance);
+  billing = await load();
+  assert.equal(billing.allowance().unlocked, true, 'Cloud access survives restart before expiry');
+  assert.equal(billing.allowance().accountUnlocked, true);
+  assert.equal(secure.has('lifetime-purchase-proof'), false);
+  billing.acceptAllowance({ ...subscriptionAllowance, accessUntil: Date.now() - 1 });
+  billing = await load();
+  assert.equal(
+    billing.allowance().unlocked,
+    false,
+    'Expired cached Cloud access cannot become Lifetime',
+  );
+  billing.acceptAllowance({
+    ...subscriptionAllowance,
+    lifetime: true,
+    accessUntil: Date.now() - 1,
+  });
+  assert.equal(billing.allowance().unlocked, true, 'Lifetime survives Cloud expiry');
+  billing.acceptAllowance({ ...subscriptionAllowance, lifetime: true });
+  secure.set('lifetime-purchase-proof', 'fixture');
+  await billing.clearNativePurchase();
+  assert.equal(
+    billing.allowance().unlocked,
+    true,
+    'A native Lifetime refund preserves unexpired Cloud access',
+  );
+  billing.clearAccountAllowance();
+  assert.equal(billing.allowance().unlocked, false, 'Signing out removes Cloud account access');
   console.log(
     'Local billing: shared counter, blocked prompts, reminder persistence, offline lifetime access across process restarts, and refund clearing passed.',
   );
 } finally {
   db.close();
 }
+
+await import('./verify-billing-timeout.js');
+
+await import('./verify-store-connection.js');

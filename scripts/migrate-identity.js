@@ -86,9 +86,11 @@ const migrations = await getMigrations(identityOptions(db, config));
 await migrations.runMigrations();
 writeFileSync(
   'worker/identity.sql',
-  await (
+  (await (
     await getMigrations(identityOptions(new DatabaseSync(':memory:'), config))
-  ).compileMigrations(),
+  ).compileMigrations()) +
+    '\n' +
+    readFileSync('worker/migrations/account-login-ownership.sql', 'utf8'),
 );
 const auth = createIdentity(db, config);
 const context = await auth.$context;
@@ -181,7 +183,7 @@ const statements = tables.flatMap((table) =>
     ),
 );
 statements.push(
-  `CREATE UNIQUE INDEX account_provider_identity_unique ON account(providerId,accountId);`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS account_provider_identity_unique ON account(providerId,accountId);`,
 );
 writeFileSync(`${directory}/import.sql`, statements.join('\n'), { mode: 0o600 });
 writeFileSync(

@@ -1,9 +1,11 @@
+import { ProfileEditor } from './profile-editor.js';
+import { AccountError } from './account-error.js';
+import { AnalyticsReport } from './analytics-report.js';
+import { initializeWebAnalytics, trackWebAnalytics } from './analytics.js';
 import { createMyselfClient } from './public-client.js';
 import { registerPublicTools } from './webmcp.js';
 
 import { errorJSON } from '../packages/support-chat/errors.js';
-import { WebSupport } from '../packages/support-chat/web.js';
-import { createSupportClient } from '../packages/support-chat/index.js';
 import {
   createContext,
   useContext,
@@ -13,14 +15,12 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { createRoot } from 'react-dom/client';
+import { providerLogos } from '../server/provider-logos.js';
 import { setNonce } from 'get-nonce';
 import { Dialog } from 'radix-ui';
 import {
   IconUser,
-  IconBrandApple,
-  IconBrandGithub,
   IconDatabase,
-  IconChartBar,
   IconListDetails,
   IconRobot,
   IconCloud,
@@ -49,12 +49,15 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { api, initializeSession, hasSession, signIn, signOut, isDemo } from './session.js';
+import { api, initializeSession, hasSession, signIn, signOut } from './session.js';
 import { AccountDeletion } from './account-deletion.js';
 import { MigrationClaim } from './migration-claim.js';
 import { cloudUsageLabel } from '../core/cloud-allowance.js';
+import { CloudStorageCard, cloudStorageSummary } from './cloud-storage.js';
 import { deviceName } from './workspace.js';
 import { DatasetDocumentation } from './dataset-documentation.js';
+import { Landing } from './landing.js';
+import { GettingStarted } from './getting-started.js';
 import { Explorer } from './explorer.js';
 import { HistoryView } from './history.js';
 import { ExportActivity } from './export-activity.js';
@@ -107,75 +110,38 @@ import {
 } from './components/ui/dropdown-menu.js';
 /** @typedef {import('./workspace.js').Workspace} Workspace */
 /** @typedef {import('./workspace.js').StoredExport} StoredExport */
-/** @typedef {'exports'|'explore'|'profiles'|'agents'|'history'|'support'} View */
+/** @typedef {'start'|'exports'|'explore'|'profiles'|'agents'|'history'} View */
 /** @typedef {{title:string,description:string,label:string,action:()=>Promise<void>}} Confirmation */
-const supportRequest = createSupportClient((path, options) =>
-  api(path, options.method, options.body === undefined ? undefined : JSON.parse(options.body)),
-);
-const supportData = {
-  automaticLogs: false,
-  /** @param {import('../packages/support-chat/support-client.js').SupportDataRequest|null} request */
-  collect: async (request) => ({
-    category: request?.selector.category ?? 'manual',
-    capturedAt: Date.now(),
-    content: JSON.stringify(
-      {
-        note: 'Paste only the information you want to share. Phone logs can be reviewed on your phone.',
-        requested: request?.reason ?? '',
-        data: null,
-      },
-      null,
-      2,
-    ),
-  }),
-  /** @param {string} content */
-  digest: async (content) =>
-    Array.from(
-      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))),
-      (b) => b.toString(16).padStart(2, '0'),
-    ).join(''),
-};
 const views = [
   {
-    id: /** @type {const} */ ('support'),
-    title: 'Support',
-    description: 'Ask Isobot a question or report a problem.',
-    icon: IconRobot,
+    id: /** @type {const} */ ('start'),
+    title: 'Start',
+    description: 'Connect your assistant and phone, then ask your first question.',
   },
   {
     id: /** @type {const} */ ('exports'),
-    title: 'Stored data',
-    description:
-      'Browse exported files from your phone, see when they were saved, and open them to explore their contents. Try it with fictional health, screen time, and location exports below.',
-    icon: IconDatabase,
+    title: 'Files',
+    description: 'Browse files exported from your phone and explore the records inside.',
   },
   {
     id: /** @type {const} */ ('history'),
     title: 'History',
-    description:
-      'See when data was exported and when agents accessed it. Filter the sample activity by profile or event type, then open an entry to see what happened.',
-    icon: IconListDetails,
+    description: 'Review exports and agent access. Open an event to see what happened.',
   },
   {
     id: /** @type {const} */ ('explore'),
-    title: 'Explore data',
-    description:
-      'Look inside your exported files to find individual records and spot patterns. Filter the sample data, compare it in charts, and open a record for details.',
-    icon: IconChartBar,
+    title: 'Explore',
+    description: 'Find records in your exports, compare them in charts and inspect their details.',
   },
   {
     id: /** @type {const} */ ('profiles'),
-    title: 'Profiles & permissions',
-    description:
-      'Profiles define which data you export and share. Try changing a sample profile’s sharing permission to control whether agents can read its stored files.',
-    icon: IconListDetails,
+    title: 'Profiles',
+    description: 'Choose what to export and control the data your assistants can read.',
   },
   {
     id: /** @type {const} */ ('agents'),
-    title: 'Connected agents',
-    description:
-      'See which AI agents have connected to your workspace and when they were last active. Try blocking a sample agent or restoring its access.',
-    icon: IconRobot,
+    title: 'Agents',
+    description: 'Review connected assistants and manage their access to your workspace.',
   },
 ];
 /** @param {number} value */
@@ -187,6 +153,23 @@ function bytes(value) {
 /** @param {{view:View,onNavigate:(view:View)=>void,workspace:Workspace|null,busy:boolean}} props */
 function AppSidebar({ view, onNavigate, workspace, busy }) {
   const { setOpenMobile } = useSidebar();
+  const [operator, setOperator] = useState(false);
+  useEffect(() => {
+    if (!workspace) return;
+    let active = true;
+    void api('/api/analytics/access')
+      .then((result) => {
+        if (active) setOperator(/** @type {{operator:boolean}} */ (result).operator);
+        return undefined;
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [workspace]);
+  const profile = workspace?.accountProfile;
+  const accountName = profile?.name || profile?.email || 'Your account';
+  const accountEmail = profile?.email || 'Personal account';
   const navigate = (/** @type {View} */ next) => {
     onNavigate(next);
     setOpenMobile(false);
@@ -198,10 +181,7 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
               <a href="/">
-                <span aria-hidden="true" className="font-mono text-lg font-semibold">
-                  m.
-                </span>
-                <span className="text-base font-semibold">myself.md</span>
+                <BrandWordmark />
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -212,119 +192,144 @@ function AppSidebar({ view, onNavigate, workspace, busy }) {
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {views
-                .filter((item) => !isDemo || item.id !== 'support')
-                .map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      isActive={view === item.id}
-                      aria-current={view === item.id ? 'page' : undefined}
-                      onClick={() => navigate(item.id)}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+              {views.map((item) => (
+                <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton
+                    isActive={view === item.id}
+                    aria-current={view === item.id ? 'page' : undefined}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <nav
-          className="flex gap-4 px-2 text-xs underline"
-          aria-label={isDemo ? 'Privacy' : 'Privacy and support'}
-        >
-          <a href="/privacy">Privacy policy</a>
-          {!isDemo && <a href="/support">Support</a>}
+        <nav className="flex gap-4 px-2 text-xs underline" aria-label="Privacy">
+          <a href="/privacy">Privacy</a>
         </nav>
         <SidebarMenu>
           <SidebarMenuItem>
-            {isDemo ? (
-              <SidebarMenuButton asChild size="lg">
-                <a href="/login">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <IconUser className="size-4" aria-hidden="true" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton size="lg" disabled={!workspace || busy}>
+                  <div className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted font-semibold">
+                    {profile?.name || profile?.email ? (
+                      accountName.slice(0, 1).toUpperCase()
+                    ) : (
+                      <IconUser className="size-4" aria-hidden="true" />
+                    )}
+                    {profile?.picture && (
+                      <img
+                        src={profile.picture}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 size-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
                   </div>
-                  <div className="grid flex-1 gap-1 text-left text-sm leading-tight">
-                    <span className="font-medium">Sign in</span>
-                    <span className="text-xs text-muted-foreground">Your files, your control</span>
+                  <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {workspace ? accountName : 'Your workspace'}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {workspace ? accountEmail : 'Sign in to continue'}
+                    </span>
                   </div>
-                  <IconChevronRight className="ml-auto size-4" aria-hidden="true" />
-                </a>
-              </SidebarMenuButton>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton size="lg" disabled={!workspace || busy}>
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-muted font-semibold">
-                      {workspace?.account.slice(0, 1).toUpperCase() ?? 'Q'}
-                    </div>
-                    <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-medium">
-                        {workspace?.account ?? 'Your workspace'}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {workspace ? 'Personal account' : 'Sign in to continue'}
-                      </span>
-                    </div>
-                    <IconDotsVertical className="ml-auto size-4" />
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="end" className="w-56">
-                  <DropdownMenuLabel>{workspace?.account}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
+                  <IconDotsVertical className="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-56">
+                <DropdownMenuLabel className="grid gap-1">
+                  <span className="truncate">{accountName}</span>
+                  {profile?.email && (
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {profile.email}
+                    </span>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    void api('/api/account-logins')
+                      .then((result) => {
+                        const logins = /** @type {{handoff:{url:string}}} */ (result);
+                        location.assign(logins.handoff.url);
+                        return null;
+                      })
+                      .catch((error) =>
+                        window.alert(
+                          error instanceof Error
+                            ? error.message
+                            : 'Connected logins could not open.',
+                        ),
+                      );
+                  }}
+                >
+                  Connected logins
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => window.dispatchEvent(new Event('myself-analytics-preferences'))}
+                >
+                  Analytics preferences
+                </DropdownMenuItem>
+                {operator && (
                   <DropdownMenuItem asChild>
-                    <a href="/delete-account">Delete account</a>
+                    <a href="/operator/analytics">Product analytics</a>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={signOut}>
-                    <IconLogout /> Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                )}
+                <DropdownMenuItem asChild>
+                  <a href="/delete-account">Delete account</a>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={signOut}>
+                  <IconLogout /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );
 }
+function BrandWordmark() {
+  return (
+    <span className="dashboard-wordmark text-xl font-semibold tracking-[-0.8px] text-foreground">
+      myself<span className="text-muted-foreground">.md</span>
+    </span>
+  );
+}
 /** @param {{title:string,busy:boolean,onRefresh:()=>void,workspace:Workspace|null,view:View}} props */
 function SiteHeader({ title, busy, onRefresh, workspace, view }) {
   return (
-    <header
-      className={`flex min-h-(--header-height) shrink-0 items-center gap-2 border-b ${isDemo ? 'sticky top-0 z-30 bg-background' : ''}`}
-    >
+    <header className="dashboard-header flex min-h-(--header-height) shrink-0 items-center gap-2 border-b">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 py-2 lg:px-6">
         <SidebarTrigger className="-ml-1 size-11 shrink-0 lg:size-7" />
         <Separator
           orientation="vertical"
           className="mx-2 hidden data-[orientation=vertical]:h-4 lg:block"
         />
-        <h1 className="min-w-0 flex-1 truncate text-base font-medium lg:flex-none">{title}</h1>
-        {workspace && !isDemo && (
+        <a href="/" aria-label="myself.md home">
+          <BrandWordmark />
+        </a>
+        {workspace && (
+          <span className="ml-4 hidden truncate border-l pl-4 text-sm font-medium text-muted-foreground lg:block">
+            {title}
+          </span>
+        )}
+        {workspace && view !== 'start' && (
           <div className="ml-auto hidden lg:block">
             <SummaryPills workspace={workspace} view={view} />
           </div>
         )}
-        {isDemo && (
-          <div className="ml-auto flex shrink-0 items-center gap-3">
-            <a
-              href="/login"
-              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
-            >
-              Log in
-            </a>
-            <Button asChild size="sm" className="h-11 lg:h-8">
-              <a href="/login">
-                <span className="sm:hidden">Join</span>
-                <span className="hidden sm:inline">Join myself.md</span>
-                <IconChevronRight className="hidden sm:block" />
-              </a>
-            </Button>
-          </div>
-        )}
-        {workspace && !isDemo && (
+
+        {workspace && (
           <Button
             variant="outline"
             size="sm"
@@ -383,11 +388,11 @@ function SummaryPills({ workspace, view, compact = false }) {
               label: storage
                 ? storage.eligible
                   ? cloudUsageLabel(storage)
-                  : 'Lifetime access required'
+                  : 'No active Cloud subscription'
                 : 'Cloud storage unavailable',
-              detail: storage?.eligible
-                ? `Included cloud storage · ${storage.overLimit ? 'Over allowance; delete files to resume uploads · ' : ''}encrypted at rest · files retained for 30 days`
-                : 'Sign in to the app and purchase or restore lifetime access for 100 MB of included cloud storage',
+              detail: storage
+                ? cloudStorageSummary(storage)
+                : 'Sign in to the app to subscribe to Cloud or restore access',
               icon: IconCloud,
             },
           ];
@@ -598,7 +603,7 @@ function DataTable(props) {
                           className="-ml-3"
                           onClick={header.column.getToggleSortingHandler()}
                         >
-                          {<FlexRender header={header} />}
+                          <FlexRender header={header} />
                           {header.column.getIsSorted() === 'asc' ? (
                             <IconArrowUp />
                           ) : header.column.getIsSorted() === 'desc' ? (
@@ -618,7 +623,9 @@ function DataTable(props) {
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getAllCells().map((cell) => (
-                      <TableCell key={cell.id}>{<FlexRender cell={cell} />}</TableCell>
+                      <TableCell key={cell.id}>
+                        <FlexRender cell={cell} />
+                      </TableCell>
                     ))}
                   </TableRow>
                 ))
@@ -777,33 +784,43 @@ function ProfileSelection({ selection }) {
 }
 /** @param {{workspace:Workspace,view:View,busy:boolean,onConfirm:(confirmation:Confirmation)=>void,onReload:()=>Promise<void>}} props */
 function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
+  const [editing, setEditing] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  useEffect(() => {
+    if (view !== 'profiles') return;
+    let active = true;
+    let refreshing = false;
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible' || refreshing) return;
+      refreshing = true;
+      try {
+        await onReload();
+        if (active) setRefreshError('');
+      } catch {
+        if (active)
+          setRefreshError('Could not refresh profile status. Showing the last saved snapshot.');
+      } finally {
+        refreshing = false;
+      }
+    };
+    const timer = setInterval(() => void refresh(), 5000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [view, onReload]);
+  const [suggestion, setSuggestion] = useState(
+    /** @type {import('../server/profile-sync.js').ProfileRequest|undefined} */ (undefined),
+  );
   return (
     <div className="px-4 lg:px-6">
       <Card>
-        <CardHeader>
-          <CardTitle>
-            {view === 'profiles' ? 'Cloud sharing permissions' : 'Connected agents'}
-          </CardTitle>
-          <CardDescription>
-            {view === 'profiles'
-              ? 'Choose which profiles agents can read from your stored cloud exports.'
-              : 'Agents appear after their first MCP request. Block access at any time.'}
-          </CardDescription>
-        </CardHeader>
-        {view === 'profiles' && (
-          <div className="mx-6 flex items-start gap-3 rounded-lg border bg-muted/30 p-4">
-            <IconShieldCheck
-              className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <div className="space-y-1">
-              <p className="text-sm font-medium">You control what agents can access</p>
-              <p className="text-sm text-muted-foreground">
-                Sharing applies to all allowed agents on your account. Selected types describe the
-                export profile; iPhone Health permissions are managed separately on your phone.
-              </p>
-            </div>
-          </div>
+        {refreshError && (
+          <p role="status" className="px-6 pb-4 text-sm text-muted-foreground">
+            {refreshError}
+          </p>
         )}
         <CardContent className="divide-y">
           {view === 'profiles'
@@ -822,7 +839,7 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                           ) : (
                             <IconLock aria-hidden="true" />
                           )}
-                          {profile.shared ? 'Shared with agents' : 'Private'}
+                          {profile.shared ? 'Agents enabled' : 'Agents disabled'}
                         </Badge>
                       </div>
                       <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
@@ -831,40 +848,99 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                       </p>
                       <p className="mt-2 text-sm text-muted-foreground">
                         {profile.shared
-                          ? 'Allowed agents can read this profile’s selected data from stored exports.'
+                          ? 'Agent permissions control these cloud exports. Turning a category off blocks its data; turning it back on restores access to selected data after your phone syncs.'
                           : 'Only you can view these stored exports. Agent access is off.'}
                       </p>
+                      <div
+                        className="mt-3 flex flex-wrap gap-2"
+                        aria-label="Profile agent permission status"
+                      >
+                        {
+                          /** @type {const} */ (['health', 'time', 'location']).map((domain) => (
+                            <Badge
+                              key={domain}
+                              variant={
+                                profile.permissionsSynced && profile.agentPermissions?.[domain]
+                                  ? 'secondary'
+                                  : 'outline'
+                              }
+                            >
+                              {domain === 'health'
+                                ? 'Health'
+                                : domain === 'time'
+                                  ? 'Screen time'
+                                  : 'Location'}
+                              :{' '}
+                              {profile.permissionsSynced
+                                ? profile.agentPermissions?.[domain]
+                                  ? 'On'
+                                  : 'Off'
+                                : 'Unknown — sync phone'}
+                            </Badge>
+                          ))
+                        }
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {profile.lastSeen
+                          ? `Phone last synced ${new Date(profile.lastSeen).toLocaleString()}. `
+                          : ''}
+                        {profile.revision && profile.confirmedRevision !== profile.revision
+                          ? 'Changes saved on web; waiting for this phone to sync.'
+                          : profile.syncSupported
+                            ? 'Profile is synced. Open myself.md on this phone to receive new changes.'
+                            : 'Update and open the phone app to enable profile editing and synchronization.'}
+                      </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        onConfirm({
-                          title: profile.shared ? 'Revoke cloud sharing?' : 'Share this profile?',
-                          description: profile.shared
-                            ? 'Agents will lose access to this profile’s stored exports. You can still view them here.'
-                            : 'All allowed agents on your account will be able to read stored exports within the data selection shown for this profile.',
-                          label: profile.shared ? 'Revoke sharing' : 'Share with agents',
-                          action: async () => {
-                            await api('/api/dashboard/permissions', 'PUT', {
-                              deviceId: profile.deviceId,
-                              profileId: profile.profileId,
-                              shared: !profile.shared,
-                            });
-                            await onReload();
-                          },
-                        })
-                      }
-                    >
-                      {profile.shared ? 'Revoke sharing' : 'Share with agents'}
-                    </Button>
                   </div>
+                  {profile.profile && profile.syncSupported && (
+                    <div className="space-y-3">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setSuggestion(undefined);
+                          setEditing(`${profile.deviceId}/${profile.profileId}`);
+                        }}
+                      >
+                        Edit profile
+                      </Button>
+                      {profile.requests
+                        ?.filter((r) => r.status === 'awaiting_user')
+                        .map((request) => (
+                          <div key={request.id} className="rounded-md border p-3 text-sm">
+                            An agent suggested changes to this profile. Nothing has been applied.{' '}
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setSuggestion(request);
+                                setEditing(`${profile.deviceId}/${profile.profileId}`);
+                              }}
+                            >
+                              Review suggestion
+                            </Button>
+                          </div>
+                        ))}
+                      {editing === `${profile.deviceId}/${profile.profileId}` && (
+                        <ProfileEditor
+                          key={`${editing}/${suggestion?.id ?? ''}`}
+                          entry={profile}
+                          suggestion={suggestion}
+                          onConfirm={onConfirm}
+                          onSaved={onReload}
+                          onCancel={() => setEditing('')}
+                        />
+                      )}
+                    </div>
+                  )}
                   <div>
                     <h3 className="mb-3 text-sm font-medium">Selected export data</h3>
                     <ProfileSelection selection={profile.selection} />
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                    <p>Change selected data and device permissions in myself.md on your phone.</p>
+                    <p>
+                      Edit synced profile settings here or in myself.md. System permissions are
+                      managed on the phone.
+                    </p>
                     <p className="break-all">Profile ID: {profile.profileId}</p>
                   </div>
                 </div>
@@ -895,8 +971,8 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                       onConfirm({
                         title: agent.blocked ? 'Allow this agent?' : 'Block this agent?',
                         description: agent.blocked
-                          ? 'This OAuth client will regain access to shared cloud profiles and explicitly permitted phone data.'
-                          : 'This OAuth client will lose all MCP access for your account. Its pending live requests and retained responses will be discarded.',
+                          ? 'This agent will regain access to already-shared cloud profiles and explicitly permitted phone data. The agent and its AI providers use their own privacy and retention policies and may keep copies. Blocking it later stops future access; it cannot recall copies already received.'
+                          : 'This agent will lose all MCP access for your account. Its pending live requests and responses retained by myself.md will be discarded. Blocking it cannot recall copies already received by the agent or its AI providers.',
                         label: agent.blocked ? 'Allow agent' : 'Block agent',
                         action: async () => {
                           await api('/api/dashboard/agents', 'PUT', {
@@ -915,25 +991,27 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
           {!(view === 'profiles' ? workspace.profiles.length : workspace.agents.length) && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {view === 'profiles'
-                ? 'Authorize cloud uploads for a profile in the app to manage sharing here.'
+                ? 'Open myself.md on a connected phone to sync its profiles here.'
                 : 'Connect an agent to your cloud MCP server with this account to see it here.'}
             </p>
           )}
         </CardContent>
         <CardFooter className="border-t text-xs leading-relaxed text-muted-foreground">
           {view === 'profiles'
-            ? 'Data selection, upload authorization, and live phone permissions are managed in the app.'
+            ? 'Profiles sync between web and phone. System permissions, destination authorization and automatic-export opt-in are managed on the phone.'
             : 'Agent names are OAuth client IDs. Blocks apply across the account; allowed agents can read shared profiles.'}
         </CardFooter>
       </Card>
     </div>
   );
 }
-/** @param {{ready:boolean}} props */
-function LoginCard({ ready }) {
+/** @param {{ready:boolean,notice?:string}} props */
+function LoginCard({ ready, notice = '' }) {
+  const standalone = ['/login', '/login/'].includes(location.pathname);
+  const clientLogin = standalone && new URLSearchParams(location.search).has('client_id');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  /** @param {'apple'|'github'|'google'} provider */
+  /** @param {'apple'|'github'|'google'|'reviewer'} provider */
   async function login(provider) {
     setBusy(true);
     setError('');
@@ -945,65 +1023,76 @@ function LoginCard({ ready }) {
     }
   }
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <span aria-hidden="true" className="font-mono text-xl font-semibold">
-              m.
-            </span>
-          </div>
-          <CardTitle className="text-2xl">Sign in to myself.md</CardTitle>
-          <CardDescription>
-            Continue to create your workspace or sign in. Use the same account as myself.md on your
-            phone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {error && (
-            <pre
-              role="alert"
-              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+    <div className="dashboard-sign-in flex min-h-full flex-1 flex-col bg-background">
+      {standalone && (
+        <header className="flex min-h-14 shrink-0 items-center border-b bg-background px-5 sm:px-8">
+          <BrandWordmark />
+        </header>
+      )}
+      <div
+        className={`flex flex-1 flex-col items-center justify-start px-4 py-6 sm:justify-center sm:px-6 sm:py-12 ${standalone ? 'min-h-[calc(100svh-3.5rem)]' : ''}`}
+      >
+        <Card className="w-full max-w-[440px] gap-5 rounded-[20px] border-border bg-card py-6 sm:gap-6 sm:py-8 text-card-foreground shadow-[0_4px_24px_rgb(0_0_0/0.03)]">
+          <CardHeader className="gap-2 px-5 sm:gap-3 sm:px-8">
+            <CardTitle className="text-2xl leading-tight tracking-[-0.8px] sm:text-[26px]">
+              <h1>Sign in to myself.md</h1>
+            </CardTitle>
+            <CardDescription className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Use the same account as the myself.md app to keep your exports and purchases together.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 sm:space-y-6 sm:px-8">
+            {(error || notice) && (
+              <AccountError
+                error={error || notice}
+                actionHref={clientLogin ? null : '/login'}
+                actionLabel="Start sign-in again"
+              />
+            )}
+            <div className="space-y-2.5">
+              {
+                /** @type {const} */ (['apple', 'github', 'google']).map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    className="grid min-h-12 w-full touch-manipulation select-none active:bg-accent grid-cols-[20px_1fr_20px] items-center gap-2 rounded-[9px] border border-input text-foreground px-3 py-3 sm:gap-3 sm:px-[18px] text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-accent"
+                    disabled={!ready || busy}
+                    onClick={() => void login(provider)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      dangerouslySetInnerHTML={{ __html: providerLogos[provider] }}
+                    />
+                    <span>
+                      Continue with{' '}
+                      {provider === 'github' ? 'GitHub' : provider === 'apple' ? 'Apple' : 'Google'}
+                    </span>
+                  </button>
+                ))
+              }
+            </div>
+            <nav
+              className="flex flex-wrap items-center justify-between gap-x-4 text-[13px] text-muted-foreground"
+              aria-label="Other sign-in options"
             >
-              {errorJSON(error)}
-            </pre>
-          )}
-          <Button
-            type="button"
-            className="min-h-11 w-full border border-white bg-black text-white hover:bg-black/90"
-            disabled={!ready || busy}
-            onClick={() => void login('apple')}
-          >
-            <IconBrandApple aria-hidden="true" className="size-5" />
-            Sign in with Apple
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full"
-            disabled={!ready || busy}
-            onClick={() => void login('github')}
-          >
-            <IconBrandGithub aria-hidden="true" className="size-5" />
-            Continue with GitHub
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full"
-            disabled={!ready || busy}
-            onClick={() => void login('google')}
-          >
-            Continue with Google
-          </Button>
-          <a
-            href="/"
-            className="block text-center text-sm text-muted-foreground hover:text-foreground"
-          >
-            Back to myself.md
-          </a>
-        </CardContent>
-      </Card>
+              <button
+                type="button"
+                className="min-h-11 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current disabled:pointer-events-none disabled:opacity-50"
+                disabled={!ready || busy}
+                onClick={() => void login('reviewer')}
+              >
+                Reviewer sign-in
+              </button>
+              <a
+                href="/"
+                className="flex min-h-11 items-center underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-current"
+              >
+                Back to myself.md
+              </a>
+            </nav>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1011,16 +1100,19 @@ function App() {
   const [workspace, setWorkspace] = useState(/** @type {Workspace|null} */ (null));
   const search = useSyncExternalStore(subscribeRoute, routeSnapshot);
   const query = new URLSearchParams(search);
-  const view =
-    query.get('view') === 'support'
-      ? 'support'
-      : query.has('history')
-        ? 'history'
-        : query.get('view') === 'profiles'
-          ? 'profiles'
-          : query.get('view') === 'agents'
-            ? 'agents'
-            : 'exports';
+  const view = query.has('history')
+    ? 'history'
+    : query.get('view') === 'profiles'
+      ? 'profiles'
+      : query.get('view') === 'agents'
+        ? 'agents'
+        : query.get('view') === 'start' || (!query.has('view') && !workspace?.devices.length)
+          ? 'start'
+          : 'exports';
+  const viewingWorkspace = Boolean(workspace);
+  useEffect(() => {
+    if (viewingWorkspace) trackWebAnalytics('dashboard_viewed', view);
+  }, [view, viewingWorkspace]);
   const exportId = query.get('export');
   const exploring = Boolean(exportId) || query.has('explore');
   const [confirmation, setConfirmation] = useState(/** @type {Confirmation|null} */ (null));
@@ -1080,7 +1172,9 @@ function App() {
     };
   }, []);
   const currentView = views.find((item) => item.id === (exploring ? 'explore' : view));
-  const title = exploring ? 'Data explorer' : (currentView?.title ?? 'Stored data');
+  const title = currentView?.title ?? 'Files';
+  if (!workspace && ['/login', '/login/'].includes(location.pathname))
+    return <LoginCard ready={ready} notice={notice} />;
   return (
     <SidebarProvider className="dashboard-layout">
       <AppSidebar
@@ -1091,9 +1185,9 @@ function App() {
               ? '?explore=1'
               : next === 'history'
                 ? '?history=1'
-                : next === 'profiles' || next === 'agents'
+                : next === 'profiles' || next === 'agents' || next === 'start'
                   ? `?view=${next}`
-                  : '',
+                  : '?view=exports',
           );
         }}
         workspace={workspace}
@@ -1111,30 +1205,31 @@ function App() {
         />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              {workspace && !isDemo && (
+            <div
+              className={
+                workspace ? 'flex flex-col gap-4 py-4 md:gap-6 md:py-6' : 'flex flex-1 flex-col'
+              }
+            >
+              {workspace && view !== 'start' && (
                 <div className="px-4 lg:hidden">
                   <SummaryPills workspace={workspace} view={exploring ? 'explore' : view} compact />
                 </div>
               )}
-              {isDemo && currentView && currentView.id !== 'exports' && (
-                <header className="space-y-2 px-4 lg:px-6">
-                  <h2 className="text-2xl font-semibold tracking-tight">{currentView.title}</h2>
-                  <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                    {currentView.description}
-                  </p>
-                </header>
-              )}
               {notice && (
-                <div
-                  role="status"
-                  className="mx-4 whitespace-pre-wrap break-words rounded-lg border bg-muted p-4 text-sm lg:mx-6"
-                >
-                  {notice}
+                <div className="mx-4 lg:mx-6">
+                  <AccountError error={notice} />
                 </div>
               )}
               {workspace ? (
                 <>
+                  {(view !== 'start' || exploring) && currentView && (
+                    <header className="dashboard-view-heading">
+                      <div>
+                        <h1>{title}</h1>
+                        <p>{currentView.description}</p>
+                      </div>
+                    </header>
+                  )}
                   {exploring ? (
                     <Explorer
                       workspace={workspace}
@@ -1144,17 +1239,8 @@ function App() {
                     />
                   ) : (
                     <>
-                      {view === 'support' ? (
-                        isDemo ? (
-                          <p className="p-6">Sign in to contact support.</p>
-                        ) : (
-                          <WebSupport
-                            projectLabel="myself.md"
-                            request={supportRequest}
-                            data={supportData}
-                            Button={Button}
-                          />
-                        )
+                      {view === 'start' ? (
+                        <GettingStarted workspace={workspace} />
                       ) : view === 'history' ? (
                         <HistoryView
                           workspace={workspace}
@@ -1164,6 +1250,15 @@ function App() {
                         />
                       ) : view === 'exports' ? (
                         <>
+                          {workspace.cloudStorage && (
+                            <div className="px-4 lg:px-6">
+                              <CloudStorageCard
+                                key={workspace.account}
+                                account={workspace.account}
+                                storage={workspace.cloudStorage}
+                              />
+                            </div>
+                          )}
                           <div className="px-4 lg:px-6">
                             <ExportActivity
                               workspace={workspace}
@@ -1180,9 +1275,7 @@ function App() {
                             onDelete={(item) =>
                               setConfirmation({
                                 title: 'Delete this export?',
-                                description: isDemo
-                                  ? `${item.profileName} · ${item.day}. This removes a sample export from this preview. Reload the page to bring it back.`
-                                  : `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
+                                description: `${item.profileName} · ${item.day} · ${item.format.toUpperCase()}. This permanently removes the cloud file. Phone files are kept. A future scheduled upload can recreate it.`,
                                 label: 'Delete export',
                                 action: async () => {
                                   await api(`/api/dashboard/exports/${item.id}`, 'DELETE');
@@ -1203,25 +1296,10 @@ function App() {
                       )}
                     </>
                   )}
-                  <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
-                    {isDemo
-                      ? 'You’re exploring a fictional workspace. Join to connect your own data.'
-                      : `Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
-                  </p>
-                  {isDemo && (
-                    <div className="mx-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-6 lg:mx-6">
-                      <div>
-                        <p className="font-semibold">Make this workspace yours.</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Connect your phone, build your profiles, and bring your agents along.
-                        </p>
-                      </div>
-                      <Button asChild>
-                        <a href="/login">
-                          Join myself.md <IconChevronRight />
-                        </a>
-                      </Button>
-                    </div>
+                  {view !== 'start' && (
+                    <p className="px-4 text-center text-xs text-muted-foreground lg:px-6">
+                      {`Updated ${new Date(updated).toLocaleTimeString()} · Stored exports remain available while your phone is offline.`}
+                    </p>
                   )}
                 </>
               ) : (
@@ -1266,8 +1344,12 @@ function pageSnapshot() {
 function Page() {
   const pathname = useSyncExternalStore(subscribeRoute, pageSnapshot);
   const datasetRoute = pathname.match(/^\/datasets(?:\/(health|screen-time|location|all))?\/?$/);
-  const dataset = pathname === '/' ? 'all' : datasetRoute ? (datasetRoute[1] ?? 'all') : null;
-  return pathname === '/delete-account' ||
+  const dataset = datasetRoute ? (datasetRoute[1] ?? 'all') : null;
+  return pathname === '/' ? (
+    <Landing />
+  ) : pathname === '/operator/analytics' ? (
+    <AnalyticsReport />
+  ) : pathname === '/delete-account' ||
     (pathname === '/dashboard/callback' && sessionStorage.getItem('myself-delete-account')) ? (
     <AccountDeletion />
   ) : pathname === '/claim' ||
@@ -1275,12 +1357,13 @@ function Page() {
       sessionStorage.getItem('myself-migration-ticket')) ? (
     <MigrationClaim />
   ) : dataset ? (
-    <DatasetDocumentation key={pathname} dataset={dataset} landing={pathname === '/'} />
+    <DatasetDocumentation key={pathname} dataset={dataset} />
   ) : (
     <App />
   );
 }
 createRoot(root).render(<Page />);
+initializeWebAnalytics();
 
 const browserContext =
   /** @type {Document & {modelContext?:import('./webmcp.js').ModelContext}} */ (document)

@@ -1,4 +1,7 @@
 @import 'tailwindcss' source(none);
+@import './landing.css';
+@import './getting-started.css';
+@import './dashboard-theme.css';
 @source "./**/*.js";
 @source "../packages/support-chat/support-web.js";
 @custom-variant dark (@media (prefers-color-scheme: dark));
@@ -299,6 +302,78 @@ summary.export-json-line:focus-visible {
   }
 }
 
+.landing-page {
+  overflow-x: clip;
+}
+.landing-hero-column {
+  position: relative;
+  isolation: isolate;
+}
+.landing-hero-column > header,
+.landing-hero-column > section {
+  position: relative;
+  z-index: 1;
+}
+.landing-hero {
+  display: flex;
+  align-items: center;
+  min-height: 32rem;
+  padding-block: 4rem;
+}
+.landing-hero-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.75rem;
+  max-width: 44rem;
+}
+.hero-portrait {
+  position: absolute;
+  z-index: 0;
+  top: -7rem;
+  right: -5rem;
+  width: 52rem;
+  height: 49rem;
+  color: var(--foreground);
+  opacity: 0.14;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, transparent, black 12%, black 65%, transparent 98%);
+}
+.hero-portrait-sculpture {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  mask-image: url('/dashboard/hero-portrait.png');
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+.hero-portrait-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hero-portrait-particles span {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+}
+@media (max-width: 63.99rem) {
+  .landing-hero {
+    min-height: 29rem;
+    padding-block: 3rem;
+  }
+  .hero-portrait {
+    top: -3rem;
+    right: -10rem;
+    width: 36rem;
+    height: 40rem;
+    opacity: 0.1;
+  }
+}
+
 /* Source categories flow into a file; the graphic never moves readable data. */
 .hero-data-flow {
   width: 100%;
@@ -370,4 +445,401 @@ summary.export-json-line:focus-visible {
     background-repeat: no-repeat;
     background-position: left calc(50% + 0.75rem);
   }
+}
+
+/* Browser account handoffs share the identity pages’ typography and materials. */
+.account-page {
+  --account-background: #f8f9fa;
+  --account-surface: #fff;
+  --account-text: #18181b;
+  --account-muted: #60616b;
+  --account-border: #e6e7eb;
+  --account-inset: #f8f9fa;
+  min-height: 100svh;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--account-background);
+  color: var(--account-text);
+  -webkit-font-smoothing: antialiased;
+}
+.account-brand {
+  margin-bottom: 24px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.8px;
+}
+.account-brand a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  text-decoration: none;
+}
+.account-brand span {
+  color: var(--account-muted);
+}
+.account-card {
+  width: 100%;
+  max-width: 480px;
+  padding: 32px;
+  border: 1px solid var(--account-border);
+  border-radius: 20px;
+  background: var(--account-surface);
+  box-shadow: 0 4px 24px rgb(0 0 0 / 3%);
+  overflow-wrap: anywhere;
+}
+.account-card-wide {
+  max-width: 900px;
+}
+.account-eyebrow {
+  margin: 0 0 12px;
+  color: var(--account-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.account-card h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.8px;
+  text-wrap: balance;
+}
+.account-intro {
+  margin: 14px 0 28px;
+  color: var(--account-muted);
+  font-size: 16px;
+  line-height: 1.7;
+}
+.account-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.2px;
+}
+.account-actions {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.account-action[data-slot='button'] {
+  width: 100%;
+  min-height: 48px;
+  height: auto;
+  padding: 12px 16px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: normal;
+}
+.account-section-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.account-providers {
+  display: grid;
+  gap: 10px;
+}
+.account-provider[data-slot='button'] {
+  display: grid;
+  grid-template-columns: 20px 1fr 20px;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  height: auto;
+  padding: 12px 18px;
+  border: 1px solid var(--account-border);
+  border-radius: 9px;
+  background: var(--account-surface);
+  color: var(--account-text);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+  white-space: normal;
+}
+.account-notice {
+  padding: 16px;
+  border: 1px solid var(--account-border);
+  border-radius: 10px;
+  background: var(--account-inset);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.account-notice strong {
+  font-weight: 600;
+}
+.account-notice p {
+  margin: 6px 0 0;
+  color: var(--account-muted);
+}
+.account-notice .account-identity {
+  color: var(--account-text);
+  font-weight: 500;
+}
+.account-fine-print {
+  margin: 0;
+  color: var(--account-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.account-error {
+  margin: 0 0 20px;
+  padding: 14px;
+  border: 1px solid var(--account-border);
+  border-radius: 9px;
+  color: var(--destructive);
+  background: var(--account-inset);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.account-text-link {
+  padding: 8px 0;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 13px;
+}
+.account-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--account-border);
+}
+.account-footer a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--account-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.account-page a:focus-visible,
+.account-disclosure summary:focus-visible {
+  outline: 2px solid var(--account-text);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.account-deletion-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 36px;
+  align-items: start;
+}
+.account-deletion-notice {
+  padding-right: 28px;
+  border-right: 1px solid var(--account-border);
+}
+.account-consequences {
+  display: grid;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.account-consequences strong {
+  font-weight: 600;
+}
+.account-consequences p {
+  margin: 4px 0 0;
+  color: var(--account-muted);
+}
+.account-disclosure {
+  border-top: 1px solid var(--account-border);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.account-disclosure summary {
+  padding: 14px 0;
+  cursor: pointer;
+  font-weight: 500;
+}
+.account-disclosure p {
+  margin: 0;
+  color: var(--account-muted);
+}
+.account-confirmation {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--account-border);
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.7;
+  cursor: pointer;
+}
+.account-confirmation input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--account-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-provider[data-slot='button']:hover {
+    background: var(--account-inset);
+  }
+  .account-footer a:hover {
+    color: var(--account-text);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+}
+@media (max-width: 680px) {
+  .account-page {
+    padding: 28px 16px;
+  }
+  .account-card {
+    padding: 24px;
+    border-radius: 16px;
+  }
+  .account-card h1 {
+    font-size: 24px;
+  }
+  .account-deletion-layout {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .account-deletion-notice {
+    padding: 0 0 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--account-border);
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .account-page {
+    --account-background: #111113;
+    --account-surface: #1b1b1f;
+    --account-text: #f4f4f5;
+    --account-muted: #a7a7b1;
+    --account-border: #333338;
+    --account-inset: #222226;
+  }
+}
+
+/* Public catalog and pricing share the browser handoff control language. */
+.dataset-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 1024px) {
+  .dataset-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  }
+}
+.dataset-site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dataset-site-header a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+.dataset-site-header .dataset-brand {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.8px;
+  color: var(--foreground);
+}
+.dataset-brand span {
+  color: var(--muted-foreground);
+}
+.dataset-site-header div {
+  display: flex;
+  gap: 20px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.dataset-site-header a:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.dataset-controls [data-slot='button'] {
+  min-height: 44px;
+  height: auto;
+  border-radius: 9px;
+}
+.dataset-option {
+  padding: 10px 8px;
+  overflow-wrap: anywhere;
+}
+.site-pricing .pricing-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.site-pricing .pricing-card {
+  min-width: 0;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+}
+.site-pricing .pricing-lifetime {
+  border-color: var(--foreground);
+}
+.site-pricing [data-slot='button'] {
+  min-height: 48px;
+  height: auto;
+  border-radius: 9px;
+  padding: 12px 16px;
+  white-space: normal;
+  text-align: center;
+}
+.site-pricing .pricing-full-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+@media (max-width: 640px) {
+  .site-pricing .pricing-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-pricing .pricing-card {
+    padding: 24px;
+  }
+}
+
+.account-error-message {
+  font-family: inherit;
+  font-size: 14px;
+}
+.account-error-message p {
+  margin: 0;
+  line-height: 1.7;
+}
+.account-error-message a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }

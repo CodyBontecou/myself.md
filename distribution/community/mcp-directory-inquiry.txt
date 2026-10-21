@@ -1,0 +1,21 @@
+To: hello@mcp.directory
+Subject: Import and ownership claim for myself.md (md.myself/mcp)
+
+Hello,
+
+I'm Cody Bontecou, the owner and developer of myself.md. Our hosted MCP server is published in the official MCP Registry as md.myself/mcp, version 1.0.0.
+
+I couldn't find an existing entry when searching MCP.Directory for myself. Could you import the Registry entry and let me know how to verify ownership and claim the listing?
+
+Website: https://myself.md
+Documentation: https://myself.md/docs
+Remote endpoint: https://myself.md/mcp
+Authentication: OAuth with PKCE and dynamic client registration
+Registry entry: https://registry.modelcontextprotocol.io/v0.1/servers?search=md.myself%2Fmcp
+
+The server connects AI agents to owner-approved health, screen-time and recorded location data from paired phones and shared cloud exports.
+
+I can provide a DNS or HTTPS ownership proof. Please tell me which verification method you require.
+
+Thank you,
+Cody Bontecou

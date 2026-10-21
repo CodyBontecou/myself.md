@@ -1,43 +1,51 @@
-import { notifyLogs } from './log-updates.js';
 import { Platform } from 'react-native';
 import { phoneDatabase } from './phone-database.js';
-import {
-  debugEntries,
-  parseDebugEntry,
-  debugLimit,
-  debugRetentionMs,
-  parseDebugContent,
-  debugEntryContent,
-  debugUrl,
-} from '../core/debug-log.js';
+import { debugEntries, parseDebugEntry, debugLimit, debugRetentionMs } from '../core/debug-log.js';
 const db = phoneDatabase();
 db.execSync(`CREATE TABLE IF NOT EXISTS debug_log (id INTEGER PRIMARY KEY, owner TEXT, device TEXT, time INTEGER, value TEXT);
 CREATE INDEX IF NOT EXISTS debug_log_partition ON debug_log(owner,device,time);
-CREATE TABLE IF NOT EXISTS debug_content (owner TEXT, device TEXT, value TEXT, PRIMARY KEY(owner,device));
 CREATE TABLE IF NOT EXISTS debug_sharing (owner TEXT, device TEXT, shared INTEGER, revision INTEGER, PRIMARY KEY(owner,device));`);
+// Earlier versions could capture records, credentials and URLs. Strip retained attachments once.
+if (db.getFirstSync("SELECT name FROM sqlite_master WHERE type='table' AND name='debug_content'"))
+  db.withTransactionSync(() => {
+    for (const row of /** @type {{id:number,value:string}[]} */ (
+      db.getAllSync('SELECT id,value FROM debug_log')
+    )) {
+      try {
+        db.runSync(
+          'UPDATE debug_log SET value=? WHERE id=?',
+          JSON.stringify(parseDebugEntry(JSON.parse(row.value))),
+          row.id,
+        );
+      } catch {
+        db.runSync('DELETE FROM debug_log WHERE id=?', row.id);
+      }
+    }
+    db.execSync('DROP TABLE debug_content');
+  });
 /** @typedef {{owner:string,deviceId:string}} Context */
 /** Diagnostics must never turn an otherwise successful application operation into a failure.
  * @param {Context} context @param {string} operation @param {string} outcome
- * @param {{durationMs?:number,httpStatus?:number,error?:unknown,url?:string,credentials?:Record<string,string>,records?:Omit<import('../core/debug-log.js').DebugRecords,'truncated'>}} [details] */
+ * @param {{durationMs?:number,httpStatus?:number,error?:unknown}} [details] */
 export function recordDebug(context, operation, outcome, details = {}) {
   try {
-    const content = debugContent(context);
+    if (
+      db.getFirstSync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='account_cleanup'",
+      ) &&
+      db.getFirstSync(
+        'SELECT 1 FROM account_cleanup WHERE owner=? OR device=?',
+        context.owner,
+        context.deviceId,
+      )
+    )
+      return;
     const message =
       details.error === undefined
         ? undefined
         : details.error instanceof Error
           ? details.error.message
           : String(details.error);
-    /** @type {import('../core/debug-log.js').DebugRecords|undefined} */
-    let records;
-    if (content.records && details.records) {
-      records = { ...details.records, values: [], truncated: false };
-      for (const value of details.records.values.slice(0, 50)) {
-        if (JSON.stringify({ ...records, values: [...records.values, value] }).length > 8000) break;
-        records.values.push(value);
-      }
-      records.truncated = records.values.length < details.records.values.length;
-    }
     const entry = parseDebugEntry({
       ...(message === undefined
         ? {}
@@ -45,15 +53,6 @@ export function recordDebug(context, operation, outcome, details = {}) {
             error: message.slice(0, 16000),
             ...(message.length > 16000 ? { errorTruncated: true } : {}),
           }),
-      ...(content.urls && details.url
-        ? { url: debugUrl(details.url, content.credentials).slice(0, 4000) }
-        : {}),
-      ...(content.credentials &&
-      details.credentials &&
-      JSON.stringify(details.credentials).length <= 4000
-        ? { credentials: details.credentials }
-        : {}),
-      ...(records ? { records } : {}),
       time: Date.now(),
       operation,
       outcome,
@@ -63,7 +62,6 @@ export function recordDebug(context, operation, outcome, details = {}) {
           : Math.min(86400000, Math.max(0, Math.round(details.durationMs))),
       httpStatus: details.httpStatus ?? null,
     });
-    let written = false;
     db.withTransactionSync(() => {
       db.runSync('DELETE FROM debug_log WHERE time<?', Date.now() - debugRetentionMs);
       const last = /** @type {{value:string}|null} */ (
@@ -77,13 +75,10 @@ export function recordDebug(context, operation, outcome, details = {}) {
         const previous = parseDebugEntry(JSON.parse(last.value));
         if (
           entry.error === undefined &&
-          entry.records === undefined &&
           previous.error === undefined &&
           previous.operation === operation &&
           previous.outcome === outcome &&
           previous.httpStatus === entry.httpStatus &&
-          previous.url === entry.url &&
-          JSON.stringify(previous.credentials) === JSON.stringify(entry.credentials) &&
           entry.time - previous.time < 60000
         )
           return;
@@ -95,7 +90,6 @@ export function recordDebug(context, operation, outcome, details = {}) {
         entry.time,
         JSON.stringify(entry),
       );
-      written = true;
       db.runSync(
         'DELETE FROM debug_log WHERE owner=? AND device=? AND id NOT IN (SELECT id FROM debug_log WHERE owner=? AND device=? ORDER BY id DESC LIMIT ?)',
         context.owner,
@@ -105,59 +99,9 @@ export function recordDebug(context, operation, outcome, details = {}) {
         debugLimit,
       );
     });
-    if (written) notifyLogs(context);
   } catch {
     // Storage failures must not break exports, sign-in, or request handling.
   }
-}
-/** @param {Context} context */
-export function debugContent(context) {
-  const row = /** @type {{value:string}|null} */ (
-    db.getFirstSync(
-      'SELECT value FROM debug_content WHERE owner=? AND device=?',
-      context.owner,
-      context.deviceId,
-    )
-  );
-  try {
-    return parseDebugContent(row ? JSON.parse(row.value) : undefined);
-  } catch {
-    return parseDebugContent(undefined);
-  }
-}
-/** Trusted phone control. Disabling inclusion purges retained attachments and advances consent revision.
- * @param {Context} context @param {import('../core/debug-log.js').DebugContent} value */
-export function setDebugContent(context, value) {
-  const content = parseDebugContent(value);
-  const shared = debugSharing(context).shared;
-  db.withTransactionSync(() => {
-    db.runSync(
-      'INSERT OR REPLACE INTO debug_content VALUES(?,?,?)',
-      context.owner,
-      context.deviceId,
-      JSON.stringify(content),
-    );
-    const rows = /** @type {{id:number,value:string}[]} */ (
-      db.getAllSync(
-        'SELECT id,value FROM debug_log WHERE owner=? AND device=?',
-        context.owner,
-        context.deviceId,
-      )
-    );
-    for (const row of rows) {
-      let entry;
-      try {
-        entry = debugEntryContent(parseDebugEntry(JSON.parse(row.value)), content);
-      } catch {
-        continue;
-      }
-      // URL credential components are also removed when credential capture is disabled.
-      if (entry.url && !content.credentials) entry.url = debugUrl(entry.url, false);
-      db.runSync('UPDATE debug_log SET value=? WHERE id=?', JSON.stringify(entry), row.id);
-    }
-    setDebugSharing(context, shared);
-  });
-  notifyLogs(context);
 }
 /** @param {Context} context */
 export function debugSharing(context) {
@@ -202,9 +146,7 @@ export function debugReport(context, forAgent = false) {
   const entries = [];
   for (const row of rows) {
     try {
-      entries.push(
-        debugEntryContent(parseDebugEntry(JSON.parse(row.value)), debugContent(context)),
-      );
+      entries.push(parseDebugEntry(JSON.parse(row.value)));
     } catch {
       /* Ignore malformed diagnostics, preserving application data. */
     }
@@ -215,7 +157,6 @@ export function debugReport(context, forAgent = false) {
     revision: consent.revision,
     shared: consent.shared,
     platform: Platform.OS,
-    content: debugContent(context),
     entries: debugEntries(entries, now),
   };
 }

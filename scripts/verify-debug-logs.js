@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
@@ -5,12 +6,12 @@ import { SourceTextModule, SyntheticModule, createContext, runInContext } from '
 import { randomUUID } from 'node:crypto';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
-import * as updates from '../client/log-updates.js';
 import { readJSONResponse } from '../packages/support-chat/errors.js';
 import { logJson, logsJson, selectLogs, logs as unifiedLogs } from '../core/logs.js';
 import { exportEvent } from '../core/history.js';
 import * as core from '../core/debug-log.js';
 import { createDataService } from '../server/data-service.js';
+import { restrictChatgptTools } from '../server/chatgpt-tools.js';
 import { BillingStore } from '../server/billing-store.js';
 import { HistoryStore } from '../server/history-store.js';
 import { parseProfile } from '../core/profiles.js';
@@ -37,9 +38,7 @@ async function loadLogs() {
         ? { Platform: { OS: 'ios' } }
         : specifier === './phone-database.js'
           ? { phoneDatabase: () => sqlite }
-          : specifier === './log-updates.js'
-            ? updates
-            : core;
+          : core;
     return new SyntheticModule(
       Object.keys(values),
       function () {
@@ -50,7 +49,7 @@ async function loadLogs() {
   });
   await module.evaluate();
   const boundary =
-    /** @type {{recordDebug:(context:{owner:string,deviceId:string},operation:string,outcome:string,details?:{httpStatus?:number,durationMs?:number,error?:unknown,url?:string,credentials?:Record<string,string>,records?:Omit<import('../core/debug-log.js').DebugRecords,'truncated'>})=>void,debugReport:(context:{owner:string,deviceId:string},forAgent?:boolean)=>import('../core/debug-log.js').DebugReport,debugSharing:(context:{owner:string,deviceId:string})=>{shared:boolean},debugContent:(context:{owner:string,deviceId:string})=>import('../core/debug-log.js').DebugContent,setDebugContent:(context:{owner:string,deviceId:string},content:import('../core/debug-log.js').DebugContent)=>void,setDebugSharing:(context:{owner:string,deviceId:string},shared:boolean)=>void}} */ (
+    /** @type {{recordDebug:(context:{owner:string,deviceId:string},operation:string,outcome:string,details?:{httpStatus?:number,durationMs?:number,error?:unknown})=>void,debugReport:(context:{owner:string,deviceId:string},forAgent?:boolean)=>import('../core/debug-log.js').DebugReport,debugSharing:(context:{owner:string,deviceId:string})=>{shared:boolean},setDebugSharing:(context:{owner:string,deviceId:string},shared:boolean)=>void}} */ (
       module.namespace
     );
   return {
@@ -66,10 +65,14 @@ const billing = new BillingStore(':memory:');
 const history = new HistoryStore(':memory:', { seal: (value) => value, open: (value) => value });
 /** @type {Map<string,import('../server/data-service.js').Phone>} */
 const phones = new Map();
+/** @type {Map<string,import('../server/data-service.js').Job>} */
+const jobs = new Map();
 const service = createDataService({
+  cloud: { syncAgentPermissions: () => {} },
   billing,
   history,
   phones,
+  jobs,
   refreshEntitlement: async () => {},
   devices: (subject) =>
     subject === 'owner' ? [{ id: deviceId, name: 'Test', created: Date.now() }] : [],
@@ -102,11 +105,12 @@ function heartbeat(report) {
     diagnostics: report,
   });
 }
-/** @param {string} subject */
-async function connect(subject) {
+/** @param {string} subject @param {boolean} [chatgpt] */
+async function connect(subject, chatgpt = false) {
   const handler = createMcpHandler(() => {
     const mcp = new McpServer({ name: 'logs-test', version: '1' });
-    service.registerDataTools(mcp, subject, 'test-agent');
+    if (chatgpt) restrictChatgptTools(mcp);
+    service.registerDataTools(mcp, subject, 'test-agent', { chatgpt });
     return mcp;
   });
   const client = new Client({ name: 'test', version: '1' });
@@ -128,39 +132,6 @@ async function read(client, args = { deviceId }) {
   };
 }
 try {
-  let deliveries = 0;
-  const unsubscribe = updates.subscribeLogs(context, () => {
-    assert.ok(logs.debugReport(context).entries.length, 'Observers read committed events');
-    deliveries++;
-  });
-  const stopOther = updates.subscribeLogs({ ...context, owner: 'other' }, () => {
-    throw new Error('Wrong partition received a notification');
-  });
-  let otherDeliveries = 0;
-  const stopOtherCount = updates.subscribeLogs({ ...context, owner: 'other' }, () => {
-    otherDeliveries++;
-  });
-  logs.recordDebug(context, 'app', 'started');
-  logs.recordDebug(context, 'profile', 'succeeded');
-  await Promise.resolve();
-  assert.equal(deliveries, 1, 'Same-turn writes are batched and delivered immediately');
-  assert.equal(otherDeliveries, 0);
-  logs.recordDebug(context, 'profile', 'succeeded');
-  await Promise.resolve();
-  assert.equal(deliveries, 1, 'Suppressed repeats do not emit updates');
-  logs.recordDebug(context, 'query', 'started');
-  unsubscribe();
-  await Promise.resolve();
-  assert.equal(deliveries, 1, 'Unsubscribe cancels a queued delivery');
-  stopOther();
-  stopOtherCount();
-  const stopThrowing = updates.subscribeLogs(context, () => {
-    throw new Error('Viewer failed');
-  });
-  logs.recordDebug(context, 'app', 'succeeded');
-  await Promise.resolve();
-  stopThrowing();
-  db.exec('DELETE FROM debug_log');
   const transport = createContext({
     readJSONResponse,
     recordDebug: logs.recordDebug,
@@ -195,52 +166,62 @@ try {
     requestLog?.error?.includes('private-token private-payload'),
     'Raw error text is always retained',
   );
-  assert.equal(requestLog?.url, undefined);
-  assert.equal(requestLog?.credentials, undefined);
-  assert.equal(requestLog?.records, undefined);
-  const allContent = { records: true, credentials: true, urls: true };
-  const attachment = {
-    domain: /** @type {const} */ ('health'),
-    type: 'sleep',
-    profileId: 'private',
-    values: [{ value: 'fixture-record-value' }],
-  };
-  logs.setDebugContent(context, allContent);
-  logs.recordDebug(context, 'query', 'failed', {
+  assert.ok(!JSON.stringify(requestLog).includes('secret.example'));
+  const legacyEntry = {
+    time: Date.now(),
+    operation: 'query',
+    outcome: 'failed',
+    durationMs: 17,
+    httpStatus: 503,
     error: 'fixture raw error',
     url: 'https://fixture.test/path?token=fixture-url-token',
     credentials: { Authorization: 'Bearer fixture-credential' },
-    records: attachment,
-  });
-  const rich = logs.debugReport(context).entries[0];
-  assert.equal(rich?.credentials?.Authorization, 'Bearer fixture-credential');
-  assert.ok(rich?.url?.includes('fixture-url-token'));
-  assert.equal(rich?.records?.values.length, 1);
+    records: {
+      domain: 'health',
+      type: 'sleep',
+      profileId: 'private',
+      values: [{ value: 'fixture-record-value' }],
+      truncated: false,
+    },
+  };
+  logs.recordDebug(context, 'query', 'failed', legacyEntry);
+  assert.deepEqual(logs.debugReport(context).entries[0], core.parseDebugEntry(legacyEntry));
+  db.exec('CREATE TABLE debug_content(owner TEXT,device TEXT,value TEXT)');
+  db.prepare('INSERT INTO debug_content VALUES(?,?,?)').run(
+    context.owner,
+    deviceId,
+    JSON.stringify({ records: true, credentials: true, urls: true }),
+  );
+  db.prepare('INSERT INTO debug_log(owner,device,time,value) VALUES(?,?,?,?)').run(
+    context.owner,
+    deviceId,
+    legacyEntry.time,
+    JSON.stringify(legacyEntry),
+  );
   logs = await loadLogs();
-  assert.deepEqual(logs.debugContent(context), allContent, 'Content choices survive restart');
+  const retained = JSON.stringify(db.prepare('SELECT value FROM debug_log').all());
+  assert.ok(!retained.includes('fixture-record-value'));
+  assert.ok(!retained.includes('fixture-credential'));
+  assert.ok(!retained.includes('fixture-url-token'));
+  assert.ok(retained.includes('fixture raw error'), 'Migration preserves raw errors');
+  assert.equal(
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='debug_content'").get(),
+    undefined,
+    'Obsolete attachment choices are removed',
+  );
+  const legacyReport = {
+    ...logs.debugReport(context),
+    shared: true,
+    content: { records: true, credentials: true, urls: true },
+    entries: [legacyEntry],
+  };
+  heartbeat(legacyReport);
   assert.deepEqual(
-    logs.debugContent({ ...context, owner: 'other' }),
-    core.parseDebugContent(undefined),
+    phones.get(deviceId)?.catalog.diagnostics?.entries,
+    [core.parseDebugEntry(legacyEntry)],
+    'Server strips attachments from legacy phone reports',
   );
-  logs.setDebugContent(context, core.parseDebugContent(undefined));
-  const purged = db.prepare('SELECT value FROM debug_log WHERE owner=?').all(context.owner);
-  assert.ok(!JSON.stringify(purged).includes('fixture-record-value'));
-  assert.ok(!JSON.stringify(purged).includes('fixture-credential'));
-  assert.ok(!JSON.stringify(purged).includes('fixture-url-token'));
-  assert.ok(
-    JSON.stringify(purged).includes('fixture raw error'),
-    'Disabling attachments preserves errors',
-  );
-  logs.setDebugContent(context, { records: false, credentials: false, urls: true });
-  logs.recordDebug(context, 'cloud', 'started', {
-    url: 'https://user:password@fixture.test/path?token=fixture-url-secret#fragment-secret',
-    credentials: { Authorization: 'fixture-header-secret' },
-  });
-  const urlOnly = logs.debugReport(context).entries[0];
-  assert.ok(urlOnly?.url?.includes('/path'));
-  assert.ok(!JSON.stringify(urlOnly).includes('secret'));
-  assert.ok(!JSON.stringify(urlOnly).includes('password'));
-  logs.setDebugContent(context, core.parseDebugContent(undefined));
+  assert.ok(!JSON.stringify(phones.get(deviceId)?.catalog.diagnostics).includes('"content"'));
   logs.recordDebug(context, 'query', 'failed', { error: 'a'.repeat(16001) });
   assert.equal(logs.debugReport(context).entries[0]?.errorTruncated, true);
   assert.equal(logs.debugReport(context).entries[0]?.error?.length, 16000);
@@ -329,6 +310,11 @@ try {
     /** @type {Record<string,unknown>|undefined} */ (handoff.structuredContent)?.status,
     'awaiting_user',
   );
+  const ownerHandoff = /** @type {{handoff:{deepLink:string,instructions:string}}} */ (
+    handoff.structuredContent
+  ).handoff;
+  assert.equal(ownerHandoff.deepLink, 'myselfmd://profiles/private?section=agent-permissions');
+  assert.ok(ownerHandoff.instructions.includes('Enable Logs'));
   assert.equal(logs.debugSharing(context).shared, false, 'Agent cannot grant itself access');
   assert.equal((await read(other)).isError, true);
   assert.throws(
@@ -406,13 +392,13 @@ try {
   assert.deepEqual(
     (await listLogs(owner)).value?.logs,
     expected,
-    'Mobile selector and real MCP union agree',
+    'Shared metadata selector and real MCP union agree',
   );
   const raw = (await listLogs(owner, { format: 'jsonl' })).value;
   assert.equal(
     raw?.jsonl,
     expected.map((log) => logJson(log)).join('\n'),
-    'MCP raw JSON matches the UI projection',
+    'MCP raw JSON matches the authorized projection',
   );
   assert.deepEqual(
     (await listLogs(owner, { query: '  LOG-EXPORT  ', format: 'jsonl' })).value?.logs,
@@ -439,57 +425,133 @@ try {
   assert.equal((await listLogs(owner, { selectedIds: ['same', 'same'] })).isError, true);
   assert.equal((await listLogs(other, { selectedIds: chosenIds, format: 'jsonl' })).isError, true);
   assert.throws(() => selectLogs(expected, Array(351).fill('id')));
-  const changed = expected.map((log) =>
-    'entry' in log
-      ? Object.assign({}, log, {
-          entry: core.debugEntryContent(log.entry, core.parseDebugContent(undefined)),
-        })
-      : log,
-  );
-  assert.equal(
-    logsJson(selectLogs(changed, chosenIds).logs),
-    logsJson(changed.filter((log) => chosenIds.includes(log.id))),
-    'Selections resolve current content, never old snapshots',
-  );
   assert.equal(raw?.recommendedPollMs, 2000);
   assert.ok(Number.isSafeInteger(raw?.observedAt));
   assert.equal((await listLogs(owner, { format: 'console' })).isError, true);
   assert.equal((await listLogs(other, { format: 'jsonl' })).isError, true);
-  logs.setDebugContent(context, allContent);
-  logs.recordDebug(context, 'query', 'failed', {
-    error: 'grant-test failure',
-    credentials: { Authorization: 'Bearer grant-test' },
-    url: 'https://fixture.test/private',
-    records: attachment,
-  });
-  const richReport = logs.debugReport(context, true);
-  heartbeat(richReport);
-  const deniedRecordReport = /** @type {import('../core/debug-log.js').DebugReport} */ (
-    (await read(owner)).structuredContent?.report
-  );
-  assert.equal(
-    deniedRecordReport.entries[0]?.records,
-    undefined,
-    'Diagnostic capture cannot bypass data grants',
-  );
-  assert.equal(deniedRecordReport.entries[0]?.credentials?.Authorization, 'Bearer grant-test');
+  logs.recordDebug(context, 'query', 'failed', { error: 'metadata-test failure' });
+  const metadataReport = logs.debugReport(context, true);
+  const destinationProfile = catalog.profiles[0];
+  assert.ok(destinationProfile);
+  destinationProfile.export = {
+    ...destinationProfile.export,
+    destination: 'http',
+    writeMode: 'append',
+    httpUrl: 'https://destination.fixture/?apiKey=synthetic-destination-key',
+  };
+  heartbeat(metadataReport);
   const catalogResult = await owner.callTool({
     name: 'get_phone_data_catalog',
     arguments: { deviceId },
   });
   assert.ok(
     !JSON.stringify(catalogResult.structuredContent).includes('fixture-record-value'),
-    'Catalog cannot bypass diagnostic record authorization',
+    'Catalog never includes legacy diagnostic records',
   );
-  const requestContent = await owner.callTool({
-    name: 'request_phone_debug_content',
-    arguments: { deviceId, content: { records: false, credentials: false, urls: false } },
-  });
-  assert.equal(
-    /** @type {Record<string,unknown>|undefined} */ (requestContent.structuredContent)?.status,
-    'awaiting_user',
+  const restricted = await connect('owner', true);
+  try {
+    const safeCatalog = await restricted.callTool({
+      name: 'get_phone_data_catalog',
+      arguments: { deviceId },
+    });
+    const safeText = JSON.stringify(safeCatalog);
+    assert.equal(
+      z
+        .object({
+          catalog: z.object({
+            profiles: z.array(
+              z.object({ id: z.string(), export: z.object({ writeMode: z.string() }) }),
+            ),
+          }),
+        })
+        .parse(safeCatalog.structuredContent)
+        .catalog.profiles.find((p) => p.id === destinationProfile.id)?.export.writeMode,
+      'append',
+    );
+    assert.ok(!safeText.includes('metadata-test failure'));
+    assert.ok(!safeText.includes('diagnostics'));
+    assert.ok(!safeText.includes('synthetic-destination-key'));
+    await assert.rejects(
+      () => restricted.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }),
+      /not found/,
+    );
+    assert.ok(
+      JSON.stringify(catalogResult).includes('metadata-test failure'),
+      'The separately consented full endpoint retains metadata and raw errors',
+    );
+    assert.ok(JSON.stringify(catalogResult).includes('synthetic-destination-key'));
+    const failureProfile = {
+      ...destinationProfile,
+      id: 'capture-error',
+      agentAccess: true,
+      agentPermissions: { health: true, time: false, location: false, logs: false },
+      selection: { health: ['native:sleep'], time: [], location: [] },
+    };
+    catalog.profiles.push(failureProfile);
+    const failureDomain = catalog.domains.find((domain) => domain.domain === 'health');
+    assert.ok(failureDomain);
+    failureDomain.enabled = true;
+    failureDomain.types = ['native:sleep'];
+    heartbeat(metadataReport);
+    const requestId = randomUUID();
+    jobs.set(requestId, {
+      id: requestId,
+      subject: 'owner',
+      deviceId,
+      client: 'test-agent',
+      expires: Date.now() + 60000,
+      state: 'failed',
+      query: {
+        deviceId,
+        profileId: failureProfile.id,
+        domain: 'health',
+        type: 'sleep',
+        source: 'native',
+        start: '2026-10-12T00:00:00Z',
+        end: '2026-10-13T00:00:00Z',
+        cursor: '',
+        limit: 50,
+        format: 'json',
+        schema: 'myself.md.export.v1',
+      },
+      error: 'Phone adapter failed with Bearer synthetic-capture-secret',
+    });
+    const safeFailure = await restricted.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId },
+    });
+    assert.ok(JSON.stringify(safeFailure).includes('Phone capture failed.'));
+    assert.ok(!JSON.stringify(safeFailure).includes('synthetic-capture-secret'));
+    const fullFailure = await owner.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId },
+    });
+    assert.ok(JSON.stringify(fullFailure).includes('synthetic-capture-secret'));
+    const deniedRequestId = randomUUID();
+    const failedJob = jobs.get(requestId);
+    assert.ok(failedJob);
+    jobs.set(deniedRequestId, {
+      ...failedJob,
+      id: deniedRequestId,
+      query: { ...failedJob.query, profileId: destinationProfile.id },
+    });
+    const deniedFailure = await restricted.callTool({
+      name: 'get_phone_request',
+      arguments: { requestId: deniedRequestId },
+    });
+    assert.equal(
+      deniedFailure.isError,
+      true,
+      'An unapproved profile cannot read retained failures',
+    );
+    assert.ok(!JSON.stringify(deniedFailure).includes('synthetic-capture-secret'));
+  } finally {
+    await restricted.close();
+  }
+  assert.ok(
+    !(await owner.listTools()).tools.some((tool) => tool.name === 'request_phone_debug_content'),
+    'Attachment-content tool is removed',
   );
-  assert.deepEqual(logs.debugContent(context), allContent, 'Agents cannot change content consent');
   const profileForGrant = catalog.profiles[0];
   assert.ok(profileForGrant);
   profileForGrant.agentAccess = true;
@@ -498,21 +560,14 @@ try {
   assert.ok(healthForGrant);
   healthForGrant.enabled = true;
   healthForGrant.types = ['native:sleep'];
-  heartbeat(richReport);
+  heartbeat(metadataReport);
   assert.deepEqual(
     (await read(owner)).structuredContent?.report,
-    richReport,
-    'Current domain/type and profile approval authorize attached records',
+    metadataReport,
+    'Diagnostics remain metadata-only regardless of data grants',
   );
   profileForGrant.agentPermissions.health = false;
-  heartbeat(richReport);
-  assert.equal(
-    /** @type {import('../core/debug-log.js').DebugReport} */ (
-      (await read(owner)).structuredContent?.report
-    )?.entries[0]?.records,
-    undefined,
-    'Per-profile source revocation removes record attachments',
-  );
+  heartbeat(metadataReport);
   const queryArguments = {
     deviceId,
     profileId: profileForGrant.id,
@@ -536,7 +591,7 @@ try {
     agentPermissions: { ...profileForGrant.agentPermissions, health: true, logs: false },
   };
   catalog.profiles.push(independentProfile);
-  heartbeat(richReport);
+  heartbeat(metadataReport);
   assert.equal(
     (
       await owner.callTool({
@@ -557,23 +612,7 @@ try {
     'available',
   );
   catalog.profiles.pop();
-  heartbeat(richReport);
-  logs.setDebugContent(context, core.parseDebugContent(undefined));
-  heartbeat(richReport);
-  service.phoneApi(
-    `/api/phones/${deviceId}/diagnostics`,
-    'POST',
-    'owner',
-    logs.debugReport(context, true),
-  );
-  heartbeat(richReport);
-  assert.equal(
-    /** @type {import('../core/debug-log.js').DebugReport} */ (
-      (await read(owner)).structuredContent?.report
-    )?.entries[0]?.credentials,
-    undefined,
-    'Older in-flight snapshots cannot restore disabled content',
-  );
+  heartbeat(metadataReport);
   db.exec('DELETE FROM debug_log');
   logs.recordDebug(context, 'query', 'failed');
   heartbeat(logs.debugReport(context, true));
@@ -609,14 +648,9 @@ try {
     () =>
       heartbeat({
         ...enabled,
-        entries: [
-          /** @type {import('../core/debug-log.js').DebugEntry} */ ({
-            ...enabled.entries[0],
-            message: 'secret',
-          }),
-        ],
+        entries: [{ ...core.parseDebugEntry(legacyEntry), httpStatus: 999 }],
       }),
-    /Unrecognized key/,
+    /Too big/,
   );
   logs.setDebugSharing(context, false);
   service.phoneApi(
@@ -654,7 +688,31 @@ try {
     'Disconnect removes server report',
   );
   console.log(
-    'Debug logs: SQLite persistence, bounded retention, safe fields, partition isolation, real MCP reads, consent, revocation races, stale-phone denial and disconnect pass.',
+    'Debug logs: metadata-only capture, legacy attachment removal, SQLite persistence, bounded retention, partition isolation, real MCP reads, consent, revocation races, stale-phone denial and disconnect pass.',
+  );
+  db.exec(
+    'DELETE FROM debug_log; CREATE TABLE account_cleanup(id INTEGER PRIMARY KEY,owner TEXT,device TEXT)',
+  );
+  db.prepare('INSERT INTO account_cleanup VALUES(1,?,?)').run(context.owner, context.deviceId);
+  logs.recordDebug(context, 'query', 'failed', { error: 'Synthetic late account response' });
+  assert.equal(
+    logs.debugReport(context).entries.length,
+    0,
+    'Deletion must prevent late diagnostics from recreating erased account data',
+  );
+  const otherContext = { owner: 'other-owner', deviceId: 'other-phone' };
+  logs.recordDebug(otherContext, 'query', 'succeeded');
+  assert.equal(
+    logs.debugReport(otherContext).entries.length,
+    1,
+    'An unrelated owner remains writable',
+  );
+  db.exec('DELETE FROM account_cleanup');
+  logs.recordDebug(context, 'query', 'succeeded');
+  assert.equal(
+    logs.debugReport(context).entries.length,
+    1,
+    'A rejected deletion does not permanently disable diagnostics',
   );
 } finally {
   await Promise.all([owner.close(), other.close()]);

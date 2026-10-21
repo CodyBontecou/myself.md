@@ -42,17 +42,16 @@ export async function saveDestinationCredential(device, profile, value) {
   );
 }
 /** @param {import('./session.js').Session} session @param {import('../core/profiles.js').ExportProfile} profile */
-export async function authorizeCloud(session, profile) {
+async function authorizeCloud(session, profile) {
   const result = /** @type {{token:string}} */ (
     await api(session, '/api/cloud/credential', {
       method: 'POST',
       body: JSON.stringify({ deviceId: session.deviceId, profile }),
     })
   );
-  await saveDestinationCredential(session.deviceId, profile.id, {
-    server: session.server,
-    token: result.token,
-  });
+  const credential = { server: session.server, token: result.token };
+  await saveDestinationCredential(session.deviceId, profile.id, credential);
+  return credential;
 }
 /** @param {import('./session.js').Session} session @param {string} profileId @param {DestinationCredential} credential */
 async function renewCredential(session, profileId, credential) {
@@ -64,7 +63,7 @@ async function renewCredential(session, profileId, credential) {
       deviceId: session.deviceId,
       profileId,
       token: credential.token,
-      expiresAt: (session.lastActiveAt ?? Date.now()) + 30 * 86400000,
+      expiresAt: (session.lastActiveAt ?? Date.now()) + 365 * 86400000,
     }),
   });
 }
@@ -84,25 +83,43 @@ export async function renewCloudAuthorizations(session) {
       }),
   );
 }
-/** @param {import('./session.js').Session} session @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} [shared] */
-export async function cloudAccess(session, profile, shared) {
-  return /** @type {{shared:boolean}} */ (
-    await api(session, '/api/cloud/access', {
-      method: shared === undefined ? 'POST' : 'PUT',
-      body: JSON.stringify({
-        deviceId: session.deviceId,
-        profile,
-        ...(shared === undefined ? {} : { shared }),
-      }),
-    })
-  );
+/** Coalesce first-use credential creation so concurrent exports cannot rotate each other's token. */
+/** @type {Map<string,Promise<DestinationCredential>>} */
+const pendingCredentials = new Map();
+/** @param {import('./session.js').Session} session @param {import('../core/profiles.js').ExportProfile} profile */
+async function cloudCredential(session, profile) {
+  const key = `${session.server}|${session.owner}|${vaultKey(session.deviceId, profile.id, 'cloud')}`;
+  const existing = pendingCredentials.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const stored = await SecureStore.getItemAsync(vaultKey(session.deviceId, profile.id, 'cloud'));
+    const credential = stored ? /** @type {DestinationCredential} */ (JSON.parse(stored)) : null;
+    return credential?.server && credential.token ? credential : authorizeCloud(session, profile);
+  })();
+  pendingCredentials.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    pendingCredentials.delete(key);
+  }
+}
+/** A saved Cloud destination authorizes uploads; verify login before creating or renewing its credential.
+ * @param {import('./export-context.js').ExportContext} context @param {import('../core/profiles.js').ExportProfile} profile */
+export async function requireCloudAuthorization(context, profile) {
+  if (profile.export.destination !== 'cloud') return null;
+  const session = await loadSession();
+  if (!session || session.deviceId !== context.deviceId || session.owner !== context.owner)
+    throw new Error('Sign in again to resume cloud uploads.');
+  const saved = loadProfiles(context.deviceId)?.profiles.find((p) => p.id === profile.id);
+  if (saved?.export.destination !== 'cloud')
+    throw new Error('Save Cloud as this profile’s export destination first.');
+  const credential = await cloudCredential(session, saved);
+  if (credential.server) credential.server = canonicalServiceOrigin(credential.server);
+  await renewCredential(session, profile.id, credential);
+  return credential;
 }
 /** @param {import('./export-context.js').ExportContext} context @param {import('../core/profiles.js').ExportProfile} profile @param {import('expo-file-system').File} file @param {import('../core/export-files.js').ExportFormat} format @param {Record<string,unknown>} manifest @param {()=>boolean} valid */
 export async function deliverExport(context, profile, file, format, manifest, valid) {
-  const stored = await SecureStore.getItemAsync(
-    vaultKey(context.deviceId, profile.id, profile.export.destination),
-  );
-  const credential = stored ? /** @type {DestinationCredential} */ (JSON.parse(stored)) : null;
   if (!valid()) throw new Error('Export cancelled before delivery.');
   const headers = {
     'Content-Type': format === 'json' ? 'application/json' : 'application/x-ndjson',
@@ -110,17 +127,16 @@ export async function deliverExport(context, profile, file, format, manifest, va
     'X-Export-Day': String(/** @type {{day:string}} */ (manifest.interval).day),
   };
   if (profile.export.destination === 'http') {
+    const stored = await SecureStore.getItemAsync(
+      vaultKey(context.deviceId, profile.id, profile.export.destination),
+    );
+    const credential = stored ? /** @type {DestinationCredential} */ (JSON.parse(stored)) : null;
     const url = new URL(profile.export.httpUrl ?? '');
     if (url.protocol !== 'https:' || url.username || url.password || url.hash)
       throw new Error('Use an HTTPS endpoint without credentials or fragments.');
     if (credential?.token && credential.url !== url.href)
       throw new Error('Save the HTTP credential for this endpoint before exporting.');
-    recordDebug(context, 'export', 'started', {
-      url: url.href,
-      ...(credential?.token
-        ? { credentials: { Authorization: `Bearer ${credential.token}` } }
-        : {}),
-    });
+    recordDebug(context, 'export', 'started');
     const response = await send(url.href, {
       method: 'POST',
       // Expo fetch replaces explicit Content-Type with File.type, which is null for JSONL.
@@ -135,16 +151,12 @@ export async function deliverExport(context, profile, file, format, manifest, va
     if (!response.ok) throw new Error(`HTTP export failed (${response.status}).`);
     return null;
   }
-  if (!credential?.server) throw new Error('Authorize cloud uploads on this profile first.');
-  credential.server = canonicalServiceOrigin(credential.server);
-  const session = await loadSession();
-  if (!session || session.deviceId !== context.deviceId || session.owner !== context.owner)
-    throw new Error('Sign in again to resume cloud uploads.');
-  await renewCredential(session, profile.id, credential);
+  const approved = await requireCloudAuthorization(context, profile);
+  if (!approved) throw new Error('Cloud upload authorization is required.');
   if (!valid()) throw new Error('Export cancelled before upload.');
   if (file.size > 16 * 1024 * 1024)
     throw new Error('Cloud daily files are limited to 16 MiB. Reduce selected types.');
-  return uploadCloudFile(credential, profile, file, format, manifest, valid, context);
+  return uploadCloudFile(approved, profile, file, format, manifest, valid, context);
 }
 /** Shared native file transport for normal exports and isolated live cloud QA.
  * @param {DestinationCredential} credential @param {import('../core/profiles.js').ExportProfile} profile
@@ -158,11 +170,7 @@ export async function uploadCloudFile(credential, profile, file, format, manifes
     'X-Export-Day': String(/** @type {{day:string}} */ (manifest.interval).day),
   };
   const authorization = `Upload ${credential.token}`;
-  if (context)
-    recordDebug(context, 'cloud', 'started', {
-      url: `${credential.server}/api/cloud/uploads`,
-      credentials: { Authorization: authorization },
-    });
+  if (context) recordDebug(context, 'cloud', 'started');
   const begin = await send(`${credential.server}/api/cloud/uploads`, {
     method: 'POST',
     headers: { Authorization: authorization, 'Content-Type': 'application/json' },
@@ -170,13 +178,14 @@ export async function uploadCloudFile(credential, profile, file, format, manifes
     redirect: 'error',
   });
   if (!begin.ok) throw await uploadFailure(begin, 'Cloud upload could not start');
-  const { id } = /** @type {{id:string}} */ (await begin.json());
+  const receipt =
+    /** @type {{id:string,completed?:boolean,recordCount?:number,bytes?:number,partial?:boolean}} */ (
+      await begin.json()
+    );
+  const { id } = receipt;
   if (!valid()) throw new Error('Export cancelled before upload.');
-  if (context)
-    recordDebug(context, 'cloud', 'started', {
-      url: `${credential.server}/api/cloud/uploads/${id}`,
-      credentials: { Authorization: authorization },
-    });
+  if (receipt.completed) return receipt;
+  if (context) recordDebug(context, 'cloud', 'started');
   // Raw bytes avoid Expo overriding Content-Type with a null MIME type for JSONL files.
   const result = await send(`${credential.server}/api/cloud/uploads/${id}`, {
     method: 'PUT',
@@ -185,5 +194,7 @@ export async function uploadCloudFile(credential, profile, file, format, manifes
     redirect: 'error',
   });
   if (!result.ok) throw await uploadFailure(result, 'Cloud upload failed');
-  return { id };
+  return /** @type {{id:string,recordCount?:number,bytes?:number,partial?:boolean}} */ (
+    await result.json()
+  );
 }

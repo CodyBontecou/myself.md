@@ -7,7 +7,7 @@ import { navigateRoute } from './navigation.js';
 import { recordRoute } from './explorer-route.js';
 import { Button } from './components/ui/button.js';
 import { Badge } from './components/ui/badge.js';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card.js';
+import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card.js';
 /** @typedef {import('../core/history.js').HistoryEvent} Event */
 /** @param {string} id */
 function openEntry(id) {
@@ -94,13 +94,11 @@ export function HistoryView({ workspace, search, updated, onExpired }) {
   return (
     <div className="space-y-4 px-4 lg:px-6">
       <Card>
-        <CardHeader>
-          <CardTitle>{id ? 'Activity details' : 'Export history'}</CardTitle>
-          <CardDescription>
-            Exports and agent access. Phone export metadata syncs when you refresh History in the
-            app. History contains metadata, never records.
-          </CardDescription>
-        </CardHeader>
+        {id && (
+          <CardHeader>
+            <CardTitle>Activity details</CardTitle>
+          </CardHeader>
+        )}
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {id ? (
@@ -321,8 +319,8 @@ function HistoryDetails({ event, related, workspace }) {
             );
           })}
           <p className="text-xs text-muted-foreground">
-            Cloud files are retained for 30 days. History remains after files expire or are
-            replaced.
+            Cloud files stay until you delete them or replace them. History remains after files are
+            deleted or replaced.
           </p>
         </div>
       ) : null}

@@ -1,7 +1,7 @@
+import { AnalyticsObserver } from '../../client/AnalyticsControls.js';
+import PhoneNotifications from '../../client/PhoneNotifications.js';
 import { ToastProvider } from '../components/Toast.js';
-import { SupportNotifications } from '../../client/support-notifications.js';
-import { useEffect, useSyncExternalStore } from 'react';
-import { feedbackState } from '../../client/gripe.js';
+import { useSyncExternalStore } from 'react';
 import QaPhoneProvider from '../../client/QaPhoneProvider.js';
 import { qaEnabled, qaSnapshot, subscribeQa } from '../../client/qa-runtime.js';
 import BillingPaywalls from '../../client/BillingPaywalls';
@@ -13,10 +13,6 @@ import PhoneProvider from '../../client/PhoneProvider';
 import { OnboardingProvider, useOnboarding } from '../../client/onboarding';
 export const unstable_settings = { initialRouteName: 'index' };
 export default function RootLayout() {
-  useEffect(() => {
-    if (qaEnabled) return;
-    void feedbackState().catch(() => {});
-  }, []);
   const fixture = useSyncExternalStore(subscribeQa, qaSnapshot);
   return (
     <OnboardingProvider key={qaEnabled ? fixture.revision : 0}>
@@ -47,8 +43,9 @@ function RootStack() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <ToastProvider>
           <Provider>
+            {!qaEnabled && <AnalyticsObserver />}
             {!qaEnabled && <BillingPaywalls />}
-            {!qaEnabled && <SupportNotifications />}
+            {!qaEnabled && <PhoneNotifications />}
             <Stack
               screenOptions={{
                 headerStyle: { backgroundColor: colors.background },
@@ -73,11 +70,14 @@ function RootStack() {
                 <Stack.Screen name="manage" options={{ headerShown: false }} />
               </Stack.Protected>
               <Stack.Screen name="unlock" options={{ title: 'Lifetime unlock' }} />
+              <Stack.Screen name="cloud-storage" options={{ title: 'Cloud storage' }} />
               <Stack.Screen name="pair" options={{ title: 'Connect agent' }} />
-              <Stack.Screen name="account" options={{ title: 'Lifetime access' }} />
+              <Stack.Screen name="account" options={{ title: 'Account' }} />
+              <Stack.Screen name="whoop" options={{ title: 'WHOOP' }} />
+              <Stack.Screen name="connected-logins" options={{ title: 'Connected logins' }} />
+              <Stack.Screen name="login" options={{ title: 'Sign in' }} />
+              <Stack.Screen name="claim-access" options={{ title: 'Existing purchases' }} />
               <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
-              <Stack.Screen name="feedback" options={{ title: 'Bug report updates' }} />
-              <Stack.Screen name="diagnostics" options={{ title: 'Log sharing' }} />
             </Stack>
           </Provider>
         </ToastProvider>

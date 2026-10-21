@@ -6,7 +6,6 @@ export default function SettingsLayout() {
     <AppStack>
       <Stack.Screen name="index" options={{ title: 'Settings' }} />
       <Stack.Screen name="watch" options={{ title: 'Apple Watch' }} />
-      <Stack.Screen name="connections" options={{ title: 'Connections' }} />
     </AppStack>
   );
 }

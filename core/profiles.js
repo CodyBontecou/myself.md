@@ -57,10 +57,20 @@ export function profileLink(profile) {
   if (link.length > 64000) throw new Error('Profile is too large for a deep link.');
   return link;
 }
+/** HTTPS links are recognized by email clients; the fragment stays off the server.
+ * @param {ProfileDraft} profile */
+export function profileShareLink(profile) {
+  const link = `https://myself.md/share/profile#payload=${encodeURIComponent(JSON.stringify(parseProfile(profile)))}`;
+  if (link.length > 64000) throw new Error('Profile is too large for a share link.');
+  return link;
+}
 /** @param {string} link */
 export function profileFromLink(link) {
   if (link.length > 64000) throw new Error('Profile link is too large.');
-  const match = /^myselfmd:\/\/profile\?payload=([^&#]+)$/.exec(link);
+  const match =
+    /^(?:myselfmd:\/\/profile\?|https:\/\/myself\.md\/share\/profile\/?#)payload=([^&#]+)$/.exec(
+      link,
+    );
   if (!match?.[1]) throw new Error('Invalid profile link.');
   return parseProfile(JSON.parse(decodeURIComponent(match[1])));
 }
@@ -71,7 +81,7 @@ export function profileAllows(profile, query) {
     profile.selection[query.domain].includes(`${query.source}:${query.type}`)
   );
 }
-/** Live access requires phone approval in addition to the profile selection.
+/** Live access requires individually approved permissions and the profile selection.
  * @param {ExportProfile|undefined} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
 export function agentProfileAllows(profile, query) {
   return (
@@ -113,6 +123,30 @@ export function uniqueProfileName(name, profiles) {
   return next;
 }
 
+/** Build the validated private profile mutation used by setup and the editor.
+ * @param {ProfileState} state @param {ProfileDraft} draft @param {string} id @param {boolean} [editing] */
+export function saveProfileDraft(state, draft, id, editing = false) {
+  const parsed = parseProfile(draft);
+  const previous = state.profiles.find((profile) => profile.id === id);
+  if (editing && !previous) throw new Error('This profile no longer exists. Go back to return.');
+  if (!editing && previous) throw new Error('This profile already exists.');
+  const others = state.profiles.filter((profile) => profile.id !== id);
+  const profile = {
+    ...parsed,
+    id,
+    name: uniqueProfileName(parsed.name, others),
+    agentAccess: editing ? previous?.agentAccess === true : true,
+    agentPermissions: editing
+      ? previous?.agentPermissions
+      : { health: false, time: false, location: false, logs: false },
+  };
+  return parseProfileState({
+    profiles: editing
+      ? state.profiles.map((entry) => (entry.id === id ? profile : entry))
+      : [...state.profiles, profile],
+  });
+}
+
 /** Same profile parser and minimum-count contract as the mobile save boundary.
  * @param {import('../core/profiles.js').ProfileState} state */
 export function parseProfileState(state) {
@@ -124,11 +158,18 @@ export function parseProfileState(state) {
       if (typeof profile.id !== 'string' || !profile.id || ids.has(profile.id))
         throw new Error('Use unique profile IDs.');
       ids.add(profile.id);
+      // Legacy master denials become individual denials. agentAccess is now only a
+      // compatibility summary for older catalog readers, never a separate setting.
+      const savedPermissions = parseAgentPermissions(profile.agentPermissions);
+      const permissions =
+        profile.agentAccess !== true
+          ? { health: false, time: false, location: false, logs: false }
+          : savedPermissions;
       return {
         ...parseProfile(profile),
         id: profile.id,
-        agentAccess: profile.agentAccess === true,
-        agentPermissions: parseAgentPermissions(profile.agentPermissions),
+        agentAccess: Object.values(permissions).some(Boolean),
+        agentPermissions: permissions,
       };
     }),
   };

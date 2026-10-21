@@ -1,0 +1,11 @@
+[
+  {
+    "action": "set_config",
+    "action_parameters": {
+      "disable_rum": true
+    },
+    "description": "Exclude internal and QA website measurements",
+    "enabled": true,
+    "expression": "(http.host in {\"myself.md\" \"www.myself.md\"} and (http.cookie eq \"myself_internal_traffic=1\" or starts_with(http.cookie, \"myself_internal_traffic=1;\") or ends_with(http.cookie, \"; myself_internal_traffic=1\") or http.cookie contains \"; myself_internal_traffic=1;\" or any(http.request.headers[\"x-myself-qa\"][*] eq \"1\") or http.user_agent contains \"HeadlessChrome\" or http.request.uri.path eq \"/operator/analytics\"))"
+  }
+]

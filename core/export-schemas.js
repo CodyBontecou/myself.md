@@ -38,6 +38,7 @@ const schemas = [
     id: originalExportSchema,
     version: 'v1',
     title: 'Original',
+    documentationUrl: 'https://myself.md/docs/reference#export-schema-v1',
     description:
       'Source records and explicit time series. Preserves native fields, every available observation, timestamps, precision and metadata.',
     changes: [

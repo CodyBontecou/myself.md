@@ -1,3 +1,6 @@
+import * as dataAggregation from '../core/data-aggregation.js';
+import * as dataRange from '../core/data-range.js';
+import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule } from 'node:vm';
@@ -99,6 +102,10 @@ const platform = { OS: 'android' };
 const phone =
   /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>,profile?:import('../core/profiles.js').ExportProfile)=>Promise<{domains:{types:string[],selectableTypes:string[]}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      '../core/data-aggregation.js': dataAggregation,
+      '../core/data-range.js': dataRange,
+      './whoop.js': disconnectedWhoop,
+      './location-task.js': { locationStatus: async () => ({ tracking: false }) },
       'expo-location': { getForegroundPermissionsAsync: async () => ({ granted: false }) },
       'react-native': { Platform: platform },
       '../core/profiles.js': profiles,

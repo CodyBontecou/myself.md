@@ -1,3 +1,4 @@
+import { deliveredFormats } from './export-files.js';
 import { parseExportSchema } from './export-schemas.js';
 import { parseProfile } from './profiles.js';
 /** @typedef {'running'|'ready'|'complete'|'partial'|'failed'|'cancelled'|'expired'|'interrupted'} HistoryStatus */
@@ -31,7 +32,7 @@ export function exportEvent({ id, profile, actor, interval, stamp, timezone }) {
     },
     interval: { ...interval },
     timezone,
-    formats: [...profile.export.formats],
+    formats: [...deliveredFormats(profile.export)],
     recordCount: null,
     artifacts: [],
     warnings: [],

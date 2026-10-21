@@ -4,13 +4,15 @@ import { useProfileEditor } from './ProfileEditorState.js';
 import { router, Stack, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Copy, Group, Row, Screen, SectionHeader } from '../src/components/ui';
+import { Button, Copy, Group, Icon, Row, Screen, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { usePhoneData } from './DataPanel.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
-import { parseProfile, profileFromLink, uniqueProfileName } from '../core/profiles.js';
+import { parseProfile, profileFromLink, saveProfileDraft } from '../core/profiles.js';
 import { domains } from '../core/data.js';
+import { compatibleProfile } from '../core/profile-compatibility.js';
+import ProfileImportReview from './ProfileImportReview.js';
 
 /** @param {{data?:boolean}} props */
 export default function ProfileEditor({ data = false }) {
@@ -35,6 +37,8 @@ export default function ProfileEditor({ data = false }) {
               window: 'Export window',
               filename: 'Filename',
               folders: 'Folders',
+              writeMode: 'When files exist',
+              schedule: 'Schedule',
               cadence: 'Cadence',
               time: 'Preferred time',
               refresh: 'Today Refresh',
@@ -44,6 +48,7 @@ export default function ProfileEditor({ data = false }) {
   const phone = usePhoneData();
   const navigation = useNavigation();
   const [importText, setImportText] = useState('');
+  const [importExpanded, setImportExpanded] = useState(false);
   const disabled = phone.busy || working;
   usePreventRemove(
     (!data || Boolean(section)) && !saved && (dirty || working),
@@ -55,7 +60,6 @@ export default function ProfileEditor({ data = false }) {
       ]);
     },
   );
-  const save = useSaveProfile();
   useEffect(() => {
     if ((data && !section) || !saved || working) return;
     router.dismissTo({ pathname: '/profiles/[id]', params: { id: saved.id } });
@@ -78,8 +82,9 @@ export default function ProfileEditor({ data = false }) {
           {...(domain ? { domain } : {})}
           types={phone.types}
           permissions={phone.sourcePermissions}
+          isTracking={phone.isTracking}
+          onRecordingChange={(enabled) => void phone.run(() => phone.changeRecording(enabled))}
           onAuthorize={phone.reviewSourceAccess}
-          onOpenLocation={() => void run(() => save(true))}
           selection={draft.selection}
           onSelection={(selection) => setDraft({ ...draft, selection })}
           disabled={disabled}
@@ -88,42 +93,72 @@ export default function ProfileEditor({ data = false }) {
     );
   return (
     <Screen testID="profile-editor-screen" compact>
-      <Stack.Screen
-        options={{ title, ...(section ? { headerRight: renderSaveProfileButton } : {}) }}
-      />
+      <Stack.Screen options={{ title, headerRight: renderSaveProfileButton }} />
       <ErrorToast error={error} />
+      {!section && (
+        <Copy variant="caption" muted>
+          Name your profile, choose data and files, then save.
+        </Copy>
+      )}
       {!section && !session.id && !session.onSaved && (
         <>
-          <SectionHeader compact title="Import profile" />
-          <TextInput
-            testID="profile-import-input"
-            accessibilityLabel="Profile JSON or deep link"
-            placeholder="Paste profile JSON or myselfmd link"
-            editable={!disabled}
-            value={importText}
-            onChangeText={setImportText}
-            multiline
-            style={[
-              styles.input,
-              { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-            ]}
-          />
-          <Button
-            label="Review pasted profile"
-            disabled={disabled || !importText}
-            onPress={() =>
-              void run(async () => {
-                start(
-                  importText.trim().startsWith('myselfmd:')
-                    ? profileFromLink(importText.trim())
-                    : parseProfile(JSON.parse(importText)),
-                );
-                setImportText('');
-              })
-            }
-          />
+          <Group compact>
+            <Row
+              compact
+              testID="profile-import-toggle"
+              title="Import an existing profile"
+              subtitle="Use a shared link or profile JSON"
+              selected={importExpanded}
+              trailing={<Icon name={importExpanded ? 'chevron-up' : 'chevron-down'} size={16} />}
+              disabled={disabled}
+              onPress={() => setImportExpanded((value) => !value)}
+            />
+          </Group>
+          {importExpanded && (
+            <View style={styles.importFields}>
+              <TextInput
+                testID="profile-import-input"
+                accessibilityLabel="Profile JSON or deep link"
+                placeholder="Paste profile JSON or myselfmd link"
+                editable={!disabled}
+                value={importText}
+                onChangeText={setImportText}
+                multiline
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    color: colors.text,
+                  },
+                ]}
+              />
+              <Button
+                testID="profile-import-review"
+                filled
+                label="Review pasted profile"
+                disabled={
+                  disabled || !importText || !domains.every((d) => d in phone.sourcePermissions)
+                }
+                onPress={() =>
+                  void run(async () => {
+                    const review = compatibleProfile(
+                      /^(myselfmd:|https:)/.test(importText.trim())
+                        ? profileFromLink(importText.trim())
+                        : parseProfile(JSON.parse(importText)),
+                      phone.types,
+                    );
+                    start(review.profile, '', undefined, review);
+                    setImportText('');
+                    setImportExpanded(false);
+                  })
+                }
+              />
+            </View>
+          )}
         </>
       )}
+      {!section && session.compatibility && <ProfileImportReview review={session.compatibility} />}
       {(!section || section === 'name') && (
         <>
           {!section && <SectionHeader compact title="Profile name" />}
@@ -155,6 +190,7 @@ export default function ProfileEditor({ data = false }) {
       )}
       {(!section || section !== 'name') && (
         <ExportSettingsEditor
+          folderContext={phone.session}
           {...(section ? { section } : {})}
           {...(field ? { field } : {})}
           settings={draft.export}
@@ -170,13 +206,6 @@ export default function ProfileEditor({ data = false }) {
             Changes stay in this draft until you save. Automatic exports and credentials are managed
             on the saved profile.
           </Copy>
-          <Button
-            testID="profile-save"
-            busy={working}
-            label={working ? 'Saving…' : 'Save profile'}
-            disabled={disabled}
-            onPress={() => void run(() => save())}
-          />
           <Button
             testID="profile-cancel"
             label="Cancel"
@@ -195,33 +224,16 @@ function useSaveProfile() {
   /** @param {boolean} [location] */
   async function save(location = false) {
     if (!session || !phone.profiles) throw new Error('Open a profile to edit it.');
-    const parsed = parseProfile(draft);
     const state = phone.profiles;
     const id = session.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    if (session.id && !state.profiles.some((p) => p.id === id))
-      throw new Error('This profile no longer exists. Go back to return.');
-    const others = state.profiles.filter((p) => p.id !== id);
-    if (others.length >= 50) throw new Error('Keep at most 50 profiles.');
-    const savedProfile = {
-      ...parsed,
-      agentPermissions: session.id
-        ? state.profiles.find((p) => p.id === id)?.agentPermissions
-        : undefined,
-      id,
-      name: uniqueProfileName(parsed.name, others),
-      agentAccess: session.id
-        ? state.profiles.find((p) => p.id === id)?.agentAccess === true
-        : false,
-    };
-    await phone.changeProfiles({
-      ...state,
-      profiles: session.id
-        ? state.profiles.map((p) => (p.id === id ? savedProfile : p))
-        : [...state.profiles, savedProfile],
-    });
+    const next = saveProfileDraft(state, draft, id, Boolean(session.id));
+    await phone.changeProfiles(next);
     session.onSaved?.();
     setSaved({ id, location });
-    showToast({ message: `${savedProfile.name} saved.`, kind: 'success' });
+    showToast({
+      message: `${next.profiles.find((p) => p.id === id)?.name} saved.`,
+      kind: 'success',
+    });
   }
   return save;
 }
@@ -242,19 +254,28 @@ function SaveProfileButton() {
       accessibilityState={{ disabled, busy: working }}
       disabled={disabled}
       onPress={() => void run(() => save())}
-      style={[styles.saveAction, disabled && styles.disabled]}
+      style={[styles.saveAction, { backgroundColor: colors.accent }, disabled && styles.disabled]}
     >
-      <Copy style={[styles.saveLabel, { color: colors.accent }]}>
+      <Copy style={[styles.saveLabel, { color: colors.onAccent }]}>
         {working ? 'Saving…' : 'Save'}
       </Copy>
     </Pressable>
   );
 }
 const styles = StyleSheet.create({
+  importFields: { gap: 8 },
   fill: { flex: 1 },
   saveLabel: { fontWeight: '600' },
   disabled: { opacity: 0.45 },
-  saveAction: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
+  saveAction: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,

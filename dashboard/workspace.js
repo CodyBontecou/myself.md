@@ -1,7 +1,11 @@
 /** @typedef {{id:string,profileId:string,profileName:string,deviceId:string,day:string,format:string,schema?:string,bytes:number,created:number,shared:boolean}} StoredExport */
-/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>}} Profile */
+/** @typedef {{deviceId:string,profileId:string,name:string,shared:boolean,selection:Record<string,string[]>,agentPermissions?:import('../core/profiles.js').AgentPermissions,permissionsSynced?:boolean,cloudConfigured?:boolean,profile?:import('../core/profiles.js').ExportProfile,revision?:number,confirmedRevision?:number,lastSeen?:number,syncSupported?:boolean,domains?:import('../server/profile-sync.js').ProfileDomain[],requests?:import('../server/profile-sync.js').ProfileRequest[]}} Profile */
 /** @typedef {{client:string,blocked:boolean,lastSeen:number}} Agent */
-/** @typedef {{account:string,cloudStorage?:import('../core/cloud-allowance.js').CloudAllowance,exports:StoredExport[],profiles:Profile[],agents:Agent[],devices:{id:string,name:string}[]}} Workspace */
+/** Phone-app handoff for buying or managing storage; the dashboard never purchases.
+ * @typedef {{appLink:string,requiresUser:boolean,instructions:string,manageUrls:{ios:string,android:string}}} CloudHandoff */
+/** Same body as `GET /api/cloud/status`.
+ * @typedef {import('../core/cloud-allowance.js').CloudAllowance & {plans?:{id:string,label:string,capacityBytes:number,usPrice:{monthly:string,yearly:string}}[],handoff?:CloudHandoff}} CloudStorageStatus */
+/** @typedef {{account:string,accountProfile?:{name:string|null,email:string|null,picture:string|null}|null,cloudStorage?:CloudStorageStatus,exports:StoredExport[],profiles:Profile[],agents:Agent[],devices:{id:string,name:string}[]}} Workspace */
 /** @typedef {{records:{domain:string,type:string,source:string,start:string|null,end:string|null,native:unknown}[],nextCursor:string|null,manifest:Record<string,unknown>}} RecordPage */
 
 /** @param {Workspace} workspace @param {string} id */

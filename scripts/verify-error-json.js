@@ -1,9 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { errorJSON, errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 
 const cause = Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' });
@@ -15,8 +10,46 @@ assert.equal(parsed.error.cause.code, 'ECONNRESET');
 assert.equal(errorJSON(errorJSON(failure)), errorJSON(failure));
 assert.equal(errorMessage(failure), 'Upload failed');
 assert.equal(errorMessage(errorJSON(failure)), 'Upload failed');
+const lostConnection = new Error(
+  'fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)',
+);
+for (const value of [lostConnection, lostConnection.message, errorJSON(lostConnection)]) {
+  assert.equal(
+    errorMessage(value),
+    'We couldn’t connect. Check your internet connection and try again.',
+    'Native connection failures must give actionable feedback instead of Swift implementation details.',
+  );
+}
+assert.equal(JSON.parse(errorJSON(lostConnection)).error.message, lostConnection.message);
+for (const message of [
+  'Failed to fetch',
+  'fetch failed',
+  'Network request failed',
+  'Load failed',
+  'TypeError: Network request failed',
+  'The Internet connection appears to be offline.',
+]) {
+  assert.equal(
+    errorMessage(new Error(message)),
+    'We couldn’t connect. Check your internet connection and try again.',
+  );
+}
+assert.equal(errorMessage(new Error('Network permission denied')), 'Network permission denied');
+assert.equal(
+  errorMessage(new Error('Purchase verification failed')),
+  'Purchase verification failed',
+);
 assert.equal(errorMessage('Validation failed'), 'Validation failed');
 assert.equal(errorMessage(''), '');
+for (const message of ['', '   ']) {
+  const native = Object.assign(new Error(message), { code: 'E_UNKNOWN' });
+  assert.equal(
+    errorMessage(errorJSON(native)),
+    'Something went wrong. Please try again. (E_UNKNOWN)',
+  );
+  assert.equal(errorMessage(native), errorMessage(errorJSON(native)));
+}
+assert.equal(errorMessage(new Error('')), 'Something went wrong. Please try again.');
 assert.equal(errorMessage('{"error":"Server unavailable"}'), 'Server unavailable');
 assert.ok(!errorMessage(new Error('Bearer fixture-secret')).includes('fixture-secret'));
 assert.equal(
@@ -46,6 +79,10 @@ assert.equal(
   ).error.cause.message,
   'Broken error getter',
 );
+await assert.rejects(readJSONResponse(Response.json({ error: '' }, { status: 400 })), (error) => {
+  assert.equal(errorMessage(errorJSON(error)), 'HTTP 400');
+  return true;
+});
 await assert.rejects(
   readJSONResponse(
     Response.json(
@@ -85,51 +122,6 @@ assert.ok(
   ),
 );
 
-// Compile and execute the actual Foundation-only native formatter, without an app or network request.
-const directory = await mkdtemp(join(tmpdir(), 'gripe-error-json-'));
-try {
-  const source = await readFile('modules/gripe/ios/vendor/Internal/GripeAPIClient.swift', 'utf8');
-  const start = source.indexOf('enum GripeError:');
-  const end = source.indexOf('final class GripeAPIClient');
-  assert.ok(start >= 0 && end > start);
-  const file = join(directory, 'main.swift');
-  await writeFile(
-    file,
-    `import Foundation\n${source.slice(start, end)}\n
-let underlying = NSError(domain: NSURLErrorDomain, code: -1005, userInfo: [NSLocalizedDescriptionKey: "Connection lost", NSUnderlyingErrorKey: NSError(domain: "Transport", code: 54)])
-let envelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.network(underlying)).utf8)) as! [String: Any]
-let network = envelope["error"] as! [String: Any]
-assert(network["code"] as? String == "network_error")
-assert(network["retryable"] as? Bool == true)
-let cause = network["cause"] as! [String: Any]
-assert(cause["domain"] as? String == NSURLErrorDomain)
-assert(cause["code"] as? Int == -1005)
-assert((cause["cause"] as! [String: Any])["code"] as? Int == 54)
-let serverEnvelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.serverError(503, "{\\"error\\":\\"r2_failure\\"}")).utf8)) as! [String: Any]
-let server = serverEnvelope["error"] as! [String: Any]
-assert(server["status"] as? Int == 503)
-assert((server["response"] as! [String: Any])["error"] as? String == "r2_failure")
-assert(!GripeErrorDetails.json(GripeError.serverError(500, "fixture-secret"), redacting: "fixture-secret").contains("fixture-secret"))
-let rejectedEnvelope = try JSONSerialization.jsonObject(with: Data(GripeErrorDetails.json(GripeError.unauthorized).utf8)) as! [String: Any]
-let rejected = rejectedEnvelope["error"] as! [String: Any]
-assert(rejected["retryable"] as? Bool == false)
-let large = GripeErrorDetails.json(GripeError.serverError(503, String(repeating: "x", count: 100000)))
-assert(large.utf8.count <= 16000)
-let largeEnvelope = try JSONSerialization.jsonObject(with: Data(large.utf8)) as! [String: Any]
-assert((largeEnvelope["error"] as! [String: Any])["truncated"] as? Bool == true)
-print("Native error JSON passed")
-`,
-  );
-  const result = await promisify(execFile)('xcrun', [
-    'swift',
-    '-module-cache-path',
-    join(directory, 'cache'),
-    file,
-  ]);
-  assert.ok(result.stdout.includes('Native error JSON passed'));
-} finally {
-  await rm(directory, { recursive: true, force: true });
-}
 console.log(
-  'Error JSON checks passed: actual causes and status, native iOS errors, valid bounded JSON, legacy messages, server payloads and credential projection. No live report or task started.',
+  'Error JSON checks passed: actual causes and status, valid bounded JSON, legacy messages, server payloads and credential projection. No live report or task started.',
 );

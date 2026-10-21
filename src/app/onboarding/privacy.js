@@ -1,15 +1,14 @@
 import { router } from 'expo-router';
-import { View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import OnboardingFrame, { OnboardingButton } from '../../components/OnboardingFrame';
-import { Row } from '../../components/ui';
-import PrivacyLinks from '../../components/PrivacyLinks';
+import { Copy, Row } from '../../components/ui';
 
 export default function Privacy() {
   return (
     <OnboardingFrame
       testID="onboarding-privacy-screen"
       title="You choose what to share."
-      body="Choose what goes into your files and who can access your data. This introduction doesn’t enable sharing."
+      body="You decide what to export and who gets access. Your source data stays private during setup."
       footer={
         <OnboardingButton
           testID="onboarding-privacy-continue"
@@ -19,24 +18,37 @@ export default function Privacy() {
       }
     >
       <View>
+        <Row title="Choose the data" subtitle="Pick data types and dates in your profile." />
         <Row
-          title="Choose the data"
-          subtitle="Set data types, date ranges, and export destinations in a profile."
-        />
-        <Row
-          title="Allow access when ready"
-          subtitle="Your phone asks for permission when a source needs it."
+          title="Allow access when you’re ready"
+          subtitle="Your phone asks before accessing a data source."
         />
         <Row
           title="Disconnect anytime"
-          subtitle="Agent access and scheduled exports stop. Previously shared files stay at their destination."
+          subtitle="Stop future access. Already shared copies stay with the recipient."
         />
-        <Row
-          title="AI providers keep their own copies"
-          subtitle="Revoking access cannot recall shared results. Provider retention and training depend on its policy and your settings."
-        />
-        <PrivacyLinks />
+        <Pressable
+          testID="privacy-policy-link"
+          accessibilityRole="link"
+          onPress={() => router.push('/privacy')}
+          style={styles.policyLink}
+        >
+          <Copy variant="caption" muted style={styles.policyLabel}>
+            Privacy policy
+          </Copy>
+        </Pressable>
       </View>
     </OnboardingFrame>
   );
 }
+
+const styles = StyleSheet.create({
+  policyLink: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    marginTop: 12,
+  },
+  policyLabel: { textDecorationLine: 'underline' },
+});

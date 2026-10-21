@@ -28,6 +28,7 @@ async function unavailable() {
   );
 }
 const refreshLocation = async () => ({
+  notificationPermission: 'synthetic',
   backgroundGranted: false,
   permission: 'Synthetic location access',
   tracking: false,
@@ -75,10 +76,13 @@ export default function QaPhoneProvider({ children }) {
     <PhoneStateProvider
       value={{
         accountRevision: fixture.revision,
+        deletionPending: false,
+        deletionConfirmed: false,
         deletionStatusUrl: '',
         incoming: null,
         dismissIncoming: () => {},
-        session: null,
+        session: fixture.accountSignedIn ? qaSession : null,
+        accountProfile: null,
         connected: false,
         permission: null,
         requestPermission: async () => {
@@ -97,6 +101,7 @@ export default function QaPhoneProvider({ children }) {
         setLink,
         scan: () => setError(errorJSON('Pairing requires a normal build.')),
         confirm: unavailable,
+        reauthenticateDeletion: unavailable,
         refresh: unavailable,
         disconnect: unavailable,
         deleteAccount: unavailable,
@@ -105,7 +110,7 @@ export default function QaPhoneProvider({ children }) {
         changeAccount: () => {},
         switchConnection: unavailable,
         signInAccount: unavailable,
-        syncAccount: unavailable,
+        reauthenticateAccount: unavailable,
         signIn: unavailable,
       }}
     >
@@ -125,9 +130,8 @@ export default function QaPhoneProvider({ children }) {
           busy,
           proposal: null,
           setProposal: () => {},
-          grants: { health: false, time: false, location: false },
-          isTracking: false,
-          locationInfo: 'Synthetic data: recording off, 0 location points.',
+          isTracking: fixture.scenario === 'location-tracking',
+          locationInfo: `Synthetic data: recording ${fixture.scenario === 'location-tracking' ? 'on' : 'off'}, 0 location points.`,
           notes: {
             health: 'Synthetic Health catalog',
             time: 'Synthetic Screen Time catalog',
@@ -142,7 +146,6 @@ export default function QaPhoneProvider({ children }) {
           reviewSourceAccess,
           message,
           run,
-          changeGrant: unavailable,
           changeRecording: unavailable,
           changeProfiles,
           setMessage,

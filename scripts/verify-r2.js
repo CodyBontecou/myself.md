@@ -1,3 +1,4 @@
+import { verifyCloudWrites } from './cloud-write-fixture.js';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
@@ -72,33 +73,32 @@ try {
   assert.deepEqual((await store.page('alice', legacy, 0, 50)).records, [record]);
   await assert.rejects(store.page('bob', legacy, 0, 50));
   await assert.rejects(store.page('alice', legacy, 0, 50, true));
-  store.access('alice', 'phone', profile, true);
+  store.syncAgentPermissions('alice', 'phone', [{ ...profile, agentAccess: true }]);
   store.objects = {
     ...objects,
     async get(k) {
       const result = await objects.get(k);
-      store.setSharing('alice', 'phone', profile.id, false);
+      store.syncAgentPermissions('alice', 'phone', [{ ...profile, agentAccess: false }]);
       return result;
     },
   };
   await assert.rejects(store.page('alice', legacy, 0, 50, true), /not found/);
-  store.access('alice', 'phone', profile, true);
+  store.syncAgentPermissions('alice', 'phone', [{ ...profile, agentAccess: true }]);
   store.objects = {
     ...objects,
     async get(k) {
       const result = await objects.get(k);
-      store.access(
-        'alice',
-        'phone',
-        { ...profile, selection: { health: [], time: [], location: [] } },
-        true,
-      );
+      store.syncAgentPermissions('alice', 'phone', [{ ...profile, agentAccess: false }]);
       return result;
     },
   };
-  assert.equal((await store.page('alice', legacy, 0, 50, true)).records.length, 0);
+  await assert.rejects(
+    store.page('alice', legacy, 0, 50, true),
+    /not found/,
+    'Source revocation during object reads denies the result',
+  );
   store.objects = objects;
-  store.access('alice', 'phone', profile, true);
+  store.syncAgentPermissions('alice', 'phone', [{ ...profile, agentAccess: true }]);
   const replacement = begin();
   const results = await Promise.all([commit(replacement), commit(replacement)]);
   assert.equal(results.length, 2);
@@ -161,12 +161,16 @@ try {
   await assert.rejects(store.delete('alice', replacement), /deletion failed/);
   assert.equal(store.list('alice').length, 1);
   fixture.state.failDelete = false;
-  // Expiry removes visibility immediately and queues physical deletion.
+  // Age does not remove visibility or enqueue physical deletion.
   store.db
     .prepare('UPDATE exports SET created=? WHERE id=?')
     .run(Date.now() - 31 * 86400000, replacement);
-  assert.equal(store.list('alice').length, 0);
+  assert.equal(store.list('alice').length, 1);
   await store.sweepObjects();
+  assert.deepEqual((await store.page('alice', replacement, 0, 50)).records, [record]);
+  assert.equal(fixture.files.size, 1);
+  await store.delete('alice', replacement);
+  assert.equal(store.list('alice').length, 0);
   assert.equal(fixture.files.size, 0);
   const restored = begin();
   await commit(restored);
@@ -183,6 +187,8 @@ try {
   console.log(
     'R2: real S3 SDK signing/HTTP, encrypted backfill verification, failure preservation, restart, tenant isolation, in-flight grant/token revocation, concurrent retries, quotas, orphan recovery, retention, deletion failure and SQLite rollback passed.',
   );
+  store.objects = objects;
+  await verifyCloudWrites(store);
 } finally {
   store.db.close();
   await new Promise((resolve) => fixture.server.close(resolve));

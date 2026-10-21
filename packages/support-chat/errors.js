@@ -130,7 +130,18 @@ export function errorMessage(value) {
         /* Ordinary validation messages are already readable. */
       }
     }
-    return describe(value, new Set(), 0).message;
+    const details = describe(value, new Set(), 0);
+    if (
+      /^(?:TypeError:\s*)?(?:failed to fetch|fetch failed|network request failed|load failed)\b/i.test(
+        details.message.trim(),
+      ) ||
+      /\b(?:the network connection was lost|the internet connection appears to be offline)\b/i.test(
+        details.message,
+      )
+    )
+      return 'We couldn’t connect. Check your internet connection and try again.';
+    if (details.message.trim()) return details.message;
+    return `Something went wrong. Please try again.${details.code !== undefined && String(details.code).trim() ? ` (${details.code})` : ''}`;
   } catch {
     return 'Something went wrong. Please try again.';
   }
@@ -141,9 +152,9 @@ export function errorMessage(value) {
 function responseError(status, response) {
   const body = /** @type {Record<string,unknown>|null} */ (response);
   const message =
-    typeof body?.error === 'string'
+    typeof body?.error === 'string' && body.error.trim()
       ? body.error
-      : typeof body?.message === 'string'
+      : typeof body?.message === 'string' && body.message.trim()
         ? body.message
         : `HTTP ${status}`;
   return Object.assign(new Error(message), {

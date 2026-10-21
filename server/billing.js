@@ -15,4 +15,4 @@ const service = createBillingService({
     billing.unlock(subject, purchase);
   },
 });
-export const { billingApi, refreshEntitlement } = service;
+export const { billingApi, refreshEntitlement, configureCloud: configureBillingCloud } = service;

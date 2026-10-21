@@ -34,6 +34,32 @@
       "ios": {
         "buildConfiguration": "Debug"
       }
+    },
+    "beta": {
+      "extends": "production",
+      "distribution": "store",
+      "channel": "beta",
+      "autoIncrement": true,
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "beta": {
+      "ios": {
+        "ascAppId": "6821601165",
+        "appleTeamId": "67KC823C9A"
+      },
+      "android": {
+        "applicationId": "com.myself.md",
+        "track": "internal",
+        "releaseStatus": "draft",
+        "changesNotSentForReview": true
+      }
     }
   }
 }

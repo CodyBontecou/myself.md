@@ -1,0 +1,37 @@
+{
+  "voice": "af_bella",
+  "model": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "lines": [
+    { "start": 0.08, "end": 1.43, "text": "Your data. Your agent.", "deliverySpeed": 1.18 },
+    { "start": 1.7, "end": 2.95, "text": "Make it yours!", "deliverySpeed": 1.1 },
+    { "start": 3.25, "end": 4.8, "text": "Pick your steps.", "deliverySpeed": 1.1 },
+    { "start": 5.4, "end": 6.75, "text": "Add your app time.", "deliverySpeed": 1.15 },
+    {
+      "start": 7.15,
+      "end": 9.85,
+      "text": "Choose your files. Save your profile!",
+      "deliverySpeed": 1.15
+    },
+    {
+      "start": 10.18,
+      "end": 12.4,
+      "text": "Give your agent the green light.",
+      "deliverySpeed": 1.15
+    },
+    { "start": 13.65, "end": 15.9, "text": "We're connected! Ask away.", "deliverySpeed": 1.08 },
+    { "start": 18.25, "end": 18.85, "text": "Wow!", "deliverySpeed": 1 },
+    {
+      "start": 18.95,
+      "end": 21.8,
+      "text": "Sixty-four thousand, nine hundred eighty steps!",
+      "deliverySpeed": 1.1
+    },
+    {
+      "start": 21.9,
+      "end": 24.0,
+      "text": "Five hours, fifty-two minutes in apps.",
+      "deliverySpeed": 1.15
+    },
+    { "start": 24.25, "end": 25.9, "text": "Myself dot M D.", "deliverySpeed": 1.05 }
+  ]
+}

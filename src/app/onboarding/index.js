@@ -1,3 +1,4 @@
+import { AnalyticsConsent } from '../../../client/AnalyticsControls.js';
 import { router } from 'expo-router';
 import { View } from 'react-native';
 import OnboardingFrame, { OnboardingButton } from '../../components/OnboardingFrame';
@@ -18,6 +19,7 @@ export default function Welcome() {
       }
     >
       <View>
+        <AnalyticsConsent />
         <Row title="Health" subtitle="Sleep, activity, and other health data" />
         <Row title="Screen time" subtitle="App and website usage" />
         <Row title="Location" subtitle="Places recorded by your phone" />

@@ -1,9 +1,10 @@
+import { trackAnalytics } from './analytics.js';
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { qaEnabled, qaSnapshot, updateQa } from './qa-runtime.js';
 import Storage from 'expo-sqlite/kv-store';
 
 const key = 'agent-bridge-onboarding-v1';
-/** @typedef {'/profiles'|'/settings/connections'|'/pair'} Destination */
+/** @typedef {'/profiles'|`/profiles/${string}`|'/pair'} Destination */
 const Context = createContext(
   /** @type {{complete:boolean,destination:Destination,error:string,finish:(destination:Destination)=>void,resetDestination:()=>void}|null} */ (
     null
@@ -30,6 +31,7 @@ export function OnboardingProvider({ children }) {
     try {
       if (qaEnabled) updateQa({ onboarding: true });
       else Storage.setItemSync(key, 'complete');
+      trackAnalytics('onboarding_completed');
       setDestination(target);
       setStatus({ complete: true, error: '' });
     } catch {

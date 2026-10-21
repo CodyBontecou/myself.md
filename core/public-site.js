@@ -1,27 +1,66 @@
-import { freeExports } from './billing.js';
+import { documentationGuides } from './documentation.js';
+import { exportSchemas } from './export-schemas.js';
+import { serviceTerms } from './terms.js';
+import { freeExports, lifetimePurchaseGuide } from './billing.js';
 import { privacyPolicy } from './privacy.js';
+import { cloudPlans } from './cloud-plans.js';
+import { cloudRetentionDays, lifetimeCloudBytes } from './cloud-allowance.js';
+import { healthGuides } from './health-guides.js';
+import { projectIdentity } from './project-identity.js';
+
+const includedCloud = `${lifetimeCloudBytes / 1_000_000} MB`;
+
+export const agentSetupPrompt = 'Set up myself.md using https://myself.md/llms.txt';
+
+export const smitheryListingUrl = 'https://smithery.ai/servers/cody-82px/myself-md';
+
+export const homepageOverview = {
+  definition:
+    'myself.md is an open-source iOS and Android app that exports selected health, screen time and recorded location data to files you control. Compatible AI assistants can query the data you approve through MCP.',
+  question: 'When should I use myself.md?',
+  answer:
+    'Use myself.md to export your personal records, explore sleep and activity patterns with an AI assistant, understand screen-time habits, or work with location points you chose to record. Choose which data to share and which profiles agents can access.',
+  limitations:
+    'Supported sources vary by platform. Live phone queries require a reachable installed app and your approval. Public App Store and Google Play downloads are coming soon.',
+};
 
 export const publicNavigation = [
   { label: 'Home', href: '/' },
+  { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: '/docs' },
-  { label: 'Pricing', href: '/#pricing' },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'FAQ', href: '/faq' },
   { label: 'About', href: '/about' },
   { label: 'Contact', href: '/contact' },
   { label: 'Privacy', href: '/privacy' },
 ];
 
+const showcaseGuide = `## Recorded walkthroughs
+
+- [Choose your context](https://myself.md/dashboard/showcase/selection.mp4): a silent recording of selecting data types and JSON/JSONL settings in an isolated app QA session.
+- [Approve agent access](https://myself.md/dashboard/showcase/approval.mp4): a silent recording of phone-owner approval in an isolated QA profile. Agents cannot approve themselves.
+- [From phone to agent](https://myself.md/dashboard/showcase/overview.mp4): a silent film combining app setup footage with an illustrated replay of an actual MCP run using synthetic phone data. The agent UI is illustrative.
+
+Recordings date from October 2026; app UI may differ from the current release. Browsers provide native playback controls, and agents can retrieve these public media URLs without authentication. Watching a recording does not initiate account setup or change permissions.
+`;
+
 const home = `# myself.md — Personal data for AI agents
 
-myself.md brings your health, screen time and recorded location data together in files you control. Create export profiles that select data types, date ranges and destinations. Use local files, your own HTTPS endpoint, or the paired cloud service. Native sources differ between iOS and Android, and operating-system permissions still apply.
+${homepageOverview.definition}
 
-## When to use myself.md
+Create export profiles that select data types, date ranges and destinations. Use local files, your own HTTPS endpoint, or the paired cloud service. Operating-system permissions still apply.
 
-Use myself.md when a person wants an AI agent to analyze their approved health records, understand screen-time patterns, or work with location points they chose to record. Use the public dataset explorer to preview fictional records before connecting any account. Never treat the demo as a real person's health data or infer permission from an empty result.
+## ${homepageOverview.question}
 
-## Try the free public sandbox
+${homepageOverview.answer}
 
-The demo at https://myself.md/demo is a free, read-only sandbox with fictional datasets and example exports. It needs no account, API key or sales conversation. Preview supported data at https://myself.md/datasets. Mobile store distribution is coming soon; source and self-hosting instructions are available at https://github.com/CodyBontecou/myself.md.
+${homepageOverview.limitations}
+
+Do not infer permission from an empty result.
+
+## Explore supported datasets
+
+Preview supported data at https://myself.md/datasets. Mobile store distribution is coming soon; source and self-hosting instructions are available at https://github.com/CodyBontecou/myself.md.
 
 ## JavaScript integration
 
@@ -29,13 +68,55 @@ Install the official SDK with npm install myself-md-sdk. Package: https://www.np
 
 ## Connect an AI agent
 
+Give your agent this prompt: ${agentSetupPrompt}
+
+Start with public discovery: GET https://myself.md/v1/dataset-catalog and GET https://myself.md/v1/docs need no account. Read https://myself.md/docs/reference for exact request schemas and tool availability in your client. For private data, discover connected phones and approved profiles with get_phone_data_catalog, request a bounded query with query_phone_data, then poll get_phone_request until it reaches a terminal state. Phone query states are queued, running, complete and failed; use records only after complete, and stop if the request is expired or missing. Other owner-reviewed operations may require awaiting_user handoffs or report cancelled outcomes; follow returned pagination cursors and capture warnings. Do not retry a mutation blindly after a lost response. Stored cloud exports use list_cloud_exports and read_cloud_export, subject to existing profile and source grants. If a restricted client does not expose an operation, report that limitation and use its documented owner handoff.
+
 Add https://myself.md/mcp as a remote MCP server in a compatible client. OAuth 2.0 signs you in and asks for consent. Pair your phone and approve specific profiles and data grants before requesting private records. Agents cannot grant themselves access. Read the developer guide at https://myself.md/docs and the privacy policy at https://myself.md/privacy.
 
+Find myself.md in the Smithery MCP directory: ${smitheryListingUrl}.
+
+${showcaseGuide}
 ## Your data, on your terms
 
-Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and expires after 30 days. The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
+Review sharing permissions, revoke future reads, and inspect activity in the phone app or authenticated dashboard. Cloud export content is encrypted at rest and kept until you delete or replace it; the only exception is the ${cloudRetentionDays}-day lapse rule when paid cloud storage ends above the included allowance (see Pricing). The service decrypts approved records for authorized reads; providers receiving those records apply their own retention policies. Revocation cannot recall copies already delivered to another service.
 `;
 export const publicFAQs = [
+  {
+    question: 'What is myself.md?',
+    answer:
+      'myself.md is an open-source app for iOS and Android that exports selected health, screen time and recorded location data to files you control. Its MCP server lets compatible AI assistants query approved phone profiles or read authorized cloud exports. You choose the data types, date ranges, destinations and agent permissions.',
+  },
+  {
+    question: 'Is myself.md the same project as self.md?',
+    answer:
+      'No. The name myself.md includes “my”. This phone data export and remote MCP project is maintained by Cody Bontecou at https://github.com/CodyBontecou/myself.md. Its official website is https://myself.md/ and its MCP endpoint is https://myself.md/mcp. self.md is a separate project; its pages and images do not document myself.md.',
+  },
+  {
+    question: 'Which sources document myself.md setup and permissions?',
+    answer:
+      'Use https://myself.md/docs for connection and pairing, https://myself.md/datasets/health for supported health records and limitations, and https://myself.md/privacy for consent, retention and revocation. The source is https://github.com/CodyBontecou/myself.md. A listing for another apple-health-mcp or health-export-mcp project is not documentation for myself.md. Public store downloads are coming soon; live phone reads require an installed app or authorized test build.',
+  },
+  {
+    question: 'How can I connect Apple Health to an AI assistant with myself.md?',
+    answer:
+      'On iPhone, myself.md reads supported Apple Health data through HealthKit after you grant operating-system permission. Select health types and a date range in an export profile. For agent queries, sign in, pair the phone, approve the profile’s agent access and connect https://myself.md/mcp in a compatible client. The phone must be available to complete a live query; an authorized stored cloud export is a separate read path.',
+  },
+  {
+    question: 'Does myself.md support Android Health Connect?',
+    answer:
+      'Yes. The Android app reads supported Health Connect records after you grant permission. Select the records and date range in a profile, then export to files or approve access for a compatible MCP assistant. Historical access may be limited to 30 days without additional permission, and exercise routes can require separate consent. Check the public health dataset catalog for supported types and limitations.',
+  },
+  {
+    question: 'Can Claude or Codex use my health data through myself.md?',
+    answer:
+      'Compatible Claude and Codex clients can connect to https://myself.md/mcp using OAuth. Sign-in alone grants no health records: pair your phone and approve specific profiles and data grants. Ask the assistant to discover available data, query an approved profile and wait for completion. Client tool availability varies; the setup guide documents handoffs and limitations. You can revoke future reads, but cannot recall copies already delivered to an AI provider.',
+  },
+  {
+    question: 'Where can I install myself.md, and does the phone need to stay open?',
+    answer:
+      'Public App Store and Google Play downloads are coming soon. Live phone queries require an installed app or authorized test build; developers can use the source setup instructions on GitHub. Keep the app open and connected while verifying a live query, with the required operating-system permissions enabled. You can explore the public dataset catalog without installing anything. Reading an already-approved cloud export is a separate path that does not require a live phone query.',
+  },
   {
     question: 'Can an agent access my data without approval?',
     answer:
@@ -56,24 +137,77 @@ export const publicFAQs = [
     answer:
       'Review and revoke sharing permissions in the phone app or authenticated dashboard. Revocation prevents future reads but cannot recall copies already delivered.',
   },
+  {
+    question: 'What happens to my cloud files if a storage subscription ends?',
+    answer: `Paid storage continues while your store subscription is active or in the store’s billing grace period. If paid storage ends and your exports exceed your remaining allowance (${includedCloud} with Lifetime, zero otherwise), you have ${cloudRetentionDays} days to resubscribe or delete files. Reminders arrive by push notification and email when this starts, 7 days before and 1 day before. After ${cloudRetentionDays} days, the oldest cloud exports are deleted until usage fits that remaining allowance. Phone files are not affected.`,
+  },
 ];
 export const publicLifetimePrice = '$19.99';
+/** Public cloud storage rows: the included Lifetime allowance followed by the paid tiers in `cloud-plans.js`. */
 export const publicCloudPlans = [
   {
-    capacity: '100 MB',
+    id: 'included',
+    capacity: includedCloud,
     price: 'Included with Lifetime',
     billing: 'No recurring charge',
   },
-  { capacity: '1 GB', price: '$1.99 / month', billing: 'or $19.99 / year' },
-  { capacity: '10 GB', price: '$4.99 / month', billing: 'or $49.99 / year' },
+  ...cloudPlans.map((plan) => ({
+    id: plan.id,
+    capacity: plan.label,
+    price: `${plan.usPrice.monthly} / month`,
+    billing: `or ${plan.usPrice.yearly} / year`,
+  })),
 ];
-const publicPricing = `The public demo and dataset catalog are free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The planned US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Mobile store distribution is coming soon. Eligible existing health.md and iso.me purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Paid hosted storage subscriptions are not implemented. Optional cloud storage provides a hosted MCP server for agents and requires an account. Proposed cloud plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. These plans are coming soon; the prices are planned US prices and checkout will use localized store pricing.`;
+const purchaseGuide = lifetimePurchaseGuide();
+const publicPricing = `The dataset catalog is free. The app includes ${freeExports} free exports or queries, followed by an optional one-time lifetime unlock. The US price is ${publicLifetimePrice}; actual checkout uses the localized price returned by Apple or Google. Open the installed app for free at myselfmd:// or open Lifetime checkout at ${purchaseGuide.appLink}. ${purchaseGuide.instructions} ${purchaseGuide.accountInstructions} ${purchaseGuide.availability} Opening the app does not confirm payment or grant access. Eligible existing health.md, iso.me and time.md purchasers can claim lifetime access after purchase verification. Lifetime access removes export/query usage limits and does not include unlimited hosted storage. Optional cloud storage keeps encrypted exports for your account, provides a hosted MCP server for agents and requires an account. Cloud storage plans: ${publicCloudPlans.map((plan) => `${plan.capacity}: ${plan.price} (${plan.billing})`).join('; ')}. myself.md Cloud is a 100 GB auto-renewing App Store or Google Play subscription bought in the installed app at myselfmd://cloud-storage. Cloud includes app access while subscribed, with no Lifetime purchase required. Its capacity replaces any included ${includedCloud}; capacities do not add up. Prices are US prices; checkout shows the localized store price and billing period. A subscription renews automatically unless cancelled at least 24 hours before the current period ends; manage or cancel it in App Store or Google Play subscription settings, and request refunds from Apple or Google. Storage continues during the store's billing grace period. If paid storage ends while usage exceeds the remaining allowance (${includedCloud} with Lifetime, zero otherwise), the files stay for ${cloudRetentionDays} days with push and email reminders; resubscribe or delete files before then, or the oldest exports are deleted until usage fits the remaining allowance. A refunded Lifetime purchase deletes all cloud exports only if no active Cloud subscription remains. The dashboard and agents cannot purchase storage; they hand off to the app. Subscription terms: https://myself.md/terms.`;
 const faqMarkdown = publicFAQs.map((item) => `## ${item.question}\n\n${item.answer}`).join('\n\n');
+const localAgentSetupGuide = `## Codex CLI setup
+
+If the owner uses the Codex CLI, first inspect existing connections with \`codex mcp list\`. Reuse an existing myself.md entry; otherwise add the remote server:
+
+\`\`\`sh
+codex mcp add myself --url https://myself.md/mcp
+\`\`\`
+
+If that entry still requires OAuth, start sign-in and let the owner complete the browser flow:
+
+\`\`\`sh
+codex mcp login myself --scopes myselfmd,offline_access
+\`\`\`
+
+Use the existing entry's name instead of myself when it differs. After authorization, verify the server's tools are available in the intended session; configuration alone is not a successful connection. Other clients use their supported remote MCP settings. See [official Codex MCP instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+`;
+const phoneSetupGuide = `## Pair a phone and approve a profile
+
+Live reads require an installed myself.md app. Public App Store and Google Play downloads are coming soon. If the owner has no installed app or authorized test-build access, explain that prerequisite and offer public discovery or already-approved cloud exports. For a developer installation, use the [source setup instructions](https://github.com/CodyBontecou/myself.md#run-locally); do not invent a store link or treat the CLI as a phone installer.
+
+1. Verify the intended account using get_account_logins where exposed, then list_connected_phones. Reuse the intended paired phone. If an existing connection points to the wrong account, ask the owner to correct it before reading records; do not silently switch accounts.
+2. If a phone still needs pairing and tools/list exposes create_phone_pairing, call it once. Show its returned pairingUrl or QR to the owner. On the installed app, open **Settings → Agent connection**, scan the QR or paste the pairing link, sign in to the same account and confirm. If sign-in returns to **Account**, go Back to the retained **Confirm connection** screen and finish there. On the same phone, the pairing page's **Open in myself.md** button opens the app. Pairing links expire after five minutes and are single-use; keep the link private.
+3. Where exposed, poll get_pairing_status with the returned pairingId, then refresh list_connected_phones and get_phone_data_catalog. Verify the returned device ID identifies the intended phone in that refreshed list and catalog; a non-null device alone is not enough. A displayed QR, browser sign-in or opened app is not a confirmed pairing. For an expired uncompleted link, create a new pairing handoff rather than reusing it.
+4. Open **Profiles**, select the intended profile, and review **Data selection**. Select only the types needed for the task and complete the app's OS/provider permission prompts. On Android, Health Connect may list additional categories; enable only the intended types rather than Allow all. If an earlier denial prevents a new prompt, the owner must re-enable that access in Health Connect → App permissions for the installed myself.md app. Under that saved profile's **Agent permissions**, approve only the relevant Health, Screen time or Location permission. Saving a profile or selecting a type does not grant agent access. Keep the app open while verifying a live query.
+5. Refresh get_phone_data_catalog and confirm the intended phone is online, the saved profile exists, and its selections and individual agentPermissions cover the request before querying. If catalog is null, there is no discoverable live profile yet; do not guess IDs or enqueue a query.
+
+Some directory connections use the separate read-only resource https://myself.md/mcp/chatgpt. Reuse that connection for its approved reads. It does not expose pairing-ticket creation or profile proposals. If those tools are absent, explain the owner step: pair using a compatible full MCP client connected to https://myself.md/mcp, then return to this connection and rediscover. Both clients and the phone must use the same intended account; verify that identity before continuing. Do not change the existing connector's resource or try hidden tool names to bypass its restrictions. Owners always control profile and OS permissions in the phone app.
+`;
 const overview = `# Get started
 
-Connect your AI assistant to the health, screen time and location data you choose to share. Or use the SDK and CLI to build your own integration.
+Connect the phone data you choose to share to a compatible AI assistant through MCP (Model Context Protocol).
+
+## Choose your starting point
+
+Already connected? Follow [MCP workflows](/docs/mcp-workflows) for filtered discovery, raw records or scalar summaries, bounded waiting, cloud pagination and owner-reviewed file exports.
+
+Public App Store and Google Play downloads are coming soon. Live queries require an installed myself.md app or authorized test build. Developers can follow the [source setup instructions](https://github.com/CodyBontecou/myself.md#run-locally). The CLI connects to the service; it does not install the phone app.
+
+- No installed app: explore the [supported datasets](/datasets), without an account or API key.
+- Installed app: connect your assistant below, pair the same account and approve a profile on the phone.
+- Existing approved cloud export: ask your assistant to list authorized exports and read the chosen file; this does not require a live phone query.
+
+For guided agent setup, use this prompt: ${agentSetupPrompt}
 
 ## Connect an AI assistant
+
+Directory listing: ${smitheryListingUrl}.
 
 Add this URL as a remote MCP server in your assistant’s settings. MCP is the connection that lets an assistant use myself.md tools.
 
@@ -85,7 +219,30 @@ https://myself.md/mcp
 2. Pair your phone with the same account.
 3. Approve the profiles and data types you want to share.
 
-Your assistant can read only what you approve. Phone reads may need the app open and operating-system permissions enabled.
+Your assistant can read only what you approve. Keep the phone app open and connected while verifying a live query, with the required operating-system permissions enabled.
+
+## Verify your first health question
+
+Ask: “Discover my approved phone profiles and available health types. Tell me which source, profile and date range you can read before querying.” Confirm the intended phone and individual Health agent permission. Then ask one bounded question, such as the step records for one explicit day and time zone. Wait for the request to complete and check its returned source, interval and pagination before interpreting the records. Empty records do not prove zero activity or authorization.
+
+On iPhone, Apple Health reads use HealthKit. Select only the intended types and grant OS read permission; HealthKit does not disclose read denial. On Android, use Health Connect and enable only the intended read categories, rather than Allow all; older history and exercise routes may require additional consent. Follow the [health examples and platform limits](/datasets/health). Compatible Claude and Codex clients use the same endpoint above; connector tool availability varies.
+
+## Source-specific connection guides
+
+${healthGuides.map((guide) => `- [${guide.title}](/docs/${guide.slug}): ${guide.description}`).join('\n')}
+
+${showcaseGuide}
+
+${localAgentSetupGuide}
+
+${phoneSetupGuide}
+
+${publicFAQs
+  .slice(0, 6)
+  .map((item) => `## ${item.question}\n\n${item.answer}`)
+  .join('\n\n')}
+
+See the [health dataset catalog](/datasets/health) for supported HealthKit and Health Connect records, the [screen time catalog](/datasets/screen-time) for platform restrictions, and the [location catalog](/datasets/location) for recording limits. Read [pricing](/pricing) and [privacy](/privacy) before sharing private records.
 
 ## Use the JavaScript SDK
 
@@ -153,6 +310,8 @@ Private requests need an agent OAuth bearer token. Missing or expired tokens ret
 
 ## Discover available data
 
+For a step-by-step agent workflow and examples, read [Query and export approved data with MCP](/docs/mcp-workflows).
+
 After MCP initialization, call \`tools/list\` for the current schemas, inputs and limits.
 
 1. Discover the owner’s paired phones.
@@ -160,11 +319,17 @@ After MCP initialization, call \`tools/list\` for the current schemas, inputs an
 3. Choose a supported type covered by the profile and its data grants.
 4. Call \`query_phone_data\`, then poll \`get_phone_request\` for the result.
 
+Filter \`get_phone_data_catalog\` with optional \`domains\`, \`profileId\`, and \`detail: "summary"\` to inspect type counts and grants; request full detail to obtain exact type IDs. Cloud discovery \`list_cloud_exports\` accepts device/profile and inclusive-start/exclusive-end day filters and returns \`{exports, nextCursor}\` metadata pages.
+
+Use \`waitMs\` (0–25000 milliseconds) on query initiation or asynchronous status tools to wait for a pending state change. Owner-action states return immediately; follow \`retryAfterMs\`. Waiting does not reserve another allowance or change retry identity. REST query status accepts \`?waitMs=25000\`.
+
+For scalar summaries, pass \`aggregation: {operation: "sum", field: "quantity", groupBy: "day"}\` to \`query_phone_data\`. Operations are count, sum, avg, min and max; numeric operations require an explicit scalar field path inside native. Optional unitField defaults to native unit; different sources and units remain separate buckets. Count counts records, avg is unweighted, UTC buckets use record start, and intervals are not prorated or deduplicated. Nested series are not flattened. Empty days are omitted, not zero-filled. Each page reports scanned/skipped counts and coverage; keep warnings and follow nextCursor. Daily pages cover up to 31 days; interval grouping supports at most 31 days. A scan exceeding 10000 records, 200 source pages or 50 source/unit buckets fails without partial totals. Requires catalog dataQuery.aggregation version 1; older phones need an app update.
+
 Use the returned identifiers rather than guessing them. \`create_phone_export_profile\` submits a profile for owner review; it does not grant access.
 
 A phone read may need the app open and OS permissions enabled. Sign-in, permission prompts, purchases and system sharing require the owner on the device. Empty HealthKit results can mean missing records or limited permission; they do not prove authorization.
 
-Try the [fictional-data demo](/demo) or browse [Datasets](/datasets) before connecting a phone. Neither authorizes private reads.
+Browse [Datasets](/datasets) before connecting a phone. This does not authorize private reads.
 
 ## Query through REST
 
@@ -212,6 +377,8 @@ Validation and permission failures return HTTP \`422\` with an error. Authentica
 The [JavaScript SDK](https://www.npmjs.com/package/myself-md-sdk) has no runtime dependencies. Import \`createMyselfClient\` from \`myself-md-sdk\`, or use the [standalone module](/sdk/myself.mjs).
 
 Public methods need no token:
+
+The website's bundled JavaScript client supports ${healthGuides.map((entry) => `docs({ guide: '${entry.slug}' })`).join(', ')}. Older npm releases may support only docs(); read the guide's public HTTP URL instead. The optional guide selector is also available on get_public_documentation and WebMCP myself_public_documentation.
 
 - \`health()\` checks service availability.
 - \`config()\` reads public configuration.
@@ -271,6 +438,35 @@ Deprecations are announced here at least 90 days before removal. Affected routes
 
 The [OpenAPI specification](/openapi.json) covers public discovery and REST phone queries. The [agent catalog](/.well-known/ard.json) links to the [MCP server card](/mcp/server-card) for connection metadata. These documents expose no private records; discover current private operations through authenticated \`tools/list\`.
 
+${exportSchemas()
+  .versions.map(
+    (version) => `## Export schema ${version.version}
+
+${version.description}
+
+${version.changes.join(' ')} Saved profiles keep their selected version. JSON exports contain a schema identifier and records array; JSONL exports contain one record per line. Empty objects in these definitions allow any JSON value. The example uses fictional data.
+
+JSON export definition:
+
+\`\`\`json
+${JSON.stringify(version.definition, null, 2)}
+\`\`\`
+
+JSONL record definition:
+
+\`\`\`json
+${JSON.stringify(version.jsonlRecordDefinition, null, 2)}
+\`\`\`
+
+Example JSON export:
+
+\`\`\`json
+${JSON.stringify(version.example, null, 2)}
+\`\`\`
+`,
+  )
+  .join('\n')}
+
 ## Privacy and help
 
 Blocking an agent or revoking its grant stops future reads. Copies already delivered to an AI provider follow that provider’s retention policy.
@@ -283,6 +479,14 @@ const about = `# About myself.md
 
 Save your health, screen time and location as files you can keep. Share the data you choose with your AI assistant.
 
+## Project and maintenance
+
+myself.md is an open-source project maintained in [Cody Bontecou's repository](https://github.com/CodyBontecou/myself.md). Review the source and change history there, report documentation problems through [GitHub issues](${privacyPolicy.issuesUrl}), or [contact the project](/contact). Product documentation describes software capabilities and permission limits; it is not medical advice.
+
+## Official project identity
+
+${projectIdentity}
+
 ## Choose what to save
 
 Create a profile with the data types, date range and destination you want. Save files on your phone, send them to your own HTTPS endpoint, or use the paired cloud service. Available data depends on your phone and its permissions.
@@ -293,11 +497,11 @@ Connect to [myself.md MCP](https://myself.md/mcp), sign in, and pair your phone.
 
 Review sharing and activity in the app or dashboard. You can stop future access at any time. Copies already sent to another service follow that service’s retention policy.
 
-Cloud exports are encrypted in storage and expire after 30 days. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) for details.
+Cloud exports are encrypted in storage and kept until you delete or replace them. If paid cloud storage ends while you use more than the included ${includedCloud}, the oldest exports are deleted after ${cloudRetentionDays} days unless you resubscribe or delete files first. The service decrypts them when you or an approved agent reads them. See the [privacy policy](/privacy) and [terms](/terms) for details.
 
 ## Try it out
 
-Explore the [free demo](/demo) and [supported datasets](/datasets) without an account or API key. The demo is read only and uses fictional data.
+Explore the [supported datasets](/datasets) without an account or API key.
 
 The mobile apps are coming soon. You can find the source code and self-hosting instructions on [GitHub](https://github.com/CodyBontecou/myself.md).
 
@@ -325,6 +529,9 @@ export const publicPages = new Map([
   ['/', `${home}\n## Pricing\n\n${publicPricing}\n\n${faqMarkdown}`],
   ['/docs', overview],
   ['/docs/reference', guide],
+  ...documentationGuides.map(
+    (entry) => /** @type {[string,string]} */ ([`/docs/${entry.slug}`, entry.markdown]),
+  ),
   ['/pricing', `# myself.md pricing\n\n${publicPricing}`],
   [
     '/faq',
@@ -332,12 +539,156 @@ export const publicPages = new Map([
   ],
   ['/about', about],
   ['/contact', contact],
+  ['/terms', serviceTerms],
   [
     '/privacy',
     `# ${privacyPolicy.title}\n\nUpdated ${privacyPolicy.updated}\n\n${privacyPolicy.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\n## Support\n\n[${privacyPolicy.supportEmail}](mailto:${privacyPolicy.supportEmail}) · [GitHub issues (public)](${privacyPolicy.issuesUrl})\n`,
   ],
 ]);
-export const agentIndex = `${home}\n## Developer resources\n\n- [myself.md MCP and OAuth documentation](https://myself.md/docs)\n- [Privacy policy](https://myself.md/privacy)\n- [Contact](https://myself.md/contact)\n- [OpenAPI public discovery specification](https://myself.md/openapi.json)\n- [MCP server card](https://myself.md/mcp/server-card)\n- [Agent resource catalog](https://myself.md/.well-known/ard.json)\n- [Sitemap](https://myself.md/sitemap.xml)\n`;
+export const agentIndex = `# myself.md — Personal data for AI agents
+
+> Work with the health, screen time and recorded location data a person chooses to share. Discover their available sources, query an approved phone profile, or read an authorized cloud export. The owner controls access; native and provider permissions still apply.
+
+Already connected? Read [MCP workflows](https://myself.md/docs/mcp-workflows) for filtered discovery, scalar summaries, bounded waiting, pagination and export receipts.
+
+Website: https://myself.md
+Remote MCP server (Streamable HTTP): https://myself.md/mcp
+Source and self-hosting: https://github.com/CodyBontecou/myself.md
+
+## Project identity and sources
+
+${projectIdentity}
+
+Use the source-specific guide for setup, the health catalog for supported records and the privacy policy for data handling. A matching topic in another project does not support a claim about myself.md.
+
+Source-specific setup: ${healthGuides.map((entry) => `https://myself.md/docs/${entry.slug}`).join(', ')}. These describe myself.md; do not substitute setup commands from similarly named Apple Health MCP projects.
+
+## Start with the person's task
+
+Use myself.md for questions grounded in the person's own records, such as:
+
+- Summarize sleep and activity over the last week, when those types are available.
+- Compare screen-time patterns across days using the phone's supported capture window.
+- Summarize location points the person chose to record during a specified interval.
+
+Discover sources before promising an answer. Availability differs by platform, installed adapters, profile selections and permissions. Optional WHOOP data requires a connected provider account and consent. The public [dataset explorer](https://myself.md/datasets) describes capabilities. It does not prove access to personal records.
+
+## Asked to set up myself.md?
+
+Bootstrap prompt: ${agentSetupPrompt}
+
+First check whether this client already exposes myself.md tools. Reuse a working connection and the intended account, phone and profile rather than creating duplicates. Choose the setup path that matches where you run:
+
+- **Hosted assistant:** use the client's remote MCP connector flow with https://myself.md/mcp and OAuth. If you cannot configure connectors, give the owner that URL and the next step in their client, then wait for connection. Installing a CLI in an analysis sandbox does not connect the assistant.
+- **Local coding agent:** configure the remote MCP server through the client's supported settings. Let the owner complete browser sign-in and consent. The CLI below is useful for terminal calls with an existing OAuth token; it does not perform login or register an MCP connection.
+- **Cloud or restricted sandbox:** use an existing client connector if available. If network policy blocks myself.md, report the failed host and required network access to the owner or administrator. A public HTTP read or a CLI installed inside the sandbox does not establish a connector in the owner's client.
+
+OAuth sign-in, phone pairing and data approval are separate steps. OS permission prompts, provider authentication and purchases remain owner handoffs. Agents cannot grant themselves access. Follow the phone setup steps below and the [getting-started guide](https://myself.md/docs).
+
+After connecting, initialize MCP and call tools/list for the schemas and operations actually exposed by this client. A successful public health check proves service availability only. Verify available phones and approved profiles before saying personal data is ready.
+
+${localAgentSetupGuide}
+
+${phoneSetupGuide}
+
+## Public discovery — no account needed
+
+Read these before requesting private access:
+
+- [Dataset catalog](https://myself.md/v1/dataset-catalog): question-first workflows, starter prompts, platform-specific required types, prerequisites, query tools, supported sources and limitations. Examples are fictional; discover actual approved phone data and coverage before answering. Omit limit for the default page, or use an integer from 1 to 3. Follow nextCursor as cursor until hasMore is false.
+- [Getting started](https://myself.md/v1/docs): connection, pairing, SDK and CLI guidance. Send Accept: text/markdown for Markdown; ordinary browser/curl requests return HTML.
+- [MCP workflows](https://myself.md/docs/mcp-workflows): filtered catalogs, aggregation, bounded waiting, safe retries, cloud pagination and file export receipts.
+- [API reference](https://myself.md/docs/reference): authentication, request formats, pagination and limits.
+- [Pricing](https://myself.md/pricing): the app includes ${freeExports} free exports or queries, then an optional Lifetime unlock. Successful phone captures consume allowance; discovering data is not a capture. Lifetime removes export/query usage limits and includes ${includedCloud} of cloud storage; Cloud is a single 100 GB subscription at $7.99/month or $79.99/year, including app access while subscribed with no Lifetime purchase required, purchased in the phone app.
+
+Public service check and Markdown guide:
+
+\`\`\`sh
+curl -fsS https://myself.md/v1/health
+curl -fsS -H 'Accept: text/markdown' https://myself.md/v1/docs
+\`\`\`
+
+## First approved phone query
+
+For filtered catalogs, scalar aggregation, bounded waiting, cursors and file exports, read [MCP workflows](https://myself.md/docs/mcp-workflows). Read it through MCP with get_public_documentation and {"guide":"mcp-workflows"}. Both MCP resources serve the same workflow; tools/list determines what this connection exposes.
+
+1. Select an intended owned phone from list_connected_phones.
+2. Filter get_phone_data_catalog by needed domains; use detail summary for counts and full for exact type IDs. Resolve current profile names to stable IDs and disambiguate duplicates.
+3. Intersect source availability, profile selections and individual agentPermissions. Refresh after an owner handoff; an offline catalog may be stale. Pairing, OS consent and agent permission are separate.
+4. Convert the person's dates to explicit UTC start/end. Use raw records or scalar aggregation according to the task. Aggregation requires catalog.dataQuery.aggregation equal to 1; a backend update alone does not update the phone.
+5. Call query_phone_data with a new requestKey for the page and optional waitMs up to 25000. Retain requestId and honor retryAfterMs while queued or running. A state change can return running; use records only after complete. Stop on failed, expired or missing work.
+6. Follow result.page.nextCursor with the same query configuration and a new page key. Preserve source/unit separation, coverage, skipped counts and warnings. Missing days and empty HealthKit results are not zero measurements or proof of authorization.
+7. Report the verified effect and any gaps. For files, export_phone_data requires owner review and a delivery receipt; null export bounds select earliest readable history through now, while Screen Time requires a start. Export approval does not grant record reads.
+
+## Read existing cloud exports
+
+Use list_cloud_exports with task-relevant device/profile/day filters. It returns {exports,nextCursor} metadata pages. Read a chosen exportId with read_cloud_export and its separate record cursor; list cursors and query cursors are not interchangeable. Each successful cloud record read can consume allowance, including retries. Follow live schemas and existing profile/source grants. Confirm the export's source and date range; a stored file does not prove a fresh phone query. If the client lacks these operations, report the limitation and use the documented owner handoff. Do not claim a tool exists solely because it is named here.
+
+## Terminal and JavaScript access
+
+The [official CLI](https://www.npmjs.com/package/myself-md-cli) requires Node.js 22.13 or later:
+
+\`\`\`sh
+npx myself-md-cli health
+npx myself-md-cli help
+\`\`\`
+
+health, config, docs and openapi are public reads. With an existing owner-authorized OAuth access token supplied securely in MYSELF_TOKEN:
+
+\`\`\`sh
+npx myself-md-cli tools
+npx myself-md-cli call get_phone_data_catalog < catalog-arguments.json
+\`\`\`
+
+catalog-arguments.json must contain a JSON object with a discovered deviceId. Never put tokens in URLs, chat messages, committed files or command output. The CLI does not store tokens or grant access.
+
+For JavaScript, install the [official SDK](https://www.npmjs.com/package/myself-md-sdk):
+
+\`\`\`sh
+npm install myself-md-sdk
+\`\`\`
+
+\`\`\`js
+import { createMyselfClient } from 'myself-md-sdk';
+
+const myself = createMyselfClient();
+const page = await myself.datasets({ limit: 1 });
+console.log(page.items);
+\`\`\`
+
+For private REST/SDK queries, use an existing agent OAuth token and the discovered query inputs. POST /api/v1/queries uses the Idempotency-Key header instead of the MCP requestKey argument. HTTP 202 means accepted; poll GET /api/v1/queries/{requestId}. The SDK's request() reads status once; continue polling until completion. See the [reference](https://myself.md/docs/reference) for complete examples.
+
+## Retries and blockers
+
+- **Lost query response:** retry identical MCP arguments with the same requestKey, or identical REST arguments with the same Idempotency-Key. A live retry retrieves the original job without another allowance reservation. Changed arguments or an unavailable original fail instead of redispatching. Check the outcome before starting a new request; other mutations have their own retry contracts.
+- **401:** complete or renew OAuth through the client. A sign-in page showing invalid_signature means its continuation expired or could not be verified; return to the app or assistant that started sign-in and reconnect to get a fresh link. Do not reuse the old login URL or start an unrelated dashboard sign-in. **403 or permission errors:** inspect the account, profile and source grants; the owner must approve missing access.
+- **No phone, offline phone or missing type:** report the specific prerequisite. Ask the owner to pair or open myself.md and review permissions as needed, then rediscover. Do not repeatedly enqueue work against stale state.
+- **awaiting_user:** surface the returned owner handoff and what remains. Other owner-reviewed jobs can report cancelled or expired outcomes; follow each operation's schema and verify its effect before reporting success.
+- **429:** wait for Retry-After before retrying. Avoid tight polling or concurrent retries.
+- **Allowance or storage limit:** explain the returned limit and link to Pricing. Purchases require the owner in the phone app; opening checkout does not confirm payment. Where offered, get_lifetime_access reports the current account's server-verified entitlement and allowance. A phone's local Lifetime badge does not prove the server accepted its purchase. If Agent connection reports Purchase environment does not match this server, explain the test-versus-production mismatch and ask the owner to resolve purchase verification or use a matching authorized build/server before retrying. Do not change validation, reset allowance or buy without the owner's instruction.
+
+## Finish setup with a useful outcome
+
+Say what was verified: public discovery, an authenticated connection, an approved profile, a completed phone read, or an existing cloud export. If an owner action remains, name it precisely. Once ready, suggest a small next task based on the available approved sources and the person's goal. A connection alone is not evidence that personal records were read.
+
+${showcaseGuide}
+## Privacy and resources
+
+The owner can inspect activity and revoke future access in the app or dashboard. Cloud exports are encrypted at rest and decrypted for authorized reads. Copies already delivered to an AI provider follow that provider's retention policy; revocation cannot recall them. Paid-storage lapse and deletion rules are described in Pricing and Terms. myself.md provides data access, not medical advice.
+
+- [MCP and OAuth setup](https://myself.md/docs)
+- [OpenAPI specification](https://myself.md/openapi.json)
+- [OAuth protected-resource metadata](https://myself.md/.well-known/oauth-protected-resource/mcp)
+- [MCP server card](https://myself.md/mcp/server-card)
+- [Agent resource catalog](https://myself.md/.well-known/ard.json)
+- [Smithery listing](${smitheryListingUrl})
+- [Privacy policy](https://myself.md/privacy)
+- [Terms of service](https://myself.md/terms)
+- [Contact and support](https://myself.md/contact)
+- [Sitemap](https://myself.md/sitemap.xml)
+
+Re-read https://myself.md/llms.txt for current guidance. Live tools/list and the phone catalog determine available operations and data.
+`;
 /** @param {string} value */
 function escapeHTML(value) {
   return value.replace(
@@ -360,5 +711,5 @@ export function publicHTML(markdown) {
     })
     .join(
       '\n',
-    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/demo">Demo</a> · <a href="/docs">Developers</a> · <a href="https://www.npmjs.com/package/myself-md-sdk">JavaScript SDK</a> · <a href="https://www.npmjs.com/package/myself-md-cli">CLI</a> · <a href="/pricing">Pricing</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a></nav></main>`;
+    )}<nav aria-label="Public resources"><a href="/">Home</a> · <a href="/docs">Developers</a> · <a href="https://www.npmjs.com/package/myself-md-sdk">JavaScript SDK</a> · <a href="https://www.npmjs.com/package/myself-md-cli">CLI</a> · <a href="/pricing">Pricing</a> · <a href="/faq">FAQ</a> · <a href="/about">About</a> · <a href="/contact">Contact</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:${privacyPolicy.supportEmail}">Email support</a> · <a href="${privacyPolicy.issuesUrl}">GitHub issues</a> · <a href="/llms.txt">Agent instructions</a> · <a href="${smitheryListingUrl}">Smithery</a></nav></main>`;
 }

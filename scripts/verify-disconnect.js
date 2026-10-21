@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { errorMessage, errorJSON, readJSONResponse } from '../packages/support-chat/errors.js';
+import { errorJSON, errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 import { createPairingUrl, createPairingDeepLink, parsePairingQr } from '../core/index.js';
 // Exercise the actual UI handler with native/network boundaries replaced.
 const app = readFileSync('client/PhoneProvider.js', 'utf8');
@@ -67,8 +67,9 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
   let revocations = 0;
   let screen = 'connected';
   const context = vm.createContext({
-    errorMessage,
     errorJSON,
+    errorMessage,
+    showToast: () => {},
     readJSONResponse,
     session: { deviceId: failure === 'account' ? '' : 'old-phone' },
     clearAccountAllowance: () => {
@@ -92,7 +93,6 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
     reset: () => {},
     cancelExports: () => {},
     Alert: { alert: () => {} },
-    showToast: () => {},
   });
   // The UI must return without awaiting remote or native cleanup.
   // oxlint-disable-next-line eslint/no-await-in-loop
@@ -100,6 +100,57 @@ for (const failure of ['server', 'location', 'pending', 'account']) {
   assert.ok(cleared && screen === 'scanner', `${failure} must not block local sign-out`);
   assert.ok(allowanceCleared, `${failure} must clear account access on sign-out`);
   if (failure === 'account') assert.equal(revocations, 0);
+}
+const confirm = app.match(/  async function confirm\(\) \{[\s\S]*?\n  \}/)?.[0];
+assert.ok(confirm);
+for (const failure of ['billing', 'none', 'claim']) {
+  /** @type {string[]} */
+  const effects = [];
+  const context = vm.createContext({
+    session: { owner: 'fixture-owner', deviceId: '' },
+    pairing: { ticket },
+    Platform: { OS: 'ios' },
+    api: async () => {
+      if (failure === 'claim') throw new Error('Claim rejected');
+      return { id: 'paired-phone' };
+    },
+    prepareProfilePairing: () => effects.push('prepared-profiles'),
+    completeProfilePairing: () => effects.push('completed-profiles'),
+    /** @param {{deviceId:string}} session */
+    saveSession: async (session) => {
+      effects.push(`saved:${session.deviceId}`);
+    },
+    /** @param {{deviceId:string}} session */
+    setSession: (session) => {
+      effects.push(`active:${session.deviceId}`);
+    },
+    reset: () => effects.push('reset'),
+    router: { dismissTo: () => effects.push('dismissed') },
+    syncBilling: async () => {
+      effects.push('billing');
+      if (failure === 'billing') throw new Error('Billing unavailable');
+    },
+  });
+  const result = vm.runInContext(confirm + '\nconfirm()', context);
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await (failure === 'none'
+    ? result
+    : assert.rejects(result, failure === 'claim' ? /Claim rejected/ : /Billing unavailable/));
+  assert.deepEqual(
+    effects,
+    failure === 'claim'
+      ? []
+      : [
+          'prepared-profiles',
+          'saved:paired-phone',
+          'completed-profiles',
+          'active:paired-phone',
+          'reset',
+          'dismissed',
+          'billing',
+        ],
+    'A successful claim must persist and activate pairing even when billing sync fails',
+  );
 }
 const source = readFileSync('client/session.js', 'utf8')
   .replace(/^import .*;\n/gm, '')

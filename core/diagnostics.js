@@ -9,7 +9,7 @@ export function exportFailureMessage(error) {
     'No selected sources could be read. Review permissions or edit the profile.',
     'Use an HTTPS endpoint without credentials or fragments.',
     'Save the HTTP credential for this endpoint before exporting.',
-    'Authorize cloud uploads on this profile first.',
+    'Save Cloud as this profile’s export destination first.',
     'Cloud daily files are limited to 16 MiB. Reduce selected types.',
     'Sign in to check your shared export allowance.',
     'Reconnect your account to use its shared free exports.',
@@ -53,10 +53,6 @@ export function exportDiagnostics(event, profile, sources) {
         )
       : null,
     actions: [
-      {
-        label: 'Review export details',
-        deepLink: `myselfmd://history/${encodeURIComponent(event.id)}`,
-      },
       { label: 'Review profile destination, output and schedule', deepLink: profileLink },
       ...domains
         .filter((domain) => event.profile.selection[domain].length > 0)
@@ -64,7 +60,7 @@ export function exportDiagnostics(event, profile, sources) {
           const source = sources.find((item) => item.domain === domain);
           return {
             label: `Review ${domain} permissions`,
-            deepLink: `myselfmd://data/${domain}`,
+            deepLink: profileLink,
             notes: source?.notes ?? [],
             unavailableTypes: source
               ? event.profile.selection[domain].filter(

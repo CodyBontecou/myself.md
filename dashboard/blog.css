@@ -1,0 +1,334 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Geist, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  -webkit-text-size-adjust: 100%;
+  overflow-wrap: anywhere;
+}
+.blog-page {
+  min-height: 100vh;
+  overflow-x: clip;
+}
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  touch-action: manipulation;
+}
+a:hover {
+  color: var(--muted-foreground);
+}
+a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 5px;
+  border-radius: 2px;
+}
+.blog-shell {
+  position: relative;
+  isolation: isolate;
+  max-width: 740px;
+  padding: 0 32px;
+  margin: auto;
+}
+.blog-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 40px 0 64px;
+  font-size: 14px;
+}
+.blog-header a {
+  text-decoration: none;
+}
+.blog-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  color: var(--muted-foreground);
+}
+.blog-header a[aria-current] {
+  text-decoration: underline;
+}
+.blog-brand {
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-size: 18px;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+}
+h1 {
+  margin: 0 0 20px;
+  font-size: clamp(32px, 6vw, 36px);
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+p {
+  margin: 0 0 24px;
+}
+.blog-latest {
+  margin: 0 0 32px;
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--border);
+}
+.blog-label {
+  margin: 0 0 24px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.blog-feature {
+  display: block;
+  text-decoration: none;
+}
+.blog-feature:hover {
+  color: inherit;
+}
+.blog-feature h2 {
+  margin: 0 0 12px;
+  font-size: 30px;
+}
+.blog-feature:hover h3,
+.blog-feature:hover .blog-continue {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.blog-meta,
+.blog-author,
+.blog-back {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.blog-meta {
+  margin: 0 0 20px;
+}
+.blog-author {
+  margin-top: -12px;
+}
+.blog-continue {
+  font-size: 15px;
+}
+.blog-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.blog-list a {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  column-gap: 24px;
+  padding: 12px 0;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.blog-list time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  padding-top: 2px;
+}
+.blog-list a:hover span {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.blog-back {
+  display: inline-block;
+  margin-bottom: 32px;
+  text-decoration: none;
+}
+.blog-prose {
+  margin-top: 44px;
+}
+.blog-prose h2,
+.blog-prose h3 {
+  margin: 44px 0 12px;
+  font-size: 22px;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+}
+.blog-prose img {
+  max-width: 100%;
+  height: auto;
+}
+.blog-prose pre,
+.blog-prose table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.blog-prose pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  padding: 18px 20px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+.blog-prose table {
+  display: block;
+  border-collapse: collapse;
+}
+.blog-prose th,
+.blog-prose td {
+  text-align: left;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+}
+.blog-prose blockquote {
+  border-left: 2px solid var(--border);
+  margin: 28px 0;
+  padding-left: 24px;
+  color: var(--muted-foreground);
+}
+.blog-post-footer,
+.blog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding: 24px 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.blog-post-footer {
+  display: block;
+  margin-top: 48px;
+}
+.blog-post-nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.blog-post-nav a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+}
+.blog-post-nav a:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.blog-post-nav strong {
+  color: var(--foreground);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.blog-previous {
+  grid-column: 1;
+}
+.blog-next {
+  grid-column: 2;
+  text-align: right;
+}
+.blog-post-utilities {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+}
+.blog-footer {
+  margin-top: 80px;
+  padding-bottom: 40px;
+}
+.blog-skip {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  transform: translateY(-200%);
+  background: var(--background);
+  padding: 8px;
+}
+.blog-skip:focus {
+  transform: none;
+}
+.blog-empty {
+  padding: 40px 0;
+}
+@media (max-width: 480px) {
+  .blog-shell {
+    padding: 0 24px;
+  }
+  .blog-header {
+    padding: 28px 0 56px;
+  }
+  .blog-header nav {
+    gap: 16px;
+  }
+  .blog-list a {
+    grid-template-columns: 80px 1fr;
+    column-gap: 16px;
+  }
+}
+
+/* The same masked artwork and semantic colors as the landing hero. */
+.blog-shell > header,
+.blog-shell > main,
+.blog-shell > footer {
+  position: relative;
+  z-index: 1;
+}
+.blog-portrait.hero-portrait {
+  top: -6rem;
+  right: -12rem;
+  width: 48rem;
+  height: 46rem;
+  opacity: 0.12;
+}
+.blog-prose :not(pre) > code {
+  font-size: 0.875em;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.blog-prose ul,
+.blog-prose ol {
+  padding-left: 24px;
+  margin: 16px 0 24px;
+}
+.blog-prose ul {
+  list-style-type: disc;
+}
+.blog-prose ol {
+  list-style-type: decimal;
+}
+.blog-prose li + li {
+  margin-top: 8px;
+}
+.blog-skip {
+  z-index: 2;
+}
+@media (max-width: 760px) {
+  .blog-portrait.hero-portrait {
+    top: -2rem;
+    right: -12rem;
+    width: 36rem;
+    height: 38rem;
+    opacity: 0.08;
+  }
+}
+@media (forced-colors: active) {
+  .blog-portrait {
+    display: none;
+  }
+}
+
+.blog-shell > .public-site-header {
+  margin-bottom: 48px;
+  padding-top: 16px;
+}

@@ -1,12 +1,14 @@
 import { phoneQueryBodySchema } from './data-service.js';
 import { privacyPolicy } from '../core/privacy.js';
+import { documentationGuides } from '../core/documentation.js';
 
 const origin = 'https://myself.md';
 const card = {
   $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
   name: 'md.myself/mcp',
   title: 'myself.md',
-  description: 'Owner-approved health, screen time and location data for AI agents.',
+  description:
+    'myself.md: owner-approved phone data exports and remote MCP access. Reads Apple Health through HealthKit on iOS and Health Connect on Android, plus supported screen time and recorded location. Maintained by Cody Bontecou at github.com/CodyBontecou/myself.md. Official website: https://myself.md/; MCP: https://myself.md/mcp. Separate from self.md and other Apple Health MCP projects.',
   version: '1.0.0',
   websiteUrl: origin,
   repository: { url: 'https://github.com/CodyBontecou/myself.md', source: 'github' },
@@ -113,11 +115,43 @@ const openapi = {
     },
   },
   paths: {
+    '/blog': readOperation(
+      'listPublicBlogPosts',
+      'Read the complete published blog index, newest first. Send Accept: text/markdown; HTML is the default. No account or private records.',
+      { ...textContent, 'text/html': { schema: { type: 'string' } } },
+    ),
+    '/blog/{slug}': {
+      get: {
+        ...readOperation(
+          'readPublicBlogPost',
+          'Read a published post in full. Discover slugs at /blog. Send Accept: text/markdown, or append .md to the post URL. An unknown post returns 404.',
+          { ...textContent, 'text/html': { schema: { type: 'string' } } },
+        ).get,
+        parameters: [
+          {
+            name: 'slug',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' },
+          },
+        ],
+        responses: {
+          ...readOperation('readPublicBlogPost', 'Read a published post.', {
+            ...textContent,
+            'text/html': { schema: { type: 'string' } },
+          }).get.responses,
+          404: {
+            description: 'Post not found. Return to /blog to discover published slugs.',
+            content: { ...textContent, 'text/html': { schema: { type: 'string' } } },
+          },
+        },
+      },
+    },
     '/v1/dataset-catalog': {
       get: {
         ...readOperation(
           'listPublicDatasets',
-          'List supported dataset adapters; follow nextCursor until hasMore is false. No personal records.',
+          'Discover supported questions, starter prompts, platform requirements and query workflows alongside dataset adapters; follow nextCursor until hasMore is false. Examples are fictional; no personal records or grants.',
           {
             'application/json': {
               schema: {
@@ -137,6 +171,65 @@ const openapi = {
                         url: { type: 'string', format: 'uri' },
                         sources: { type: 'string' },
                         limitations: { type: 'array', items: { type: 'string' } },
+                        workflows: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            required: [
+                              'id',
+                              'dataset',
+                              'topic',
+                              'question',
+                              'description',
+                              'dataNeeded',
+                              'requiredTypes',
+                              'availability',
+                              'limitations',
+                              'example',
+                              'exampleKind',
+                              'prompt',
+                              'prerequisites',
+                              'querySteps',
+                              'setupUrl',
+                              'interpretation',
+                            ],
+                            properties: {
+                              id: { type: 'string' },
+                              dataset: { type: 'string' },
+                              topic: { type: 'string' },
+                              question: { type: 'string' },
+                              description: { type: 'string' },
+                              dataNeeded: { type: 'string' },
+                              requiredTypes: {
+                                type: 'object',
+                                required: ['ios', 'android'],
+                                properties: {
+                                  ios: { type: 'array', items: { type: 'string' } },
+                                  android: { type: 'array', items: { type: 'string' } },
+                                },
+                              },
+                              availability: { type: 'string' },
+                              limitations: { type: 'array', items: { type: 'string' } },
+                              example: { type: 'string' },
+                              exampleKind: { type: 'string', const: 'fictional' },
+                              prompt: { type: 'string' },
+                              prerequisites: { type: 'array', items: { type: 'string' } },
+                              querySteps: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  required: ['tool', 'instruction'],
+                                  properties: {
+                                    tool: { type: 'string' },
+                                    instruction: { type: 'string' },
+                                  },
+                                },
+                              },
+                              setupUrl: { type: 'string', format: 'uri' },
+                              interpretation: { type: 'string' },
+                            },
+                          },
+                        },
                         groups: {
                           type: 'array',
                           items: {
@@ -233,6 +326,13 @@ const openapi = {
         security: [{ agentBearer: [] }],
         parameters: [
           {
+            name: 'waitMs',
+            in: 'query',
+            description:
+              'Wait for a pending state change, up to 25000 milliseconds. Honor retryAfterMs.',
+            schema: { type: 'integer', minimum: 0, maximum: 25000, default: 0 },
+          },
+          {
             name: 'requestId',
             in: 'path',
             required: true,
@@ -255,6 +355,11 @@ const openapi = {
                       type: ['object', 'null'],
                       description:
                         'Completed export page, schema and format. Follow result.page.nextCursor with a new query.',
+                    },
+                    retryAfterMs: {
+                      type: ['integer', 'null'],
+                      description:
+                        'Suggested delay for pending work; null after completion or an owner handoff.',
                     },
                     error: { type: ['string', 'null'] },
                   },
@@ -351,6 +456,12 @@ const openapi = {
       'getDeveloperGuide',
       'Read MCP onboarding, authentication, consent and result verification guidance. Send Accept: text/markdown to request the documented Markdown representation.',
       textContent,
+    ),
+    ...Object.fromEntries(
+      documentationGuides.map((guide) => [
+        `/v1/docs/${guide.slug}`,
+        readOperation(guide.operationId, guide.description, textContent),
+      ]),
     ),
   },
 };

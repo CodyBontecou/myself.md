@@ -1,11 +1,33 @@
+import { mcpGuide } from '../core/mcp-guide.js';
+import { serviceTerms } from '../core/terms.js';
+import { chatgptMcpPath, chatgptToolNames } from '../server/chatgpt-tools.js';
 import { parseProfile } from '../core/profiles.js';
+import { Buffer } from 'node:buffer';
+import { hashPassword } from 'better-auth/crypto';
+import { reviewerUserId, reviewerEmail } from '../server/reviewer.js';
+import { seedReviewerFixtures } from '../server/reviewer-fixtures.js';
+import { CloudStore } from '../server/cloud-store.js';
+import { BillingStore } from '../server/billing-store.js';
+import { PairingStore } from '../server/pairing-store.js';
+import { HistoryStore } from '../server/history-store.js';
+import { accountTokenKey } from '../server/store-subscriptions.js';
+import { exportRows } from '../server/migration-rows.js';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, openSync, closeSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  openSync,
+  closeSync,
+  readdirSync,
+} from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createHmac, createHash, randomBytes } from 'node:crypto';
+import { createHmac, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { generateKeyPair, exportPKCS8, createRemoteJWKSet, jwtVerify } from 'jose';
 import { createIdentity } from '../server/identity.js';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -39,18 +61,68 @@ const output = openSync(log, 'a');
 const configPath = join(directory, 'wrangler.json');
 const db = new DatabaseSync(':memory:');
 db.exec(readFileSync('worker/identity.sql', 'utf8'));
+db.exec(readFileSync('worker/migrations/reviewer-access.sql', 'utf8'));
+const reviewerPassword = randomBytes(24).toString('base64url');
+db.prepare('INSERT INTO user VALUES (?,?,?,?,?,?,?)').run(
+  reviewerUserId,
+  'Fictional reviewer',
+  reviewerEmail,
+  1,
+  null,
+  Date.now(),
+  Date.now(),
+);
+db.prepare(
+  'INSERT INTO account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?)',
+).run(
+  'reviewer-credential',
+  reviewerUserId,
+  'credential',
+  reviewerUserId,
+  await hashPassword(reviewerPassword),
+  Date.now(),
+  Date.now(),
+);
+db.prepare('INSERT INTO reviewer_access VALUES (?,1,0)').run(reviewerUserId);
 const auth = createIdentity(db, {
   issuer,
   secret,
   resource: `${origin}/mcp`,
+  resources: [`${origin}/mcp`, `${origin}${chatgptMcpPath}`],
   googleId: 'fixture-google',
   googleSecret: 'fixture',
   githubId: 'fixture-github',
   githubSecret: 'fixture',
   appleId: 'fixture.apple',
   appleSecret: 'fixture',
+  reviewerEnabled: true,
 });
 const context = await auth.$context;
+await assert.rejects(
+  () =>
+    context.internalAdapter.createAccount({
+      userId: reviewerUserId,
+      providerId: 'google',
+      accountId: 'forbidden-social-link',
+    }),
+  /cannot connect social/,
+);
+const forbiddenSignup = await auth.handler(
+  new Request(`${issuer}/sign-up/email`, {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'unexpected@example.test',
+      name: 'Unexpected',
+      password: reviewerPassword,
+    }),
+  }),
+);
+assert.equal(forbiddenSignup.ok, false);
+assert.equal(
+  db.prepare('SELECT id FROM user WHERE email=?').get('unexpected@example.test'),
+  undefined,
+);
 await context.adapter.create({
   model: 'user',
   forceAllowId: true,
@@ -90,7 +162,7 @@ await Promise.all(
         postLogoutRedirectUris: [`${origin}/dashboard`],
         tokenEndpointAuthMethod: 'none',
         applicationType: clientId === 'myselfmd-dashboard' ? 'web' : 'native',
-        scopes: ['openid', 'profile', 'myselfmd', 'offline_access'],
+        scopes: ['openid', 'profile', 'email', 'myselfmd', 'offline_access'],
         grantTypes: ['authorization_code', 'refresh_token'],
         responseTypes: ['code'],
         skipConsent: clientId !== 'myselfmd-mcp',
@@ -103,21 +175,105 @@ await Promise.all(
       model: 'oauthClientResource',
       data: { clientId, resourceId: `${origin}/mcp`, createdAt: new Date() },
     });
+    if (clientId === 'myselfmd-mcp') {
+      await context.adapter.create({
+        model: 'oauthClientResource',
+        data: { clientId, resourceId: `${origin}${chatgptMcpPath}`, createdAt: new Date() },
+      });
+    }
   }),
 );
 const session = await context.internalAdapter.createSession('original-user-id');
 assert.ok(session);
+assert.ok(
+  session.expiresAt.getTime() - Date.now() > 364 * 86400000,
+  'Identity cookies last one year',
+);
 const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(session.token + '.' + createHmac('sha256', secret).update(session.token).digest('base64'))}`;
+const agedSession = await context.internalAdapter.createSession('original-user-id');
+assert.ok(agedSession);
+const sessionAge = 2 * 86400000;
+db.prepare('UPDATE session SET createdAt=?, updatedAt=?, expiresAt=? WHERE id=?').run(
+  agedSession.createdAt.getTime() - sessionAge,
+  agedSession.updatedAt.getTime() - sessionAge,
+  agedSession.expiresAt.getTime() - sessionAge,
+  agedSession.id,
+);
+const agedCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(agedSession.token + '.' + createHmac('sha256', secret).update(agedSession.token).digest('base64'))}`;
 const logoutSession = await context.internalAdapter.createSession('original-user-id');
 assert.ok(logoutSession);
 const logoutCookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(logoutSession.token + '.' + createHmac('sha256', secret).update(logoutSession.token).digest('base64'))}`;
+/** @param {string} id @param {{userId:string,email:string}} [link] */
+function providerState(id, link) {
+  return {
+    callbackURL: `${origin}/dashboard`,
+    codeVerifier: 'synthetic-verifier',
+    expiresAt: Date.now() + 900000,
+    oauthState: id,
+    ...(link ? { link } : {}),
+  };
+}
+const retainedVerificationFixtures = [
+  [
+    'deletion-code-other-user',
+    JSON.stringify({
+      type: 'authorization_code',
+      userId: reviewerUserId,
+      sessionId: 'other-session',
+    }),
+  ],
+  ['deletion-state-other-user', JSON.stringify(providerState('deletion-state-other-user'))],
+  [
+    'deletion-link-other-user',
+    JSON.stringify(
+      providerState('deletion-link-other-user', { userId: reviewerUserId, email: reviewerEmail }),
+    ),
+  ],
+  ['deletion-invalid-json', '{not-json'],
+  [
+    'deletion-invalid-code-types',
+    JSON.stringify({ type: 'authorization_code', userId: 42, sessionId: [] }),
+  ],
+];
+for (const [id, value] of [
+  ...retainedVerificationFixtures,
+  [
+    'deletion-code-owned-user',
+    JSON.stringify({ type: 'authorization_code', userId: 'original-user-id' }),
+  ],
+  [
+    'deletion-code-owned-session',
+    JSON.stringify({ type: 'authorization_code', sessionId: session.id }),
+  ],
+  [
+    'deletion-link-owned-user',
+    JSON.stringify(
+      providerState('deletion-link-owned-user', {
+        userId: 'original-user-id',
+        email: 'fixture@example.test',
+      }),
+    ),
+  ],
+])
+  db.prepare('INSERT INTO verification VALUES (?,?,?,?,?,?)').run(
+    id ?? '',
+    id?.startsWith('deletion-link-') || id?.startsWith('deletion-state-')
+      ? `auth-state:${id}`
+      : (id ?? ''),
+    value ?? '',
+    new Date(Date.now() + 3600000).toISOString(),
+    new Date().toISOString(),
+    new Date().toISOString(),
+  );
 const seed = [
   'user',
   'account',
   'session',
+  'verification',
   'oauthResource',
   'oauthClient',
   'oauthClientResource',
+  'reviewer_access',
 ].flatMap((table) =>
   db
     .prepare(`SELECT * FROM "${table}"`)
@@ -141,6 +297,7 @@ const seedPath = join(directory, 'seed.sql');
 writeFileSync(seedPath, seed.join('\n'), { mode: 0o600 });
 const config = JSON.parse(readFileSync('wrangler.jsonc', 'utf8').replace(/,\s*([}\]])/g, '$1'));
 config.main = resolve('worker/index.js');
+config.alias['node-fetch'] = resolve('worker/node-fetch.js');
 config.assets.directory = resolve('dashboard/dist');
 config.routes = [];
 Object.assign(config.vars, {
@@ -151,6 +308,7 @@ Object.assign(config.vars, {
   ALLOW_HTTP_DEV: '1',
   IDENTITY_ENABLED: '1',
   MIGRATION_ENABLED: '1',
+  REVIEWER_LOGIN_ENABLED: '1',
 });
 writeFileSync(configPath, JSON.stringify(config));
 const appleKey = await exportPKCS8(
@@ -240,8 +398,16 @@ function browserRequest(path, sessionCookie, body, requestOrigin = origin) {
     request.end(body);
   });
 }
-/** @param {string} clientId @param {boolean} loggedIn */
-async function authorize(clientId, loggedIn) {
+/** @param {string} clientId @param {boolean} loggedIn @param {string} [scope] @param {string} [resource] @param {string} [sessionCookie] @param {string} [prompt] @param {string} [provider] */
+async function authorize(
+  clientId,
+  loggedIn,
+  scope = 'openid profile email myselfmd offline_access',
+  resource = `${origin}/mcp`,
+  sessionCookie = cookie,
+  prompt,
+  provider,
+) {
   const verifier = randomBytes(32).toString('base64url');
   const redirect =
     clientId === 'myselfmd-phone'
@@ -253,8 +419,11 @@ async function authorize(clientId, loggedIn) {
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirect,
-    scope: 'openid profile myselfmd offline_access',
-    resource: `${origin}/mcp`,
+    scope,
+    resource,
+    ...(resource.endsWith(chatgptMcpPath) ? { prompt: 'consent' } : {}),
+    ...(prompt ? { prompt } : {}),
+    ...(provider ? { kc_idp_hint: provider } : {}),
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
     state: 'fixture-state',
@@ -264,13 +433,25 @@ async function authorize(clientId, loggedIn) {
     headers: {
       Accept: 'text/html',
       'Sec-Fetch-Mode': 'navigate',
-      ...(loggedIn ? { Cookie: cookie } : {}),
+      ...(loggedIn ? { Cookie: sessionCookie } : {}),
     },
   });
   assert.equal(response.status, 302, await response.clone().text());
   return { response, verifier, redirect };
 }
 try {
+  await cli([
+    'd1',
+    'execute',
+    'myself-md-analytics',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--file',
+    resolve('worker/analytics-migrations/0001_events.sql'),
+  ]);
   await cli([
     'd1',
     'execute',
@@ -282,6 +463,18 @@ try {
     join(directory, 'state'),
     '--file',
     resolve('worker/identity.sql'),
+  ]);
+  await cli([
+    'd1',
+    'execute',
+    'myself-md-identity',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--file',
+    resolve('worker/migrations/reviewer-access.sql'),
   ]);
   await cli([
     'd1',
@@ -315,6 +508,37 @@ try {
   await ready(200);
   // Cloud deletion fixtures need the same verified lifetime entitlement as real uploads.
   const fixtureSubject = 'https://old.example/realm|original-user-id';
+  // Concurrent cold requests must not inherit unfinished identity I/O from a different request.
+  const protectedResource = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`);
+  const resourceDiscovery = z
+    .object({ scopes_supported: z.array(z.string()) })
+    .parse(await protectedResource.json());
+  assert.deepEqual(resourceDiscovery.scopes_supported, ['myselfmd', 'offline_access']);
+  const coldConsent = await fetch(`${issuer}/consent?scope=myselfmd`, {
+    signal: AbortSignal.timeout(6000),
+  });
+  assert.equal(coldConsent.status, 200);
+  assert.match(await coldConsent.text(), /Connect this application/);
+  await Promise.all(
+    [
+      ['/.well-known/openid-configuration', 'GET', 200],
+      ['/.well-known/oauth-authorization-server', 'GET', 200],
+      ['/jwks', 'GET', 200],
+      ['/protocol/openid-connect/certs', 'GET', 200],
+      [`/connected-accounts?subject=${encodeURIComponent(fixtureSubject)}`, 'GET', 200],
+      [`/connected-accounts?subject=${encodeURIComponent(fixtureSubject)}`, 'POST', 401],
+    ].map(async ([path, method, status]) => {
+      const response = await fetch(issuer + path, {
+        method: String(method),
+        headers: { Origin: origin },
+        ...(method === 'POST' ? { body: 'action=link&provider=google' } : {}),
+        signal: AbortSignal.timeout(10000),
+      });
+      assert.equal(response.status, status);
+      await response.body?.cancel();
+    }),
+  );
+
   const grant = await fetch(`${origin}/__migration`, {
     method: 'POST',
     headers: { Authorization: `Migration ${secret}`, 'Content-Type': 'application/json' },
@@ -326,15 +550,169 @@ try {
         subject: fixtureSubject,
         tables: [
           {
+            name: 'cloud_writes',
+            columns: ['subject', 'device', 'profile', 'request', 'id', 'configuration', 'result'],
+            rows: [
+              [
+                fixtureSubject,
+                'fixture-phone',
+                'fixture-profile',
+                'fixture-request',
+                'fixture-upload',
+                'fixture-config',
+                JSON.stringify({ id: 'fixture-upload', recordCount: 0, bytes: 0, partial: false }),
+              ],
+            ],
+          },
+
+          {
             name: 'billing_grants',
             columns: ['source', 'reference', 'subject', 'created'],
             rows: [['fixture', 'identity-lifetime', fixtureSubject, Date.now()]],
+          },
+          {
+            name: 'cloud_subscriptions',
+            columns: [
+              'store',
+              'id',
+              'subject',
+              'product',
+              'plan',
+              'period',
+              'status',
+              'expires',
+              'auto_renew',
+              'linked',
+              'verified',
+            ],
+            rows: [
+              [
+                'android',
+                'deletion-cloud-fixture',
+                fixtureSubject,
+                'myself_md_cloud_100gb',
+                'cloud_100gb',
+                'monthly',
+                'expired',
+                Date.now() - 90 * 86400000,
+                0,
+                null,
+                Date.now(),
+              ],
+            ],
+          },
+          {
+            name: 'cloud_notices',
+            columns: [
+              'subject',
+              'id',
+              'kind',
+              'details',
+              'push',
+              'email',
+              'attempts',
+              'error',
+              'channel',
+              'failed',
+              'created',
+            ],
+            rows: [
+              [
+                fixtureSubject,
+                'completed-deletion-fixture',
+                'lapse-0',
+                JSON.stringify({ deleteAt: Date.now(), bytesToDelete: 0, plan: null }),
+                1,
+                1,
+                1,
+                null,
+                null,
+                null,
+                Date.now(),
+              ],
+            ],
           },
         ],
       },
     }),
   });
   assert.equal(grant.status, 200, await grant.clone().text());
+  const reviewerSubject = `https://old.example/realm|${reviewerUserId}`;
+  const fixtureBilling = new BillingStore(':memory:');
+  const fixturePairing = new PairingStore(':memory:');
+  const fixtureCloud = new CloudStore(':memory:', Buffer.from('a'.repeat(64), 'hex'), null, (s) =>
+    fixtureBilling.cloudEntitlement(s),
+  );
+  const fixtureHistory = new HistoryStore(':memory:', fixtureCloud);
+  let reviewerFixture;
+  try {
+    await assert.rejects(
+      () =>
+        seedReviewerFixtures(
+          {
+            billing: fixtureBilling,
+            pairing: fixturePairing,
+            cloud: fixtureCloud,
+            history: fixtureHistory,
+          },
+          fixtureSubject,
+          '2026-10-13',
+        ),
+      /reserved reviewer/,
+    );
+    reviewerFixture = await seedReviewerFixtures(
+      {
+        billing: fixtureBilling,
+        pairing: fixturePairing,
+        cloud: fixtureCloud,
+        history: fixtureHistory,
+      },
+      reviewerSubject,
+      '2026-10-13',
+    );
+    assert.equal(reviewerFixture.exports, 6);
+    assert.equal(reviewerFixture.sharedExports, 4);
+    assert.equal(
+      (
+        await seedReviewerFixtures(
+          {
+            billing: fixtureBilling,
+            pairing: fixturePairing,
+            cloud: fixtureCloud,
+            history: fixtureHistory,
+          },
+          reviewerSubject,
+          '2026-10-13',
+        )
+      ).exports,
+      6,
+    );
+    const reviewerEvents = fixtureHistory.list(reviewerSubject, null).events;
+    assert.equal(reviewerEvents.length, 6);
+    assert.ok(reviewerEvents.every((event) => event.artifacts.length === 1));
+    const tables = [
+      exportRows(fixturePairing.db, ['devices'], 'devices', 0),
+      exportRows(fixtureBilling.db, ['billing_grants'], 'billing_grants', 0),
+      exportRows(fixtureCloud.db, ['exports'], 'exports', 0),
+      exportRows(fixtureCloud.db, ['cloud_access'], 'cloud_access', 0),
+      exportRows(fixtureHistory.db, ['activity'], 'activity', 0),
+    ].map(({ name, columns, rows }) => ({ name, columns, rows }));
+    const imported = await fetch(`${origin}/__migration`, {
+      method: 'POST',
+      headers: { Authorization: `Migration ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'account',
+        name: reviewerSubject,
+        batch: { id: 'reviewer-fixture-v1', subject: reviewerSubject, tables },
+      }),
+    });
+    assert.equal(imported.status, 200, await imported.text());
+  } finally {
+    fixtureHistory.db.close();
+    fixtureCloud.db.close();
+    fixturePairing.db.close();
+    fixtureBilling.db.close();
+  }
   child.kill('SIGTERM');
   await once(child, 'exit');
   config.vars.MIGRATION_ENABLED = '0';
@@ -353,9 +731,31 @@ try {
     );
   assert.equal(discovery.issuer, issuer);
   assert.ok(discovery.grant_types_supported.includes('refresh_token'));
+  const standardDiscovery = await fetch(
+    `${origin}/.well-known/oauth-authorization-server${new URL(issuer).pathname}`,
+    { signal: AbortSignal.timeout(6000), redirect: 'manual' },
+  );
+  assert.equal(standardDiscovery.status, 200);
+  assert.equal(
+    z.object({ issuer: z.string() }).parse(await standardDiscovery.json()).issuer,
+    issuer,
+  );
   const logoutPage = await browserRequest('/protocol/openid-connect/logout', logoutCookie);
   assert.equal(logoutPage.status, 200, logoutPage.text);
   assert.match(logoutPage.text, /oauth2\/end-session\/confirm/);
+  assert.match(logoutPage.text, /Sign out of myself.md\?/);
+  assert.match(
+    logoutPage.text,
+    /class="primary"[^>]*name="action"|name="action"[^>]*class="primary"/,
+  );
+  assert.match(logoutPage.text, /href="\/dashboard">Cancel/);
+  assert.match(String(logoutPage.headers['content-security-policy'] ?? ''), /style-src 'nonce-/);
+  assert.ok(
+    await fetch(`${issuer}/get-session`, { headers: { Cookie: logoutCookie } }).then((response) =>
+      response.json(),
+    ),
+    'Showing the confirmation must retain the session',
+  );
   const confirmationCookie = (logoutPage.headers['set-cookie'] ?? [])
     .map((value) => value.split(';')[0])
     .join('; ');
@@ -373,13 +773,92 @@ try {
   );
   assert.equal(logoutResult.status, 200, logoutResult.text);
   assert.match(logoutResult.text, /Logged out/);
+  assert.match(logoutResult.text, /You’re signed out/);
+  assert.match(logoutResult.text, /href="\/login">Sign in again/);
   const loggedOutSession = await fetch(`${issuer}/get-session`, {
     headers: { Cookie: logoutCookie },
   });
   assert.equal(await loggedOutSession.json(), null);
-  const login = await authorize('myselfmd-phone', false);
+  const expiredLogout = await browserRequest(
+    '/oauth2/end-session/confirm',
+    logoutCookie,
+    'action=confirm',
+  );
+  assert.equal(expiredLogout.status, 400, expiredLogout.text);
+  assert.match(expiredLogout.text, /Sign-out could not finish/);
+  assert.match(expiredLogout.text, /invalid or expired/);
+  const login = await authorize(
+    'myselfmd-phone',
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'github',
+  );
+  const nativeReviewerQuery = new URLSearchParams({
+    client_id: 'myselfmd-phone',
+    redirect_uri: 'myselfmd://oauth',
+  });
+  const nativeReviewerForm = await fetch(`${issuer}/reviewer-login?${nativeReviewerQuery}`);
+  assert.match(
+    nativeReviewerForm.headers.get('content-security-policy') ?? '',
+    /form-action 'self' myselfmd:/,
+    'Reviewer form must permit its registered native callback after a successful POST',
+  );
+  await Promise.all(
+    [
+      { client_id: 'myselfmd-phone', redirect_uri: 'https://attacker.example/callback' },
+      { client_id: 'unknown-client', redirect_uri: 'myselfmd://oauth' },
+      { client_id: 'myselfmd-phone', redirect_uri: 'otherapp://oauth' },
+    ].map(async (query) => {
+      const form = await fetch(`${issuer}/reviewer-login?${new URLSearchParams(query)}`);
+      assert.match(
+        form.headers.get('content-security-policy') ?? '',
+        /form-action 'self';/,
+        'Unregistered query text must not expand form destinations',
+      );
+    }),
+  );
+
+  await Promise.all(
+    [
+      { error: 'account_not_linked', title: 'Connect your sign-in method' },
+      { error: 'state_mismatch', title: 'Start a new sign-in attempt' },
+      { error: '<script>alert(1)</script>', title: 'Sign-in could not finish' },
+    ].map(async ({ error, title }) => {
+      const failure = await fetch(
+        `${issuer}/error?${new URLSearchParams({ error, redirect_uri: 'https://evil.example', state: 'stale-state' })}`,
+      );
+      assert.equal(failure.status, 200);
+      assert.equal(failure.headers.get('cache-control'), 'no-store');
+      const html = await failure.text();
+      assert.ok(html.includes(`<h1>${title}</h1>`));
+      if (error === 'state_mismatch') {
+        assert.doesNotMatch(html, /Try sign-in again/);
+        assert.match(html, /Close this window/);
+      } else assert.match(html, /href="\/login">Try sign-in again/);
+      assert.doesNotMatch(html, /evil\.example|stale-state|<script>/);
+      const nonce = html.match(/<style nonce="([^"]+)"/)?.[1];
+      assert.ok(nonce);
+      assert.ok(
+        failure.headers.get('content-security-policy')?.includes(`style-src 'nonce-${nonce}'`),
+      );
+    }),
+  );
+  assert.equal((await fetch(`${issuer}/error`, { method: 'POST' })).status, 405);
   const loginURL = new URL(login.response.headers.get('location') ?? '');
   assert.equal(loginURL.pathname, '/login');
+  assert.equal(
+    loginURL.searchParams.get('kc_idp_hint'),
+    'github',
+    'Native provider choice must survive the signed web redirect',
+  );
+  assert.equal(
+    Number(loginURL.searchParams.get('exp')) -
+      Math.floor(Number(loginURL.searchParams.get('ba_iat')) / 1000),
+    15 * 60,
+  );
   const loginPage = await fetch(loginURL);
   assert.match(await loginPage.text(), /id="root"/);
   // The shared /login UI continues the signed phone/MCP request through the social API.
@@ -414,6 +893,48 @@ try {
   assert.equal(appleURL.hostname, 'appleid.apple.com');
   assert.equal(appleURL.searchParams.get('redirect_uri'), `${issuer}/broker/apple/endpoint`);
   assert.match(apple.headers.get('set-cookie') ?? '', /SameSite=None/i);
+  const appleState = appleURL.searchParams.get('state');
+  assert.ok(appleState);
+  const appleCookies = apple.headers
+    .getSetCookie()
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  const appleCancelled = await fetch(`${issuer}/broker/apple/endpoint`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: {
+      Origin: 'https://appleid.apple.com',
+      Cookie: appleCookies,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ state: appleState, error: 'access_denied' }),
+  });
+  assert.equal(appleCancelled.status, 302);
+  const appleCanonical = new URL(appleCancelled.headers.get('location') ?? '');
+  assert.equal(appleCanonical.pathname, `${new URL(issuer).pathname}/callback/apple`);
+  const appleReturned = await fetch(appleCanonical, {
+    redirect: 'manual',
+    headers: { Cookie: appleCookies, Accept: 'text/html' },
+  });
+  const appleReturnURL = new URL(appleReturned.headers.get('location') ?? '');
+  assert.equal(appleReturnURL.protocol, 'myselfmd:');
+  assert.equal(appleReturnURL.host, 'oauth');
+  assert.equal(appleReturnURL.searchParams.get('state'), 'fixture-state');
+  assert.equal(appleReturnURL.searchParams.get('error'), 'access_denied');
+  const replayedApple = await fetch(appleCanonical, {
+    redirect: 'manual',
+    headers: { Cookie: appleCookies, Accept: 'text/html' },
+  });
+  const replayedAppleURL = new URL(replayedApple.headers.get('location') ?? '');
+  assert.equal(replayedAppleURL.protocol, 'myselfmd:');
+  assert.equal(replayedAppleURL.searchParams.get('state'), 'fixture-state');
+  assert.equal(replayedAppleURL.searchParams.get('error'), 'state_mismatch');
+  assert.equal(replayedAppleURL.searchParams.has('code'), false);
+  const unrecoverableState = await fetch(`${issuer}/error?error=state_mismatch`);
+  const unrecoverableHTML = await unrecoverableState.text();
+  assert.doesNotMatch(unrecoverableHTML, /Try sign-in again/);
+  assert.match(unrecoverableHTML, /Close this window and start sign-in again in the app/);
+  console.log('PASS Apple form POST and callback error return to the original native OAuth state.');
   // Isolate Google's redirect assertion from the earlier provider rate-limit bucket.
   const google = await post(
     '/login',
@@ -446,7 +967,104 @@ try {
     { redirect: 'manual' },
   );
   assert.notEqual(googleCallback.status, 404);
-  assert.equal((await auth.$context).options.account?.accountLinking?.enabled, false);
+  assert.equal((await auth.$context).options.account?.accountLinking?.enabled, true);
+  const loginsUrl = `${issuer}/connected-accounts?subject=${encodeURIComponent(fixtureSubject)}`;
+  const connectedPage = await fetch(loginsUrl, { headers: { Cookie: cookie } });
+  assert.equal(connectedPage.status, 200);
+  assert.match(await connectedPage.text(), /GitHub<\/span><span class="connected">/);
+  const missingSession = await fetch(loginsUrl, {
+    method: 'POST',
+    headers: { Origin: origin },
+    body: 'action=link&provider=google',
+  });
+  assert.equal(missingSession.status, 401);
+  const blockedOrigin = await fetch(loginsUrl, {
+    method: 'POST',
+    headers: { Origin: 'https://attacker.test', Cookie: cookie },
+    body: 'action=link&provider=google',
+  });
+  assert.equal(blockedOrigin.status, 403);
+  const connectGoogle = await fetch(loginsUrl, {
+    method: 'POST',
+    headers: { Origin: origin, Cookie: cookie, 'CF-Connecting-IP': '192.0.2.81' },
+    body: 'action=link&provider=google',
+    redirect: 'manual',
+  });
+  assert.equal(connectGoogle.status, 302, await connectGoogle.clone().text());
+  assert.equal(
+    new URL(connectGoogle.headers.get('location') ?? '').hostname,
+    'accounts.google.com',
+  );
+  // Internal linking endpoints stay inaccessible: only the owner browser form can initiate.
+  assert.equal(
+    (
+      await fetch(`${issuer}/link-social`, {
+        method: 'POST',
+        headers: { Origin: origin, Cookie: cookie },
+        body: '{}',
+      })
+    ).status,
+    404,
+  );
+  /** @param {string} selectionPrompt */
+  async function verifyCookiePrompt(selectionPrompt) {
+    const selected = await authorize(
+      'myselfmd-phone',
+      true,
+      'openid profile myselfmd offline_access',
+      `${origin}/mcp`,
+      agedCookie,
+      selectionPrompt,
+      'apple',
+    );
+    const selectedURL = new URL(selected.response.headers.get('location') ?? '');
+    assert.equal(selectedURL.pathname, '/login', 'Cookie renewal cannot bypass provider selection');
+    assert.equal(selectedURL.searchParams.get('kc_idp_hint'), 'apple');
+    assert.equal(selectedURL.searchParams.get('state'), 'fixture-state');
+  }
+  await verifyCookiePrompt('select_account');
+  await verifyCookiePrompt('login');
+  const restored = await authorize(
+    'myselfmd-dashboard',
+    true,
+    'openid profile email myselfmd offline_access',
+    `${origin}/mcp`,
+    cookie,
+    'none',
+  );
+  const restoredURL = new URL(restored.response.headers.get('location') ?? '');
+  assert.equal(restoredURL.pathname, '/dashboard/callback');
+  assert.ok(
+    restoredURL.searchParams.get('code'),
+    'A surviving identity cookie restores web login silently',
+  );
+  const restoredToken = await post('/protocol/openid-connect/token', {
+    grant_type: 'authorization_code',
+    client_id: 'myselfmd-dashboard',
+    code: restoredURL.searchParams.get('code') ?? '',
+    redirect_uri: restored.redirect,
+    code_verifier: restored.verifier,
+  });
+  assert.equal(restoredToken.status, 200, await restoredToken.clone().text());
+  const restoredCredentials = z
+    .object({ access_token: z.string(), refresh_token: z.string() })
+    .parse(await restoredToken.json());
+  const restoredAccount = await fetch(`${origin}/api/dashboard`, {
+    headers: { Authorization: `Bearer ${restoredCredentials.access_token}` },
+  });
+  assert.equal(restoredAccount.status, 200, await restoredAccount.clone().text());
+  const signedOutRestore = await authorize(
+    'myselfmd-dashboard',
+    false,
+    'openid profile email myselfmd offline_access',
+    `${origin}/mcp`,
+    cookie,
+    'none',
+  );
+  assert.equal(
+    new URL(signedOutRestore.response.headers.get('location') ?? '').searchParams.get('error'),
+    'login_required',
+  );
   const phone = await authorize('myselfmd-phone', true);
   const code = new URL(phone.response.headers.get('location') ?? '').searchParams.get('code');
   assert.ok(code);
@@ -463,17 +1081,441 @@ try {
   const tokenSchema = z.object({ access_token: z.string(), refresh_token: z.string() });
   const tokens = tokenSchema.parse(await tokenResponse.json());
   assert.ok(tokens.refresh_token);
+  let checkedRefreshLifetime = false;
+  for (const entry of readdirSync(join(directory, 'state'), {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
+    const persisted = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+    try {
+      if (
+        !persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='oauthRefreshToken'")
+          .get()
+      )
+        continue;
+      const refreshRow = persisted
+        .prepare(
+          'SELECT expiresAt FROM oauthRefreshToken WHERE clientId=? AND revoked IS NULL ORDER BY expiresAt DESC LIMIT 1',
+        )
+        .get('myselfmd-phone');
+      assert.ok(
+        Date.parse(String(refreshRow?.expiresAt)) - Date.now() > 364 * 86400000,
+        'Issued phone refresh tokens last one year',
+      );
+      checkedRefreshLifetime = true;
+    } finally {
+      persisted.close();
+    }
+  }
+  assert.ok(checkedRefreshLifetime);
+
   const certs = await fetch(`${issuer}/protocol/openid-connect/certs`);
   assert.equal(certs.status, 200, await certs.clone().text());
   const jwks = createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`));
   const claims = (await jwtVerify(tokens.access_token, jwks, { issuer, audience: `${origin}/mcp` }))
     .payload;
   assert.equal(claims.sub, 'original-user-id');
+  const reviewerStart = await authorize('myselfmd-mcp', false, 'myselfmd offline_access');
+  const reviewerQuery = new URL(reviewerStart.response.headers.get('location') ?? '').search.slice(
+    1,
+  );
+  assert.equal(
+    (
+      await browserRequest(
+        '/reviewer-login',
+        '',
+        new URLSearchParams({
+          username: 'reviewer',
+          password: reviewerPassword,
+          oauth_query: reviewerQuery,
+        }).toString(),
+        'https://attacker.test',
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await post('/reviewer-login', { username: 'reviewer', password: 'wrong-reviewer-password' }))
+      .status,
+    401,
+  );
+  assert.equal(
+    (
+      await fetch(`${issuer}/sign-up/email`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'public@example.test',
+          password: reviewerPassword,
+          name: 'Public',
+        }),
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await fetch(`${issuer}/sign-in/email`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'fixture@example.test', password: reviewerPassword }),
+      })
+    ).status,
+    401,
+  );
+  const reviewerLogin = await browserRequest(
+    '/reviewer-login',
+    '',
+    new URLSearchParams({
+      username: 'reviewer',
+      password: reviewerPassword,
+      oauth_query: reviewerQuery,
+    }).toString(),
+  );
+  assert.equal(reviewerLogin.status, 302, reviewerLogin.text);
+  const reviewerCookie = (reviewerLogin.headers['set-cookie'] ?? [])
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  const reviewerConsentURL = new URL(String(reviewerLogin.headers.location));
+  assert.equal(reviewerConsentURL.pathname, '/auth/realms/myselfmd/consent');
+  const reviewerConsent = await browserRequest(
+    '/consent',
+    reviewerCookie,
+    new URLSearchParams({
+      accept: 'true',
+      oauth_query: reviewerConsentURL.search.slice(1),
+    }).toString(),
+  );
+  assert.equal(reviewerConsent.status, 302, reviewerConsent.text);
+  const reviewerCode = new URL(String(reviewerConsent.headers.location)).searchParams.get('code');
+  assert.ok(reviewerCode);
+  const reviewerTokens = tokenSchema.parse(
+    await (
+      await post('/oauth2/token', {
+        grant_type: 'authorization_code',
+        client_id: 'myselfmd-mcp',
+        code: reviewerCode,
+        redirect_uri: reviewerStart.redirect,
+        code_verifier: reviewerStart.verifier,
+        resource: `${origin}/mcp`,
+      })
+    ).json(),
+  );
+  assert.equal(
+    (await jwtVerify(reviewerTokens.access_token, jwks, { issuer, audience: `${origin}/mcp` }))
+      .payload.sub,
+    reviewerUserId,
+  );
+  assert.equal(
+    (
+      await browserRequest(
+        `/connected-accounts?subject=${encodeURIComponent(reviewerSubject)}`,
+        reviewerCookie,
+      )
+    ).status,
+    403,
+  );
+  let reviewerFileId = '';
+  const reviewerClient = new Client({ name: 'reviewer-fixture', version: '1' });
+  try {
+    await reviewerClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${reviewerTokens.access_token}` } },
+      }),
+    );
+    const unscopedProfile = await reviewerClient.callTool({
+      name: 'get_account_profile',
+      arguments: {},
+    });
+    assert.notEqual(
+      unscopedProfile.isError,
+      true,
+      'An MCP-only token must not fail the account profile tool.',
+    );
+    assert.deepEqual(unscopedProfile.structuredContent, { name: null, email: null, picture: null });
+    const listed = await reviewerClient.callTool({ name: 'list_cloud_exports', arguments: {} });
+    assert.ok(Array.isArray(listed.content));
+    const text = listed.content[0];
+    assert.ok(text && text.type === 'text');
+    const files = z.array(z.object({ id: z.string() })).parse(JSON.parse(text.text).exports);
+    assert.equal(files.length, 4);
+    const firstListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { limit: 1 },
+    });
+    const firstListText = firstListPage.content.find((part) => part.type === 'text');
+    assert.ok(firstListText && firstListText.type === 'text');
+    const firstList = z
+      .object({
+        exports: z.array(z.object({ id: z.string(), profileId: z.string() })),
+        nextCursor: z.string(),
+      })
+      .parse(JSON.parse(firstListText.text));
+    assert.equal(firstList.exports.length, 1);
+    const secondListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { limit: 1, cursor: firstList.nextCursor },
+    });
+    const secondListText = secondListPage.content.find((part) => part.type === 'text');
+    assert.ok(secondListText && secondListText.type === 'text');
+    const secondList = z
+      .object({ exports: z.array(z.object({ id: z.string() })) })
+      .parse(JSON.parse(secondListText.text));
+    assert.notEqual(secondList.exports[0]?.id, firstList.exports[0]?.id);
+    assert.equal(
+      (
+        await reviewerClient.callTool({
+          name: 'list_cloud_exports',
+          arguments: { cursor: firstList.nextCursor, profileId: 'different' },
+        })
+      ).isError,
+      true,
+    );
+    const emptyListPage = await reviewerClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: { start: '2099-01-01' },
+    });
+    const emptyListText = emptyListPage.content.find((part) => part.type === 'text');
+    assert.ok(emptyListText && emptyListText.type === 'text');
+    assert.deepEqual(JSON.parse(emptyListText.text), { exports: [], nextCursor: null });
+    const fileId = files[0]?.id;
+    assert.ok(fileId);
+    const page = await reviewerClient.callTool({
+      name: 'read_cloud_export',
+      arguments: { exportId: fileId, limit: 50 },
+    });
+    assert.notEqual(page.isError, true);
+    assert.ok(Array.isArray(page.content));
+    const pageText = page.content[0];
+    assert.ok(pageText && pageText.type === 'text');
+    const fixturePage = z
+      .object({
+        records: z.array(
+          z.object({ source: z.string(), native: z.object({ fictional: z.literal(true) }) }),
+        ),
+        nextCursor: z.string(),
+      })
+      .parse(JSON.parse(pageText.text));
+    assert.equal(fixturePage.records.length, 50);
+    assert.equal(fixturePage.nextCursor, '50');
+    assert.ok(fixturePage.records.every((record) => record.source === 'reviewer-fixture'));
+    const linking = await reviewerClient.callTool({ name: 'get_account_logins', arguments: {} });
+    assert.ok(
+      z
+        .object({ providers: z.array(z.object({ available: z.boolean() })) })
+        .parse(linking.structuredContent)
+        .providers.every((provider) => !provider.available),
+    );
+    assert.equal(
+      (
+        await reviewerClient.callTool({
+          name: 'request_account_link',
+          arguments: { provider: 'google' },
+        })
+      ).isError,
+      true,
+    );
+    reviewerFileId = fileId;
+  } finally {
+    await reviewerClient.close();
+  }
+
+  const restrictedResource = `${origin}${chatgptMcpPath}`;
+  const restrictedMetadata = await fetch(
+    `${origin}/.well-known/oauth-protected-resource${chatgptMcpPath}`,
+  );
+  assert.equal(restrictedMetadata.status, 200);
+  assert.equal(
+    z.object({ resource: z.string() }).parse(await restrictedMetadata.json()).resource,
+    restrictedResource,
+  );
+  assert.equal(
+    (
+      await fetch(restrictedResource, {
+        headers: { Authorization: `Bearer ${reviewerTokens.access_token}` },
+      })
+    ).status,
+    401,
+  );
+  const restrictedStart = await authorize(
+    'myselfmd-mcp',
+    true,
+    'myselfmd offline_access',
+    restrictedResource,
+    reviewerCookie,
+  );
+  const restrictedConsentURL = new URL(restrictedStart.response.headers.get('location') ?? '');
+  assert.equal(
+    restrictedConsentURL.searchParams.get('error'),
+    null,
+    restrictedConsentURL.searchParams.get('error_description') ?? 'OAuth authorization failed',
+  );
+  assert.equal(
+    restrictedConsentURL.pathname,
+    '/auth/realms/myselfmd/consent',
+    restrictedConsentURL.pathname,
+  );
+  const restrictedConsent = await browserRequest(
+    '/consent',
+    reviewerCookie,
+    new URLSearchParams({
+      accept: 'true',
+      oauth_query: new URL(restrictedStart.response.headers.get('location') ?? '').search.slice(1),
+    }).toString(),
+  );
+  assert.equal(restrictedConsent.status, 302, restrictedConsent.text);
+  const restrictedTokens = tokenSchema.parse(
+    await (
+      await post('/oauth2/token', {
+        grant_type: 'authorization_code',
+        client_id: 'myselfmd-mcp',
+        code: new URL(String(restrictedConsent.headers.location)).searchParams.get('code') ?? '',
+        redirect_uri: restrictedStart.redirect,
+        code_verifier: restrictedStart.verifier,
+        resource: restrictedResource,
+      })
+    ).json(),
+  );
+  assert.equal(
+    (
+      await fetch(`${origin}/api/dashboard`, {
+        headers: { Authorization: `Bearer ${restrictedTokens.access_token}` },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await fetch(`${origin}/mcp`, {
+        headers: { Authorization: `Bearer ${restrictedTokens.access_token}` },
+      })
+    ).status,
+    401,
+  );
+  const restrictedClient = new Client({ name: 'chatgpt-resource-fixture', version: '1' });
+  try {
+    await restrictedClient.connect(
+      new StreamableHTTPClientTransport(new URL(restrictedResource), {
+        requestInit: { headers: { Authorization: `Bearer ${restrictedTokens.access_token}` } },
+      }),
+    );
+    const restrictedTools = await restrictedClient.listTools();
+    assert.deepEqual(
+      new Set(restrictedTools.tools.map((tool) => tool.name)),
+      new Set(chatgptToolNames),
+    );
+    for (const name of [
+      'get_phone_debug_logs',
+      'get_lifetime_access',
+      'send_support_message',
+      'delete_account',
+    ]) {
+      // Sequential calls prove removed registrations are not merely hidden from discovery.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      await assert.rejects(() => restrictedClient.callTool({ name, arguments: {} }), /not found/);
+    }
+    const workflow = await restrictedClient.callTool({
+      name: 'get_public_documentation',
+      arguments: { guide: mcpGuide.slug },
+    });
+    assert.notEqual(workflow.isError, true);
+    assert.ok(
+      workflow.content.some((part) => part.type === 'text' && part.text === mcpGuide.markdown),
+    );
+    assert.equal(
+      (
+        await restrictedClient.callTool({
+          name: 'get_public_documentation',
+          arguments: { guide: 'https://example.com/private' },
+        })
+      ).isError,
+      true,
+    );
+    const documentation = await restrictedClient.callTool({
+      name: 'get_public_documentation',
+      arguments: {},
+    });
+    assert.notEqual(documentation.isError, true);
+    assert.ok(
+      documentation.content.some(
+        (value) => value.type === 'text' && value.text.includes('https://myself.md/mcp/chatgpt'),
+      ),
+    );
+    assert.ok(
+      !documentation.content.some(
+        (value) =>
+          value.type === 'text' &&
+          /\$\d|timemd\.app|planned US price/.test(value.text.replace(serviceTerms, '')),
+      ),
+    );
+    assert.ok(
+      documentation.content.some(
+        (value) =>
+          value.type === 'text' &&
+          value.text.includes(serviceTerms) &&
+          value.text.includes('export_phone_data'),
+      ),
+    );
+    const unownedPhoneExport = await restrictedClient.callTool({
+      name: 'export_phone_data',
+      arguments: { deviceId: randomUUID(), profileId: 'unowned', requestId: randomUUID() },
+    });
+    assert.equal(unownedPhoneExport.isError, true);
+    const restrictedList = await restrictedClient.callTool({
+      name: 'list_cloud_exports',
+      arguments: {},
+    });
+    const text = restrictedList.content.find((value) => value.type === 'text');
+    assert.ok(text && text.type === 'text');
+    assert.equal(JSON.parse(text.text).exports.length, 4);
+    assert.equal(
+      (
+        await restrictedClient.callTool({
+          name: 'read_cloud_export',
+          arguments: { exportId: reviewerFileId, limit: 1 },
+        })
+      ).isError,
+      undefined,
+    );
+  } finally {
+    await restrictedClient.close();
+  }
+  console.log(
+    'PASS ChatGPT resource audience isolation, shared data reads, safe docs, and executable exclusion of diagnostics/commerce/support/deletion tools.',
+  );
   assert.equal(claims.client_id, 'myselfmd-phone');
+  const expectedProfile = { name: 'Fixture', email: 'fixture@example.test', picture: null };
+  const profileResponse = await fetch(`${origin}/api/account-profile`, {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  assert.equal(profileResponse.status, 200, await profileResponse.clone().text());
+  assert.deepEqual(await profileResponse.json(), expectedProfile);
+  await cli([
+    'd1',
+    'execute',
+    'myself-md-identity',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--command',
+    `INSERT INTO rateLimit(id,key,count,lastRequest) VALUES ('internal-jwks-limit','no-trusted-ip|/jwks',60,${Date.now()}),('public-jwks-limit','203.0.113.79|/jwks',60,${Date.now()}) ON CONFLICT(key) DO UPDATE SET count=60,lastRequest=excluded.lastRequest;`,
+  ]);
+  const limitedJwks = await fetch(`${issuer}/protocol/openid-connect/certs`, {
+    headers: { 'cf-connecting-ip': '203.0.113.79' },
+  });
+  assert.equal(limitedJwks.status, 429, 'The public JWKS endpoint must retain its rate limit');
   const devices = await fetch(`${origin}/api/devices`, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
-  assert.equal(devices.status, 200, await devices.clone().text());
+  assert.equal(
+    devices.status,
+    200,
+    `Internal JWT verification must not consume the public JWKS rate limit: ${await devices.clone().text()}`,
+  );
   assert.equal(
     z.object({ subject: z.string() }).parse(await devices.json()).subject,
     'https://old.example/realm|original-user-id',
@@ -492,6 +1534,15 @@ try {
     resource: `${origin}/mcp`,
   });
   assert.equal(refresh.status, 200, await refresh.clone().text());
+  const refreshedPhone = tokenSchema.parse(await refresh.clone().json());
+  const refreshedDevices = await fetch(`${origin}/api/devices`, {
+    headers: { Authorization: `Bearer ${refreshedPhone.access_token}` },
+  });
+  assert.equal(
+    refreshedDevices.status,
+    200,
+    `A refreshed phone token must authenticate phone APIs: ${await refreshedDevices.text()}`,
+  );
   const retryRefresh = await post('/protocol/openid-connect/token', {
     grant_type: 'refresh_token',
     client_id: 'myselfmd-phone',
@@ -499,7 +1550,15 @@ try {
     resource: `${origin}/mcp`,
   });
   assert.equal(retryRefresh.status, 200, await retryRefresh.clone().text());
-  assert.deepEqual(await retryRefresh.json(), await refresh.clone().json());
+  const refreshResult = z.object({ expires_in: z.number() }).loose();
+  const { expires_in: originalLifetime, ...originalTokens } = refreshResult.parse(
+    await refresh.clone().json(),
+  );
+  const { expires_in: retryLifetime, ...retryTokens } = refreshResult.parse(
+    await retryRefresh.json(),
+  );
+  assert.deepEqual(retryTokens, originalTokens);
+  assert.ok(retryLifetime > 0 && retryLifetime <= originalLifetime);
   let mcp = await authorize('myselfmd-mcp', true);
   const consentURL = new URL(mcp.response.headers.get('location') ?? '');
   assert.equal(consentURL.pathname, '/auth/realms/myselfmd/consent');
@@ -507,6 +1566,12 @@ try {
   assert.equal(consentPage.headers.get('referrer-policy'), 'same-origin');
   assert.ok(
     consentPage.headers.get('content-security-policy')?.includes(new URL(mcp.redirect).origin),
+  );
+  const consentHTML = await consentPage.text();
+  const styleNonce = consentHTML.match(/<style nonce="([^"]+)">/)?.[1];
+  assert.ok(styleNonce);
+  assert.ok(
+    consentPage.headers.get('content-security-policy')?.includes(`style-src 'nonce-${styleNonce}'`),
   );
   const invalidCallback = new URL(consentURL);
   invalidCallback.searchParams.set('redirect_uri', 'https://untrusted.example/callback');
@@ -527,9 +1592,90 @@ try {
   );
   let mcpCode;
   if (process.argv.includes('--browser')) {
+    // Negative password cases intentionally consume the production limiter. Start the
+    // separate browser scenario with a fresh local rate window, without weakening it.
+    child.kill('SIGTERM');
+    await once(child, 'exit');
+    await cli([
+      'd1',
+      'execute',
+      'myself-md-identity',
+      '--local',
+      '--config',
+      configPath,
+      '--persist-to',
+      join(directory, 'state'),
+      '--command',
+      'DELETE FROM rateLimit;',
+    ]);
+    child = spawn(
+      resolve('node_modules/.bin/wrangler'),
+      ['dev', '--config', configPath, '--port', port, '--persist-to', join(directory, 'state')],
+      { stdio: ['ignore', output, output] },
+    );
+    await ready(200);
     const { chromium } = await import('playwright');
     const browser = await chromium.launch();
     try {
+      const reviewerBrowser = await browser.newContext();
+      const reviewerTab = await reviewerBrowser.newPage();
+      await reviewerTab.goto(`${origin}/login`);
+      await reviewerTab.getByRole('button', { name: 'Reviewer sign-in', exact: true }).click();
+      await reviewerTab.waitForURL((url) => url.pathname.endsWith('/reviewer-login'));
+      await reviewerTab.getByLabel('Username').fill('reviewer');
+      await reviewerTab.getByLabel('Password').fill(reviewerPassword);
+      await reviewerTab.getByRole('button', { name: 'Sign in as reviewer', exact: true }).click();
+      await reviewerTab
+        .waitForURL(
+          (url) => url.pathname === '/dashboard' || url.pathname === '/dashboard/callback',
+        )
+        .catch(async (error) => {
+          console.error(
+            'Reviewer browser:',
+            new URL(reviewerTab.url()).pathname,
+            await reviewerTab.locator('body').innerText(),
+          );
+          throw error;
+        });
+      await reviewerTab
+        .locator('header')
+        .getByLabel('6 files: Stored export files', { exact: true })
+        .waitFor({ state: 'visible' });
+      assert.ok(
+        (await reviewerTab.context().cookies()).some((value) =>
+          value.name.includes('session_token'),
+        ),
+      );
+      await reviewerBrowser.close();
+      const nativeReviewerBrowser = await browser.newContext();
+      const nativeReviewerTab = await nativeReviewerBrowser.newPage();
+      const nativeReviewerStart = await authorize('myselfmd-phone', false);
+      const nativeReviewerSearch = new URL(
+        nativeReviewerStart.response.headers.get('location') ?? '',
+      ).search;
+      let nativeReviewerCspBlocked = false;
+      nativeReviewerTab.on('console', (message) => {
+        if (/form-action/i.test(message.text())) nativeReviewerCspBlocked = true;
+      });
+      await nativeReviewerTab.goto(`${issuer}/reviewer-login${nativeReviewerSearch}`);
+      await nativeReviewerTab.getByLabel('Username').fill('reviewer');
+      await nativeReviewerTab.getByLabel('Password').fill(reviewerPassword);
+      const nativeReviewerPost = nativeReviewerTab.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/reviewer-login') &&
+          response.request().method() === 'POST',
+      );
+      await nativeReviewerTab
+        .getByRole('button', { name: 'Sign in as reviewer', exact: true })
+        .click({ noWaitAfter: true });
+      const nativeReviewerResponse = await nativeReviewerPost;
+      assert.equal(nativeReviewerResponse.status(), 302);
+      assert.equal(new URL(nativeReviewerResponse.headers().location ?? '').protocol, 'myselfmd:');
+      assert.equal(nativeReviewerCspBlocked, false);
+      await nativeReviewerBrowser.close();
+      console.log(
+        'Browser reviewer sign-in reaches the registered native callback without a CSP block.',
+      );
       const browserContext = await browser.newContext();
       const [cookieName, ...cookieValue] = cookie.split('=');
       assert.ok(cookieName);
@@ -539,6 +1685,20 @@ try {
       const tab = await browserContext.newPage();
       const callbackOrigin = new URL(mcp.redirect).origin;
       await tab.goto(consentURL.href);
+      assert.equal(
+        await tab.evaluate('getComputedStyle(document.querySelector("main")).borderRadius'),
+        '20px',
+      );
+      await [320, 390].reduce(async (previous, width) => {
+        await previous;
+        await tab.setViewportSize({ width, height: 844 });
+        assert.ok(
+          await tab.evaluate('document.documentElement.scrollWidth <= innerWidth'),
+          `Consent must fit a ${width}px viewport.`,
+        );
+        assert.ok(await tab.getByRole('button', { name: 'Allow access', exact: true }).isVisible());
+      }, Promise.resolve());
+      await tab.setViewportSize({ width: 1280, height: 800 });
       await tab.getByRole('button', { name: 'Cancel', exact: true }).click();
       await tab.waitForURL((url) => url.origin === callbackOrigin && url.searchParams.has('error'));
       assert.equal(new URL(tab.url()).searchParams.get('error'), 'access_denied');
@@ -550,6 +1710,34 @@ try {
       mcpCode = new URL(tab.url()).searchParams.get('code');
       assert.equal(new URL(tab.url()).searchParams.get('state'), 'fixture-state');
       assert.equal(callbackReferrer, false);
+      await tab.route(
+        (url) => url.hostname === 'accounts.google.com',
+        (route) =>
+          route.fulfill({ contentType: 'text/html', body: 'Google authentication received' }),
+      );
+      await tab.goto(loginsUrl);
+      assert.equal(
+        await tab.evaluate('getComputedStyle(document.querySelector(".provider-row")).display'),
+        'flex',
+      );
+      await tab.setViewportSize({ width: 320, height: 844 });
+      assert.ok(await tab.evaluate('document.documentElement.scrollWidth <= innerWidth'));
+      await tab.emulateMedia({ colorScheme: 'dark' });
+      assert.ok(await tab.getByRole('button', { name: 'Connect Google', exact: true }).isVisible());
+      await tab.emulateMedia({ colorScheme: 'light' });
+      await tab.setViewportSize({ width: 1280, height: 800 });
+      assert.ok(
+        await tab
+          .getByRole('listitem')
+          .filter({ hasText: 'GitHub' })
+          .getByText('Connected')
+          .isVisible(),
+      );
+      await tab.getByRole('button', { name: 'Connect Google', exact: true }).click();
+      await tab.waitForURL((url) => url.hostname === 'accounts.google.com');
+      console.log(
+        'Browser account linking verified: connected inventory and owner form/provider handoff.',
+      );
       // The legacy login form also redirects to an external social provider.
       await tab.route(
         (url) => url.hostname === 'github.com',
@@ -561,9 +1749,51 @@ try {
       // Isolate this fixture from the earlier social API rate-limit bucket in local workerd.
       await browserContext.setExtraHTTPHeaders({ 'cf-connecting-ip': '192.0.2.2' });
       await tab.goto(`${issuer}/login${browserLoginURL.search}`);
+      assert.equal(await tab.locator('.sign-in-form svg').count(), 3);
+      assert.equal(
+        await tab.evaluate('getComputedStyle(document.querySelector("main")).borderRadius'),
+        '20px',
+      );
+      await tab.setViewportSize({ width: 320, height: 844 });
+      await tab.emulateMedia({ colorScheme: 'dark' });
+      assert.ok(await tab.evaluate('document.documentElement.scrollWidth <= innerWidth'));
+      await tab.emulateMedia({ colorScheme: 'light' });
+      await tab.setViewportSize({ width: 1280, height: 800 });
       await tab.getByRole('button', { name: 'Continue with GitHub', exact: true }).click();
       await tab.waitForURL((url) => url.hostname === 'github.com');
       console.log('Browser OAuth verified: cancel, accept, external callback and social sign-in.');
+      const errorScreenshots = resolve('.local/sign-in-error-ui');
+      mkdirSync(errorScreenshots, { recursive: true });
+      await Promise.all(
+        ['account_not_linked', 'state_mismatch'].map(async (error) => {
+          const errorTab = await browserContext.newPage();
+          await errorTab.setViewportSize({ width: 1280, height: 800 });
+          await errorTab.goto(`${issuer}/error?error=${error}`);
+          await errorTab.screenshot({ path: join(errorScreenshots, `${error}-light.png`) });
+          await errorTab.setViewportSize({ width: 320, height: 844 });
+          await errorTab.emulateMedia({ colorScheme: 'dark' });
+          assert.ok(await errorTab.evaluate('document.documentElement.scrollWidth <= innerWidth'));
+          await errorTab.screenshot({ path: join(errorScreenshots, `${error}-dark-mobile.png`) });
+          if (error === 'state_mismatch') {
+            assert.equal(
+              await errorTab.getByRole('link', { name: 'Try sign-in again', exact: true }).count(),
+              0,
+            );
+            assert.ok(await errorTab.getByText('Close this window', { exact: false }).isVisible());
+          } else {
+            await errorTab.getByRole('link', { name: 'Try sign-in again', exact: true }).click();
+            await errorTab.waitForURL(`${origin}/login`);
+            assert.equal(
+              await errorTab
+                .getByRole('button', { name: 'Continue with Google', exact: true })
+                .count(),
+              1,
+            );
+          }
+          await errorTab.close();
+        }),
+      );
+      console.log('Browser sign-in errors verified: guidance, mobile dark layout and fresh retry.');
     } finally {
       await browser.close();
     }
@@ -592,6 +1822,48 @@ try {
       requestInit: { headers: { Authorization: `Bearer ${mcpTokens.access_token}` } },
     }),
   );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: reviewerFileId } }))
+      .isError,
+    true,
+  );
+  const accountProfile = await client.callTool({ name: 'get_account_profile', arguments: {} });
+  assert.equal(accountProfile.isError, undefined);
+  assert.deepEqual(accountProfile.structuredContent, expectedProfile);
+  const logins = await client.callTool({ name: 'get_account_logins', arguments: {} });
+  assert.equal(logins.isError, undefined);
+  const linkedLogins = z
+    .object({
+      subject: z.string(),
+      providers: z.array(z.object({ provider: z.string(), connected: z.boolean() })),
+      handoff: z.object({ url: z.string() }),
+    })
+    .parse(logins.structuredContent);
+  assert.equal(linkedLogins.subject, fixtureSubject);
+  assert.ok(linkedLogins.providers.some((item) => item.provider === 'github' && item.connected));
+  const linking = await client.callTool({
+    name: 'request_account_link',
+    arguments: { provider: 'google' },
+  });
+  assert.equal(linking.isError, undefined);
+  assert.equal(
+    z.object({ status: z.string() }).parse(linking.structuredContent).status,
+    'awaiting_user',
+  );
+  assert.equal(
+    (await client.callTool({ name: 'request_account_link', arguments: { provider: 'password' } }))
+      .isError,
+    true,
+  );
+  const loginsResponse = await fetch(`${origin}/api/account-logins`, {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  assert.equal(loginsResponse.status, 200);
+  assert.equal(
+    z.object({ subject: z.string() }).parse(await loginsResponse.json()).subject,
+    fixtureSubject,
+  );
+  assert.equal((await fetch(`${origin}/api/account-logins`)).status, 401);
   const allowance = await client.callTool({ name: 'get_lifetime_access', arguments: {} });
   assert.equal(allowance.isError, undefined);
   assert.equal(
@@ -666,6 +1938,213 @@ try {
     body: JSON.stringify({ redirect_uris: ['https://untrusted.example/callback'] }),
   });
   assert.equal(unsupported.status, 400);
+  const vercelRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    // Keep these additional OAuth requests outside the existing fixture's rate-limit bucket.
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: origin,
+      'CF-Connecting-IP': '192.0.2.90',
+    },
+    body: JSON.stringify({
+      client_name: 'Vercel Connect fixture',
+      redirect_uris: ['https://connect.vercel.com/callback'],
+      token_endpoint_auth_method: 'none',
+      scope: 'myselfmd offline_access',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(vercelRegistration.status, 201, await vercelRegistration.clone().text());
+  const vercelClient = z
+    .object({ client_id: z.string(), skip_consent: z.boolean().optional() })
+    .parse(await vercelRegistration.json());
+  assert.notEqual(vercelClient.skip_consent, true);
+  const vercelAuthorization = await fetch(
+    `${issuer}/oauth2/authorize?${new URLSearchParams({
+      client_id: vercelClient.client_id,
+      response_type: 'code',
+      redirect_uri: 'https://connect.vercel.com/callback',
+      scope: 'myselfmd offline_access',
+      resource: `${origin}/mcp`,
+      code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+      code_challenge_method: 'S256',
+      state: 'vercel-fixture-state',
+    })}`,
+    {
+      redirect: 'manual',
+      headers: {
+        Cookie: cookie,
+        Accept: 'text/html',
+        'Sec-Fetch-Mode': 'navigate',
+        'CF-Connecting-IP': '192.0.2.90',
+      },
+    },
+  );
+  assert.equal(vercelAuthorization.status, 302, await vercelAuthorization.clone().text());
+  assert.equal(
+    new URL(vercelAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
+  const zapierRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: origin,
+      'CF-Connecting-IP': '192.0.2.91',
+    },
+    body: JSON.stringify({
+      client_name: 'Zapier origin fixture',
+      // A representative callback on the origin observed from Zapier's live registration.
+      redirect_uris: ['https://zapier.com/oauth/callback'],
+      token_endpoint_auth_method: 'client_secret_basic',
+      scope: 'myselfmd offline_access',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(zapierRegistration.status, 201, await zapierRegistration.clone().text());
+  const zapierClient = z
+    .object({ client_id: z.string(), skip_consent: z.boolean().optional() })
+    .parse(await zapierRegistration.json());
+  assert.notEqual(zapierClient.skip_consent, true);
+  const zapierAuthorization = await fetch(
+    `${issuer}/oauth2/authorize?${new URLSearchParams({
+      client_id: zapierClient.client_id,
+      response_type: 'code',
+      redirect_uri: 'https://zapier.com/oauth/callback',
+      scope: 'myselfmd offline_access',
+      resource: `${origin}/mcp`,
+      code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+      code_challenge_method: 'S256',
+      state: 'zapier-fixture-state',
+    })}`,
+    {
+      redirect: 'manual',
+      headers: {
+        Cookie: cookie,
+        Accept: 'text/html',
+        'Sec-Fetch-Mode': 'navigate',
+        'CF-Connecting-IP': '192.0.2.91',
+      },
+    },
+  );
+  assert.equal(zapierAuthorization.status, 302, await zapierAuthorization.clone().text());
+  assert.equal(
+    new URL(zapierAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
+  const smitheryRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      client_name: 'Smithery fixture',
+      redirect_uris: ['https://connect.smithery.ai/oauth/callback'],
+      token_endpoint_auth_method: 'none',
+      scope: 'myselfmd',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(smitheryRegistration.status, 201, await smitheryRegistration.clone().text());
+  const smitheryClient = z
+    .object({ client_id: z.string() })
+    .parse(await smitheryRegistration.json());
+  const smitheryQuery = new URLSearchParams({
+    client_id: smitheryClient.client_id,
+    response_type: 'code',
+    redirect_uri: 'https://connect.smithery.ai/oauth/callback',
+    scope: 'myselfmd',
+    resource: `${origin}/mcp`,
+    code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+    code_challenge_method: 'S256',
+    state: 'smithery-fixture-state',
+  });
+  const smitheryAuthorization = await fetch(
+    `${issuer}/protocol/openid-connect/auth?${smitheryQuery}`,
+    {
+      redirect: 'manual',
+      headers: { Cookie: cookie, Accept: 'text/html', 'Sec-Fetch-Mode': 'navigate' },
+    },
+  );
+  assert.equal(smitheryAuthorization.status, 302, await smitheryAuthorization.clone().text());
+  assert.equal(
+    new URL(smitheryAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
+  const directBrowserAuthorization = await fetch(`${issuer}/oauth2/authorize?${smitheryQuery}`, {
+    redirect: 'manual',
+    headers: { Cookie: cookie, Accept: 'text/html', 'Sec-Fetch-Mode': 'navigate' },
+  });
+  assert.equal(
+    directBrowserAuthorization.status,
+    302,
+    await directBrowserAuthorization.clone().text(),
+  );
+  assert.equal(
+    new URL(directBrowserAuthorization.headers.get('Location') ?? '').pathname,
+    `${new URL(issuer).pathname}/consent`,
+  );
+  const glamaRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      client_name: 'Glama callback fixture',
+      redirect_uris: ['https://glama.ai/oauth/callback', 'http://localhost:6749/oauth/callback'],
+      token_endpoint_auth_method: 'client_secret_basic',
+      scope: 'myselfmd',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  assert.equal(glamaRegistration.status, 201, await glamaRegistration.clone().text());
+  const glamaClient = z
+    .object({ application_type: z.string() })
+    .parse(await glamaRegistration.json());
+  assert.equal(glamaClient.application_type, 'native');
+  const declaredWebRegistration = await fetch(`${issuer}/oauth2/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      application_type: 'web',
+      redirect_uris: ['https://glama.ai/oauth/callback', 'http://localhost:6749/oauth/callback'],
+    }),
+  });
+  assert.equal(declaredWebRegistration.status, 400);
+  await Promise.all(
+    [
+      'http://connect.vercel.com/callback',
+      'https://connect.vercel.com/other',
+      'https://connect.vercel.com/callback?forward=elsewhere',
+      'https://connect.vercel.com:444/callback',
+      'https://connect.vercel.com.evil.example/callback',
+      'https://user:secret@connect.vercel.com/callback',
+      'https://connect.vercel.com/callback#fragment',
+      'http://zapier.com/oauth/callback',
+      'https://zapier.com:444/oauth/callback',
+      'https://zapier.com.evil.example/oauth/callback',
+      'https://user:secret@zapier.com/oauth/callback',
+      'https://zapier.com/oauth/callback#fragment',
+      'http://connect.smithery.ai/oauth/callback',
+      'https://connect.smithery.ai/other',
+      'https://connect.smithery.ai/oauth/callback?forward=elsewhere',
+      'https://connect.smithery.ai:444/oauth/callback',
+      'https://connect.smithery.ai.evil.example/oauth/callback',
+      'https://user:secret@connect.smithery.ai/oauth/callback',
+      'http://glama.ai/oauth/callback',
+      'https://glama.ai:444/oauth/callback',
+      'https://glama.ai.evil.example/oauth/callback',
+      'https://user:secret@glama.ai/oauth/callback',
+      'https://glama.ai/oauth/callback#fragment',
+    ].map(async (redirect) => {
+      const rejected = await fetch(`${issuer}/oauth2/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: origin },
+        body: JSON.stringify({ redirect_uris: [redirect] }),
+      });
+      assert.equal(rejected.status, 400, `Unexpected directory callback acceptance: ${redirect}`);
+    }),
+  );
   // Deletion runs through the real hosted HTTP and MCP adapters, using only fixture accounts.
   assert.equal((await fetch(`${origin}/delete-account`)).status, 200);
   const handoff = await client.callTool({ name: 'request_account_deletion', arguments: {} });
@@ -686,6 +2165,9 @@ try {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   }
+  const deletionPurchaseAccount = z
+    .object({ appAccountToken: z.string().uuid() })
+    .parse(await (await ownerRequest('/api/cloud/purchase-account')).json());
   const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
   const pairingUrl = z
     .object({ pairingUrl: z.string() })
@@ -804,6 +2286,11 @@ try {
     arguments: { subject: 'other-account', confirmation: 'DELETE' },
   });
   assert.equal(wrongAccountDelete.isError, true);
+  const pendingAuthorization = await authorize('myselfmd-phone', true);
+  const pendingAuthorizationCode = new URL(
+    pendingAuthorization.response.headers.get('location') ?? '',
+  ).searchParams.get('code');
+  assert.ok(pendingAuthorizationCode);
   const [removed, concurrentRemoval, agentRemoval] = await Promise.all([
     ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
     ownerRequest('/api/account', 'DELETE', { subject, confirmation: 'DELETE' }),
@@ -821,6 +2308,13 @@ try {
     .object({ state: z.literal('completed'), statusUrl: z.string() })
     .parse(await removed.json());
   assert.equal((await ownerRequest('/api/devices')).status, 410);
+  assert.equal((await ownerRequest('/api/analytics/preferences')).status, 410);
+  await assert.rejects(() =>
+    client.callTool({
+      name: 'set_usage_analytics_preference',
+      arguments: { enabled: true, confirmation: 'ALLOW_USAGE_ANALYTICS' },
+    }),
+  );
   assert.equal(
     (
       await fetch(`${origin}/api/watch/runtime`, {
@@ -881,13 +2375,175 @@ try {
   console.log(
     'PASS Cloudflare identity: Apple/GitHub/Google callback URLs, signed login state, preserved subjects, native PKCE, code replay denial, refresh isolation, consent, MCP and first-party authorization.',
   );
+  child.kill('SIGTERM');
+  await once(child, 'exit');
+  // Inspect the stopped real workerd SQLite stores, not a second cleanup implementation.
+  let tombstoneFound = false;
+  let billingPartitions = 0;
+  let cloudWritePartitions = 0;
+  let identityPartitions = 0;
+  const ownerKey = accountTokenKey(deletionPurchaseAccount.appAccountToken);
+  for (const entry of readdirSync(join(directory, 'state'), {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
+    const persisted = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+    try {
+      if (
+        persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='verification'")
+          .get()
+      ) {
+        identityPartitions++;
+        assert.equal(
+          persisted
+            .prepare(
+              `SELECT COUNT(*) AS count FROM verification WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.userId')=? OR json_extract(value,'$.link.userId')=? ELSE 0 END`,
+            )
+            .get('original-user-id', 'original-user-id')?.count,
+          0,
+          'Deletion removes unconsumed codes and owned account-link state before any attempted exchange.',
+        );
+        assert.deepEqual(
+          new Set(
+            persisted
+              .prepare("SELECT id FROM verification WHERE id LIKE 'deletion-%'")
+              .all()
+              .map((row) => row.id),
+          ),
+          new Set(retainedVerificationFixtures.map(([id]) => id)),
+          'Deletion removes owned codes while preserving other accounts, sign-in state and invalid values.',
+        );
+      }
+      if (
+        !persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_subscriptions'")
+          .get()
+      )
+        continue;
+      billingPartitions++;
+      for (const table of [
+        'cloud_subscriptions',
+        'cloud_lapses',
+        'cloud_notices',
+        'cloud_revocations',
+      ])
+        assert.equal(
+          Number(
+            persisted.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE subject=?`).get(subject)
+              ?.count,
+          ),
+          0,
+          `Account deletion clears ${table} in every partition`,
+        );
+      if (
+        persisted
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_writes'")
+          .get()
+      ) {
+        cloudWritePartitions++;
+        assert.equal(
+          persisted.prepare('SELECT COUNT(*) count FROM cloud_writes WHERE subject=?').get(subject)
+            ?.count,
+          0,
+          'Account deletion clears cloud export retry receipts',
+        );
+      }
+      const owner = persisted.prepare('SELECT subject FROM cloud_owners WHERE key=?').get(ownerKey);
+      if (owner) {
+        assert.equal(
+          owner.subject,
+          'deleted',
+          'Global Purchase ownership is tombstoned without retaining the account',
+        );
+        tombstoneFound = true;
+      }
+    } finally {
+      persisted.close();
+    }
+  }
+  assert.ok(billingPartitions > 0);
+  assert.ok(cloudWritePartitions > 0);
+  assert.ok(identityPartitions > 0);
+  assert.ok(tombstoneFound, 'Account deletion preserves its Purchase ownership tombstone');
+  const tombstone = new BillingStore(':memory:');
+  try {
+    tombstone.bindOwner(ownerKey, 'deleted');
+    assert.throws(
+      () => tombstone.bindOwner(ownerKey, 'another-account'),
+      /another.*account/,
+      'Deleted ownership cannot be reclaimed by a new account',
+    );
+  } finally {
+    tombstone.db.close();
+  }
+  await cli([
+    'd1',
+    'execute',
+    'myself-md-identity',
+    '--local',
+    '--config',
+    configPath,
+    '--persist-to',
+    join(directory, 'state'),
+    '--command',
+    `UPDATE reviewer_access SET enabled=0 WHERE user_id='${reviewerUserId}'; DELETE FROM session WHERE userId='${reviewerUserId}'; DELETE FROM oauthAccessToken WHERE userId='${reviewerUserId}'; DELETE FROM oauthRefreshToken WHERE userId='${reviewerUserId}';`,
+  ]);
+  child = spawn(
+    resolve('node_modules/.bin/wrangler'),
+    ['dev', '--config', configPath, '--port', port, '--persist-to', join(directory, 'state')],
+    { stdio: ['ignore', output, output] },
+  );
+  await ready(200);
+  assert.equal(
+    (
+      await post('/protocol/openid-connect/token', {
+        grant_type: 'authorization_code',
+        client_id: 'myselfmd-phone',
+        code: pendingAuthorizationCode,
+        code_verifier: pendingAuthorization.verifier,
+        redirect_uri: pendingAuthorization.redirect,
+        resource: `${origin}/mcp`,
+      })
+    ).status,
+    400,
+    'A code issued before deletion cannot be redeemed after identity cleanup and restart.',
+  );
+  assert.equal(
+    (
+      await fetch(`${origin}/api/account-profile`, {
+        headers: { Authorization: `Bearer ${reviewerTokens.access_token}` },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await post('/reviewer-login', { username: 'reviewer', password: reviewerPassword })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await post('/oauth2/token', {
+        grant_type: 'refresh_token',
+        client_id: 'myselfmd-mcp',
+        refresh_token: reviewerTokens.refresh_token,
+        resource: `${origin}/mcp`,
+      })
+    ).status,
+    400,
+  );
+  console.log(
+    'PASS restricted reviewer password/OAuth sign-in, fictional fixtures, safe retries, cross-account denial, disabled signup/linking and immediate issued-token revocation.',
+  );
   passed = true;
 } finally {
   await client.close();
   await new Promise((done) => callbackServer.close(done));
-  if (child) {
+  if (child && child.exitCode === null && child.signalCode === null) {
+    const stopped = once(child, 'exit');
     child.kill('SIGTERM');
-    await once(child, 'exit');
+    await stopped;
   }
   closeSync(output);
   db.close();

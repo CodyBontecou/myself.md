@@ -1,3 +1,4 @@
+import { whoopTypes } from '../core/whoop.js';
 import {
   quantities,
   categories,
@@ -5,6 +6,56 @@ import {
   special,
   characteristics,
 } from '../client/health-types.js';
+
+/** Selected adapter examples, restricted to identifiers present in the supported type catalog. */
+export const healthMetricExamples = [
+  {
+    metric: 'Steps',
+    platform: 'iOS',
+    type: 'HKQuantityTypeIdentifierStepCount',
+    fields: 'quantity and unit (for example count)',
+    note: 'Samples can overlap across sources; do not blindly sum duplicates.',
+  },
+  {
+    metric: 'Steps',
+    platform: 'Android',
+    type: 'Steps',
+    fields: 'count, startTime and endTime',
+    note: 'Interval counts; preserve source metadata when comparing records.',
+  },
+  {
+    metric: 'Heart rate',
+    platform: 'iOS',
+    type: 'HKQuantityTypeIdentifierHeartRate',
+    fields: 'quantity and unit (for example count/min)',
+    note: 'Individual samples are not a daily average.',
+  },
+  {
+    metric: 'Heart rate',
+    platform: 'Android',
+    type: 'HeartRate',
+    fields: 'samples with time and beatsPerMinute',
+    note: 'A record can contain multiple measurements.',
+  },
+  {
+    metric: 'Sleep',
+    platform: 'iOS',
+    type: 'HKCategoryTypeIdentifierSleepAnalysis',
+    fields: 'value, startDate and endDate',
+    note: 'Category intervals describe sleep states; overlapping sources are not deduplicated.',
+  },
+  {
+    metric: 'Sleep',
+    platform: 'Android',
+    type: 'SleepSession',
+    fields: 'startTime, endTime and stages',
+    note: 'Session duration and stage duration are different measures.',
+  },
+].filter((example) =>
+  example.platform === 'iOS'
+    ? [...quantities, ...categories].includes(example.type)
+    : androidTypes.includes(example.type),
+);
 
 /** @type {{ios:string[],android:string[],shared:string[]}} */
 const healthLimitations = {
@@ -16,7 +67,9 @@ const healthLimitations = {
   android: [
     'Health Connect can limit historical reads to 30 days without historical access. Exercise routes may require separate consent.',
   ],
-  shared: [],
+  shared: [
+    'Optional WHOOP connection requires provider sign-in and consent. WHOOP v2 records preserve scores, RMSSD and millisecond durations separately from OS health records; overlapping events are not deduplicated. Body measurements are current snapshots, not historical measurements. Recovery has no independent measurement timestamp.',
+  ],
 };
 
 /** @type {{ios:string[],android:string[],shared:string[]}} */
@@ -51,7 +104,8 @@ export const datasets = {
     domain: /** @type {const} */ ('health'),
     introduction:
       'Export the health samples your phone can read into files. Select individual metrics and keep the original units, metadata, and source fields.',
-    sources: 'HealthKit on iOS and Health Connect on Android.',
+    sources:
+      'HealthKit on iOS, Health Connect on Android, and optional WHOOP on either phone platform.',
     groups: [
       { title: 'iOS · Quantity samples', keys: quantities.map((key) => `native:${key}`) },
       { title: 'iOS · Category samples', keys: categories.map((key) => `native:${key}`) },
@@ -61,6 +115,10 @@ export const datasets = {
       },
       { title: 'iOS · Workouts and other samples', keys: special.map((key) => `native:${key}`) },
       { title: 'Android · Health Connect', keys: androidTypes.map((key) => `native:${key}`) },
+      {
+        title: 'WHOOP · Connected provider',
+        keys: Object.keys(whoopTypes).map((key) => `native:${key}`),
+      },
     ],
     defaults: [
       'native:HKQuantityTypeIdentifierStepCount',

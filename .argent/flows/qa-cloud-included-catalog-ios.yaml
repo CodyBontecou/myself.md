@@ -1,0 +1,186 @@
+steps:
+  - echo: Dedicated iOS fixture baseline through UI; synthetic partition only, nothing charged.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Activate qa-open-cloud-storage; require resulting state.
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        text: Choose cloud storage
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: 42.0 MB of 100 MB used
+        equals: 42.0 MB of 100 MB used
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        equals: 10 GB cloud storage, $2.99 per month
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_1tb
+        equals: 1 TB cloud storage, $24.99 per month
+  - echo: Activate cloud-plan-period-yearly; require resulting state.
+  - tap:
+      id: cloud-plan-period-yearly
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_10gb
+        equals: 10 GB cloud storage, $29.99 per year
+  - await:
+      text:
+        in:
+          id: cloud-plan-cloud_1tb
+        equals: 1 TB cloud storage, $249.99 per year
+  - echo: Reveal cloud-plan-subscribe by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-subscribe
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: "Subscribe to 10 GB \xB7 $29.99/year"
+  - echo: Activate cloud-plan-cloud_1tb; require resulting state.
+  - tap:
+      id: cloud-plan-cloud_1tb
+  - await:
+      text:
+        in:
+          id: cloud-plan-subscribe
+        equals: "Subscribe to 1 TB \xB7 $249.99/year"
+  - echo: Activate cloud-plan-subscribe; require resulting state.
+  - tap:
+      id: cloud-plan-subscribe
+  - await:
+      text:
+        in:
+          text: Purchases require a normal build for integration QA. Nothing was charged.
+        equals: Purchases require a normal build for integration QA. Nothing was charged.
+  - await:
+      visible:
+        id: action-toast-dismiss
+  - echo: Activate action-toast-dismiss; require resulting state.
+  - tap:
+      id: action-toast-dismiss
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - echo: Activate cloud-plan-restore; require resulting state.
+  - tap:
+      id: cloud-plan-restore
+  - await:
+      text:
+        in:
+          text: Purchases require a normal build for integration QA. Nothing was charged.
+        equals: Purchases require a normal build for integration QA. Nothing was charged.
+  - await:
+      visible:
+        id: action-toast-dismiss
+  - echo: Activate action-toast-dismiss; require resulting state.
+  - tap:
+      id: action-toast-dismiss
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - echo: Activate cloud-plan-manage; require resulting state.
+  - tap:
+      id: cloud-plan-manage
+  - await:
+      text:
+        in:
+          text: Purchases require a normal build for integration QA. Nothing was charged.
+        equals: Purchases require a normal build for integration QA. Nothing was charged.
+  - await:
+      visible:
+        id: action-toast-dismiss
+  - echo: Activate action-toast-dismiss; require resulting state.
+  - tap:
+      id: action-toast-dismiss
+  - await:
+      hidden:
+        id: action-toast-dismiss
+  - echo: Reveal cloud-plan-privacy by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: cloud-plan-privacy
+  - await:
+      text:
+        in:
+          text: 'Cloud Storage 1 TB: auto-renewing subscription'
+        equals:
+          'Cloud Storage 1 TB: auto-renewing subscription, 1 year, $249.99 per year. Payment is charged to your
+          Apple Account when you confirm the purchase. The subscription renews automatically at the same price and
+          length unless you cancel at least 24 hours before the end of the current period; your account is charged
+          for renewal within 24 hours before the period ends. Manage or cancel anytime in your App Store account settings.
+          Requires Lifetime access; the plan replaces the 100 MB included with Lifetime. Moving to a smaller plan
+          never deletes files, but uploads beyond the smaller capacity are blocked.'
+  - await:
+      text:
+        in:
+          id: cloud-plan-terms
+        equals: Terms of Use (EULA), https://myself.md/terms
+  - await:
+      text:
+        in:
+          id: cloud-plan-privacy
+        equals: Privacy Policy, https://myself.md/privacy
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

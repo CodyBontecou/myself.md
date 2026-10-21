@@ -87,19 +87,26 @@ export function IconButton({ icon, label, onPress, testID }) {
     </Pressable>
   );
 }
-/** @param {{label:string,onPress:()=>void,secondary?:boolean,plain?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,plain?:boolean,filled?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
 export function Button({
   label,
   onPress,
   secondary = false,
   plain = false,
+  filled = false,
   disabled = false,
   busy = false,
   testID,
   icon,
 }) {
   const { colors } = useTheme();
-  const color = plain ? colors.accent : secondary ? colors.secondary : colors.text;
+  const color = filled
+    ? colors.onAccent
+    : plain
+      ? colors.accent
+      : secondary
+        ? colors.secondary
+        : colors.text;
   return (
     <Pressable
       testID={testID}
@@ -110,6 +117,7 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        filled && [styles.filledButton, { backgroundColor: colors.accent }],
         {
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
@@ -165,15 +173,19 @@ export function Checkbox({
     </Pressable>
   );
 }
-/** @param {{children:import('react').ReactNode,compact?:boolean}} props */
-export function Group({ children, compact = false }) {
+/** @param {{children:import('react').ReactNode,compact?:boolean,transparent?:boolean}} props */
+export function Group({ children, compact = false, transparent = false }) {
   const { colors } = useTheme();
   return (
     <View
       style={[
         styles.group,
         compact && styles.compactGroup,
-        { backgroundColor: colors.surface, borderColor: colors.border },
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+        transparent && styles.transparent,
       ]}
     >
       {children}
@@ -333,6 +345,7 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline', tes
   );
 }
 const styles = StyleSheet.create({
+  transparent: { backgroundColor: 'transparent' },
   fill: { flex: 1 },
   compactScreen: { paddingHorizontal: 16, paddingTop: 8 },
   compactColumn: { gap: 16 },
@@ -398,6 +411,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 8,
+  },
+  filledButton: {
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    justifyContent: 'center',
   },
   group: {
     borderRadius: 12,

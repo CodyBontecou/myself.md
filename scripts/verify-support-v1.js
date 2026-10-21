@@ -1,129 +1,9 @@
 import { Buffer } from 'node:buffer';
-import { z } from 'zod';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
-import { McpServer } from '@modelcontextprotocol/server';
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
-import { createRemoteSupport } from '../server/support-remote.js';
-
-// The host supplies roles; prompt fields and guest credentials cannot elevate them.
-/** @type {'owner'|'lifetime'|'guest'} */
-let verifiedRole = 'guest';
-let roleResolutions = 0;
-/** @type {typeof fetch} */
-const roleTransport = async (_input, options) => {
-  const headers = new Headers(options?.headers);
-  return Response.json({ role: headers.get('X-Support-Role') });
-};
-const roleProxy = createRemoteSupport(
-  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
-  () => {},
-  roleTransport,
-  async () => {
-    roleResolutions++;
-    return verifiedRole;
-  },
-);
-for (const role of /** @type {const} */ (['guest', 'lifetime', 'owner', 'guest'])) {
-  verifiedRole = role;
-  // Each role change must settle before the next request verifies downgrade behavior.
-  // oxlint-disable-next-line eslint/no-await-in-loop
-  const response = await roleProxy.supportV1Api('verified-account', 'POST', new URLSearchParams(), {
-    action: 'send',
-    role: 'owner',
-  });
-  assert.equal(response.role, role);
-}
-verifiedRole = 'owner';
-const beforeGuest = roleResolutions;
-assert.equal(
-  (
-    await roleProxy.supportV1Api('support-guest:fixture', 'POST', new URLSearchParams(), {
-      action: 'list',
-    })
-  ).role,
-  'guest',
-);
-assert.equal(roleResolutions, beforeGuest);
-const legacyProxy = createRemoteSupport(
-  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
-  () => {},
-  roleTransport,
-);
-assert.equal(
-  (await legacyProxy.supportV1Api('verified-account', 'GET', new URLSearchParams(), null)).role,
-  'guest',
-);
-
-let blocked = false;
-/** @type {{agent:string|null,body:unknown}[]} */
-const calls = [];
-/** @type {typeof fetch} */
-const transport = async (input, options) => {
-  if (String(input).startsWith('https://support.fixture/')) {
-    const headers = new Headers(options?.headers);
-    assert.equal(headers.get('Authorization'), 'Bearer fixture-secret');
-    assert.equal(headers.get('X-Support-Owner'), 'alice');
-    calls.push({ agent: headers.get('X-Support-Agent'), body: options?.body });
-    return Response.json({ conversations: [] });
-  }
-  throw new Error('Unexpected remote fixture request');
-};
-const remote = createRemoteSupport(
-  { SUPPORT_ISOBOT_ORIGIN: 'https://support.fixture', SUPPORT_ISOBOT_TOKEN: 'fixture-secret' },
-  () => {
-    if (blocked) throw new Error('Agent is blocked');
-  },
-  transport,
-);
-const mcp = new McpServer({ name: 'support-v1-fixture', version: '1' });
-remote.registerSupportV1Tools(mcp, 'alice', 'test-agent');
-const client = new Client({ name: 'fixture', version: '1' });
-const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
-await mcp.connect(serverTransport);
-await client.connect(clientTransport);
-try {
-  await remote.supportV1Api('alice', 'POST', new URLSearchParams(), {
-    action: 'create',
-    id: 'a',
-    title: 'A',
-  });
-  assert.equal(calls.at(-1)?.agent, null);
-  const listed = await client.callTool({
-    name: 'support_conversations',
-    arguments: { action: 'list' },
-  });
-  assert.notEqual(listed.isError, true);
-  assert.equal(calls.at(-1)?.agent, 'test-agent');
-  const denied = await client.callTool({
-    name: 'support_conversations',
-    arguments: { action: 'share', accepted: true },
-  });
-  assert.equal(denied.isError, true);
-  const handoff = await client.callTool({
-    name: 'support_conversations',
-    arguments: { action: 'ownerHandoff', conversationId: 'a', ownerAction: 'share' },
-  });
-  const handoffState = z
-    .object({ status: z.string(), requiresUser: z.boolean() })
-    .parse(handoff.structuredContent);
-  assert.equal(handoffState.status, 'awaiting_user');
-  assert.equal(handoffState.requiresUser, true);
-  const count = calls.length;
-  blocked = true;
-  assert.equal(
-    (await client.callTool({ name: 'support_conversations', arguments: { action: 'list' } }))
-      .isError,
-    true,
-  );
-  assert.equal(calls.length, count);
-} finally {
-  await client.close();
-  await mcp.close();
-}
 
 const now = Date.now();
 const fixture = await build({
@@ -409,7 +289,7 @@ try {
   await page.getByRole('button', { name: 'Back to conversations', exact: true }).click();
   await page.getByRole('button', { name: 'Usage question', exact: true }).waitFor();
   console.log(
-    'PASS support v1 owner proxy, real MCP validation/blocking/handoffs, local preview, edited snapshot approval, conversation isolation, composer clearing and archive presentation. No live messages or data were sent.',
+    'PASS portable support client local preview, edited snapshot approval, conversation isolation, composer clearing and archive presentation. No live messages or data were sent.',
   );
 } finally {
   await browser.close();

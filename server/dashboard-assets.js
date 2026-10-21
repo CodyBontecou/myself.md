@@ -1,5 +1,26 @@
 /** @type {Map<string, [string, string]>} */
 export const assets = new Map([
+  ...[
+    'android-health-connect-permissions',
+    'android-health-data-selection',
+    'android-agent-permissions',
+    'android-agent-pairing',
+    'iphone-whoop-connected',
+    'iphone-whoop-data-types',
+    'iphone-agent-permissions',
+    'iphone-health-data-selection',
+    'iphone-agent-pairing',
+  ].map(
+    (name) =>
+      /** @type {[string, [string, string]]} */ ([
+        `/dashboard/guide-images/${name}.png`,
+        [`guide-images/${name}.png`, 'image/png'],
+      ]),
+  ),
+  ['/dashboard/blog.css', ['blog.css', 'text/css']],
+  ['/share/profile', ['profile-share/share/profile/index.html', 'text/html']],
+  ['/share/profile/', ['profile-share/share/profile/index.html', 'text/html']],
+  ['/share/profile/app.js', ['profile-share/share/profile/app.js', 'text/javascript']],
   ['/dashboard/docs.css', ['docs.css', 'text/css']],
   ...['regular', 'medium', 'semibold'].map(
     (weight) =>
@@ -8,10 +29,17 @@ export const assets = new Map([
         [`geist-${weight}.ttf`, 'font/ttf'],
       ]),
   ),
+  ['/dashboard/geist-pixel-square.woff2', ['geist-pixel-square.woff2', 'font/woff2']],
+  ['/dashboard/geist-pixel-license.txt', ['geist-pixel-license.txt', 'text/plain']],
+  ...['sleep', 'activity', 'focus', 'location'].map(
+    (name) =>
+      /** @type {[string,[string,string]]} */ ([
+        `/dashboard/getting-started/${name}-marble.jpg`,
+        [`getting-started/${name}-marble.jpg`, 'image/jpeg'],
+      ]),
+  ),
   ['/dashboard/geist-license.txt', ['geist-license.txt', 'text/plain']],
   ['/', ['index.html', 'text/html']],
-  ['/demo', ['index.html', 'text/html']],
-  ['/demo/', ['index.html', 'text/html']],
   ['/datasets', ['index.html', 'text/html']],
   ['/datasets/', ['index.html', 'text/html']],
   ...['health', 'screen-time', 'location', 'all'].flatMap(
@@ -27,9 +55,12 @@ export const assets = new Map([
   ['/claim', ['index.html', 'text/html']],
   ['/login', ['index.html', 'text/html']],
   ['/login/', ['index.html', 'text/html']],
+  ['/operator/analytics', ['index.html', 'text/html']],
   ['/dashboard', ['index.html', 'text/html']],
   ['/dashboard/', ['index.html', 'text/html']],
   ['/dashboard/callback', ['index.html', 'text/html']],
+  ['/dashboard/usage-analytics.js', ['usage-analytics.js', 'text/javascript']],
+  ['/dashboard/analytics.css', ['analytics.css', 'text/css']],
   ['/dashboard/public-tools.js', ['public-tools.js', 'text/javascript']],
   ['/sdk/myself.mjs', ['myself-sdk.mjs', 'text/javascript']],
   ['/cli/myself.mjs', ['myself.mjs', 'text/javascript']],
@@ -43,7 +74,39 @@ export const assets = new Map([
         [`brand-icons/${name}.png`, 'image/png'],
       ]),
   ),
-  ['/dashboard/favicon.svg', ['favicon.svg', 'image/svg+xml']],
+  ...[
+    'claude-code',
+    'codex',
+    'opencode',
+    'openclaw',
+    'grokbot',
+    'chatgpt',
+    'dots',
+    'muse',
+    'pi',
+  ].map(
+    (name) =>
+      /** @type {[string,[string,string]]} */ ([
+        `/dashboard/agent-logos/${name}.svg`,
+        [`agent-logos/${name}.svg`, 'image/svg+xml'],
+      ]),
+  ),
+  ...[
+    'selection',
+    'approval',
+    'overview',
+    'context-loop',
+    'permissions-loop',
+    'discovery-loop',
+  ].flatMap(
+    (name) =>
+      /** @type {[string,[string,string]][]} */ ([
+        [`/dashboard/showcase/${name}.mp4`, [`showcase/${name}.mp4`, 'video/mp4']],
+        [`/dashboard/showcase/${name}.jpg`, [`showcase/${name}.jpg`, 'image/jpeg']],
+      ]),
+  ),
+  ['/dashboard/favicon.png', ['favicon.png', 'image/png']],
+  ['/dashboard/hero-portrait.png', ['hero-portrait.png', 'image/png']],
   ['/dashboard/store-badges/apple-icon.svg', ['store-badges/apple-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/github-icon.svg', ['store-badges/github-icon.svg', 'image/svg+xml']],
   ['/dashboard/store-badges/app-store.svg', ['store-badges/app-store.svg', 'image/svg+xml']],

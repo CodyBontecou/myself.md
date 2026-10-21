@@ -1,16 +1,17 @@
+import { connectWebAnalytics, resetWebAnalytics, trackWebAnalytics } from './analytics.js';
 import { readJSONResponse } from '../packages/support-chat/errors.js';
-import { demoApi } from './demo.js';
-export const isDemo = /^\/demo\/?$/.test(location.pathname);
 /** @type {{issuer:string,clientId:string}|null} */ let config = null;
 /** @type {{access_token:string,refresh_token?:string,id_token?:string,expires_in:number}|null} */ let tokens =
   null;
 let expires = 0;
 /** @type {Promise<void>|null} */ let refreshing = null;
+let continuedProviderQuery = '';
 function reset() {
+  resetWebAnalytics();
   tokens = null;
 }
 export function hasSession() {
-  return isDemo || tokens !== null;
+  return tokens !== null;
 }
 /** @param {Record<string,string>} parameters */
 async function exchange(parameters) {
@@ -20,7 +21,7 @@ async function exchange(parameters) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: config.clientId, ...parameters }),
   });
-  if (!response.ok) {
+  if (response.status === 400 || response.status === 401) {
     reset();
   }
   tokens = /** @type {NonNullable<typeof tokens>} */ (await readJSONResponse(response));
@@ -30,9 +31,9 @@ async function exchange(parameters) {
   }
   expires = Date.now() + tokens.expires_in * 1000;
 }
-async function ensureToken() {
+async function ensureToken(force = false) {
   if (!tokens) throw new Error('Sign in to continue.');
-  if (expires > Date.now() + 30000) return;
+  if (!force && expires > Date.now() + 30000) return;
   if (!refreshing) {
     if (!tokens.refresh_token) {
       reset();
@@ -49,17 +50,24 @@ async function ensureToken() {
 }
 /** @template T @param {string} path @param {string} [method] @param {unknown} [body] @returns {Promise<T>} */
 export async function api(path, method = 'GET', body) {
-  if (isDemo) return /** @type {T} */ (demoApi(path, method, body));
   await ensureToken();
-  const response = await fetch(path, {
-    method,
-    headers: {
-      Authorization: `Bearer ${tokens?.access_token}`,
-      'Content-Type': 'application/json',
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: 'no-store',
-  });
+  const rejectedToken = tokens?.access_token;
+  const send = () =>
+    fetch(path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${tokens?.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      cache: 'no-store',
+    });
+  let response = await send();
+  if (response.status === 401 && tokens?.refresh_token) {
+    await response.body?.cancel();
+    if (tokens.access_token === rejectedToken) await ensureToken(true);
+    response = await send();
+  }
   if (response.status === 401) reset();
   const data = /** @type {T} */ (await readJSONResponse(response));
   return data;
@@ -92,7 +100,7 @@ async function authorizationUrl() {
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
-    scope: 'openid profile myselfmd',
+    scope: 'openid profile email myselfmd offline_access',
     redirect_uri: `${location.origin}/dashboard/callback`,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -100,11 +108,16 @@ async function authorizationUrl() {
   }).toString();
   return url;
 }
-/** @param {'apple'|'github'|'google'} provider */
+/** @param {'apple'|'github'|'google'|'reviewer'} provider */
 export async function signIn(provider) {
+  trackWebAnalytics('sign_in_started', provider === 'reviewer' ? 'other' : provider);
   if (!config) throw new Error('Sign-in is not ready.');
   const query = new URLSearchParams(location.search);
   if (['/login', '/login/'].includes(location.pathname) && query.has('client_id')) {
+    if (provider === 'reviewer') {
+      location.assign(`${config.issuer}/reviewer-login${location.search}`);
+      return;
+    }
     // Continue the provider-signed authorization without replacing the client's PKCE or callback.
     const response = await fetch(`${config.issuer}/sign-in/social`, {
       method: 'POST',
@@ -121,14 +134,54 @@ export async function signIn(provider) {
     return;
   }
   const url = await authorizationUrl();
+  if (provider === 'reviewer') sessionStorage.setItem('myselfmd-reviewer-login', '1');
   url.searchParams.set('kc_idp_hint', provider);
   location.assign(url);
 }
 export async function initializeSession() {
-  if (isDemo) return true;
   const response = await fetch('/dashboard/config', { cache: 'no-store' });
   config = /** @type {NonNullable<typeof config>} */ (await readJSONResponse(response));
-  if (location.pathname !== '/dashboard/callback') return false;
+  const loginQuery = new URLSearchParams(location.search);
+  const selectedProvider = loginQuery.get('kc_idp_hint');
+  if (
+    ['/login', '/login/'].includes(location.pathname) &&
+    ['myselfmd-phone', 'myselfmd-dashboard'].includes(loginQuery.get('client_id') ?? '') &&
+    loginQuery.has('sig') &&
+    loginQuery.has('exp') &&
+    (selectedProvider === 'apple' || selectedProvider === 'github' || selectedProvider === 'google')
+  ) {
+    // Submit the original signed query; the server verifies it before starting the provider.
+    // Initialization can run twice; a failure leaves the ordinary picker available for retry.
+    if (continuedProviderQuery !== location.search) {
+      continuedProviderQuery = location.search;
+      await signIn(selectedProvider);
+    }
+    return false;
+  }
+  if (
+    location.pathname === '/login' &&
+    new URLSearchParams(location.search).has('client_id') &&
+    sessionStorage.getItem('myselfmd-reviewer-login') === '1'
+  ) {
+    sessionStorage.removeItem('myselfmd-reviewer-login');
+    location.assign(`${config.issuer}/reviewer-login${location.search}`);
+    return false;
+  }
+  if (location.pathname !== '/dashboard/callback') {
+    if (hasSession() || new URLSearchParams(location.search).has('client_id')) return hasSession();
+    // Restore from the HttpOnly identity cookie after reload or reopening the browser.
+    // PKCE and state protect the fresh exchange; no tokens enter browser storage.
+    const identity = await fetch(`${config.issuer}/get-session`, { cache: 'no-store' });
+    // Legacy identity providers may not expose this optional cookie-session endpoint.
+    if (identity.status === 404) return false;
+    const saved = /** @type {{session?:unknown}|null} */ (await readJSONResponse(identity));
+    if (saved?.session) {
+      const url = await authorizationUrl();
+      url.searchParams.set('prompt', 'none');
+      location.assign(url);
+    }
+    return false;
+  }
   const query = new URLSearchParams(location.search),
     stored = sessionStorage.getItem('myselfmd-dashboard-login');
   sessionStorage.removeItem('myselfmd-dashboard-login');
@@ -159,11 +212,14 @@ export async function initializeSession() {
   const destination = new URL(login.returnTo ?? '/dashboard', location.origin);
   if (
     destination.origin === location.origin &&
-    ['/dashboard', '/claim', '/delete-account'].includes(destination.pathname)
+    ['/dashboard', '/claim', '/delete-account', '/operator/analytics'].includes(
+      destination.pathname,
+    )
   ) {
     history.replaceState(null, '', `${destination.pathname}${destination.search}`);
     window.dispatchEvent(new Event('popstate'));
   }
+  await connectWebAnalytics(api).catch(() => {});
   return true;
 }
 export function signOut() {

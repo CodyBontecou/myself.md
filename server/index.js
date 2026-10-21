@@ -1,34 +1,34 @@
 import { createWatchService } from './watch-service.js';
 import { join } from 'node:path';
-import { createRemoteSupport } from './support-remote.js';
-import { supportApi, registerSupportTools } from './support.js';
 import { billing, billingApi, refreshEntitlement } from './billing.js';
 import { verifyMigrationPurchase } from './migration-purchases.js';
 import { createServer } from 'node:http';
 import { registerDataTools, phoneApi, cancelPhone } from './data.js';
-import { cloud, history, registerCloudTools, ownCloudDevice } from './cloud.js';
+import {
+  cloud,
+  history,
+  registerCloudTools,
+  ownCloudDevice,
+  cloudSubscriptions,
+  storeNotification,
+  exportSchedules,
+} from './cloud.js';
 import { dashboardAsset, dashboardApi } from './dashboard.js';
 import { proxyAuth } from './auth-proxy.js';
-import { claim, createPairing, devices, disconnect, pending, status } from './store.js';
+import {
+  claim,
+  createPairing,
+  devices,
+  disconnect,
+  pending,
+  status,
+  ticketStatus,
+} from './store.js';
 import QRCode from 'qrcode';
 import { createApplication } from './application.js';
 createServer(
   { requestTimeout: 60000, headersTimeout: 15000 },
   createApplication(process.env, {
-    supportApi,
-    registerSupportTools,
-    ...createRemoteSupport(
-      process.env,
-      (subject, agent) => {
-        cloud.observeAgent(subject, agent);
-      },
-      fetch,
-      async (subject) => {
-        if (process.env.SUPPORT_OWNER_SUBJECT && subject === process.env.SUPPORT_OWNER_SUBJECT)
-          return 'owner';
-        return 'guest';
-      },
-    ),
     ...createWatchService({
       source: join(process.env.DATA_DIR ?? '.local', 'watch.sqlite'),
       cloud,
@@ -50,6 +50,9 @@ createServer(
     phoneApi,
     cancelPhone,
     cloud,
+    cloudSubscriptions,
+    storeNotification,
+    exportSchedules,
     history,
     registerCloudTools,
     ownCloudDevice,
@@ -61,6 +64,7 @@ createServer(
     devices,
     disconnect,
     pending,
+    ticketStatus,
     status,
   }),
 ).listen(

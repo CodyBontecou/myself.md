@@ -1,25 +1,36 @@
-import { cloudAllowance, cloudUploadFits } from '../core/cloud-allowance.js';
+import { cloudAllowance, cloudUploadFits, lifetimeEntitlement } from '../core/cloud-allowance.js';
+import { appendExportContent } from '../core/export-files.js';
 import { parseExportSchema } from '../core/export-schemas.js';
 import { Buffer } from 'node:buffer';
 import { database, transaction } from './database.js';
 import { randomBytes, randomUUID, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PairingError } from './errors.js';
-import { parseProfile, profileAllows } from '../core/profiles.js';
+import {
+  parseProfile,
+  profileAllows,
+  parseProfileState,
+  parseAgentPermissions,
+} from '../core/profiles.js';
+import { domains } from '../core/data.js';
+import { ProfileSyncStore } from './profile-sync.js';
+const deniedPermissions = { health: false, time: false, location: false, logs: false };
+/** @param {import('../core/profiles.js').AgentPermissions} permissions */
+const hasAgentData = (permissions) => domains.some((domain) => permissions[domain]);
 const metadataSchema = z.object({
   profile: z.unknown(),
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   format: z.enum(['json', 'jsonl']),
   manifest: z.record(z.string(), z.unknown()),
 });
-/** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',schema:string,created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null}} Row */
+/** @typedef {{id:string,subject:string,device:string,profile:string,day:string,format:'json'|'jsonl',schema:string,created:number,content:Uint8Array|null,metadata:Uint8Array,size:number,object_key:string|null,content_hash:string|null,upload_hash:string|null}} Row */
 export class CloudStore {
-  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] @param {((subject:string)=>boolean)|null} [lifetimeAccess] */
-  constructor(path, key, objects = null, lifetimeAccess = null) {
+  /** @param {string|import("./database.js").SqlDatabase} path @param {Uint8Array} key @param {import("./r2-store.js").ObjectStore|null} [objects] @param {((subject:string)=>import('../core/cloud-allowance.js').CloudEntitlement)|null} [entitlement] Server-verified Lifetime, subscription and lapse state. Without it, tooling stores allow a fixed 256 MiB. */
+  constructor(path, key, objects = null, entitlement = null) {
     if (key.length !== 32) throw new Error('Cloud encryption needs a 32-byte key.');
     this.key = key;
     this.objects = objects;
-    this.lifetimeAccess = lifetimeAccess;
+    this.entitlement = entitlement;
     this.sweeping = false;
     this.db = database(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;
@@ -28,6 +39,14 @@ export class CloudStore {
  CREATE TABLE IF NOT EXISTS cloud_access(subject TEXT,device TEXT,profile TEXT,shared INTEGER,selection TEXT,PRIMARY KEY(subject,device,profile));
  CREATE TABLE IF NOT EXISTS agents(subject TEXT,client TEXT,blocked INTEGER,last_seen INTEGER,PRIMARY KEY(subject,client));
  CREATE TABLE IF NOT EXISTS upload_keys(hash TEXT PRIMARY KEY,subject TEXT,device TEXT,profile TEXT,expires INTEGER);`);
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(cloud_access)')
+        .all()
+        .some((column) => column.name === 'agent_permissions')
+    )
+      this.db.exec('ALTER TABLE cloud_access ADD COLUMN agent_permissions TEXT');
+    this.profileSync = new ProfileSyncStore(this);
     const columns = new Set(
       this.db
         .prepare('PRAGMA table_info(exports)')
@@ -41,7 +60,12 @@ export class CloudStore {
     if (!columns.has('object_key')) this.db.exec('ALTER TABLE exports ADD COLUMN object_key TEXT');
     if (!columns.has('content_hash'))
       this.db.exec('ALTER TABLE exports ADD COLUMN content_hash TEXT');
-    this.db.exec(`CREATE TABLE IF NOT EXISTS object_garbage(key TEXT PRIMARY KEY,created INTEGER);
+    if (!columns.has('upload_hash'))
+      this.db.exec('ALTER TABLE exports ADD COLUMN upload_hash TEXT');
+    this.db
+      .exec(`CREATE TABLE IF NOT EXISTS cloud_writes(subject TEXT,device TEXT,profile TEXT,request TEXT,id TEXT,configuration TEXT,result TEXT,PRIMARY KEY(subject,device,profile,request));
+      CREATE INDEX IF NOT EXISTS cloud_writes_upload ON cloud_writes(subject,id);
+      CREATE TABLE IF NOT EXISTS object_garbage(key TEXT PRIMARY KEY,created INTEGER);
       CREATE TRIGGER IF NOT EXISTS exports_object_delete AFTER DELETE ON exports WHEN OLD.object_key IS NOT NULL
       BEGIN INSERT OR REPLACE INTO object_garbage VALUES(OLD.object_key,0); END;`);
     if (
@@ -71,15 +95,30 @@ export class CloudStore {
     return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]);
   }
   cleanup() {
-    this.db.prepare('DELETE FROM exports WHERE created<?').run(Date.now() - 30 * 86400000);
     this.db
       .prepare('DELETE FROM exports WHERE content IS NULL AND object_key IS NULL AND created<?')
       .run(Date.now() - 3600000);
     // Retain hashed approvals for authenticated renewal after inactivity.
     // Expired credentials still fail credential(); rotation removes the old approval.
   }
-  /** Account capacity is read again at commit, after asynchronous object storage.
+  /** Committed exports with the fields the retention executor needs.
    * @param {string} subject */
+  usage(subject) {
+    this.cleanup();
+    return this.db
+      .prepare(
+        'SELECT id,device,size,created FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+      )
+      .all(subject)
+      .map((row) => ({
+        id: String(row.id),
+        device: String(row.device),
+        size: Number(row.size),
+        created: Number(row.created),
+      }));
+  }
+  /** Account capacity is read again at commit, after asynchronous object storage.
+   * @param {string} subject @returns {import('../core/cloud-allowance.js').CloudAllowance} */
   storageStatus(subject) {
     this.cleanup();
     const usedBytes = Number(
@@ -89,10 +128,10 @@ export class CloudStore {
         )
         .get(subject)?.bytes ?? 0,
     );
-    if (this.lifetimeAccess) return cloudAllowance(this.lifetimeAccess(subject), usedBytes);
+    if (this.entitlement) return cloudAllowance(this.entitlement(subject), usedBytes);
     const limitBytes = 256 * 1024 * 1024;
     return {
-      ...cloudAllowance(true, usedBytes),
+      ...cloudAllowance(lifetimeEntitlement(true), usedBytes),
       limitBytes,
       availableBytes: Math.max(0, limitBytes - usedBytes),
       overLimit: usedBytes > limitBytes,
@@ -104,7 +143,7 @@ export class CloudStore {
     if (!status.eligible)
       throw new PairingError(
         402,
-        'Verified lifetime access is required for the included 100 MB cloud allowance. Sign in and purchase or restore lifetime access in the app.',
+        'A verified Cloud subscription or included Lifetime allowance is required for cloud storage. Sign in and subscribe or restore in the app.',
       );
     return status;
   }
@@ -123,7 +162,7 @@ export class CloudStore {
         profile.id,
         Date.now() + 30 * 86400000,
       );
-    this.access(subject, device, profile, false);
+    this.access(subject, device, profile, this.permission(subject, device, profile.id).shared);
     return token;
   }
   /** Renew an existing approval without rotating its token or changing MCP sharing.
@@ -163,49 +202,143 @@ export class CloudStore {
   /** @param {string} subject @param {string} device @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} shared */
   access(subject, device, profile, shared) {
     this.db
-      .prepare('INSERT OR REPLACE INTO cloud_access VALUES (?,?,?,?,?)')
+      .prepare(
+        `INSERT INTO cloud_access(subject,device,profile,shared,selection) VALUES (?,?,?,?,?)
+        ON CONFLICT(subject,device,profile) DO UPDATE SET shared=excluded.shared`,
+      )
       .run(subject, device, profile.id, shared ? 1 : 0, JSON.stringify(profile.selection));
-    return { shared };
+    return this.permission(subject, device, profile.id);
   }
+  /** Persist only the authenticated phone's validated profile consent and type selections as the sole cloud read gate.
+   * Missing/deleted profiles and pre-migration rows deny every source until the phone syncs.
+   * @param {string} subject @param {string} device @param {import('../core/profiles.js').ExportProfile[]} profiles */
+  syncAgentPermissions(subject, device, profiles) {
+    const state = parseProfileState({ profiles });
+    const current = new Set(state.profiles.map((profile) => profile.id));
+    transaction(this.db, () => {
+      for (const profile of state.profiles) {
+        this.db
+          .prepare(
+            `INSERT INTO cloud_access(subject,device,profile,shared,selection,agent_permissions)
+          VALUES (?,?,?,?,?,?) ON CONFLICT(subject,device,profile) DO UPDATE SET
+          selection=excluded.selection,agent_permissions=excluded.agent_permissions`,
+          )
+          .run(
+            subject,
+            device,
+            profile.id,
+            0,
+            JSON.stringify(profile.selection),
+            JSON.stringify(profile.agentPermissions),
+          );
+      }
+      for (const row of this.db
+        .prepare('SELECT profile FROM cloud_access WHERE subject=? AND device=?')
+        .all(subject, device)) {
+        if (!current.has(String(row.profile)))
+          this.db
+            .prepare(
+              'UPDATE cloud_access SET agent_permissions=? WHERE subject=? AND device=? AND profile=?',
+            )
+            .run(JSON.stringify(deniedPermissions), subject, device, String(row.profile));
+      }
+    });
+  }
+
   /** @param {string} subject @param {string} device @param {string} profile */
   permission(subject, device, profile) {
-    const row = /** @type {{shared:number,selection:string}|undefined} */ (
-      this.db
-        .prepare(
-          'SELECT shared,selection FROM cloud_access WHERE subject=? AND device=? AND profile=?',
-        )
-        .get(subject, device, profile)
-    );
+    const row =
+      /** @type {{shared:number,selection:string,agent_permissions:string|null}|undefined} */ (
+        this.db
+          .prepare(
+            'SELECT shared,selection,agent_permissions FROM cloud_access WHERE subject=? AND device=? AND profile=?',
+          )
+          .get(subject, device, profile)
+      );
+    const agentPermissions = row?.agent_permissions
+      ? parseAgentPermissions(JSON.parse(row.agent_permissions))
+      : { ...deniedPermissions };
     return {
-      shared: row?.shared === 1,
-      selection: row ? JSON.parse(row.selection) : { health: [], time: [], location: [] },
+      shared: hasAgentData(agentPermissions),
+      selection: row
+        ? /** @type {import('../core/profiles.js').ProfileDraft['selection']} */ (
+            JSON.parse(row.selection)
+          )
+        : { health: [], time: [], location: [] },
+      agentPermissions,
+      permissionsSynced: typeof row?.agent_permissions === 'string',
     };
   }
+
   /** Cloud permissions include profiles without completed exports and disconnected phones.
    * @param {string} subject */
   profiles(subject) {
     const exports = this.list(subject);
-    return this.db
+    const stored = this.db
       .prepare('SELECT device,profile,shared,selection FROM cloud_access WHERE subject=?')
       .all(subject)
       .map((r) => ({
         deviceId: String(r.device),
         profileId: String(r.profile),
-        shared: r.shared === 1,
+        shared: this.permission(subject, String(r.device), String(r.profile)).shared,
+        agentPermissions: this.permission(subject, String(r.device), String(r.profile))
+          .agentPermissions,
+        cloudConfigured: true,
+        permissionsSynced: this.permission(subject, String(r.device), String(r.profile))
+          .permissionsSynced,
         selection: JSON.parse(String(r.selection)),
         name:
           exports.find((e) => e.deviceId === r.device && e.profileId === r.profile)?.profileName ??
           String(r.profile),
       }));
+    const devices = this.db.prepare('SELECT device FROM profile_sync WHERE subject=?').all(subject);
+    const synced = devices.flatMap((row) => {
+      const deviceId = String(row.device),
+        snapshot = this.profileSync.get(subject, deviceId);
+      return snapshot
+        ? snapshot.state.profiles.map((profile) =>
+            Object.assign({}, this.permission(subject, deviceId, profile.id), {
+              deviceId,
+              profileId: profile.id,
+              name: profile.name,
+              selection: profile.selection,
+              agentPermissions: this.permission(subject, deviceId, profile.id).agentPermissions,
+              permissionsSynced: this.permission(subject, deviceId, profile.id).permissionsSynced,
+              cloudConfigured: stored.some(
+                (p) => p.deviceId === deviceId && p.profileId === profile.id,
+              ),
+              profile,
+              revision: snapshot.revision,
+              confirmedRevision: snapshot.confirmedRevision,
+              lastSeen: snapshot.lastSeen,
+              syncSupported: snapshot.supported,
+              domains: snapshot.domains,
+              requests: snapshot.requests.filter((r) => r.profileId === profile.id),
+            }),
+          )
+        : [];
+    });
+    return [
+      ...synced,
+      ...stored.filter(
+        (p) => !synced.some((s) => s.deviceId === p.deviceId && s.profileId === p.profileId),
+      ),
+    ];
   }
-  /** Change only the switch, preserving the phone-approved type selection.
-   * @param {string} subject @param {string} device @param {string} profile @param {boolean} shared */
-  setSharing(subject, device, profile, shared) {
-    const result = this.db
-      .prepare('UPDATE cloud_access SET shared=? WHERE subject=? AND device=? AND profile=?')
-      .run(shared ? 1 : 0, subject, device, profile);
-    if (!result.changes) throw new PairingError(404, 'Cloud profile not found.');
-    return this.permission(subject, device, profile);
+
+  /** Legacy clients must use the confirmed profile Agent permissions instead of a second gate.
+   * @param {string} subject @param {string} device @param {string} profile @param {boolean} _shared */
+  setSharing(subject, device, profile, _shared) {
+    if (
+      !this.db
+        .prepare('SELECT profile FROM cloud_access WHERE subject=? AND device=? AND profile=?')
+        .get(subject, device, profile)
+    )
+      throw new PairingError(404, 'Cloud profile not found.');
+    throw new PairingError(
+      410,
+      'Use Agent permissions on the profile to change agent access to cloud exports.',
+    );
   }
   /** @param {string} subject @param {string} client */
   observeAgent(subject, client) {
@@ -241,7 +374,8 @@ export class CloudStore {
     if (!result.changes) throw new PairingError(404, 'Agent not found.');
     return { blocked };
   }
-  /** @param {string} subject @param {string} device @param {string} profileId @param {unknown} value */
+  /** @param {string} subject @param {string} device @param {string} profileId @param {unknown} value
+   * @returns {{id:string,completed:boolean,recordCount?:number,bytes?:number,partial?:boolean}} */
   begin(subject, device, profileId, value) {
     this.cleanup();
     const input = metadataSchema.parse(value),
@@ -252,26 +386,66 @@ export class CloudStore {
     input.manifest.schema = schema;
     if (input.manifest.profileId !== profileId)
       throw new PairingError(400, 'Manifest profile does not match upload.');
-    this.db
-      .prepare(
-        'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND content IS NULL AND object_key IS NULL',
-      )
-      .run(subject, device, profileId, input.day, input.format, schema);
-    const previous = /** @type {{size:number}|undefined} */ (
-      this.db
-        .prepare(
-          'SELECT size FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
-        )
-        .get(subject, device, profileId, input.day, input.format, schema)
+    // A billing operation identifies each day's delivery, including retries after a lost response.
+    const operation = input.manifest.billingOperationId;
+    if (operation !== undefined && (typeof operation !== 'string' || operation.length > 200))
+      throw new PairingError(400, 'Invalid export operation.');
+    const request = operation
+      ? this.digest(Buffer.from(JSON.stringify([operation, input.day, input.format])))
+      : null;
+    const configuration = this.digest(
+      Buffer.from(JSON.stringify({ profile, day: input.day, format: input.format })),
     );
+    const prior = request
+      ? this.db
+          .prepare(
+            'SELECT * FROM cloud_writes WHERE subject=? AND device=? AND profile=? AND request=?',
+          )
+          .get(subject, device, profileId, request)
+      : null;
+    if (prior && prior.configuration !== configuration)
+      throw new PairingError(409, 'Export retry belongs to different profile settings.');
+    if (prior?.result) return { ...JSON.parse(String(prior.result)), completed: true };
+    const pending = prior
+      ? this.db
+          .prepare(
+            'SELECT id FROM exports WHERE subject=? AND id=? AND content IS NULL AND object_key IS NULL',
+          )
+          .get(subject, String(prior.id))
+      : null;
+    if (pending) {
+      this.db
+        .prepare('UPDATE exports SET metadata=?,created=? WHERE subject=? AND id=?')
+        .run(
+          this.seal(
+            Buffer.from(JSON.stringify({ ...input, profile })),
+            `${subject}|${String(pending.id)}|metadata`,
+          ),
+          Math.max(
+            Date.now(),
+            Number(
+              this.db.prepare('SELECT COALESCE(MAX(created),0) last FROM exports').get()?.last ?? 0,
+            ) + 1,
+          ),
+          subject,
+          String(pending.id),
+        );
+      return { id: String(pending.id), completed: false };
+    }
+    const mode = profile.export.writeMode ?? 'replace';
+    const previous =
+      mode === 'new_file' ? null : this.latest(subject, device, profileId, input.day, schema);
     const usage = /** @type {{bytes:number,count:number}} */ (
       this.db
         .prepare('SELECT COALESCE(SUM(size),0) bytes,COUNT(*) count FROM exports WHERE subject=?')
         .get(subject)
     );
+    const { limitBytes } = this.requireStorage(subject);
+    const maxFiles = Math.max(128, Math.ceil(limitBytes / 1_000_000_000) * 128);
     if (
-      usage.bytes - (previous?.size ?? 0) >= this.requireStorage(subject).limitBytes ||
-      usage.count - (previous ? 1 : 0) >= 128
+      usage.bytes - (mode === 'replace' || mode === 'skip' ? (previous?.size ?? 0) : 0) >=
+        limitBytes ||
+      usage.count - (previous ? 1 : 0) >= maxFiles
     )
       throw new PairingError(413, 'Cloud quota reached. Delete older exports.');
     const id = randomUUID();
@@ -297,7 +471,24 @@ export class CloudStore {
         this.seal(Buffer.from(JSON.stringify({ ...input, profile })), `${subject}|${id}|metadata`),
         0,
       );
-    return { id };
+    if (request)
+      this.db
+        .prepare('INSERT OR REPLACE INTO cloud_writes VALUES (?,?,?,?,?,?,NULL)')
+        .run(subject, device, profileId, request, id, configuration);
+    return { id, completed: false };
+  }
+  /** Latest retained snapshot; older New file snapshots are independent artifacts.
+   * @param {string} subject @param {string} device @param {string} profile @param {string} day @param {string} schema @returns {Row|null} */
+  latest(subject, device, profile, day, schema) {
+    return (
+      /** @type {Row|undefined} */ (
+        this.db
+          .prepare(
+            'SELECT * FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) ORDER BY created DESC LIMIT 1',
+          )
+          .get(subject, device, profile, day, schema)
+      ) ?? null
+    );
   }
   /** @param {string} subject @param {string} id @returns {Row} */
   row(subject, id) {
@@ -373,9 +564,7 @@ export class CloudStore {
       ? await this.requireObjects().get(row.object_key)
       : row.content;
     if (!encrypted) throw new PairingError(404, 'Cloud export not found.');
-    const current = this.row(row.subject, row.id);
-    if (current.created < Date.now() - 30 * 86400000)
-      throw new PairingError(404, 'Cloud export not found.');
+    this.row(row.subject, row.id);
     return this.open(encrypted, `${row.subject}|${row.id}`);
   }
   requireObjects() {
@@ -402,51 +591,118 @@ export class CloudStore {
       throw new PairingError(404, 'Cloud export not found.');
     if (bytes.length > 16 * 1024 * 1024)
       throw new PairingError(413, 'Cloud files are limited to 16 MiB.');
-    const records = this.records(row, bytes);
-    if (records.length !== this.metadata(row).manifest.recordCount)
-      throw new PairingError(400, 'Manifest record count does not match the file.');
+    const inputMetadata = this.metadata(row);
+    const incoming = this.records(row, bytes);
     const hash = this.digest(bytes);
     if (row.content || row.object_key) {
-      if ((row.content_hash ?? this.digest(await this.bytes(row))) !== hash)
+      if ((row.upload_hash ?? row.content_hash ?? this.digest(await this.bytes(row))) !== hash)
         throw new PairingError(409, 'Upload already committed with different bytes.');
       authorize();
-      return { id, recordCount: records.length };
+      return {
+        id,
+        recordCount: Number(inputMetadata.manifest.recordCount),
+        bytes: row.size,
+        partial: inputMetadata.manifest.status === 'partial',
+      };
     }
+    if (incoming.length !== inputMetadata.manifest.recordCount)
+      throw new PairingError(400, 'Manifest record count does not match the file.');
     this.requireStorage(subject);
-    const encrypted = this.seal(bytes, `${subject}|${id}`);
-    const objectKey = this.objects ? await this.uploadObject(encrypted) : null;
+    const mode = inputMetadata.profile.export.writeMode ?? 'replace';
+    const previous =
+      mode === 'new_file' ? null : this.latest(subject, device, profile, row.day, row.schema);
+    let manifest = inputMetadata.manifest;
+    let output = Buffer.from(bytes);
+    if (mode === 'append' && previous) {
+      const oldBytes = await this.bytes(previous);
+      if (oldBytes.length + bytes.length > 16 * 1024 * 1024)
+        throw new PairingError(
+          413,
+          'Appended cloud files are limited to 16 MiB. Choose New file or Replace.',
+        );
+      const oldRecords = this.records(previous, oldBytes);
+      const oldManifest = this.metadata(previous).manifest;
+      manifest = JSON.parse(
+        appendExportContent(
+          JSON.stringify({ ...oldManifest, schema: row.schema, recordCount: oldRecords.length }),
+          JSON.stringify(manifest),
+          'manifest',
+        ),
+      );
+      const records = [...oldRecords, ...incoming];
+      output = Buffer.from(
+        row.format === 'jsonl'
+          ? records.map((record) => JSON.stringify(record) + '\n').join('')
+          : JSON.stringify({ ...manifest, records }),
+      );
+      // Revalidate merged data against this upload's exact source selection and schema.
+      this.records(row, output);
+    }
+    if (output.length > 16 * 1024 * 1024)
+      throw new PairingError(413, 'Cloud files are limited to 16 MiB. Choose New file or Replace.');
+    const outputMetadata = Buffer.from(JSON.stringify({ ...inputMetadata, manifest }));
+    if (outputMetadata.length > 1024 * 1024)
+      throw new PairingError(
+        413,
+        'Cloud export metadata is limited to 1 MiB. Choose New file or Replace.',
+      );
+    const encrypted = this.seal(output, `${subject}|${id}`);
+    const objectKey =
+      this.objects && !(mode === 'skip' && previous) ? await this.uploadObject(encrypted) : null;
+    let result = {
+      id,
+      recordCount: Number(manifest.recordCount),
+      bytes: output.length,
+      partial: manifest.status === 'partial',
+    };
     try {
       transaction(this.db, () => {
         authorize();
         const current = this.row(subject, id);
         if (current.content || current.object_key) {
-          if (current.content_hash !== hash)
+          if ((current.upload_hash ?? current.content_hash) !== hash)
             throw new PairingError(409, 'Upload already committed with different bytes.');
+          result = {
+            id,
+            recordCount: Number(this.metadata(current).manifest.recordCount),
+            bytes: current.size,
+            partial: this.metadata(current).manifest.status === 'partial',
+          };
         } else {
           if (current.created < Date.now() - 3600000)
             throw new PairingError(409, 'Upload expired. Start a new upload.');
-          const newer = this.db
-            .prepare(
-              'SELECT id FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND created>?',
-            )
-            .get(subject, device, profile, row.day, row.format, row.schema, row.created);
-          if (newer) throw new PairingError(409, 'A newer daily export was already committed.');
+          if (!Buffer.from(current.metadata).equals(Buffer.from(row.metadata)))
+            throw new PairingError(409, 'Upload metadata changed. Retry the export.');
+          const latest =
+            mode === 'new_file' ? null : this.latest(subject, device, profile, row.day, row.schema);
+          if (latest?.id !== previous?.id)
+            throw new PairingError(
+              409,
+              'The daily cloud file changed during upload. Retry the export.',
+            );
+          if (mode === 'replace' && latest && latest.created > row.created)
+            throw new PairingError(409, 'A newer daily export was already committed.');
           const usage = Number(
             this.db
               .prepare('SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=?')
               .get(subject)?.bytes ?? 0,
           );
-          const replaced = Number(
+          const replaced = previous?.size ?? 0;
+          const allowance = this.requireStorage(subject);
+          const maxFiles = Math.max(128, Math.ceil(allowance.limitBytes / 1_000_000_000) * 128);
+          const count = Number(
             this.db
               .prepare(
-                'SELECT COALESCE(SUM(size),0) bytes FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
+                'SELECT COUNT(*) count FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL)',
               )
-              .get(subject, device, profile, row.day, row.format, row.schema)?.bytes ?? 0,
+              .get(subject)?.count ?? 0,
           );
+          if (count - (previous ? 1 : 0) >= maxFiles)
+            throw new PairingError(413, 'Cloud file limit reached. Delete older exports.');
           if (
             !cloudUploadFits(
               { ...this.requireStorage(subject), usedBytes: usage },
-              bytes.length,
+              mode === 'skip' && previous ? previous.size : output.length,
               replaced,
             )
           )
@@ -454,15 +710,44 @@ export class CloudStore {
               413,
               'Cloud quota reached. Delete older exports before uploading more.',
             );
+          if (mode === 'skip' && previous) {
+            result = {
+              id: previous.id,
+              recordCount: Number(this.metadata(previous).manifest.recordCount),
+              bytes: previous.size,
+              partial: this.metadata(previous).manifest.status === 'partial',
+            };
+            this.db.prepare('DELETE FROM exports WHERE subject=? AND id=?').run(subject, id);
+          } else {
+            if (previous)
+              this.db
+                .prepare('DELETE FROM exports WHERE subject=? AND id=?')
+                .run(subject, previous.id);
+            this.db
+              .prepare(
+                'UPDATE exports SET content=?,object_key=?,content_hash=?,upload_hash=?,size=?,metadata=?,created=? WHERE id=?',
+              )
+              .run(
+                objectKey ? null : encrypted,
+                objectKey,
+                this.digest(output),
+                hash,
+                output.length,
+                this.seal(outputMetadata, `${subject}|${id}|metadata`),
+                Math.max(
+                  Date.now(),
+                  Number(
+                    this.db.prepare('SELECT COALESCE(MAX(created),0) last FROM exports').get()
+                      ?.last ?? 0,
+                  ) + 1,
+                ),
+                id,
+              );
+            if (objectKey) this.db.prepare('DELETE FROM object_garbage WHERE key=?').run(objectKey);
+          }
           this.db
-            .prepare(
-              'DELETE FROM exports WHERE subject=? AND device=? AND profile=? AND day=? AND format=? AND schema=? AND (content IS NOT NULL OR object_key IS NOT NULL) AND id<>?',
-            )
-            .run(subject, device, profile, row.day, row.format, row.schema, id);
-          this.db
-            .prepare('UPDATE exports SET content=?,object_key=?,content_hash=?,size=? WHERE id=?')
-            .run(objectKey ? null : encrypted, objectKey, hash, bytes.length, id);
-          if (objectKey) this.db.prepare('DELETE FROM object_garbage WHERE key=?').run(objectKey);
+            .prepare('UPDATE cloud_writes SET result=? WHERE subject=? AND id=?')
+            .run(JSON.stringify(result), subject, id);
         }
       });
     } catch (error) {
@@ -473,7 +758,7 @@ export class CloudStore {
     // Concurrent identical retries may have uploaded an unused candidate.
     if (objectKey && this.row(subject, id).object_key !== objectKey)
       this.db.prepare('UPDATE object_garbage SET created=0 WHERE key=?').run(objectKey);
-    return { id, recordCount: records.length };
+    return result;
   }
   /** Retry physical deletion without losing the durable queue on network errors. */
   async sweepObjects() {
@@ -565,38 +850,54 @@ export class CloudStore {
     this.cleanup();
     return this.db
       .prepare(
-        'SELECT id FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL) ORDER BY created DESC LIMIT 128',
+        'SELECT id FROM exports WHERE subject=? AND (content IS NOT NULL OR object_key IS NOT NULL) ORDER BY created DESC',
       )
       .all(subject)
       .map((v) => this.row(subject, String(v.id)))
-      .filter((r) => !forMcp || this.permission(subject, r.device, r.profile).shared)
-      .map((r) => ({
-        id: r.id,
-        profileId: r.profile,
-        profileName: this.metadata(r).profile.name,
-        deviceId: r.device,
-        day: r.day,
-        format: r.format,
-        schema: r.schema,
-        bytes: r.size,
-        created: r.created,
-        shared: this.permission(subject, r.device, r.profile).shared,
-      }));
+      .filter((r) => {
+        if (!forMcp) return true;
+        const permission = this.permission(subject, r.device, r.profile);
+        return permission.shared && hasAgentData(permission.agentPermissions);
+      })
+      .map((r) =>
+        Object.assign(
+          {
+            id: r.id,
+            profileId: r.profile,
+            profileName: this.metadata(r).profile.name,
+            deviceId: r.device,
+            day: r.day,
+            format: r.format,
+            schema: r.schema,
+            bytes: r.size,
+            writeMode: this.metadata(r).profile.export.writeMode ?? 'replace',
+            created: r.created,
+            shared: this.permission(subject, r.device, r.profile).shared,
+            agentPermissions: this.permission(subject, r.device, r.profile).agentPermissions,
+          },
+          forMcp ? {} : { recordCount: this.metadata(r).manifest.recordCount },
+        ),
+      );
   }
   /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] */
   async page(subject, id, offset, limit, forMcp = false) {
     this.cleanup();
     const row = this.row(subject, id),
       permission = this.permission(subject, row.device, row.profile);
-    if ((!row.content && !row.object_key) || (forMcp && !permission.shared))
+    if (
+      (!row.content && !row.object_key) ||
+      (forMcp && (!permission.shared || !hasAgentData(permission.agentPermissions)))
+    )
       throw new PairingError(404, 'Shared cloud export not found.');
     let records = this.records(row, await this.bytes(row));
     const currentPermission = this.permission(subject, row.device, row.profile);
-    if (forMcp && !currentPermission.shared)
+    if (forMcp && (!currentPermission.shared || !hasAgentData(currentPermission.agentPermissions)))
       throw new PairingError(404, 'Shared cloud export not found.');
     if (forMcp)
-      records = records.filter((r) =>
-        currentPermission.selection[r.domain].includes(`native:${r.type}`),
+      records = records.filter(
+        (r) =>
+          currentPermission.agentPermissions[r.domain] &&
+          currentPermission.selection[r.domain].includes(`native:${r.type}`),
       );
     const page = [];
     let size = 0;

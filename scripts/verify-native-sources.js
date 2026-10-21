@@ -1,7 +1,12 @@
+import * as dataAggregation from '../core/data-aggregation.js';
+import * as dataRange from '../core/data-range.js';
+import * as hosting from '../core/hosting.js';
+import { disconnectedWhoop } from './whoop-fixture.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { SourceTextModule, SyntheticModule } from 'node:vm';
+import { SourceTextModule, SyntheticModule, createContext, runInContext } from 'node:vm';
+import ts from 'typescript';
 import * as profiles from '../core/profiles.js';
 import * as data from '../core/data.js';
 import * as healthTypeCatalog from '../client/health-types.js';
@@ -39,7 +44,7 @@ async function load(path, dependencies) {
   return module.namespace;
 }
 const library =
-  /** @type {{saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void}} */ (
+  /** @type {{loadGrants:(owner:string)=>Record<import('../core/data.js').Domain,boolean>,saveRecord:(owner:string,row:import('../core/data.js').DataRecord)=>void,localPage:(owner:string,query:import('../core/data.js').DataQuery,token:string)=>import('../core/data.js').DataPage,earliestLocationDate:(owner:string,types:string[],end:string)=>string|null}} */ (
     await load('../client/library.js', {
       '../core/time-series.js': timeSeries,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
@@ -48,6 +53,8 @@ const library =
 const storedProfiles =
   /** @type {{saveProfiles:(owner:string,state:import('../core/profiles.js').ProfileState)=>void,loadProfiles:(owner:string)=>import('../core/profiles.js').ProfileState|null}} */ (
     await load('../client/profiles.js', {
+      '../core/hosting.js': hosting,
+      './library.js': library,
       './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
       '../core/profiles.js': profiles,
       './qa-runtime.js': {
@@ -62,17 +69,311 @@ const storedProfiles =
       },
     })
   );
+// Exercise owner consent migration and the single profile control against real profile persistence.
+const logConsent = new Map();
+const profileLogs =
+  /** @type {{loadAgentProfiles:(session:{owner:string,deviceId:string})=>import('../core/profiles.js').ProfileState|null,saveAgentProfiles:(session:{owner:string,deviceId:string},state:import('../core/profiles.js').ProfileState)=>void}} */ (
+    await load('../client/profile-logs.js', {
+      './profiles.js': storedProfiles,
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      './qa-runtime.js': { qaEnabled: false },
+      '../core/profiles.js': profiles,
+      './debug-log.js': {
+        debugSharing: (/** @type {{owner:string,deviceId:string}} */ context) => ({
+          shared: logConsent.get(`${context.owner}:${context.deviceId}`) === true,
+        }),
+        setDebugSharing: (
+          /** @type {{owner:string,deviceId:string}} */ context,
+          /** @type {boolean} */ shared,
+        ) => logConsent.set(`${context.owner}:${context.deviceId}`, shared),
+      },
+    })
+  );
+const logSession = {
+  owner: 'logs-owner',
+  deviceId: 'logs-device',
+  server: '',
+  issuer: '',
+  resource: '',
+  accessToken: '',
+  refreshToken: '',
+  expires: 0,
+  account: '',
+};
+const logState = {
+  profiles: ['one', 'two'].map((id) =>
+    Object.assign(
+      profiles.parseProfile({
+        schema: 'myself.md.profile.v1',
+        name: id,
+        selection: { health: [], time: [], location: [] },
+      }),
+      {
+        id,
+        agentAccess: true,
+        agentPermissions: { health: true, time: true, location: true, logs: true },
+      },
+    ),
+  ),
+};
+storedProfiles.saveProfiles(logSession.deviceId, logState);
+const deniedLogs = profileLogs.loadAgentProfiles(logSession);
+assert.ok(deniedLogs);
+assert.ok(
+  deniedLogs.profiles.every((p) => p.agentPermissions?.logs === false),
+  'Legacy global denial applies to every profile',
+);
+const firstLogs = deniedLogs.profiles[0];
+const secondLogs = deniedLogs.profiles[1];
+assert.ok(firstLogs?.agentPermissions);
+assert.ok(secondLogs?.agentPermissions);
+firstLogs.agentPermissions.logs = true;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(logConsent.get('logs-owner:logs-device'), true);
+assert.equal(
+  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
+  false,
+  'Enabling one profile never grants another',
+);
+secondLogs.agentPermissions.logs = true;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+firstLogs.agentPermissions.logs = false;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(
+  logConsent.get('logs-owner:logs-device'),
+  true,
+  'Other approved profile retains publication',
+);
+secondLogs.agentAccess = false;
+profileLogs.saveAgentProfiles(logSession, deniedLogs);
+assert.equal(
+  logConsent.get('logs-owner:logs-device'),
+  false,
+  'Legacy master denial stops publication',
+);
+assert.equal(
+  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
+  false,
+  'Legacy master denial migrates to an individual Logs denial across restart',
+);
+const approvedSession = { ...logSession, deviceId: 'previously-approved' };
+logConsent.set('logs-owner:previously-approved', true);
+const originalSecond = logState.profiles[1];
+assert.ok(originalSecond);
+originalSecond.agentPermissions.logs = false;
+storedProfiles.saveProfiles(approvedSession.deviceId, logState);
+assert.deepEqual(
+  profileLogs.loadAgentProfiles(approvedSession),
+  logState,
+  'Migration preserves existing explicit approvals and denials',
+);
+assert.equal(
+  profiles.saveProfileDraft(logState, originalSecond, 'new').profiles.at(-1)?.agentPermissions
+    ?.logs,
+  false,
+  'New profiles never inherit log consent',
+);
+// System folder grants stay account/device-local and writes use the selected provider.
+const folderNodes = new Map();
+let pickerCancelled = false;
+let folderDenied = false;
+class PickedDirectory {
+  /** @param {string} uri */
+  constructor(uri) {
+    this.uri = uri;
+    this.parent = '';
+    this.name = uri.split('/').at(-1) ?? '';
+  }
+  get exists() {
+    return !folderDenied;
+  }
+  list() {
+    return [...folderNodes.values()].filter((item) => item.parent === this.uri);
+  }
+  /** @param {string} name */
+  createDirectory(name) {
+    const dir = new PickedDirectory(`${this.uri}/${name}`);
+    folderNodes.set(dir.uri, dir);
+    dir.parent = this.uri;
+    return dir;
+  }
+  /** @param {string} name */
+  createFile(name) {
+    const file = new PickedFile(`${this.uri}/${name}`);
+    file.parent = this.uri;
+    folderNodes.set(file.uri, file);
+    return file;
+  }
+  static async pickDirectoryAsync() {
+    if (pickerCancelled) throw new Error('Picker cancelled');
+    return new PickedDirectory('content://picked/exports');
+  }
+}
+class PickedFile {
+  /** @param {string} uri */
+  constructor(uri) {
+    this.uri = uri;
+    this.parent = '';
+    this.name = uri.split('/').at(-1) ?? '';
+    this.size = 12;
+  }
+  /** @param {string} mode */
+  open(mode) {
+    const file = this;
+    let read = false;
+    return {
+      readBytes() {
+        if (read) return new Uint8Array();
+        read = true;
+        return new Uint8Array(file.size);
+      },
+      /** @param {Uint8Array} bytes */
+      writeBytes(bytes) {
+        assert.equal(mode, 'wt');
+        file.size = bytes.length;
+      },
+      close() {},
+    };
+  }
+  /** @param {PickedFile} target */
+  async copy(target) {
+    target.size = this.size;
+  }
+}
+const folderPlatform = { OS: 'android' };
+let bookmarkRestores = 0;
+const bookmarkBridge = {
+  bookmark: async () => 'fixture-bookmark',
+  restore: async () => {
+    bookmarkRestores++;
+    return { uri: 'file://restored/exports', bookmark: 'fixture-bookmark-renewed' };
+  },
+};
+const folderContext = { owner: 'folder-owner', deviceId: 'folder-device' };
+const folderRuntime =
+  /** @type {{chooseExportFolder:(context:typeof folderContext,previous?:string)=>Promise<string>,exportFolder:(context:typeof folderContext,id?:string)=>{name:string}|null,exportFolderStatus:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile)=>{status:string},saveInExportFolder:(context:typeof folderContext,profile:import('../core/profiles.js').ExportProfile,file:PickedFile,format:string)=>Promise<PickedFile>}} */ (
+    await load('../client/export-folder.js', {
+      'expo-file-system': {
+        Directory: PickedDirectory,
+        File: PickedFile,
+        FileMode: { ReadOnly: 'r', Truncate: 'wt' },
+        Paths: {},
+      },
+      '../core/export-files.js': exportFiles,
+      'react-native': { Platform: folderPlatform },
+      expo: { requireOptionalNativeModule: () => bookmarkBridge },
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      './qa-runtime.js': { qaEnabled: false },
+    })
+  );
+const selectedFolder = await folderRuntime.chooseExportFolder(folderContext);
+assert.ok(folderRuntime.exportFolder(folderContext, selectedFolder));
+assert.equal(
+  folderRuntime.exportFolder({ ...folderContext, owner: 'foreign' }, selectedFolder),
+  null,
+);
+assert.equal(
+  folderRuntime.exportFolder({ ...folderContext, deviceId: 'foreign' }, selectedFolder),
+  null,
+);
+pickerCancelled = true;
+await assert.rejects(folderRuntime.chooseExportFolder(folderContext, selectedFolder), /cancelled/);
+assert.ok(
+  folderRuntime.exportFolder(folderContext, selectedFolder),
+  'Picker cancellation preserves existing selection',
+);
+const folderProfile = {
+  ...logState.profiles[0],
+  id: 'folder-profile',
+  ...profiles.parseProfile({
+    schema: 'myself.md.profile.v1',
+    name: 'Folder test',
+    selection: { health: [], time: [], location: [] },
+    export: { localFolderId: selectedFolder, formatFolders: true },
+  }),
+};
+const stagedFolderFile = new PickedFile('cache/2026-10-16.json');
+const savedFolderFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  folderProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(savedFolderFile.uri, `content://picked/exports/json/2026-10-16.json`);
+assert.equal(
+  await folderRuntime.saveInExportFolder(folderContext, folderProfile, stagedFolderFile, 'json'),
+  savedFolderFile,
+  'Daily replacement reuses the same file',
+);
+assert.equal(folderRuntime.exportFolderStatus(folderContext, folderProfile).status, 'selected');
+const directProfile = {
+  ...folderProfile,
+  export: { ...folderProfile.export, formatFolders: false },
+};
+const directFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  directProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(directFile.uri, 'content://picked/exports/2026-10-16.json');
+assert.equal(
+  await folderRuntime.saveInExportFolder(folderContext, directProfile, stagedFolderFile, 'json'),
+  directFile,
+  'Direct daily replacement reuses the file in the selected root',
+);
+
+await assert.rejects(
+  folderRuntime.saveInExportFolder(
+    { ...folderContext, owner: 'foreign' },
+    folderProfile,
+    stagedFolderFile,
+    'json',
+  ),
+  /Choose/,
+);
+folderDenied = true;
+await assert.rejects(
+  folderRuntime.saveInExportFolder(folderContext, folderProfile, stagedFolderFile, 'json'),
+  /unavailable/,
+  'Revoked provider access cannot fall back to app storage',
+);
+assert.equal(stagedFolderFile.uri, 'cache/2026-10-16.json');
+folderDenied = false;
+pickerCancelled = false;
+folderPlatform.OS = 'ios';
+const bookmarkedFolder = await folderRuntime.chooseExportFolder(folderContext);
+const bookmarkedProfile = {
+  ...folderProfile,
+  export: { ...folderProfile.export, localFolderId: bookmarkedFolder },
+};
+const restoredFile = await folderRuntime.saveInExportFolder(
+  folderContext,
+  bookmarkedProfile,
+  stagedFolderFile,
+  'json',
+);
+assert.equal(restoredFile.uri, 'file://restored/exports/json/2026-10-16.json');
+assert.equal(
+  bookmarkRestores,
+  1,
+  'iOS restores OS bookmark before accessing the selected directory',
+);
 let healthConnectAvailable = true;
 /** @type {{accessType:string,recordType:string}[]} */
 let healthPermissions = [];
 let healthReads = 0;
+/** @type {unknown} */ let requestedAndroidHealth;
 const androidHealth =
-  /** @type {{healthTypes:(selectable?:boolean)=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
+  /** @type {{authorizeHealth:(selected?:string[])=>Promise<void>,healthTypes:(selectable?:boolean)=>Promise<string[]>,healthPage:(query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/health.js', {
       'react-native': { Platform: { OS: 'android' } },
       '@kingstinct/react-native-healthkit': {},
       'react-native-health-connect': {
         initialize: async () => healthConnectAvailable,
+        requestPermission: async (/** @type {unknown} */ permissions) => {
+          requestedAndroidHealth = permissions;
+        },
         getGrantedPermissions: async () => healthPermissions,
         readRecords: async () => {
           healthReads++;
@@ -88,17 +389,95 @@ const androidHealth =
       './workout-series.js': { captureWorkout: async () => ({}) },
     })
   );
+await androidHealth.authorizeHealth(['native:Steps']);
+assert.deepEqual(
+  requestedAndroidHealth,
+  [{ accessType: 'read', recordType: 'Steps' }],
+  'Profile consent must request only selected Android records',
+);
+await assert.rejects(androidHealth.authorizeHealth([]), /Select.*Health/);
+// Run the editor's real handlers through successive selections, including a
+// domain reported as authorized when only its first type has OS permission.
+const editorSource = await readFile('client/ProfileDataEditor.js', 'utf8');
+const editorTree = ts.createSourceFile(
+  'ProfileDataEditor.js',
+  editorSource,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.JSX,
+);
+/** @type {string[][]} */
+const reviewedHealth = [];
+const editorContext = createContext({
+  selection: { health: [], time: [], location: [] },
+  inline: true,
+  locked: false,
+  domains: data.domains,
+  permissions: { health: 'unknown' },
+  requestedHealth: { current: new Set() },
+  setRequesting: () => {},
+  setAccessMessage: () => {},
+  onSelection: async () => {},
+  onAuthorize: async (/** @type {string} */ domain, /** @type {string[]} */ selected) => {
+    assert.equal(domain, 'health');
+    reviewedHealth.push([...selected]);
+    return { message: 'Reviewed selected Health types.' };
+  },
+  showToast: () => assert.fail('The selection handler must not fail.'),
+  errorMessage: String,
+});
+/** @param {import('typescript').Node} node */
+function loadEditorHandlers(node) {
+  if (ts.isFunctionDeclaration(node) && ['select', 'authorize'].includes(node.name?.text ?? ''))
+    runInContext(node.getText(editorTree), editorContext);
+  ts.forEachChild(node, loadEditorHandlers);
+}
+loadEditorHandlers(editorTree);
+/** @param {string[]} health */
+async function selectHealth(health) {
+  const next = { health, time: [], location: [] };
+  await editorContext.select(next);
+  editorContext.selection = next;
+}
+await selectHealth(['native:Steps']);
+await selectHealth(['native:Steps', 'native:SleepSession']);
+editorContext.permissions.health = 'authorized';
+await selectHealth(['native:Steps', 'native:SleepSession', 'native:HeartRate']);
+await selectHealth([
+  'native:Steps',
+  'native:SleepSession',
+  'native:HeartRate',
+  'native:whoop.sleep',
+]);
+await selectHealth(['native:Steps']);
+await selectHealth(['native:Steps', 'native:HeartRate']);
+assert.deepEqual(
+  reviewedHealth,
+  [
+    ['native:Steps'],
+    ['native:Steps', 'native:SleepSession'],
+    ['native:Steps', 'native:SleepSession', 'native:HeartRate'],
+  ],
+  'Each newly selected native Health type needs consent; reviewed types and WHOOP do not reprompt.',
+);
 let androidCatalog = false;
 const catalogPlatform = { OS: 'ios' };
 let foregroundGranted = true;
 let usageAuthorization = 'authorized';
+let locationTracking = false;
+/** @type {import('../core/data.js').DataPage|null} */
+let forcedHealthPage = null;
 const phone =
-  /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
+  /** @type {{catalog:(owner:string,grants:Record<import('../core/data.js').Domain,boolean>)=>Promise<{locationTracking:boolean,domains:{types:string[],selectableTypes:string[],permission:string}[]}>,readPage:(owner:string,query:import('../core/data.js').DataQuery,profile:import('../core/profiles.js').ExportProfile,forChat?:boolean)=>Promise<import('../core/data.js').DataPage>}} */ (
     await load('../client/data.js', {
+      '../core/data-aggregation.js': dataAggregation,
+      '../core/data-range.js': dataRange,
+      './whoop.js': disconnectedWhoop,
       'expo-location': {
         getForegroundPermissionsAsync: async () => ({ granted: foregroundGranted }),
       },
       'react-native': { Platform: catalogPlatform },
+      './location-task.js': { locationStatus: async () => ({ tracking: locationTracking }) },
       '../core/profiles.js': profiles,
       '../core/data.js': data,
       './library.js': library,
@@ -108,6 +487,7 @@ const phone =
             ? androidHealth.healthTypes(selectable)
             : ['HKQuantityTypeIdentifierStepCount'],
         healthPage: async () => {
+          if (forcedHealthPage) return forcedHealthPage;
           throw new Error('Unexpected health read');
         },
       },
@@ -225,11 +605,93 @@ db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
     ),
   }),
 );
+db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
+  'phone',
+  JSON.stringify({ health: true, time: false, location: true }),
+);
 const migrated = storedProfiles.loadProfiles('phone');
 assert.ok(migrated);
 assert.equal(migrated.profiles[0]?.agentAccess, true);
 assert.equal(migrated.profiles[1]?.agentAccess, false);
 assert.ok(!('activeId' in migrated));
+assert.deepEqual(
+  migrated.profiles[1]?.agentPermissions,
+  { health: false, time: false, location: false, logs: false },
+  'Legacy master-off profiles never gain access',
+);
+assert.deepEqual(migrated.profiles[0]?.agentPermissions, {
+  health: true,
+  time: false,
+  location: true,
+  logs: true,
+});
+// A single permission now grants access without another owner switch.
+const individual = profiles.parseProfileState({
+  profiles: [
+    {
+      ...migrated.profiles[1],
+      agentAccess: true,
+      agentPermissions: { health: true, time: false, location: false, logs: false },
+    },
+  ],
+});
+const individuallyAllowed = individual.profiles[0];
+assert.ok(individuallyAllowed);
+assert.equal(
+  profiles.agentProfileAllows(individuallyAllowed, {
+    domain: 'health',
+    source: 'native',
+    type: 'HKQuantityTypeIdentifierStepCount',
+  }),
+  true,
+);
+assert.equal(
+  profiles.agentProfileAllows(individuallyAllowed, {
+    domain: 'location',
+    source: 'native',
+    type: 'points',
+  }),
+  false,
+);
+assert.equal(profiles.agentLogsAllowed(individuallyAllowed), false);
+const individualOff = profiles.parseProfileState({
+  profiles: [
+    {
+      ...individuallyAllowed,
+      agentPermissions: { health: false, time: false, location: false, logs: false },
+    },
+  ],
+});
+assert.equal(
+  individualOff.profiles[0]?.agentAccess,
+  false,
+  'Compatibility summary follows the last individual permission',
+);
+assert.deepEqual(
+  individualOff.profiles[0]?.selection,
+  individuallyAllowed.selection,
+  'Permission revocation preserves selections',
+);
+// A migrated phone-wide denial remains a per-profile denial across restarts.
+db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
+  'phone',
+  JSON.stringify({ health: false, time: true, location: false }),
+);
+assert.deepEqual(storedProfiles.loadProfiles('phone'), migrated);
+// A different device partition with no legacy approval must not inherit any source access.
+db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
+  'unapproved',
+  JSON.stringify({
+    profiles: [{ ...profiles.parseProfile(legacy, true), id: 'existing', agentAccess: true }],
+  }),
+);
+const unapproved = storedProfiles.loadProfiles('unapproved');
+assert.deepEqual(unapproved?.profiles[0]?.agentPermissions, {
+  health: false,
+  time: false,
+  location: false,
+  logs: true,
+});
 storedProfiles.saveProfiles('phone', migrated);
 assert.deepEqual(storedProfiles.loadProfiles('phone'), migrated);
 assert.deepEqual(migrated.profiles[0]?.selection, {
@@ -257,6 +719,13 @@ library.saveRecord(
   data.record('location', 'points', 'expo-location', { timestamp: '2026-10-07T08:00:00.000Z' }),
 );
 const catalog = await phone.catalog('alice', { health: true, time: true, location: true });
+assert.equal(catalog.locationTracking, false);
+locationTracking = true;
+assert.equal(
+  (await phone.catalog('alice', { health: false, time: false, location: false })).locationTracking,
+  true,
+);
+locationTracking = false;
 assert.deepEqual(
   catalog.domains.map((d) => d.types),
   [
@@ -297,6 +766,193 @@ assert.ok(profile);
 const page = await phone.readPage('alice', query, profile);
 assert.equal(page.records.length, 1);
 assert.equal(page.records[0]?.source, 'expo-location');
+// Aggregate real SQLite pages, including >50 records and an empty intervening day.
+for (let index = 0; index < 65; index++)
+  library.saveRecord(
+    'aggregate-owner',
+    data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 2, unit: 'm' }),
+  );
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 100, unit: 'cm' }),
+);
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', {
+    timestamp: stamp,
+    value: 'missing',
+    unit: 'm',
+  }),
+);
+library.saveRecord(
+  'aggregate-owner',
+  data.record('location', 'points', 'expo-location', {
+    timestamp: '2026-10-10T08:00:00.000Z',
+    value: 4,
+    unit: 'm',
+  }),
+);
+const aggregateQuery = {
+  ...query,
+  end: '2026-10-11T00:00:00.000Z',
+  limit: 2,
+  aggregation: {
+    operation: /** @type {const} */ ('sum'),
+    field: 'value',
+    groupBy: /** @type {const} */ ('day'),
+  },
+};
+const aggregated = await phone.readPage('aggregate-owner', aggregateQuery, profile);
+assert.deepEqual(
+  aggregated.records.map((row) => row.native),
+  [
+    { aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'cm', count: 1, value: 100 },
+    { aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'm', count: 65, value: 130 },
+  ],
+);
+assert.equal(aggregated.aggregation?.scannedRecords, 67);
+assert.equal(aggregated.aggregation?.skippedRecords, 1);
+assert.ok(aggregated.nextCursor);
+const aggregateTail = await phone.readPage(
+  'aggregate-owner',
+  { ...aggregateQuery, cursor: aggregated.nextCursor },
+  profile,
+);
+assert.equal(aggregateTail.nextCursor, null);
+assert.deepEqual(
+  aggregateTail.records.map((row) => row.native),
+  [{ aggregation: 'sum', groupBy: 'day', field: 'value', unit: 'm', count: 1, value: 4 }],
+);
+await assert.rejects(
+  phone.readPage(
+    'aggregate-owner',
+    {
+      ...aggregateQuery,
+      cursor: aggregated.nextCursor,
+      aggregation: { ...aggregateQuery.aggregation, operation: 'avg' },
+    },
+    profile,
+  ),
+  /different/,
+);
+const intervalQuery = {
+  ...aggregateQuery,
+  aggregation: {
+    ...aggregateQuery.aggregation,
+    operation: /** @type {const} */ ('avg'),
+    groupBy: /** @type {const} */ ('interval'),
+  },
+};
+const averaged = await phone.readPage('aggregate-owner', intervalQuery, profile);
+assert.equal(averaged.records.length, 2);
+const averagedMeters = averaged.records[1];
+assert.ok(averagedMeters);
+assert.equal(/** @type {{value:number}} */ (averagedMeters.native).value, 134 / 66);
+await Promise.all(
+  /** @type {const} */ (['min', 'max', 'count']).map(async (operation) => {
+    const result = await phone.readPage(
+      'aggregate-owner',
+      { ...intervalQuery, aggregation: { ...intervalQuery.aggregation, operation } },
+      profile,
+    );
+    const last = result.records.at(-1);
+    assert.ok(last);
+    assert.equal(
+      /** @type {{value:number}} */ (last.native).value,
+      operation === 'min' ? 2 : operation === 'max' ? 4 : 68,
+    );
+  }),
+);
+const blockedAggregation = {
+  ...profile,
+  agentPermissions: { health: false, time: false, location: false, logs: false },
+};
+await assert.rejects(
+  phone.readPage('aggregate-owner', aggregateQuery, blockedAggregation),
+  /approved/,
+);
+const capped = dataAggregation.aggregateRecords(aggregateQuery, {
+  start: query.start,
+  end: query.end,
+});
+assert.throws(
+  () =>
+    capped.add(
+      Array.from({ length: 10001 }, () =>
+        data.record('location', 'points', 'expo-location', { timestamp: stamp, value: 1 }),
+      ),
+    ),
+  /10000/,
+);
+forcedHealthPage = {
+  records: [],
+  nextCursor: null,
+  warnings: ['Native source failed'],
+  capture: 'fixture',
+  complete: false,
+};
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    {
+      ...query,
+      domain: 'health',
+      type: 'HKQuantityTypeIdentifierStepCount',
+      aggregation: { operation: 'count', groupBy: 'day' },
+    },
+    profile,
+  ),
+  /partial/,
+);
+forcedHealthPage = null;
+const bucketCap = dataAggregation.aggregateRecords(aggregateQuery, {
+  start: query.start,
+  end: query.end,
+});
+assert.throws(
+  () =>
+    bucketCap.add(
+      Array.from({ length: 51 }, (_, index) =>
+        data.record('location', 'points', 'expo-location', {
+          timestamp: stamp,
+          value: 1,
+          unit: String(index),
+        }),
+      ),
+    ),
+  /50.*buckets/,
+);
+const longQuery = { ...query, start: '2026-09-01T00:00:00.000Z', end: '2026-11-01T00:00:00.000Z' };
+const emptyWindow = await phone.readPage('alice', longQuery, profile);
+assert.equal(emptyWindow.records.length, 0);
+assert.ok(emptyWindow.nextCursor, 'An empty provider window must continue to the next window');
+const lastWindow = await phone.readPage(
+  'alice',
+  { ...longQuery, cursor: emptyWindow.nextCursor },
+  profile,
+);
+assert.equal(lastWindow.records.length, library.localPage('alice', longQuery, '').records.length);
+assert.equal(lastWindow.nextCursor, null);
+assert.equal(
+  library.earliestLocationDate('alice', ['native:points'], query.end),
+  '2026-10-07T08:00:00.000Z',
+);
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    { ...longQuery, end: '2026-12-01T00:00:00.000Z', cursor: emptyWindow.nextCursor },
+    profile,
+  ),
+  /different query/,
+);
+await assert.rejects(
+  phone.readPage(
+    'alice',
+    { ...longQuery, cursor: emptyWindow.nextCursor },
+    { ...profile, agentAccess: false },
+  ),
+  /approved/,
+);
 const blocked = {
   ...profile,
   agentPermissions: { health: true, time: true, location: false, logs: false },
@@ -352,6 +1008,21 @@ let manualError = false;
 const exportTask =
   /** @type {{scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,files:string[],job:unknown,fingerprint:string},exportNow:(context:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,progress:(message:string)=>void)=>Promise<{days:number,failedSources:number}>}} */ (
     await load('../client/export-task.js', {
+      '../core/data-range.js': dataRange,
+      '../core/data.js': data,
+      './library.js': { earliestLocationDate: () => null },
+      './health-history.js': {
+        earliestHealthDate: async () => null,
+        requireHealthHistory: async () => {},
+      },
+      './export-notification-registration.js': { reconcileExportNotificationTask: async () => {} },
+      './destinations.js': { requireCloudAuthorization: async () => {} },
+      'expo-constants': { default: { expoConfig: {} } },
+      'expo-notifications': {},
+      'react-native': { Alert: { alert() {} }, Platform: { OS: 'ios' } },
+      './session.js': { api: async () => ({}), loadSession: async () => null },
+      './qa-runtime.js': { qaEnabled: false },
+      '../core/export-files.js': await import('../core/export-files.js'),
       './billing.js': { reserveExport: async () => {}, settleExport: async () => {} },
       '../core/diagnostics.js': diagnostics,
       'expo-background-task': {},
@@ -361,11 +1032,15 @@ const exportTask =
       './export-context.js': { loadExportContext: () => manualContext },
       './profiles.js': storedProfiles,
       './calendar.js': { localCalendar },
-      './history.js': { beginExport: () => {}, recordArtifact: () => {}, finishExport: () => {} },
+      './history.js': {
+        beginExport: () => 'manual-history',
+        recordArtifact: () => {},
+        finishExport: () => {},
+      },
       './profile-export.js': {
         exportProfileDay: async () => {
           if (manualError) throw new Error('Synthetic export failure');
-          return { files: ['manual.json'], failedSources: manualFailures };
+          return { files: ['manual.json'], count: 0, failedSources: manualFailures };
         },
       },
     })
@@ -394,104 +1069,99 @@ const manualProfile = {
   export: { ...privateProfile.export, lookbackDays: 1, includeToday: false },
 };
 storedProfiles.saveProfiles('phone', { ...migrated, profiles: [manualProfile] });
-assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
-  days: 1,
-  failedSources: 0,
-});
+assert.equal((await exportTask.exportNow(manualContext, manualProfile, () => {})).failedSources, 0);
 manualFailures = 2;
-assert.deepEqual(await exportTask.exportNow(manualContext, manualProfile, () => {}), {
-  days: 1,
-  failedSources: 2,
-});
+assert.equal((await exportTask.exportNow(manualContext, manualProfile, () => {})).failedSources, 2);
 manualError = true;
 await assert.rejects(
   exportTask.exportNow(manualContext, manualProfile, () => {}),
   /Synthetic export failure/,
 );
 storedProfiles.saveProfiles('phone', migrated);
-// Exercise the domain export boundary using the viewed private profile and native reader.
-const exportedFiles = new Map();
-class ShareFile {
-  /** @param {string} folder @param {string} name */
-  constructor(folder, name) {
-    this.name = name;
-    this.uri = `${folder}/${name}`;
-  }
-  create() {
-    exportedFiles.set(this.uri, '');
-  }
-  /** @param {string} value @param {{append?:boolean}} [options] */
-  write(value, options) {
-    exportedFiles.set(this.uri, (options?.append ? exportedFiles.get(this.uri) : '') + value);
-  }
-  delete() {
-    exportedFiles.delete(this.uri);
-  }
-}
-/** @type {import('../core/history.js').HistoryEvent[]} */
-const shareEvents = [];
-let sharedFile = '';
-let billed = false;
-const share =
-  /** @type {{shareDomain:(context:{owner:string,deviceId:string,server:string},grants:Record<import('../core/data.js').Domain,boolean>,domain:import('../core/data.js').Domain,profile:import('../core/profiles.js').ExportProfile,days:number,progress:(message:string)=>void)=>Promise<number>}} */ (
-    await load('../client/export.js', {
-      '../core/export-files.js': exportFiles,
-      './debug-log.js': { recordDebug: () => {} },
-      './billing.js': {
-        reserveExport: async () => {},
-        settleExport: async (
-          /** @type {unknown} */ _context,
-          /** @type {string} */ _id,
-          /** @type {boolean} */ produced,
-        ) => {
-          billed = produced;
+// Exercise the native boundary: cancellation/denial must precede location access;
+// a Settings return reuses only the same owner's pending disclosure.
+let disclosureAccepted = false;
+let notificationGranted = false;
+let backgroundGranted = false;
+let channelBlocked = false;
+let updatesStarted = false;
+const recordingEvents = /** @type {string[]} */ ([]);
+const recorder =
+  /** @type {{startTracking:(owner:string)=>Promise<boolean|null>,stopTracking:()=>Promise<void>}} */ (
+    await load('../client/location-task.js', {
+      'react-native': {
+        Platform: { OS: 'android' },
+        Alert: {
+          alert: (
+            /** @type {string} */ _title,
+            /** @type {string} */ message,
+            /** @type {{onPress:()=>void}[]} */ buttons,
+          ) => {
+            recordingEvents.push('disclosure');
+            assert.match(message, /precise location.*closed or not in use/);
+            buttons[disclosureAccepted ? 1 : 0]?.onPress();
+          },
         },
       },
-      'expo-file-system': { File: ShareFile, Paths: { cache: 'cache' } },
-      'expo-sharing': {
-        isAvailableAsync: async () => true,
-        shareAsync: async (/** @type {string} */ uri) => {
-          sharedFile = exportedFiles.get(uri) ?? '';
+      'expo-notifications': {
+        AndroidImportance: { LOW: 2, NONE: 0 },
+        setNotificationChannelAsync: async () => recordingEvents.push('channel'),
+        getPermissionsAsync: async () => ({ granted: notificationGranted }),
+        requestPermissionsAsync: async () => {
+          recordingEvents.push('notification');
+          return { granted: notificationGranted };
+        },
+        getNotificationChannelsAsync: async () =>
+          channelBlocked ? [{ id: 'scope:myselfmd-location', importance: 0 }] : [],
+      },
+      'expo-location': {
+        Accuracy: { Highest: 6 },
+        requestForegroundPermissionsAsync: async () => {
+          recordingEvents.push('foreground');
+          return { granted: true };
+        },
+        getBackgroundPermissionsAsync: async () => ({ granted: backgroundGranted }),
+        requestBackgroundPermissionsAsync: async () => {
+          recordingEvents.push('background');
+          return { granted: backgroundGranted };
+        },
+        hasStartedLocationUpdatesAsync: async () => updatesStarted,
+        startLocationUpdatesAsync: async () => {
+          recordingEvents.push('start');
+          updatesStarted = true;
+        },
+        stopLocationUpdatesAsync: async () => {
+          updatesStarted = false;
         },
       },
-      './history.js': {
-        saveShareEvent: (
-          /** @type {unknown} */ _context,
-          /** @type {import('../core/history.js').HistoryEvent} */ event,
-        ) => {
-          shareEvents.push(event);
-        },
-      },
-      './data.js': phone,
+      'expo-task-manager': { defineTask: () => {} },
+      './phone-database.js': { phoneDatabase: sqlite.openDatabaseSync },
+      '../core/data.js': data,
+      './library.js': library,
     })
   );
-library.saveRecord(
-  'manual',
-  data.record('location', 'points', 'expo-location', {
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-  }),
-);
-const context = { owner: 'manual', deviceId: 'phone', server: '' };
-assert.equal(
-  await share.shareDomain(
-    context,
-    { health: true, time: true, location: true },
-    'location',
-    privateProfile,
-    7,
-    () => {},
-  ),
-  1,
-);
-assert.equal(JSON.parse(sharedFile).records.length, 1);
-assert.equal(
-  shareEvents.at(-1)?.profile.id,
-  privateProfile.id,
-  'Shared data and audit belong to the viewed profile',
-);
-assert.equal(shareEvents.at(-1)?.status, 'complete');
-assert.equal(billed, true);
-assert.equal(exportedFiles.size, 0, 'Temporary shared files are cleaned up');
+assert.equal(await recorder.startTracking('alice'), null);
+assert.deepEqual(recordingEvents, ['disclosure']);
+disclosureAccepted = true;
+recordingEvents.length = 0;
+await assert.rejects(recorder.startTracking('alice'), /Allow notifications/);
+assert.deepEqual(recordingEvents, ['disclosure', 'channel', 'notification']);
+assert.equal(updatesStarted, false);
+notificationGranted = true;
+assert.equal(await recorder.startTracking('alice'), false);
+assert.equal(updatesStarted, false);
+backgroundGranted = true;
+recordingEvents.length = 0;
+assert.equal(await recorder.startTracking('alice'), true);
+assert.deepEqual(recordingEvents, ['channel', 'foreground', 'start']);
+assert.equal(updatesStarted, true);
+await recorder.stopTracking();
+assert.equal(updatesStarted, false);
+channelBlocked = true;
+recordingEvents.length = 0;
+await assert.rejects(recorder.startTracking('alice'), /notification channel/);
+assert.deepEqual(recordingEvents, ['disclosure', 'channel']);
+assert.equal(updatesStarted, false);
 db.close();
 console.log(
   'Native sources: legacy profile migration, import rejection, pre-permission choices, access requests, catalog, local isolation, date filtering, profile approval, independent schedules and manual sharing passed.',

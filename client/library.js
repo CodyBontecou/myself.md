@@ -15,10 +15,6 @@ export function loadGrants(owner) {
     ? JSON.parse(/** @type {{value:string}} */ (row).value)
     : { health: false, time: false, location: false };
 }
-/** @param {string} owner @param {Grants} grants */
-export function saveGrants(owner, grants) {
-  db.runSync('INSERT OR REPLACE INTO settings VALUES (?,?)', owner, JSON.stringify(grants));
-}
 /** @param {string} owner @param {import('../core/data.js').DataRecord} row */
 export function saveRecord(owner, row) {
   db.runSync(
@@ -76,4 +72,22 @@ export function localPage(owner, query, token) {
       'Location history contains only points explicitly recorded by myself.md; it cannot recover earlier phone history.',
     ],
   };
+}
+
+/** @param {string} owner @param {string[]} types @param {string} end @returns {string|null} */
+export function earliestLocationDate(owner, types, end) {
+  let earliest = null;
+  for (const type of types) {
+    const row = /** @type {{start:string|null}|null} */ (
+      db.getFirstSync(
+        "SELECT MIN(start) AS start FROM records WHERE owner=? AND domain='location' AND type=? AND source='expo-location' AND start<?",
+        owner,
+        type.slice(type.indexOf(':') + 1),
+        end,
+      )
+    );
+    if (row?.start && (!earliest || Date.parse(row.start) < Date.parse(earliest)))
+      earliest = row.start;
+  }
+  return earliest;
 }

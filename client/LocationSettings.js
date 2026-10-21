@@ -1,5 +1,4 @@
 import { Linking, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
 import { Copy, Divider, Row } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
 import { Checkbox, Text } from './Terminal.js';
@@ -11,12 +10,10 @@ export default function LocationSettings({ data }) {
   const {
     session,
     busy,
-    grants,
     isTracking,
     locationInfo,
     message,
     run,
-    changeGrant,
     changeRecording,
     setMessage,
     publish,
@@ -39,22 +36,6 @@ export default function LocationSettings({ data }) {
           }
         />
         <Divider />
-        <Row
-          title="Agent access"
-          subtitle={
-            grants.location ? 'Shared with your paired agent' : 'Only you can read these points'
-          }
-          trailing={
-            <Checkbox
-              testID="source-grant-location"
-              accessibilityLabel="Allow chat to read location data"
-              value={grants.location}
-              disabled={busy || !session.server}
-              onValueChange={(enabled) => void run(() => changeGrant('location', enabled))}
-            />
-          }
-        />
-        <Divider />
       </View>
       <Copy testID="source-location-summary" variant="caption" muted selectable>
         {locationInfo}
@@ -65,12 +46,6 @@ export default function LocationSettings({ data }) {
           title="Location permissions"
           disabled={busy}
           onPress={() => void run(() => Linking.openSettings())}
-        />
-        <Divider />
-        <Row
-          testID="source-location-choose-types"
-          title="Choose data types"
-          onPress={() => router.navigate('/profiles')}
         />
         <Divider />
         <Row
@@ -85,12 +60,6 @@ export default function LocationSettings({ data }) {
               await refreshLocation();
             })
           }
-        />
-        <Divider />
-        <Row
-          testID="source-location-exports"
-          title="Export files"
-          onPress={() => router.navigate('/profiles')}
         />
         <Divider />
       </View>

@@ -1,0 +1,88 @@
+steps:
+  - echo: Dedicated iOS fixture baseline through UI; synthetic partition only, nothing charged.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: qa-open
+      timeout: 30000
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-reset-populated
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-lapse by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-lapse
+  - echo: Reveal qa-reset-cloud-lapse by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-lapse
+  - echo: Activate qa-reset-cloud-lapse; require resulting state.
+  - tap:
+      id: qa-reset-cloud-lapse
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true
+  - echo: Activate qa-open; require resulting state.
+  - tap:
+      id: qa-open
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Activate qa-open-cloud-storage; require resulting state.
+  - tap:
+      id: qa-open-cloud-storage
+  - await:
+      visible:
+        text: Choose cloud storage
+  - await:
+      idle: true
+  - await:
+      text:
+        in:
+          text: At least 150 MB of cloud exports will be deleted
+        equals: At least 150 MB of cloud exports will be deleted on November 8, 2026 (UTC)
+  - await:
+      text:
+        in:
+          text: Paid cloud storage ended and your exports use
+        equals:
+          'Paid cloud storage ended and your exports use 250 MB of the 100 MB included with Lifetime. 23 days
+          left: on November 8, 2026 (UTC) your oldest whole exports are deleted until usage is 100 MB or less. Resubscribe,
+          or delete enough cloud files before the deadline, to prevent this cleanup. Download files first to keep
+          offline copies; downloading alone does not prevent cloud deletion.'
+  - await:
+      text:
+        in:
+          text: 250.0 MB of 100 MB used
+        equals: 250.0 MB of 100 MB used
+  - echo: Activate BackButton; require resulting state.
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: qa-open-cloud-storage
+  - await:
+      idle: true
+  - echo: Reveal qa-reset-cloud-included by scrolling; hard state follows.
+  - scroll-to:
+      target:
+        id: qa-reset-cloud-included
+  - echo: Activate qa-reset-cloud-included; require resulting state.
+  - tap:
+      id: qa-reset-cloud-included
+  - await:
+      visible:
+        id: profile-row-qa-profile
+  - await:
+      idle: true

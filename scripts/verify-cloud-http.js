@@ -1,8 +1,14 @@
 import { Buffer } from 'node:buffer';
+import { verifyBlogHTTP, verifyBlogMCP } from './verify-blog.js';
+import { verifyDatasetHTTP, verifyDatasetMCP } from './verify-dataset-pages.js';
+import { reviewToolMetadata } from './mcp-review-metadata.js';
 import { createMyselfClient } from '../dashboard/public-client.js';
 import { registerPublicTools } from '../dashboard/webmcp.js';
 import { exportSchemas } from '../core/export-schemas.js';
 import { r2Fixture } from './r2-fixture.js';
+import { r2Store } from '../server/r2-store.js';
+import { CloudStore } from '../server/cloud-store.js';
+import { PairingStore } from '../server/pairing-store.js';
 import { BillingStore } from '../server/billing-store.js';
 import { z } from 'zod';
 import assert from 'node:assert/strict';
@@ -12,20 +18,53 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { generateKeyPair, exportJWK, SignJWT, decodeJwt } from 'jose';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { parseHistoryEvent, exportEvent, addArtifact } from '../core/history.js';
-import { parseProfile } from '../core/profiles.js';
+import { parseProfile, parseProfileState } from '../core/profiles.js';
 import { privacyPolicy } from '../core/privacy.js';
 import { chromium } from 'playwright';
+import { datasetWorkflows } from '../core/dataset-workflows.js';
+// Verify the shared status contract without exposing account or device fields.
+const statusStore = new PairingStore(':memory:');
+try {
+  const pairing = statusStore.createPairing('owner');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'pending' });
+  assert.throws(() => statusStore.claim(pairing.ticket, 'other', 'Wrong owner'));
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'pending' });
+  const device = statusStore.claim(pairing.ticket, 'owner', 'Test phone');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'connected' });
+  assert.throws(() => statusStore.claim(pairing.ticket, 'owner', 'Replay'));
+  statusStore.disconnect(device.id, 'owner');
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'disconnected' });
+  statusStore.db.prepare('UPDATE pairings SET expires = 0 WHERE id = ?').run(pairing.id);
+  assert.deepEqual(statusStore.ticketStatus(pairing.ticket), { status: 'expired' });
+} finally {
+  statusStore.db.close();
+}
 const queryId = (/** @type {unknown} */ value) =>
   z.object({ requestId: z.string() }).parse(value).requestId;
+const noop = () => {};
 const r2 = process.argv.includes('--r2') ? await r2Fixture() : null;
 const directory = mkdtempSync(join(tmpdir(), 'cloud-http-'));
 const { privateKey, publicKey } = await generateKeyPair('RS256');
 const jwk = await exportJWK(publicKey);
 jwk.kid = 'fixture';
-const identity = createServer((_req, res) => {
+let profileSubjectOverride = '';
+const identity = createServer((req, res) => {
+  if (req.url?.endsWith('/userinfo')) {
+    const subject = decodeJwt((req.headers.authorization ?? '').slice(7)).sub;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        sub: profileSubjectOverride || subject,
+        name: subject === 'alice' ? 'Alice Example' : 'Bob Example',
+        email: `${subject}@example.com`,
+        picture: 'https://avatars.example.com/alice.png',
+      }),
+    );
+    return;
+  }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ keys: [jwk] }));
 });
@@ -45,6 +84,18 @@ const migrationTicket = billingFixture.createClaim({
   source: 'iso.me:ios:iap',
   reference: 'migration-fixture',
 });
+const tierSubject = `${accountNamespace}|cloud-tier`;
+billingFixture.saveSubscription(tierSubject, {
+  store: 'android',
+  id: 'node-cloud-tier',
+  product: 'myself_md_cloud_100gb',
+  plan: 'cloud_100gb',
+  period: 'yearly',
+  status: 'grace',
+  expiresAt: Date.now() + 86400000,
+  autoRenew: true,
+  linkedId: null,
+});
 billingFixture.db.close();
 const reservation = createServer();
 reservation.listen(0, '127.0.0.1');
@@ -60,6 +111,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     ...r2?.env,
     DATA_DIR: directory,
     CLOUD_ENCRYPTION_KEY: 'a'.repeat(64),
+    WHOOP_CLIENT_ID: 'fixture-whoop-client',
+    WHOOP_CLIENT_SECRET: 'fixture-whoop-secret',
     PUBLIC_URL: origin,
     PUBLIC_URL_ALIASES: 'https://legacy.example',
     OAUTH_ISSUER: issuer,
@@ -67,6 +120,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     ALLOW_HTTP_DEV: '1',
     AUTH_PROXY: '0',
     IOS_APP_ID: '67KC823C9A.com.myself.md',
+    GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT: 'push@fixture.iam.gserviceaccount.com',
     HOST: '127.0.0.1',
     PORT: String(port),
   },
@@ -74,9 +128,14 @@ const child = spawn(process.execPath, ['server/index.js'], {
 });
 const client = new Client({ name: 'synthetic-cloud-test', version: '1' });
 const accessClient = new Client({ name: 'synthetic-access-test', version: '1' });
-/** @param {string} subject @param {string} azp @param {string} [audience] */
-async function token(subject, azp, audience = `${origin}/mcp`) {
-  return new SignJWT({ scope: 'myselfmd', azp })
+/** @param {string} subject @param {string} azp @param {string} [audience] @param {string} [scope] */
+async function token(
+  subject,
+  azp,
+  audience = `${origin}/mcp`,
+  scope = 'openid profile email myselfmd',
+) {
+  return new SignJWT({ scope, azp })
     .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
     .setIssuer(issuer)
     .setAudience(audience)
@@ -173,6 +232,130 @@ try {
   assert.equal(migrated.status, 200);
   assert.equal(z.object({ unlocked: z.boolean() }).parse(migrated.value).unlocked, true);
   assert.equal((await request('/api/cloud/exports', null)).status, 401);
+  const unpaidToken = await token('unpaid', 'myselfmd-phone');
+  const purchaseInput = {
+    store: 'android',
+    proof: 'synthetic',
+    productId: 'myself_md_cloud_100gb',
+  };
+  assert.equal((await request('/api/cloud/purchase-account', null)).status, 401);
+  assert.equal((await request('/api/cloud/purchase-account', chatToken)).status, 403);
+  assert.equal(
+    (await request('/api/cloud/subscription', chatToken, 'POST', purchaseInput)).status,
+    403,
+  );
+  const invalidSubscription = await request(
+    '/api/cloud/subscription',
+    unpaidToken,
+    'POST',
+    purchaseInput,
+  );
+  assert.ok(
+    invalidSubscription.status >= 400 && invalidSubscription.status !== 402,
+    'No Lifetime prerequisite; invalid/unverifiable store proof still cannot grant access',
+  );
+  const purchaseAccount = z.object({ appAccountToken: z.string().uuid() });
+  const accountId = purchaseAccount.parse(
+    (await request('/api/cloud/purchase-account', phoneToken)).value,
+  );
+  assert.deepEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', phoneToken)).value),
+    accountId,
+  );
+  assert.notEqual(
+    purchaseAccount.parse((await request('/api/cloud/purchase-account', bobToken)).value)
+      .appAccountToken,
+    accountId.appAccountToken,
+  );
+  assert.equal(
+    (await request('/api/store/google/notifications', null, 'POST', {})).status,
+    401,
+    'Google webhook requires its OIDC token, not phone OAuth',
+  );
+  assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
+  const tierToken = await token('cloud-tier', 'myselfmd-phone');
+  const tierStatus = z
+    .object({
+      plan: z.literal('cloud_100gb'),
+      limitBytes: z.literal(100_000_000_000),
+      subscription: z.object({ status: z.literal('grace') }),
+      plans: z.array(z.object({ id: z.string() })).length(1),
+      handoff: z.object({
+        appLink: z.literal('myselfmd://cloud-storage'),
+        requiresUser: z.literal(true),
+      }),
+    })
+    .parse((await request('/api/cloud/status', tierToken)).value);
+  assert.equal(tierStatus.handoff.requiresUser, true);
+  const tierDashboard = await request(
+    '/api/dashboard',
+    await token('cloud-tier', 'myselfmd-dashboard'),
+  );
+  const dashboardTier = z
+    .object({
+      cloudStorage: z.object({
+        plan: z.literal('cloud_100gb'),
+        limitBytes: z.literal(100_000_000_000),
+      }),
+    })
+    .parse(tierDashboard.value);
+  assert.equal(dashboardTier.cloudStorage.limitBytes, tierStatus.limitBytes);
+  const cloudClient = new Client({ name: 'cloud-only-fixture', version: '1' });
+  await cloudClient.connect(
+    new StreamableHTTPClientTransport(new URL(origin + '/mcp'), {
+      requestInit: {
+        headers: { Authorization: `Bearer ${await token('cloud-tier', 'fixture-agent')}` },
+      },
+    }),
+  );
+  try {
+    const cloudResult = await cloudClient.callTool({ name: 'get_cloud_storage', arguments: {} });
+    const cloudOnly = z
+      .object({
+        plan: z.literal('cloud_100gb'),
+        limitBytes: z.literal(100_000_000_000),
+        appAccess: z.object({
+          unlocked: z.literal(true),
+          lifetime: z.literal(false),
+          accessUntil: z.number(),
+        }),
+        plans: z.array(z.object({ id: z.literal('cloud_100gb') })).length(1),
+      })
+      .parse(cloudResult.structuredContent);
+    assert.equal(cloudOnly.limitBytes, tierStatus.limitBytes);
+    const lifetimeResult = await cloudClient.callTool({
+      name: 'get_lifetime_access',
+      arguments: {},
+    });
+    z.object({
+      purchase: z.object({ status: z.literal('awaiting_user') }),
+      allowance: z.object({ unlocked: z.literal(true), lifetime: z.literal(false) }),
+    }).parse(lifetimeResult.structuredContent);
+  } finally {
+    await cloudClient.close();
+  }
+  for (let i = 0; i < 7; i++) {
+    // Each completed use verifies Cloud bypasses the shared five-use allowance.
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Complete each use before reserving another.
+    const cloudReservation = await request('/api/billing', tierToken, 'POST', {
+      action: 'reserve',
+      id: `cloud-use-${i}`,
+    });
+    assert.equal(cloudReservation.status, 200);
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Settlement depends on this reservation.
+    const completion = await request('/api/billing', tierToken, 'POST', {
+      action: 'complete',
+      id: `cloud-use-${i}`,
+    });
+    assert.equal(completion.status, 200);
+  }
+
+  const includedStatus = z.object({
+    plan: z.literal('included'),
+    lapse: z.null(),
+    plans: z.array(z.unknown()).length(1),
+  });
+  includedStatus.parse((await request('/api/cloud/status', phoneToken)).value);
   const dashboardPage = await fetch(`${origin}/dashboard`);
   assert.equal(dashboardPage.status, 200);
   assert.ok(
@@ -191,9 +374,69 @@ try {
       .clientId,
     'myselfmd-dashboard',
   );
+  const whoopAuthorize = { action: 'authorize', state: '1234abcd' };
+  assert.equal((await request('/api/whoop/oauth', null, 'POST', whoopAuthorize)).status, 401);
+  assert.equal((await request('/api/whoop/oauth', chatToken, 'POST', whoopAuthorize)).status, 403);
+  assert.equal(
+    (await request('/api/whoop/oauth', dashboardToken, 'POST', whoopAuthorize)).status,
+    403,
+  );
+  const whoopAuthorization = await request('/api/whoop/oauth', phoneToken, 'POST', whoopAuthorize);
+  assert.equal(whoopAuthorization.status, 200);
+  const whoopURL = new URL(
+    z.object({ authorization_url: z.string() }).parse(whoopAuthorization.value).authorization_url,
+  );
+  assert.equal(whoopURL.searchParams.get('redirect_uri'), 'myselfmd://whoop');
+  assert.equal(whoopURL.searchParams.get('client_id'), 'fixture-whoop-client');
+  assert.equal(whoopURL.searchParams.has('client_secret'), false);
+  assert.equal(
+    (
+      await request('/api/whoop/oauth', phoneToken, 'POST', {
+        ...whoopAuthorize,
+        redirect_uri: 'foreign://callback',
+      })
+    ).status,
+    400,
+  );
   assert.equal((await request('/api/dashboard', null)).status, 401);
   assert.equal((await request('/api/dashboard', phoneToken)).status, 403);
   assert.equal((await request('/api/dashboard', chatToken)).status, 403);
+  const expectedAccountProfile = {
+    name: 'Alice Example',
+    email: 'alice@example.com',
+    picture: 'https://avatars.example.com/alice.png',
+  };
+  assert.deepEqual(
+    z
+      .object({ accountProfile: z.unknown() })
+      .parse((await request('/api/dashboard', dashboardToken)).value).accountProfile,
+    expectedAccountProfile,
+  );
+  assert.equal((await request('/api/account-profile', null)).status, 401);
+  const nativeProfileToken = await token(
+    'alice',
+    'myselfmd-phone',
+    undefined,
+    'openid profile myselfmd offline_access',
+  );
+  assert.deepEqual((await request('/api/account-profile', nativeProfileToken)).value, {
+    ...expectedAccountProfile,
+    email: null,
+  });
+  assert.deepEqual(
+    (await request('/api/account-profile', dashboardToken)).value,
+    expectedAccountProfile,
+  );
+  assert.equal(
+    z
+      .object({ email: z.string() })
+      .parse((await request('/api/account-profile', bobDashboardToken)).value).email,
+    'bob@example.com',
+  );
+  profileSubjectOverride = 'bob';
+  assert.equal((await request('/api/account-profile', dashboardToken)).status, 502);
+  assert.equal((await request('/api/account-profile', nativeProfileToken)).status, 502);
+  profileSubjectOverride = '';
 
   const association = await request('/.well-known/apple-app-site-association', null);
   assert.equal(association.status, 200);
@@ -212,9 +455,16 @@ try {
   assert.ok((await landing.text()).includes('Open in myself.md'));
   const home = await fetch(origin, { redirect: 'manual' });
   assert.equal(home.status, 200);
-  assert.ok((await home.text()).includes('datasets and example exports'));
-  assert.equal((await fetch(`${origin}/demo`)).status, 200);
-  assert.equal((await fetch(`${origin}/demo/`)).status, 200);
+  assert.ok((await home.text()).includes('Export Apple Health, Android Health Connect'));
+  assert.equal((await fetch(`${origin}/demo`)).status, 404);
+  assert.equal((await fetch(`${origin}/demo/`)).status, 404);
+  await Promise.all(
+    ['/', '/pricing', '/docs', '/llms.txt', '/llms-full.txt', '/sitemap.xml'].map(async (path) => {
+      const response = await fetch(`${origin}${path}`);
+      assert.equal(response.status, 200);
+      assert.doesNotMatch(await response.text(), /\/demo\b|\b(?:dashboard|browser) demo\b/i);
+    }),
+  );
   const browser = await chromium.launch({ headless: true });
   try {
     await Promise.all(
@@ -246,10 +496,104 @@ try {
     const catalogPage = await browser.newPage();
     await catalogPage.goto(`${origin}/docs`);
     await catalogPage.getByRole('link', { name: 'Datasets', exact: true }).click();
-    await catalogPage.getByRole('heading', { name: 'Datasets', exact: true }).waitFor();
+    await catalogPage.getByRole('heading', { name: 'Ask about your data', exact: true }).waitFor();
+    await Promise.all(
+      datasetWorkflows.map(async (workflow) => {
+        const questionPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        try {
+          await questionPage.goto(`${origin}/datasets`);
+          const question = questionPage
+            .locator('details')
+            .filter({ has: questionPage.locator('summary', { hasText: workflow.question }) });
+          await question.locator('summary').click();
+          assert.ok(await question.getByText(workflow.example, { exact: true }).isVisible());
+          assert.equal(
+            await question
+              .getByRole('textbox', { name: 'Prompt to send to your agent' })
+              .inputValue(),
+            workflow.prompt,
+          );
+          assert.equal(
+            await questionPage.evaluate('document.documentElement.scrollWidth > innerWidth'),
+            false,
+          );
+        } finally {
+          await questionPage.close();
+        }
+      }),
+    );
+    await catalogPage.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const sleepQuestion = catalogPage.locator('[data-workflow="sleep-trends"]');
+    assert.equal(await sleepQuestion.locator('details').getAttribute('open'), null);
+    await sleepQuestion.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+    await sleepQuestion.getByText('Copied.', { exact: true }).waitFor();
+    assert.equal(
+      await catalogPage.evaluate('navigator.clipboard.readText()'),
+      datasetWorkflows[0]?.prompt,
+    );
+    await catalogPage.evaluate(
+      `navigator.clipboard.writeText = async () => { throw new Error('Clipboard unavailable in fixture'); }`,
+    );
+    await sleepQuestion.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+    await sleepQuestion
+      .getByText('Copy unavailable. Copy the selected prompt manually.', { exact: true })
+      .waitFor();
+    const selectedPrompt = sleepQuestion.getByRole('textbox', {
+      name: 'Prompt to send to your agent',
+    });
+    assert.ok(await selectedPrompt.isVisible());
+    assert.equal(
+      await catalogPage.evaluate(`(() => {
+        const textarea = document.getElementById('sleep-trends-prompt');
+        return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+      })()`),
+      datasetWorkflows[0]?.prompt,
+    );
+    await catalogPage.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await catalogPage.evaluate('document.documentElement.scrollWidth > innerWidth'),
+      false,
+    );
+    await catalogPage.setViewportSize({ width: 1280, height: 900 });
     assert.equal(await catalogPage.getByRole('tablist', { name: 'Video tutorials' }).count(), 0);
+    await catalogPage.goto(`${origin}/datasets/health`);
+    await catalogPage
+      .getByRole('heading', { name: 'Health: technical explorer', exact: true })
+      .waitFor();
+    const sources = catalogPage.locator('section[aria-labelledby="sources-title"]');
+    assert.match((await sources.textContent()) ?? '', /HealthKit/);
+    assert.doesNotMatch((await sources.textContent()) ?? '', /Points recorded|PhoneUsage/);
+    const firstType = catalogPage.getByRole('checkbox').filter({ visible: true }).first();
+    const initiallyChecked = await firstType.isChecked();
+    await firstType.click();
+    assert.equal(await firstType.isChecked(), !initiallyChecked);
+    await catalogPage.getByRole('button', { name: 'Screen time', exact: true }).click();
+    assert.match((await sources.textContent()) ?? '', /PhoneUsage/);
+    assert.doesNotMatch((await sources.textContent()) ?? '', /HealthKit/);
+    const noScript = await browser.newContext({
+      javaScriptEnabled: false,
+      viewport: { width: 390, height: 844 },
+    });
+    try {
+      const reader = await noScript.newPage();
+      await reader.goto(`${origin}/datasets/health`);
+      await reader.getByRole('heading', { name: 'Ask about your data', exact: true }).waitFor();
+      assert.ok(
+        await reader
+          .getByText('HealthKit does not reveal read denial.', { exact: false })
+          .isVisible(),
+      );
+      assert.equal(
+        await reader.evaluate('document.documentElement.scrollWidth > innerWidth'),
+        false,
+      );
+    } finally {
+      await noScript.close();
+    }
     await catalogPage.goto(origin);
-    await catalogPage.getByRole('heading', { name: 'File over app. Yours to keep.' }).waitFor();
+    await catalogPage
+      .getByRole('heading', { name: 'Your agent. Now with your context.' })
+      .waitFor();
     await catalogPage.close();
   } finally {
     await browser.close();
@@ -314,10 +658,13 @@ try {
   assert.equal((await request('/api/devices', previousIssuerToken)).status, 401);
   const unrelatedToken = await token('alice', 'myselfmd-phone', 'https://untrusted.example/mcp');
   assert.equal((await request('/api/devices', unrelatedToken)).status, 401);
-  const favicon = await fetch(`${origin}/dashboard/favicon.svg`);
+  const favicon = await fetch(`${origin}/dashboard/favicon.png`);
   assert.equal(favicon.status, 200);
-  assert.ok(favicon.headers.get('content-type')?.startsWith('image/svg+xml'));
-  assert.ok((await favicon.text()).includes('<svg'));
+  assert.ok(favicon.headers.get('content-type')?.startsWith('image/png'));
+  assert.deepEqual(
+    Buffer.from(await favicon.arrayBuffer()).subarray(0, 8),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
   const metadata = await request('/.well-known/oauth-protected-resource/mcp', null);
   assert.equal(z.object({ resource: z.string() }).parse(metadata.value).resource, `${origin}/mcp`);
   await client.connect(
@@ -326,9 +673,9 @@ try {
     }),
   );
   // Verify the standalone CLI bundle against the same authenticated service, not a stub.
-  /** @param {string[]} args @param {string} [input] */
-  async function runCli(args, input = '') {
-    const cliProcess = spawn(process.execPath, ['dashboard/dist/myself.mjs', ...args], {
+  /** @param {string[]} args @param {string} [input] @param {string} [entry] */
+  async function runCli(args, input = '', entry = 'dashboard/dist/myself.mjs') {
+    const cliProcess = spawn(process.execPath, [entry, ...args], {
       env: { ...process.env, MYSELF_URL: origin, MYSELF_TOKEN: chatToken },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -362,9 +709,59 @@ try {
     ),
   );
   assert.equal((await fetch(`${origin}/v1/mcp`)).status, 404);
+  assert.equal((await request('/api/support/v1', dashboardToken)).status, 404);
+  assert.equal(
+    (
+      await request('/api/support/v1', phoneToken, 'POST', {
+        action: 'send',
+        text: 'must not send',
+      })
+    ).status,
+    404,
+  );
   const tools = await client.listTools();
+  assert.equal(
+    tools.tools.some((tool) => tool.name === 'support_conversations'),
+    false,
+  );
+  const reviewTools = reviewToolMetadata(tools.tools);
+  console.log(
+    'MCP_REVIEW_METADATA ' + JSON.stringify({ runtime: 'node-fixture', tools: reviewTools }),
+  );
+  const reviewReport = await runCli([], '', 'scripts/review-mcp.js');
+  assert.deepEqual(reviewReport.tools, reviewTools);
+  assert.equal(reviewReport.endpoint, `${origin}/mcp`);
+  assert.equal(JSON.stringify(reviewReport).includes(chatToken), false);
+  assert.equal(JSON.stringify(reviewReport).includes('inputSchema'), false);
+  for (const name of [
+    'query_phone_data',
+    'read_cloud_export',
+    'create_phone_pairing',
+    'delete_account',
+  ]) {
+    assert.equal(reviewTools.find((tool) => tool.name === name)?.readOnlyHint, false, name);
+    assert.equal(reviewTools.find((tool) => tool.name === name)?.destructiveHint, true, name);
+  }
+  assert.equal(reviewTools.find((tool) => tool.name === 'query_phone_data')?.idempotentHint, false);
+  assert.equal(
+    reviewTools.find((tool) => tool.name === 'read_cloud_export')?.idempotentHint,
+    false,
+  );
+  assert.equal(reviewTools.find((tool) => tool.name === 'get_phone_request')?.readOnlyHint, true);
+  assert.equal(
+    reviewTools.find((tool) => tool.name === 'request_phone_profile_permissions')?.readOnlyHint,
+    true,
+  );
   assert.ok(tools.tools.some((t) => t.name === 'read_cloud_export'));
   assert.ok(tools.tools.some((t) => t.name === 'list_export_schemas'));
+  const profileResult = await client.callTool({ name: 'get_account_profile', arguments: {} });
+  assert.equal(profileResult.isError, undefined);
+  assert.deepEqual(profileResult.structuredContent, expectedAccountProfile);
+  const invalidProfileRead = await client.callTool({
+    name: 'get_account_profile',
+    arguments: { subject: 'bob' },
+  });
+  assert.equal(invalidProfileRead.isError, true);
   const schemaResult = await client.callTool({ name: 'list_export_schemas', arguments: {} });
   assert.equal(schemaResult.isError, undefined);
   const schemaContent = schemaResult.content;
@@ -401,9 +798,57 @@ try {
   const pinnedText = pinnedContent.find((item) => item.type === 'text');
   assert.ok(pinnedText?.type === 'text');
   assert.equal(JSON.parse(pinnedText.text).profile.export.schema, 'myself.md.export.v1');
+  assert.ok(
+    JSON.parse(pinnedText.text).shareLink.startsWith('https://myself.md/share/profile#payload='),
+  );
 
+  const minuteProposal = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: parseProfile({
+        schema: 'myself.md.profile.v1',
+        name: 'Minute cadence',
+        selection: { health: [], time: [], location: [] },
+        schedule: { frequency: 'custom', unit: 'minute', interval: 1 },
+      }),
+    },
+  });
+  assert.equal(minuteProposal.isError, undefined);
+  const minuteText = Array.isArray(minuteProposal.content)
+    ? minuteProposal.content.find((item) => item.type === 'text')
+    : undefined;
+  assert.ok(minuteText?.type === 'text');
+  assert.equal(JSON.parse(minuteText.text).profile.schedule.unit, 'minute');
+  assert.equal(JSON.parse(minuteText.text).profile.schedule.interval, 1);
   assert.ok(tools.tools.some((t) => t.name === 'get_lifetime_access'));
   assert.ok(tools.tools.some((t) => t.name === 'get_privacy_policy'));
+  const conflictProposal = await client.callTool({
+    name: 'create_phone_export_profile',
+    arguments: {
+      profile: {
+        schema: 'myself.md.profile.v1',
+        name: 'Append fixture',
+        selection: { health: ['native:sleep'], time: [], location: [] },
+        export: {
+          schema: 'myself.md.export.v1',
+          formats: ['jsonl'],
+          lookbackDays: 7,
+          includeToday: false,
+          folderName: 'Exports',
+          filenameTemplate: '{date}',
+          formatFolders: false,
+          writeMode: 'append',
+        },
+      },
+    },
+  });
+  assert.equal(conflictProposal.isError, undefined, JSON.stringify(conflictProposal));
+  assert.equal(
+    z
+      .object({ profile: z.object({ export: z.object({ writeMode: z.literal('append') }) }) })
+      .parse(conflictProposal.structuredContent).profile.export.writeMode,
+    'append',
+  );
   const policyResult = await client.callTool({ name: 'get_privacy_policy', arguments: {} });
   assert.equal(policyResult.isError, undefined);
   assert.deepEqual(policyResult.structuredContent, privacyPolicy);
@@ -417,17 +862,36 @@ try {
       used: z.number(),
       complimentary: z.boolean().optional(),
     }),
+    purchase: z.object({
+      appLink: z.string(),
+      status: z.string(),
+      requiresUser: z.boolean(),
+      verificationTool: z.string(),
+      accountInstructions: z.string(),
+    }),
     handoff: z.object({
       status: z.string(),
       accountLink: z.string(),
+      timeClaimUrl: z.string(),
       requiresUser: z.boolean(),
       steps: z.array(z.object({ title: z.string(), body: z.string() })),
+      apps: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          handoffUrl: z.string(),
+          eligibility: z.string(),
+          steps: z.array(z.object({ title: z.string(), body: z.string() })),
+        }),
+      ),
     }),
   });
   const paidAccess = accessSchema.parse(
     (await client.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(paidAccess.allowance.unlocked, true);
+  assert.equal(paidAccess.purchase.status, 'completed');
+  assert.equal(paidAccess.purchase.requiresUser, false);
   assert.equal(paidAccess.handoff.status, 'completed');
   assert.equal(paidAccess.handoff.requiresUser, false);
   const newBuyerToken = await token('new-buyer', 'fixture-chat');
@@ -440,19 +904,41 @@ try {
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(pendingAccess.allowance.unlocked, false);
+  assert.equal(pendingAccess.purchase.appLink, 'myselfmd://unlock');
+  assert.equal(pendingAccess.purchase.status, 'awaiting_user');
+  assert.equal(pendingAccess.purchase.requiresUser, true);
+  assert.equal(pendingAccess.purchase.verificationTool, 'get_lifetime_access');
   assert.equal(pendingAccess.allowance.used, 0);
   assert.equal(pendingAccess.handoff.status, 'awaiting_user');
   assert.equal(pendingAccess.handoff.requiresUser, true);
   assert.equal(pendingAccess.handoff.accountLink, 'myselfmd://account');
   assert.equal(pendingAccess.handoff.steps.length, 3);
+  assert.deepEqual(
+    pendingAccess.handoff.apps.map((app) => app.id),
+    ['health', 'iso', 'time'],
+  );
+  assert.deepEqual(
+    pendingAccess.handoff.apps.map((app) => app.handoffUrl),
+    ['healthmd://myself/claim', 'isome://myself/claim', 'https://timemd.app/myself-claim.html'],
+  );
+  for (const app of pendingAccess.handoff.apps) {
+    assert.ok(app.steps.length > 0);
+    assert.ok(app.eligibility.length > 0);
+    for (const other of pendingAccess.handoff.apps.filter((item) => item.id !== app.id))
+      assert.ok(!JSON.stringify(app.steps).includes(other.name));
+  }
+  assert.equal(
+    z.object({ timeClaimUrl: z.string() }).parse(pendingAccess.handoff).timeClaimUrl,
+    'https://timemd.app/myself-claim.html',
+  );
   assert.ok(
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: { subject: 'alice' } }))
       .isError,
   );
   const accessTicketStore = new BillingStore(join(directory, 'billing.sqlite'));
   const accessTicket = accessTicketStore.createClaim({
-    source: 'health.md:ios:iap',
-    reference: 'mcp-access-fixture',
+    source: 'time.md:stripe',
+    reference: 'pi_mcpaccessfixture',
   });
   accessTicketStore.db.close();
   assert.equal(
@@ -472,16 +958,54 @@ try {
     (await accessClient.callTool({ name: 'get_lifetime_access', arguments: {} })).structuredContent,
   );
   assert.equal(claimedAccess.allowance.complimentary, true);
+  assert.equal(claimedAccess.purchase.status, 'completed');
   assert.equal(claimedAccess.allowance.used, 0);
   assert.equal(claimedAccess.handoff.status, 'completed');
   assert.equal(claimedAccess.handoff.requiresUser, false);
   const pairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
   const pairingUrl = /** @type {{pairingUrl:string}} */ (pairing.structuredContent).pairingUrl;
-  const claimed = await request('/api/claim', phoneToken, 'POST', {
-    ticket: new URL(pairingUrl).hash.slice(1),
-    name: 'Synthetic phone',
+  const pairingTicket = new URL(pairingUrl).hash.slice(1);
+  const statusPath = '/api/pairing-status/' + pairingTicket;
+  assert.deepEqual((await request(statusPath, null)).value, { status: 'pending' });
+  assert.equal((await request('/api/pairing-status/invalid', null)).status, 400);
+  assert.deepEqual((await request('/api/pairing-status/' + 'x'.repeat(43), null)).value, {
+    status: 'expired',
   });
-  assert.equal(claimed.status, 200);
+  assert.equal(
+    (await request('/api/claim', bobToken, 'POST', { ticket: pairingTicket, name: 'Wrong owner' }))
+      .status,
+    403,
+  );
+  assert.deepEqual((await request(statusPath, null)).value, { status: 'pending' });
+  const pairingBrowser = await chromium.launch({ headless: true });
+  let claimed;
+  try {
+    const page = await pairingBrowser.newPage({ colorScheme: 'dark' });
+    const errors = /** @type {string[]} */ ([]);
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(origin + '/pair#' + pairingTicket);
+    await page.getByText('Scan to connect', { exact: true }).waitFor();
+    claimed = await request('/api/claim', phoneToken, 'POST', {
+      ticket: pairingTicket,
+      name: 'Synthetic phone',
+    });
+    assert.equal(claimed.status, 200);
+    assert.deepEqual((await request(statusPath, null)).value, { status: 'connected' });
+    await page.getByRole('heading', { name: 'Your phone is connected.', exact: true }).waitFor();
+    assert.equal(await page.locator('#qr').isVisible(), false);
+    assert.equal(await page.locator('#steps').isVisible(), false);
+    assert.equal(await page.locator('#app-action').isVisible(), false);
+    await page.screenshot({ path: '/tmp/myself-pairing-connected.png', fullPage: true });
+    await page.reload();
+    await page.getByText('Phone connected', { exact: true }).waitFor();
+    await page.goto(origin + '/pair#' + 'x'.repeat(43));
+    await page.reload();
+    await page.getByText('This pairing link has expired', { exact: true }).waitFor();
+    assert.equal(await page.locator('#app-action').isVisible(), false);
+    assert.deepEqual(errors, []);
+  } finally {
+    await pairingBrowser.close();
+  }
   const deviceId = z.object({ id: z.string() }).parse(claimed.value).id;
   const profile = {
     ...parseProfile({
@@ -622,6 +1146,7 @@ try {
   const dashboard = dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value);
   assert.equal(dashboard.exports.length, 1);
   const phoneStorage = (await request('/api/cloud/status', phoneToken)).value;
+  assert.equal(z.object({ retentionDays: z.null() }).parse(phoneStorage).retentionDays, null);
   assert.deepEqual(
     z
       .object({
@@ -636,7 +1161,10 @@ try {
   assert.equal(dashboard.cloudStorage.limitBytes, 100_000_000);
   const usageBrowser = await chromium.launch({ headless: true });
   try {
-    const usagePage = await usageBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+    const usagePage = await usageBrowser.newPage({
+      viewport: { width: 1280, height: 900 },
+      timezoneId: 'America/Los_Angeles',
+    });
     await usagePage.addInitScript(() =>
       sessionStorage.setItem(
         'myselfmd-dashboard-login',
@@ -651,9 +1179,63 @@ try {
     await usagePage.route(`${issuer}/protocol/openid-connect/token`, (route) =>
       route.fulfill({ json: { access_token: dashboardToken, expires_in: 300 } }),
     );
+    await usagePage.route('https://avatars.example.com/alice.png', (route) =>
+      route.fulfill({
+        contentType: 'image/png',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#52796f"/><text x="16" y="22" text-anchor="middle" fill="white" font-size="20">A</text></svg>',
+      }),
+    );
+    await usagePage.goto(`${origin}/pricing`);
+    await usagePage.getByRole('button', { name: 'Keep analytics off', exact: true }).click();
+    await usagePage
+      .getByRole('complementary', { name: 'Usage analytics privacy' })
+      .waitFor({ state: 'hidden' });
     await usagePage.goto(`${origin}/dashboard/callback?code=fixture&state=usage-fixture`);
     await usagePage.getByText('0.0 MB of 100 MB used', { exact: true }).first().waitFor();
+    const accountButton = usagePage.getByRole('button', {
+      name: /Alice Example.*alice@example.com/,
+    });
+    await accountButton.waitFor();
+    await accountButton.click();
+    assert.equal(await usagePage.getByText('alice@example.com', { exact: true }).count(), 2);
+    assert.equal(
+      await usagePage.locator('img[src="https://avatars.example.com/alice.png"]').count(),
+      1,
+    );
+    await usagePage
+      .locator('img[src="https://avatars.example.com/alice.png"]')
+      .evaluate('image => image.decode()');
+    await usagePage.keyboard.press('Escape');
     await usagePage.screenshot({ path: '/tmp/myself-cloud-dashboard.png' });
+    await usagePage.route(`${origin}/api/dashboard`, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        json: {
+          ...(await response.json()),
+          accountProfile: null,
+          cloudStorage: {
+            ...z.record(z.string(), z.unknown()).parse(phoneStorage),
+            usedBytes: 250_000_000,
+            availableBytes: 0,
+            overLimit: true,
+            retentionDays: 30,
+            lapse: {
+              startedAt: Date.parse('2029-12-03T00:30:00Z'),
+              deleteAt: Date.parse('2030-01-02T00:30:00Z'),
+              targetBytes: 100_000_000,
+              bytesToDelete: 150_000_000,
+            },
+          },
+        },
+      });
+    });
+    await usagePage.getByRole('button', { name: 'Refresh dashboard', exact: true }).click();
+    await usagePage.getByRole('button', { name: /Your account.*Personal account/ }).waitFor();
+    assert.equal(await usagePage.getByText('alice', { exact: true }).count(), 0);
+    const lapseWarning = await usagePage.getByRole('alert').textContent();
+    assert.match(lapseWarning ?? '', /Jan 2, 2030 \(UTC\)/);
+    assert.match(lapseWarning ?? '', /whole exports/);
+    assert.match(lapseWarning ?? '', /at least 150 MB/);
   } finally {
     await usageBrowser.close();
   }
@@ -747,12 +1329,35 @@ try {
   assert.equal(lastPage.records.length, 5);
   assert.equal(lastPage.nextCursor, null);
   await request(`/api/dashboard/exports/${multipleId}`, dashboardToken, 'DELETE');
+  const catalog = {
+    locationTracking: true,
+    profiles: [{ ...profile, agentAccess: true }],
+    domains: ['health', 'time', 'location'].map((domain) => ({
+      domain,
+      enabled: domain === 'health',
+      selectableTypes:
+        domain === 'health'
+          ? ['native:sleep', 'native:HKQuantityTypeIdentifierStepCount']
+          : domain === 'time'
+            ? ['native:applications', 'native:websites']
+            : ['native:points'],
+      permission: domain === 'health' ? 'system-managed' : 'required',
+      permissionHandoff: 'myselfmd://profiles',
+      availableTypes: domain === 'health' ? ['native:sleep'] : [],
+      types: domain === 'health' ? ['native:sleep'] : [],
+      notes: [],
+    })),
+  };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
+    200,
+  );
   const denied = await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
-  assert.equal(denied.isError, true);
+  assert.ok(!denied.isError);
   assert.equal(
     (await request('/api/cloud/access', phoneToken, 'PUT', { deviceId, profile, shared: true }))
       .status,
-    200,
+    410,
   );
   if (r2) {
     const bill = new BillingStore(join(directory, 'billing.sqlite'));
@@ -787,27 +1392,182 @@ try {
     ),
   );
   assert.ok(!JSON.stringify(cloudHistory.value).includes('"native":'));
-  const catalog = {
-    profiles: [{ ...profile, agentAccess: true }],
-    domains: ['health', 'time', 'location'].map((domain) => ({
-      domain,
-      enabled: domain === 'health',
-      selectableTypes:
-        domain === 'health'
-          ? ['native:sleep']
-          : domain === 'time'
-            ? ['native:applications', 'native:websites']
-            : ['native:points'],
-      permission: domain === 'health' ? 'system-managed' : 'required',
-      permissionHandoff: `myselfmd://data/${domain}`,
-      availableTypes: domain === 'health' ? ['native:sleep'] : [],
-      types: domain === 'health' ? ['native:sleep'] : [],
-      notes: [],
-    })),
+  const sourceDeniedCatalog = {
+    ...catalog,
+    profiles: [
+      {
+        ...profile,
+        agentAccess: true,
+        agentPermissions: { health: false, time: true, location: false, logs: false },
+      },
+    ],
   };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, bobToken, 'POST', sourceDeniedCatalog)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', sourceDeniedCatalog)).status,
+    200,
+  );
+  const filteredCloud = await client.callTool({
+    name: 'read_cloud_export',
+    arguments: { exportId: id },
+  });
+  assert.ok(!filteredCloud.isError);
+  assert.equal(
+    pageSchema.parse(
+      JSON.parse(filteredCloud.content.find((item) => item.type === 'text')?.text ?? '{}'),
+    ).records.length,
+    0,
+    'Phone Health denial filters the existing cloud file',
+  );
+  const allOffCatalog = {
+    ...sourceDeniedCatalog,
+    profiles: sourceDeniedCatalog.profiles.map((item) =>
+      Object.assign({}, item, { agentAccess: false }),
+    ),
+  };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', allOffCatalog)).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+  );
+  assert.equal(
+    (
+      await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
+        deviceId,
+        profileId: profile.id,
+        shared: true,
+      })
+    ).status,
+    410,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+    'Retired sharing route cannot override phone source denial',
+  );
+  assert.equal(
+    pageSchema.parse((await request(`/api/dashboard/exports/${id}`, dashboardToken)).value).records
+      .length,
+    1,
+    'Owner can still read the original file',
+  );
   assert.equal(
     (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog)).status,
     200,
+  );
+  assert.ok(
+    !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    'Fresh phone source approval restores cloud reads',
+  );
+  if (r2) {
+    /** @param {()=>Promise<unknown>} change @param {boolean} deny */
+    const changeDuringCloudRead = async (change, deny) => {
+      /** @type {()=>void} */ let entered = noop;
+      /** @type {()=>void} */ let release = noop;
+      const started = new Promise((resolve) => {
+        entered = () => resolve(undefined);
+      });
+      const pending = new Promise((resolve) => {
+        release = () => resolve(undefined);
+      });
+      r2.state.beforeGet = async () => {
+        entered();
+        await pending;
+      };
+      const reading = client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } });
+      try {
+        await started;
+        await change();
+      } finally {
+        r2.state.beforeGet = null;
+        release();
+      }
+      const response = await reading;
+      if (deny) assert.equal(response.isError, true);
+      else {
+        assert.ok(!response.isError);
+        assert.equal(
+          pageSchema.parse(
+            JSON.parse(response.content.find((item) => item.type === 'text')?.text ?? '{}'),
+          ).records.length,
+          0,
+        );
+      }
+    };
+    await changeDuringCloudRead(
+      () => request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', sourceDeniedCatalog),
+      false,
+    );
+    await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+    await changeDuringCloudRead(
+      () => request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', allOffCatalog),
+      true,
+    );
+    await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', catalog);
+    await changeDuringCloudRead(
+      () =>
+        request('/api/dashboard/agents', dashboardToken, 'PUT', {
+          client: 'fixture-chat',
+          blocked: true,
+        }),
+      true,
+    );
+    await request('/api/dashboard/agents', dashboardToken, 'PUT', {
+      client: 'fixture-chat',
+      blocked: false,
+    });
+  }
+  const importPreview = await client.callTool({
+    name: 'preview_phone_profile_import',
+    arguments: {
+      deviceId,
+      profile: {
+        ...profile,
+        selection: {
+          health: ['native:Steps'],
+          time: ['native:sessions'],
+          location: ['native:points'],
+        },
+      },
+    },
+  });
+  assert.equal(importPreview.isError, undefined);
+  const importResult = z
+    .object({
+      profile: z.object({
+        selection: z.object({
+          health: z.array(z.string()),
+          time: z.array(z.string()),
+          location: z.array(z.string()),
+        }),
+      }),
+      mapped: z.array(z.object({ from: z.string(), to: z.string() })),
+      unsupported: z.array(z.object({ type: z.string() })),
+      requiresUserSave: z.boolean(),
+    })
+    .parse(importPreview.structuredContent);
+  assert.deepEqual(importResult.profile.selection, {
+    health: ['native:HKQuantityTypeIdentifierStepCount'],
+    time: [],
+    location: ['native:points'],
+  });
+  assert.equal(importResult.mapped[0]?.from, 'native:Steps');
+  assert.equal(importResult.unsupported[0]?.type, 'native:sessions');
+  assert.equal(importResult.requiresUserSave, true);
+  assert.equal(
+    (
+      await client.callTool({
+        name: 'preview_phone_profile_import',
+        arguments: { deviceId: '00000000-0000-4000-8000-000000000000', profile },
+      })
+    ).isError,
+    true,
   );
   const diagnosticsPath = `/api/phones/${deviceId}/diagnostics`;
   const debugReport = {
@@ -850,7 +1610,23 @@ try {
         (await client.callTool({ name: 'get_phone_debug_logs', arguments: { deviceId } }))
           .structuredContent,
       ).report,
-    debugReport,
+    {
+      schema: debugReport.schema,
+      generatedAt: debugReport.generatedAt,
+      revision: debugReport.revision,
+      shared: true,
+      platform: 'ios',
+      entries: [
+        {
+          time: debugReport.entries[0]?.time,
+          operation: 'connection',
+          outcome: 'failed',
+          error: 'fixture raw server failure',
+          durationMs: 12,
+          httpStatus: 503,
+        },
+      ],
+    },
   );
   assert.equal(
     (
@@ -896,6 +1672,7 @@ try {
   const discovered = z
     .object({
       catalog: z.object({
+        locationTracking: z.boolean(),
         domains: z.array(
           z.object({
             domain: z.string(),
@@ -908,13 +1685,14 @@ try {
       }),
     })
     .parse(discovery.structuredContent);
+  assert.equal(discovered.catalog.locationTracking, true);
   assert.deepEqual(
     discovered.catalog.domains.find((domain) => domain.domain === 'time')?.selectableTypes,
     ['native:applications', 'native:websites'],
   );
   assert.equal(
     discovered.catalog.domains.find((domain) => domain.domain === 'location')?.permissionHandoff,
-    'myselfmd://data/location',
+    'myselfmd://profiles',
   );
   assert.deepEqual(
     discovered.catalog.domains.find((domain) => domain.domain === 'time')?.types,
@@ -933,7 +1711,20 @@ try {
   });
   assert.equal(deniedUsage.isError, true, 'Discovery of selectable types never grants read access');
   // Agents choose independently among approved profiles; selection in another profile never grants access.
-  const secondary = { ...profile, id: 'secondary', name: 'Secondary', agentAccess: true };
+  const folderDiscovery = {
+    status: 'selected',
+    name: 'Fixture exports',
+    requiresUser: true,
+    deepLink: 'myselfmd://profiles/secondary',
+    instructions: 'Choose a folder on the phone and Save.',
+  };
+  const secondary = {
+    ...profile,
+    id: 'secondary',
+    name: 'Secondary',
+    agentAccess: true,
+    localExportFolder: folderDiscovery,
+  };
   const privateProfile = { ...profile, id: 'private', name: 'Private', agentAccess: false };
   const excluded = {
     ...profile,
@@ -964,6 +1755,64 @@ try {
       },
     });
   await pollPhone(multiCatalog);
+  const folderCatalog = await client.callTool({
+    name: 'get_phone_data_catalog',
+    arguments: { deviceId },
+  });
+  const folderProfiles = z
+    .object({
+      catalog: z.object({
+        profiles: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            localExportFolder: z
+              .object({
+                status: z.string(),
+                name: z.string(),
+                requiresUser: z.boolean(),
+                deepLink: z.string(),
+                instructions: z.string(),
+              })
+              .optional(),
+          }),
+        ),
+      }),
+    })
+    .parse(folderCatalog.structuredContent).catalog.profiles;
+  assert.deepEqual(
+    folderProfiles.find((p) => p.id === 'secondary')?.localExportFolder,
+    folderDiscovery,
+    'MCP exposes owner folder selection and native grant handoff',
+  );
+  assert.equal(
+    folderProfiles.find((p) => p.name === secondary.name)?.id,
+    secondary.id,
+    'Agents can resolve a displayed profile name to its stable ID',
+  );
+  const renamedCatalog = {
+    ...multiCatalog,
+    profiles: multiCatalog.profiles.map((p) =>
+      p.id === secondary.id || p.id === privateProfile.id ? { ...p, name: 'Renamed fitness' } : p,
+    ),
+  };
+  await pollPhone(renamedCatalog);
+  const renamedDiscovery = await client.callTool({
+    name: 'get_phone_data_catalog',
+    arguments: { deviceId },
+  });
+  const renamedProfiles = z
+    .object({
+      catalog: z.object({ profiles: z.array(z.object({ id: z.string(), name: z.string() })) }),
+    })
+    .parse(renamedDiscovery.structuredContent).catalog.profiles;
+  assert.deepEqual(
+    new Set(renamedProfiles.filter((p) => p.name === 'Renamed fitness').map((p) => p.id)),
+    new Set([secondary.id, privateProfile.id]),
+    'Renames preserve stable IDs and duplicate names remain separate candidates',
+  );
+  assert.ok(!renamedProfiles.some((p) => p.id === secondary.id && p.name === secondary.name));
+  await pollPhone(multiCatalog);
   for (const deniedResponse of await Promise.all(
     ['private', 'excluded', 'missing'].map(queryProfile),
   ))
@@ -981,7 +1830,7 @@ try {
     .parse(handoff.structuredContent);
   assert.equal(approval.status, 'awaiting_user');
   assert.equal(approval.agentAccess, false);
-  assert.equal(approval.handoff.deepLink, 'myselfmd://profiles/private');
+  assert.equal(approval.handoff.deepLink, 'myselfmd://profiles/private?section=agent-permissions');
   assert.equal(
     (await queryProfile('private')).isError,
     true,
@@ -1137,6 +1986,10 @@ try {
     }),
   );
   const documentation = await client.callTool({ name: 'get_public_documentation', arguments: {} });
+  await verifyBlogHTTP(origin);
+  await verifyDatasetHTTP(origin);
+  await verifyDatasetMCP(client);
+  await verifyBlogMCP(client);
   assert.match(JSON.stringify(documentation), /# Get started/);
   assert.match(JSON.stringify(documentation), /Idempotency-Key/);
   const publicSdk = createMyselfClient({ origin });
@@ -1411,6 +2264,15 @@ try {
         },
       }),
     );
+    assert.equal(
+      (
+        await otherAgent.callTool({
+          name: 'preview_phone_profile_import',
+          arguments: { deviceId, profile },
+        })
+      ).isError,
+      true,
+    );
     assert.ok(
       (await otherAgent.callTool({ name: 'list_phone_export_history', arguments: { deviceId } }))
         .isError,
@@ -1498,6 +2360,322 @@ try {
     ).status,
     'partial',
   );
+  // A web denial must erase retained live results without waiting for the phone to acknowledge it.
+  const privacyPairing = await client.callTool({ name: 'create_phone_pairing', arguments: {} });
+  const privacyUrl = z.object({ pairingUrl: z.string() }).parse(privacyPairing.structuredContent);
+  const privacyDevice = z.object({ id: z.string() }).parse(
+    (
+      await request('/api/claim', phoneToken, 'POST', {
+        ticket: new URL(privacyUrl.pairingUrl).hash.slice(1),
+        name: 'Revocation fixture phone',
+      })
+    ).value,
+  ).id;
+  const privacyProfile = {
+    ...profile,
+    id: 'privacy-revoked',
+    agentAccess: true,
+    agentPermissions: { health: true, time: false, location: false, logs: false },
+  };
+  const privacyCatalog = {
+    ...catalog,
+    profiles: [privacyProfile, { ...privacyProfile, id: 'privacy-unaffected' }],
+    dispatch: true,
+    profileSync: { base: null },
+  };
+  const privacyPoll = () =>
+    request(`/api/phones/${privacyDevice}/poll`, phoneToken, 'POST', privacyCatalog);
+  assert.equal((await privacyPoll()).status, 200);
+  const privacyInput = { ...restInput, deviceId: privacyDevice, profileId: privacyProfile.id };
+  /** @param {string} key @param {string} [profileId] */
+  const privacyQuery = async (key, profileId = privacyProfile.id) => {
+    const response = await client.callTool({
+      name: 'query_phone_data',
+      arguments: { ...privacyInput, profileId, requestKey: key },
+    });
+    assert.ok(!response.isError);
+    return queryId(response.structuredContent);
+  };
+  const privacyComplete = await privacyQuery('privacy-complete');
+  assert.equal((await privacyPoll()).status, 200);
+  assert.equal(
+    (
+      await request(`/api/phones/${privacyDevice}/result`, phoneToken, 'POST', {
+        id: privacyComplete,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    200,
+  );
+  const privacyRunning = await privacyQuery('privacy-running');
+  await privacyPoll();
+  const privacyQueued = await privacyQuery('privacy-queued');
+  const privacyUnaffected = await privacyQuery('privacy-unaffected', 'privacy-unaffected');
+  const privacyStateResult = await client.callTool({
+    name: 'manage_phone_profiles',
+    arguments: { action: 'list', deviceId: privacyDevice },
+  });
+  const privacyState = z
+    .object({ revision: z.number(), state: z.object({ profiles: z.array(z.unknown()) }) })
+    .parse(privacyStateResult.structuredContent);
+  const deniedPrivacyProfile = {
+    ...privacyProfile,
+    agentPermissions: { health: false, time: false, location: false, logs: false },
+  };
+  /** @param {number} revision @param {unknown} updatedProfile */
+  const privacyUpdate = (revision, updatedProfile) =>
+    request('/api/dashboard/profiles', dashboardToken, 'PUT', {
+      deviceId: privacyDevice,
+      profileId: privacyProfile.id,
+      revision,
+      profile: updatedProfile,
+    });
+  assert.equal((await privacyUpdate(privacyState.revision, deniedPrivacyProfile)).status, 200);
+  // Do not poll the phone between the owner denial and these subsequent read attempts.
+  const privacyDeniedResults = await Promise.all(
+    [privacyComplete, privacyRunning, privacyQueued].map((privacyRequestId) =>
+      client.callTool({ name: 'get_phone_request', arguments: { requestId: privacyRequestId } }),
+    ),
+  );
+  for (const response of privacyDeniedResults)
+    assert.equal(
+      response.isError,
+      true,
+      'Dashboard denial immediately erases completed, running and queued responses',
+    );
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-complete'), /422/);
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-fresh-after-denial'), /422/);
+  assert.equal(
+    (
+      await request(`/api/phones/${privacyDevice}/result`, phoneToken, 'POST', {
+        id: privacyRunning,
+        page: { records: [record], nextCursor: null, warnings: [], capture: 'synthetic' },
+      })
+    ).status,
+    404,
+    'A late response cannot restore work revoked through the dashboard',
+  );
+  assert.ok(
+    !(
+      await client.callTool({
+        name: 'get_phone_request',
+        arguments: { requestId: privacyUnaffected },
+      })
+    ).isError,
+    'Dashboard revocation preserves another approved profile',
+  );
+  assert.equal((await privacyUpdate(privacyState.revision + 1, privacyProfile)).status, 200);
+  await assert.rejects(() => sdk.request(privacyComplete), /422/);
+  await assert.rejects(() => sdk.query(privacyInput, 'privacy-complete'), /422/);
+  assert.ok(
+    !(
+      await client.callTool({
+        name: 'get_phone_request',
+        arguments: { requestId: privacyUnaffected },
+      })
+    ).isError,
+    'Regranting without a phone acknowledgment cannot resurrect revoked results',
+  );
+  assert.equal((await request(`/api/devices/${privacyDevice}`, phoneToken, 'DELETE')).status, 200);
+  const syncCatalog = { ...catalog, profileSync: { base: null } };
+  assert.equal(
+    (await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', syncCatalog)).status,
+    200,
+  );
+  const readSynced = async () => {
+    const syncedResult = await client.callTool({
+      name: 'manage_phone_profiles',
+      arguments: { action: 'list', deviceId },
+    });
+    assert.ok(!syncedResult.isError);
+    return /** @type {import('../server/profile-sync.js').SyncedProfiles} */ (
+      JSON.parse(
+        /** @type {string} */ (syncedResult.content?.find((item) => item.type === 'text')?.text),
+      )
+    );
+  };
+  const syncedProfiles = await readSynced();
+  const originalSynced = structuredClone(syncedProfiles.state);
+  const editedProfile = structuredClone(syncedProfiles.state.profiles[0]);
+  assert.ok(editedProfile);
+  editedProfile.name = 'Edited on web';
+  editedProfile.agentPermissions = {
+    health: false,
+    time: false,
+    location: false,
+    logs: editedProfile.agentPermissions?.logs === true,
+  };
+  editedProfile.agentAccess = true;
+  const proposedResult = await client.callTool({
+    name: 'manage_phone_profiles',
+    arguments: { action: 'propose', deviceId, profileId: editedProfile.id, profile: editedProfile },
+  });
+  assert.ok(!proposedResult.isError);
+  const proposed = /** @type {import('../server/profile-sync.js').ProfileRequest} */ (
+    JSON.parse(
+      /** @type {string} */ (proposedResult.content?.find((item) => item.type === 'text')?.text),
+    )
+  );
+  assert.equal(
+    (await readSynced()).state.profiles[0]?.name,
+    originalSynced.profiles[0]?.name,
+    'Agent cannot apply its own suggestion',
+  );
+  const payload = {
+    deviceId,
+    profileId: editedProfile.id,
+    revision: syncedProfiles.revision,
+    profile: editedProfile,
+    requestId: proposed.id,
+  };
+  assert.equal(
+    (await request('/api/dashboard/profiles', bobDashboardToken, 'PUT', payload)).status,
+    404,
+  );
+  assert.equal((await request('/api/dashboard/profiles', chatToken, 'PUT', payload)).status, 403);
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', payload)).status,
+    200,
+  );
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', payload)).status,
+    409,
+    'Stale revisions rejected',
+  );
+  const delivered = await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+    ...catalog,
+    profileSync: { base: originalSynced },
+  });
+  const updatedState =
+    /** @type {{profileSync:{state:import('../core/profiles.js').ProfileState}}} */ (
+      delivered.value
+    ).profileSync.state;
+  assert.equal(updatedState.profiles[0]?.name, 'Edited on web');
+  assert.equal((await readSynced()).requests.find((r) => r.id === proposed.id)?.status, 'accepted');
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+        ...catalog,
+        profiles: updatedState.profiles,
+        profileSync: { base: updatedState },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await readSynced()).requests.find((r) => r.id === proposed.id)?.status,
+    'completed',
+    'Completion requires real phone acknowledgment',
+  );
+  // Restore synthetic profile state before the existing cloud and agent tests continue.
+  assert.equal(
+    (
+      await request(`/api/phones/${deviceId}/poll`, phoneToken, 'POST', {
+        ...catalog,
+        profiles: originalSynced.profiles,
+        profileSync: { base: updatedState },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request('/api/cloud/access', phoneToken, 'PUT', { deviceId, profile, shared: true }))
+      .status,
+    410,
+  );
+  // Exercise owner-reviewed file policy through the actual upload and MCP boundaries.
+  const cloudModeDay = '2026-10-17';
+  const uploadAuthorization = `Upload ${z.object({ token: z.string() }).parse(credential.value).token}`;
+  /** @param {string} operation @param {'new_file'|'append'|'replace'} mode */
+  async function uploadMode(operation, mode) {
+    assert.equal(
+      (
+        await request('/api/billing', phoneToken, 'POST', {
+          action: 'reserve',
+          id: operation,
+          scope: { profileId: profile.id, days: [cloudModeDay], formats: ['jsonl'] },
+        })
+      ).status,
+      200,
+    );
+    const body = {
+      profile: { ...profile, export: { ...profile.export, writeMode: mode } },
+      day: cloudModeDay,
+      format: 'jsonl',
+      manifest: { profileId: profile.id, recordCount: 1, billingOperationId: operation },
+    };
+    const beginResponse = await fetch(`${origin}/api/cloud/uploads`, {
+      method: 'POST',
+      headers: { Authorization: uploadAuthorization, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    assert.equal(beginResponse.status, 200);
+    const started = z
+      .object({ id: z.string(), completed: z.boolean() })
+      .parse(await beginResponse.json());
+    if (!started.completed) {
+      const response = await fetch(`${origin}/api/cloud/uploads/${started.id}`, {
+        method: 'PUT',
+        headers: { Authorization: uploadAuthorization },
+        body: JSON.stringify({ ...record, native: { operation } }) + '\n',
+      });
+      assert.equal(response.status, 200);
+    }
+    return { ...started, body };
+  }
+  const cloudSnapshot = await uploadMode('cloud-mode-first', 'new_file');
+  await uploadMode('cloud-mode-second', 'new_file');
+  const cloudAppend = await uploadMode('cloud-mode-append', 'append');
+  const appendedRecords = z
+    .object({ records: z.array(z.unknown()) })
+    .parse(
+      (await request(`/api/dashboard/exports/${cloudAppend.id}`, dashboardToken)).value,
+    ).records;
+  assert.equal(appendedRecords.length, 2);
+  const retryMode = await uploadMode('cloud-mode-append', 'append');
+  assert.equal(retryMode.completed, true);
+  assert.equal(retryMode.id, cloudAppend.id);
+  assert.ok(
+    !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: cloudAppend.id } }))
+      .isError,
+  );
+  const cloudReplace = await uploadMode('cloud-mode-replace', 'replace');
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudAppend.id}`, dashboardToken)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudSnapshot.id}`, dashboardToken)).status,
+    200,
+  );
+  assert.equal(
+    z
+      .object({ records: z.array(z.unknown()) })
+      .parse((await request(`/api/dashboard/exports/${cloudReplace.id}`, dashboardToken)).value)
+      .records.length,
+    1,
+  );
+  assert.equal(
+    (await request(`/api/dashboard/exports/${cloudReplace.id}`, bobDashboardToken)).status,
+    404,
+  );
+  const modeListing = await request('/api/cloud/exports', phoneToken);
+  const modeFiles = z
+    .array(z.object({ id: z.string(), day: z.string(), writeMode: z.string() }))
+    .parse(modeListing.value)
+    .filter((file) => file.day === cloudModeDay);
+  assert.equal(modeFiles.length, 2);
+  await Promise.all(
+    modeFiles.map(async (file) => {
+      assert.equal(
+        (await request(`/api/dashboard/exports/${file.id}`, dashboardToken, 'DELETE')).status,
+        200,
+      );
+    }),
+  );
+  console.log(
+    'HTTP/MCP cloud file modes: snapshots, append counts, replacement, retry receipts, retained reads and tenant isolation passed.',
+  );
   assert.equal((await request(`/api/devices/${deviceId}`, phoneToken, 'DELETE')).status, 200);
   assert.equal((await request(entryPath, dashboardToken)).status, 200);
   const revoked = await fetch(`${origin}/api/cloud/uploads`, {
@@ -1508,7 +2686,7 @@ try {
     body: '{}',
   });
   assert.equal(revoked.status, 404);
-  // Cloud permissions remain manageable after disconnect and preserve the phone selection.
+  // Legacy sharing writes cannot change confirmed permission, even after disconnect.
   assert.equal(
     (
       await request('/api/dashboard/permissions', bobDashboardToken, 'PUT', {
@@ -1527,20 +2705,7 @@ try {
         shared: false,
       })
     ).status,
-    200,
-  );
-  assert.equal(
-    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
-    true,
-  );
-  const restored = await request('/api/dashboard/permissions', dashboardToken, 'PUT', {
-    deviceId,
-    profileId: profile.id,
-    shared: true,
-  });
-  assert.deepEqual(
-    z.object({ selection: z.unknown() }).parse(restored.value).selection,
-    profile.selection,
+    410,
   );
   assert.ok(
     !(await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
@@ -1587,6 +2752,70 @@ try {
     200,
   );
   assert.ok(!(await client.callTool({ name: 'list_cloud_exports', arguments: {} })).isError);
+  const disconnectedSchema = z.object({
+    profiles: z.array(
+      z.object({
+        profileId: z.string(),
+        revision: z.number().optional(),
+        profile: z.unknown().optional(),
+      }),
+    ),
+  });
+  const readDisconnected = async () => {
+    const disconnectedResult = disconnectedSchema.parse(
+      (await request('/api/dashboard', dashboardToken)).value,
+    );
+    const entry = disconnectedResult.profiles.find((p) => p.profileId === profile.id);
+    assert.ok(entry?.revision);
+    return { ...entry, revision: entry.revision };
+  };
+  const disconnected = await readDisconnected();
+  const disconnectedProfile = parseProfileState({
+    profiles: [/** @type {import('../core/profiles.js').ExportProfile} */ (disconnected.profile)],
+  }).profiles[0];
+  assert.ok(disconnectedProfile);
+  const revokePayload = {
+    deviceId,
+    profileId: profile.id,
+    revision: disconnected.revision,
+    profile: {
+      ...disconnectedProfile,
+      agentPermissions: {
+        health: false,
+        time: false,
+        location: false,
+        logs: disconnectedProfile.agentPermissions?.logs === true,
+      },
+    },
+  };
+  assert.equal(
+    (await request('/api/dashboard/profiles', bobDashboardToken, 'PUT', revokePayload)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/api/dashboard/profiles', dashboardToken, 'PUT', revokePayload)).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+  );
+  const revokedSnapshot = await readDisconnected();
+  assert.equal(
+    (
+      await request('/api/dashboard/profiles', dashboardToken, 'PUT', {
+        ...revokePayload,
+        revision: revokedSnapshot.revision,
+        profile: { ...disconnectedProfile, agentAccess: true },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
+    true,
+    'Disconnected owner grant waits for phone confirmation',
+  );
   if (r2) {
     r2.state.failDelete = true;
     assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 503);
@@ -1595,7 +2824,19 @@ try {
   }
   assert.equal((await request(recordsPath, dashboardToken, 'DELETE')).status, 200);
   assert.equal((await request(recordsPath, dashboardToken)).status, 404);
-  if (r2) assert.equal(r2.files.size, 0);
+  if (r2) {
+    const garbageStore = new CloudStore(
+      join(directory, 'cloud.sqlite'),
+      Buffer.from('a'.repeat(64), 'hex'),
+      r2Store(r2.env),
+    );
+    try {
+      await garbageStore.sweepObjects();
+      assert.equal(r2.files.size, 0, 'Replaced objects are collected by the durable garbage queue');
+    } finally {
+      garbageStore.db.close();
+    }
+  }
   assert.equal(
     dashboardSchema.parse((await request('/api/dashboard', dashboardToken)).value).exports.length,
     0,

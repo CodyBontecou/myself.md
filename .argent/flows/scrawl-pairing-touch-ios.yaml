@@ -1,0 +1,100 @@
+# Only run on a disposable normal Debug iOS simulator with no account, no source
+# permissions, and unfinished onboarding. Requires Metro. Pairing is replaced by
+# a fictional local configuration and cleared at the end; no recording is started.
+steps:
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: onboarding-skip
+      timeout: 15000
+  - await:
+      idle: true
+  - tool: open-url
+    args:
+      url: myselfmd://scrawl?reset=1
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: onboarding-skip
+      timeout: 15000
+  - await:
+      idle: true
+  - tool: open-url
+    args:
+      url: myselfmd://login
+  - await:
+      visible:
+        id: login-existing-access
+  - await:
+      idle: true
+  - echo: Pair this disposable simulator while Sign in is already visible; the
+      fixture token is deliberately fictional. Expect an ordinary React Native
+      press to open Existing purchases.
+  - tool: open-url
+    args:
+      url: myselfmd://scrawl?url=http%3A%2F%2F127.0.0.1%3A47778&token=scrawl-isolated-touch-regression
+  - tap:
+      id: login-existing-access
+  - await:
+      visible:
+        id: claim-access-app-health
+      timeout: 3000
+  - await:
+      idle: true
+  - tap:
+      id: chevron.backward
+  - await:
+      visible:
+        id: login-existing-access
+  - await:
+      idle: true
+  - tool: open-url
+    args:
+      url: myselfmd://scrawl?reset=1
+  - tool: open-url
+    args:
+      url: myselfmd://scrawl?url=http%3A%2F%2F127.0.0.1%3A47778&token=scrawl-isolated-touch-regression
+  - tap:
+      id: login-existing-access
+  - await:
+      visible:
+        id: claim-access-app-health
+      timeout: 3000
+  - await:
+      idle: true
+  - echo: Restart with the fictional pairing saved, then verify the same React
+      Native navigation still responds. No authentication or purchase is
+      performed.
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: onboarding-skip
+      timeout: 15000
+  - await:
+      idle: true
+  - tool: open-url
+    args:
+      url: myselfmd://login
+  - await:
+      visible:
+        id: login-existing-access
+  - await:
+      idle: true
+  - tap:
+      id: login-existing-access
+  - await:
+      visible:
+        id: claim-access-app-health
+      timeout: 3000
+  - await:
+      idle: true
+  - tool: open-url
+    args:
+      url: myselfmd://scrawl?reset=1
+  - launch: com.myself.md
+  - await:
+      visible:
+        id: onboarding-skip
+      timeout: 15000
+  - await:
+      idle: true

@@ -33,6 +33,20 @@ CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, subject TEXT, name TEXT
     if (row.device) throw new PairingError(409, 'This QR code has already been used.');
     return row;
   }
+  /** Read only the outcome available to the holder of a short-lived pairing link.
+   * @param {string} ticket
+   */
+  ticketStatus(ticket) {
+    const row = /** @type {Pairing|undefined} */ (
+      this.db.prepare('SELECT * FROM pairings WHERE hash = ?').get(hash(ticket))
+    );
+    if (!row || row.expires < Date.now()) return { status: 'expired' };
+    if (!row.device) return { status: 'pending' };
+    const connected = this.db
+      .prepare('SELECT id FROM devices WHERE id = ? AND subject = ?')
+      .get(row.device, row.subject);
+    return { status: connected ? 'connected' : 'disconnected' };
+  }
   /** @param {string} ticket @param {string} subject @param {string} name */
   claim(ticket, subject, name) {
     const row = this.pending(ticket);

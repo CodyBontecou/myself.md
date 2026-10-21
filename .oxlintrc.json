@@ -16,6 +16,7 @@
     "dist/**",
     ".expo/**",
     ".local/**",
+    "content/blog/**",
     "dashboard/dist/**",
     "worker/worker-configuration.d.ts",
     ".wrangler/**"

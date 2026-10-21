@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "myself-md",
   "main": "worker/index.js",
+  "alias": { "node-fetch": "./worker/node-fetch.js" },
   "account_id": "e4265f322e6380ee832b83ad45e3e8c0",
   "compatibility_date": "2026-10-09",
   "compatibility_flags": ["nodejs_compat"],
@@ -11,7 +12,11 @@
   "routes": [{ "pattern": "myself.md", "custom_domain": true }],
   "observability": {
     "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
     "logs": {
+      "enabled": true,
+      "persist": true,
       "invocation_logs": false,
     },
   },
@@ -27,7 +32,20 @@
       "bucket_name": "myself-md-exports",
     },
   ],
+  "ratelimits": [
+    {
+      "name": "ANALYTICS_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
   "d1_databases": [
+    {
+      "binding": "ANALYTICS",
+      "database_name": "myself-md-analytics",
+      "database_id": "b22e3984-3ac1-400d-9526-398ac712145d",
+      "migrations_dir": "worker/analytics-migrations",
+    },
     {
       "binding": "IDENTITY",
       "database_name": "myself-md-identity",
@@ -37,6 +55,12 @@
       "binding": "DIRECTORY",
       "database_name": "myself-md-directory",
       "database_id": "9b949e26-bf7e-43de-b797-9d60fbb7cde8",
+    },
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["support@myself.md"],
     },
   ],
   "durable_objects": {
@@ -66,6 +90,11 @@
     },
   ],
   "vars": {
+    "ANALYTICS_OPERATORS": "",
+    "ANALYTICS_OPERATOR_GITHUB_ID": "20440899",
+    "ANALYTICS_INTERNAL_SUBJECTS": "",
+    "ANALYTICS_INTERNAL_KEYS": "",
+    "ANALYTICS_INTERNAL_ANONYMOUS_IDS": "",
     "PUBLIC_URL": "https://myself.md",
     "PUBLIC_URL_ALIASES": "",
     "OAUTH_ISSUER": "https://myself.md/auth/realms/myselfmd",
@@ -74,10 +103,14 @@
     "IOS_APP_ID": "67KC823C9A.com.myself.md",
     "ALLOW_HTTP_DEV": "0",
     "MIGRATION_ENABLED": "0",
+    "REVIEWER_LOGIN_ENABLED": "1",
     "IDENTITY_ENABLED": "1",
+    "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT": "play-rtdn-push@crested-drive-492000-u7.iam.gserviceaccount.com",
   },
   "secrets": {
     "required": [
+      "WHOOP_CLIENT_ID",
+      "WHOOP_CLIENT_SECRET",
       "CLOUD_ENCRYPTION_KEY",
       "IMPORT_SECRET",
       "IDENTITY_SECRET",
@@ -94,13 +127,14 @@
       "APPLE_IAP_KEY_ID",
       "APPLE_IAP_ISSUER_ID",
       "APPLE_IAP_APP_ID",
+      "ISO_ME_APPLE_APP_ID",
+      "HEALTH_MD_APPLE_APP_ID",
       "APPLE_IAP_BUNDLE_ID",
       "LIFETIME_PRODUCT_ID",
       "GOOGLE_SERVICE_ACCOUNT_JSON",
       "GOOGLE_PLAY_PACKAGE",
       "SUPPORT_DISCORD_BOT_TOKEN",
       "SUPPORT_DISCORD_CHANNEL_ID",
-      "SUPPORT_DISCORD_STAFF_IDS",
       "SUPPORT_ISOBOT_ORIGIN",
       "SUPPORT_ISOBOT_TOKEN",
     ],
