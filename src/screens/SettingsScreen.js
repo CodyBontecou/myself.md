@@ -6,13 +6,15 @@ import { useBilling } from '../../client/BillingPaywalls';
 import { router, Stack } from 'expo-router';
 import { usePhone } from '../../client/PhoneProvider.js';
 import AccountAvatar from '../components/AccountAvatar.js';
-import { Screen, Group, Row, SectionHeader } from '../components/ui';
+import { Screen, Group, Row, SectionHeader, IconButton } from '../components/ui';
 import PrivacyLinks from '../components/PrivacyLinks';
 export default function SettingsScreen() {
   const billing = useBilling();
   return (
     <Screen testID="settings-screen">
-      <Stack.Screen options={{ headerRight: renderSettingsAccountAvatar }} />
+      <Stack.Screen
+        options={{ headerRight: renderSettingsAccountAvatar, headerLeft: renderSettingsBack }}
+      />
       {qaEnabled && (
         <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
       )}
@@ -96,6 +98,17 @@ function SettingsAccountAvatar() {
       signedIn={signedIn}
       picture={signedIn ? accountProfile?.picture : null}
       onPress={() => router.push(signedIn ? '/account' : '/login')}
+    />
+  );
+}
+
+function renderSettingsBack() {
+  return (
+    <IconButton
+      testID="settings-back"
+      icon="chevron-back"
+      label="Back"
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/profiles'))}
     />
   );
 }

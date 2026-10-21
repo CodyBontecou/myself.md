@@ -14,15 +14,16 @@ import { nextOccurrence } from '../core/schedules.js';
 import { formatNextExport, localCalendar } from './calendar.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
 import { useProfileEditor } from './ProfileEditorState.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 function ProfileExportControls({
   session,
   profile,
   disabled,
+  visible = true,
   quick = false,
   roomy = false,
   compact = false,
@@ -292,6 +293,8 @@ function ProfileExportControls({
       }
     />
   ));
+  // Hiding an accordion must not discard the active operation or its Cancel action.
+  if (!visible) return null;
   if (filesOnly) return <Group compact>{fileControls}</Group>;
   if (destinationOnly)
     return (

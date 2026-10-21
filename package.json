@@ -171,7 +171,8 @@
     "verify:native-location-capture": "node --experimental-vm-modules scripts/verify-native-location-capture.js",
     "verify:watch": "node scripts/verify-watch.js && node scripts/verify-watch-store.js && node scripts/verify-watch-targets.js",
     "verify:watch:swift": "node scripts/verify-watch-swift.js",
-    "build:watch": "node scripts/build-watch.js"
+    "build:watch": "node scripts/build-watch.js",
+    "verify:profile-ui": "node scripts/verify-profile-accordion.js"
   },
   "private": true,
   "type": "module",

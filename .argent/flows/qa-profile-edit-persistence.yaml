@@ -50,16 +50,11 @@ steps:
         contains: QA profile changed
   - await:
       idle: true
-  - when:
-      platform: ios
-    steps:
-      - tap:
-          id: chevron.backward
-  - when:
-      platform: android
-    steps:
-      - tap:
-          text: Navigate up
+  - tap:
+      id: profile-row-qa-profile
+  - await:
+      hidden:
+        id: profile-setting-name
   - await:
       text:
         in:

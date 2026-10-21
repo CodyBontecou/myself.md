@@ -9,7 +9,7 @@ steps:
       idle: true
   - run: qa-reset-populated.yaml
   - tap:
-      text: Settings
+      id: settings-open
   - await:
       visible:
         id: settings-qa

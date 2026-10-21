@@ -1,3 +1,43 @@
+## Profile accordion recovery controls — 21 October 2026 (local source)
+
+Collapsing a profile hides its export controls while keeping the export controller mounted. Reopening preserves progress, the current operation guard and Cancel; cancellation still calls the existing `cancelExports` path. Existing MCP phone-export request/status/cancel operations and their ownership checks are unchanged. The main Settings toolbar remains available before native profile/catalog initialization succeeds; New profile is disabled until initialization finishes. These changes preserve owner settings/recovery handoffs without changing account, source or agent grants. Dashboard capabilities are unchanged.
+
+`npm run verify:profile-ui` renders the real profile/controller components with native/network boundaries replaced, starts a pending export, collapses/reopens its profile, and verifies working cancellation. It also invokes Settings from the real profile-loading branch. These component regressions do not establish native gesture/animation performance or real export delivery.
+
+## Restored header Settings navigation — 21 October 2026 (local source)
+
+Mobile again opens a dedicated Settings view from `settings-open` in the main header, beside New profile. The main-screen Settings accordion and header account avatar are removed. Settings restores its account avatar shortcut and separate Account view, including identity, connected logins and confirmed account actions. Existing UI/MCP operations, platform handoffs, account ownership, grants and confirmations remain unchanged; dashboard behavior is unchanged. Profile accordions and their motion remain in place. This supersedes the earlier Settings/Account consolidation entries below.
+
+## Header account avatar — 21 October 2026 (local source)
+
+Mobile shows the existing account photo/fallback in a small `header-account-avatar` beside New profile. Signed-in activation expands the shared Settings accordion in place; signed-out activation opens the existing native Sign in handoff. The duplicate name/email/photo block in Settings is removed (`account-account` retired); account identity remains in the avatar accessibility label. Existing account, login, billing and deletion operations and owner confirmations below remain shared and unchanged. This presentation change adds no authorization or data grant; dashboard behavior is unchanged.
+
+## Profile and Settings accordion motion — 21 October 2026 (local source)
+
+The two main-screen accordions share Reanimated layout transitions (240 ms, strong ease-out), content fade-in/out (180/120 ms), and a 200 ms chevron rotation. Containers clip outgoing content, and sibling profile/Settings positions transition with the changed layout. No explicit scrolling is added. Reduced Motion skips layout, fade and rotation animations. Existing expanded/disabled accessibility state, stable controls, profile discard confirmations and shared Settings actions are retained. This changes local presentation only; the existing semantic MCP operations, authorization, owner confirmations, handoffs and dashboard inventory remain unchanged.
+
+## Settings expands in place — 21 October 2026 (local source)
+
+Opening the main-screen Settings accordion now preserves its current position and the scroll offset. Removed the explicit scroll-to-header effect and layout callback, including their unused shared Screen ref API. Account/Settings links still expand the same shared content; they no longer force a scroll. UI/MCP operations, owner confirmations, platform handoffs, grants and dashboard behavior are unchanged.
+
+## Main-screen Settings accordion — 21 October 2026 (local source)
+
+Mobile Settings and its combined account controls now expand directly beneath profiles in the main screen's single scroll view. `settings-open` toggles the accordion and exposes expanded state. The header gear and ordinary Settings navigation are removed. Existing `/settings` and `/account` handoffs after onboarding open `/profiles?settings=open`, reveal the accordion and scroll to it. Before onboarding finishes, the same content remains available in the existing account/settings handoff so authentication and purchase recovery do not require completed setup. The open Settings accordion retains the existing automatic milestone-paywall exemption. Specialized authentication, provider, store, pairing and privacy flows keep their existing routes/handoffs.
+
+Settings content is shared between main-screen and pre-onboarding surfaces. MCP account/billing/login/disconnection/deletion, WHOOP, pairing and privacy operations retain the shared logic, ownership, grants, explicit confirmations and platform handoffs inventoried below. Accordion expansion is presentation state; no server action, grant or new agent capability is added. Dashboard behavior is unchanged.
+
+## Combined Account and Settings — 21 October 2026 (local source)
+
+Mobile Settings now includes account identity, verified-versus-phone-only access status, existing-customer claims, Connected logins, Sign in again, confirmed Sign out, confirmed Delete account and deletion-status links alongside cloud storage, WHOOP, agent connection and privacy. The header avatar shortcut is removed. `/account` renders the same Settings component for retained OAuth, cloud and account links, including before onboarding completes; signed-out users see a Sign in row. Purchase/upgrade sign-in controls open `/login` directly. Automatic milestone paywalls leave Settings available just as they did Account. Dashboard behavior is unchanged.
+
+All moved controls retain PhoneProvider, billing and account-deletion logic. MCP equivalents remain `get_lifetime_access` plus native purchase/claim handoffs; `get_account_logins` / `request_account_link` with owner provider confirmation; `disconnect_phone` for the owned registration; and `get_account_deletion` / `request_account_deletion` / `delete_account` with the existing explicit permanent-deletion confirmation and receipts. Reauthentication uses the retained `myselfmd://login?reauthenticate=1` owner handoff. Identity, OS authentication, credential entry, store purchases, claims and consent cannot be approved by an agent. Existing sharing/grants, ownership and server authorization are unchanged. No new capability is introduced.
+
+## Single-screen profile accordions — 21 October 2026 (local source)
+
+Mobile now opens saved profiles as expandable sections on the main myself.md screen. The header provides New profile and Settings; the bottom tab bar and the five overview disclosure cards are removed. Expanded profiles reuse the grouped detail controls for names, agent permissions, source selection, destination/output, schedules, exports and profile management. Collapsing a dirty field uses the existing discard confirmation. Existing profile URLs remain available for agent/OS handoffs. Dashboard behavior is unchanged.
+
+This is a navigation/presentation change. Existing `manage_phone_profiles`, `get_phone_data_catalog`, `request_phone_profile_permissions`, schedule/export operations and their owner/system handoffs retain their shared application logic and authorization. Accordion expansion is local presentation state and adds no data access or agent grant. Native authentication, purchases, permission approval and system sharing retain their platform handoffs. No new backend operation or authorization change is introduced.
+
 ## Retained identity diagnostics — 20 October 2026
 
 Owner-approved Cloudflare read-only access now supports historical retrieval through local `npm run auth:diagnostics`. The command uses a Mac Keychain credential and fixed Worker/schema filters, returning only validated diagnostic fields and timestamps in a bounded window. Cloudflare's legacy Observability Read permission is account-wide; no write permission, application grant, public endpoint or new mobile/dashboard capability was added. These remain operator logs rather than an MCP customer capability. Runtime verification retrieved the previously retained synthetic rejection through the read-only token; token expiry and platform retention still apply.

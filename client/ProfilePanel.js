@@ -1,3 +1,8 @@
+import {
+  AccordionBody,
+  AccordionChevron,
+  AccordionLayout,
+} from '../src/components/AccordionMotion.js';
 import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { deliveredFormats, parseExportSettings, exportWriteModes } from '../core/export-files.js';
@@ -53,7 +58,7 @@ export default function ProfilePanel({
   inline = false,
 }) {
   const { colors } = useTheme();
-  const [expandedSection, setExpandedSection] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const [permissionsExpanded, setPermissionsExpanded] = useState(openAgentPermissions);
   useFocusEffect(
     useCallback(() => {
@@ -96,46 +101,6 @@ export default function ProfilePanel({
       { text: 'Keep editing', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: action },
     ]);
-  }
-  /** @param {string} key @param {boolean} [forceOpen] */
-  function toggleSection(key, forceOpen = false) {
-    if (forceOpen && expandedSection === key) return;
-    leaveForm(() => {
-      setEditing(null);
-      setExpandedSection((current) => (!forceOpen && current === key ? '' : key));
-    });
-  }
-  /** @param {string} key @param {string} title @param {string} summary @param {import('../src/components/ui.js').IconName} icon @param {import('react').ReactNode} children */
-  function disclosure(key, title, summary, icon, children) {
-    if (!inline) return children;
-    const open = expandedSection === key;
-    return (
-      <View style={[styles.disclosure, { borderColor: colors.border }]}>
-        <Pressable
-          testID={`profile-section-${key}-${profileId}`}
-          accessibilityRole="button"
-          accessibilityLabel={`${title}, ${summary}`}
-          accessibilityState={{ expanded: open, disabled }}
-          disabled={disabled}
-          onPress={() => toggleSection(key)}
-          style={({ pressed }) => [styles.disclosureHeader, { opacity: pressed ? 0.5 : 1 }]}
-        >
-          <Icon name={icon} size={20} color={colors.secondary} />
-          <View style={styles.settingTitle}>
-            <Copy>{title}</Copy>
-            <Copy variant="caption" muted>
-              {summary}
-            </Copy>
-          </View>
-          <Icon
-            name={open ? 'chevron-down' : 'chevron-forward'}
-            size={16}
-            color={colors.secondary}
-          />
-        </Pressable>
-        {open && <View style={styles.disclosureBody}>{children}</View>}
-      </View>
-    );
   }
   /** @param {string} title @param {string} value @param {string} section @param {string} [field] */
   function setting(title, value, section, field = '') {
@@ -378,68 +343,51 @@ export default function ProfilePanel({
     </View>
   );
   const content = (
-    <View
+    <AccordionLayout
+      enabled={inline}
       testID={inline ? `profile-card-${profileId}` : profile ? 'profile-content' : 'profiles-list'}
-      style={[
-        styles.container,
-        inline && [
-          styles.profileCard,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ],
-      ]}
+      style={[styles.container, inline && styles.profileCard]}
     >
       {profileId && !profile && (
         <Text testID="profile-unavailable">This profile no longer exists.</Text>
       )}
       {profile && (
         <>
+          {inline && (
+            <Pressable
+              testID={`profile-row-${profile.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={profile.name}
+              accessibilityState={{ expanded, disabled }}
+              disabled={disabled}
+              onPress={() =>
+                leaveForm(() => {
+                  setEditing(null);
+                  setExpanded((value) => !value);
+                })
+              }
+              style={({ pressed }) => [styles.cardHeader, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <View style={styles.profileIdentity}>
+                <Copy variant="heading">{profile.name}</Copy>
+                <Copy variant="caption" muted>
+                  {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
+                </Copy>
+              </View>
+              <AccordionChevron open={expanded} color={colors.secondary} />
+            </Pressable>
+          )}
           {exportFirst && (
             <ProfileExports
               key={profile.id}
+              visible={!inline || expanded}
               session={session}
               profile={profile}
               disabled={disabled}
             />
           )}
-          {inline ? (
-            <>
-              <View style={styles.cardHeader}>
-                <Pressable
-                  testID={`profile-row-${profile.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${profile.name}, open profile`}
-                  onPress={() =>
-                    router.push({ pathname: '/profiles/[id]', params: { id: profile.id } })
-                  }
-                  style={styles.profileIdentity}
-                >
-                  <Copy variant="heading">{profile.name}</Copy>
-                  <Copy variant="caption" muted>
-                    {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
-                  </Copy>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`More settings for ${profile.name}`}
-                  onPress={() => toggleSection('more')}
-                  style={styles.moreButton}
-                >
-                  <Icon name="ellipsis-horizontal" size={22} color={colors.secondary} />
-                </Pressable>
-              </View>
-            </>
-          ) : (
+          <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
             <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
-          )}
-          {inline ? (
-            disclosure(
-              'permissions',
-              'Agent permissions',
-              profile.agentAccess ? 'Enabled' : 'Agents disabled',
-              'people-outline',
-              permissionControls,
-            )
-          ) : (
             <>
               <Group compact>
                 <Pressable
@@ -447,7 +395,7 @@ export default function ProfilePanel({
                   accessibilityRole="button"
                   accessibilityLabel="Agent permissions"
                   accessibilityState={{ expanded: permissionsExpanded }}
-                  onPress={() => setPermissionsExpanded((expanded) => !expanded)}
+                  onPress={() => setPermissionsExpanded((value) => !value)}
                   style={({ pressed }) => [
                     styles.permissionsHeader,
                     { opacity: pressed ? 0.7 : 1 },
@@ -466,14 +414,8 @@ export default function ProfilePanel({
               </Group>
               {permissionsExpanded && permissionControls}
             </>
-          )}
-          {disclosure(
-            'data',
-            'Data selection',
-            `${domains.reduce((total, domain) => total + profile.selection[domain].length, 0)}/${domains.reduce((total, domain) => total + new Set([...types[domain], ...profile.selection[domain]]).size, 0)}`,
-            'layers-outline',
             <>
-              {!inline && <SectionHeader compact title="Data selection" />}
+              <SectionHeader compact title="Data selection" />
               <Group compact>
                 <ProfileDataEditor
                   key={profile.id}
@@ -513,13 +455,7 @@ export default function ProfilePanel({
                   disabled={disabled}
                 />
               </Group>
-            </>,
-          )}
-          {disclosure(
-            'output',
-            'Destination & output',
-            `${profile.export.destination === 'local' ? 'On this phone' : profile.export.destination === 'http' ? 'HTTPS endpoint' : 'Cloud'} · ${deliveredFormats(profile.export).join(' + ').toUpperCase()} · ${profile.export.lookbackDays} days`,
-            'cloud-outline',
+            </>
             <>
               <SectionHeader compact title="Destination" />
               <Group compact>
@@ -585,35 +521,9 @@ export default function ProfilePanel({
                   </>
                 )}
               </Group>
-              {inline && (
-                <ProfileExports
-                  session={session}
-                  profile={profile}
-                  disabled={disabled}
-                  destinationOnly
-                />
-              )}
-            </>,
-          )}
-          {disclosure(
-            'schedule',
-            'Schedule',
-            profile.schedule.frequency === 'custom'
-              ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}`
-              : profile.schedule.frequency === 'weekly'
-                ? 'Weekly'
-                : `Daily · ${profile.schedule.dailyTimes?.length ? profile.schedule.dailyTimes.join(', ') : `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')}`}`,
-            'time-outline',
+            </>
             <>
-              {!inline && <SectionHeader compact title="Schedule" />}
-              {inline && (
-                <ProfileExports
-                  session={session}
-                  profile={profile}
-                  disabled={disabled}
-                  scheduleOnly
-                />
-              )}
+              <SectionHeader compact title="Schedule" />
               <Group compact>
                 {setting(
                   'Cadence',
@@ -644,34 +554,20 @@ export default function ProfilePanel({
                     'refresh',
                   )}
               </Group>
-              {!exportFirst && !inline && (
-                <ProfileExports
-                  key={profile.id}
-                  session={session}
-                  profile={profile}
-                  disabled={disabled}
-                />
-              )}
-            </>,
+            </>
+          </AccordionBody>
+          {!exportFirst && (
+            <ProfileExports
+              key={profile.id}
+              visible={!inline || expanded}
+              session={session}
+              profile={profile}
+              disabled={disabled}
+            />
           )}
-          {disclosure(
-            'more',
-            'More settings',
-            `Schema ${profile.export.schema.split('.').at(-1) ?? 'v1'} · Manage profile`,
-            'settings-outline',
+          <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
             <>
-              {inline && (
-                <>
-                  <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
-                  <ProfileExports
-                    session={session}
-                    profile={profile}
-                    disabled={disabled}
-                    filesOnly
-                  />
-                </>
-              )}
-              {!inline && <SectionHeader compact title="Manage profile" />}
+              <SectionHeader compact title="Manage profile" />
               <Group compact>
                 <Row
                   compact
@@ -723,18 +619,8 @@ export default function ProfilePanel({
                   }
                 />
               </Group>
-            </>,
-          )}
-          {inline && (
-            <ProfileExports
-              session={session}
-              profile={profile}
-              disabled={disabled}
-              quick
-              compact
-              onOpenSchedule={() => toggleSection('schedule', true)}
-            />
-          )}
+            </>
+          </AccordionBody>
         </>
       )}
       {draft ? (
@@ -784,7 +670,7 @@ export default function ProfilePanel({
           </View>
         </View>
       ) : null}
-    </View>
+    </AccordionLayout>
   );
   return (
     <View style={!profileId && styles.feed}>
@@ -841,24 +727,9 @@ function changedFields(before, after) {
   );
 }
 const styles = StyleSheet.create({
-  profileCard: { padding: 12, borderWidth: 1, borderRadius: 12, borderCurve: 'continuous', gap: 8 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  profileCard: { gap: 16, overflow: 'hidden' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
   profileIdentity: { flex: 1, minHeight: 52, justifyContent: 'center', gap: 4, padding: 4 },
-  moreButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  disclosure: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    borderCurve: 'continuous',
-    overflow: 'hidden',
-  },
-  disclosureHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 64,
-    padding: 12,
-  },
-  disclosureBody: { padding: 8, gap: 12 },
   reviewActions: { gap: 4 },
   settingRow: {
     flexDirection: 'row',

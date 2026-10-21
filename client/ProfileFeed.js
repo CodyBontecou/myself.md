@@ -1,3 +1,5 @@
+import { AccordionLayout } from '../src/components/AccordionMotion.js';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Copy, Icon, Screen } from '../src/components/ui.js';
 import { useTheme } from '../src/lib/theme.js';
@@ -8,7 +10,7 @@ export default function ProfileFeed({ profiles, disabled, onNewProfile, renderPr
     <View style={styles.feed}>
       <View style={styles.toolbar}>
         <Copy variant="title" style={styles.title}>
-          Profiles
+          myself.md
         </Copy>
         <Pressable
           testID="profile-new-profile"
@@ -27,14 +29,23 @@ export default function ProfileFeed({ profiles, disabled, onNewProfile, renderPr
         >
           <Icon name="add" size={26} color={colors.text} />
         </Pressable>
+        <Pressable
+          testID="settings-open"
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+          onPress={() => router.push('/settings')}
+          style={({ pressed }) => [styles.newProfileButton, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Icon name="settings-outline" size={24} color={colors.text} />
+        </Pressable>
       </View>
       <Screen>
         {children}
-        <View style={styles.list}>
+        <AccordionLayout style={styles.list}>
           {profiles.map((profile) => (
-            <View key={profile.id}>{renderProfile(profile)}</View>
+            <AccordionLayout key={profile.id}>{renderProfile(profile)}</AccordionLayout>
           ))}
-        </View>
+        </AccordionLayout>
       </Screen>
     </View>
   );

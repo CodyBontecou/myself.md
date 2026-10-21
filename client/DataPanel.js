@@ -22,6 +22,7 @@ import { reviewLocationCapture } from './location-capture.js';
 import { reconcileExports } from './export-task.js';
 import { syncHistory } from './history.js';
 import ProfilePanel from './ProfilePanel.js';
+import ProfileFeed from './ProfileFeed.js';
 import LocationSettings from './LocationSettings.js';
 import { loadAgentProfiles, saveAgentProfiles } from './profile-logs.js';
 import {
@@ -517,9 +518,16 @@ export default function DataPanel({ domain: selectedDomain = undefined, manageme
           onChange={changeProfiles}
         />
       ) : management ? (
-        <Text testID="profiles-loading" accessibilityState={{ busy: true }}>
-          Loading export profiles…
-        </Text>
+        <ProfileFeed
+          profiles={[]}
+          disabled
+          onNewProfile={() => undefined}
+          renderProfile={() => null}
+        >
+          <Text testID="profiles-loading" accessibilityState={{ busy: true }}>
+            Loading export profiles…
+          </Text>
+        </ProfileFeed>
       ) : null}
       {!management && (
         <Text style={styles.description}>
