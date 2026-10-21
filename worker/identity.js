@@ -5,6 +5,7 @@ import { decryptOAuthToken } from 'better-auth/oauth2';
 import { PairingError } from '../server/errors.js';
 import { importPKCS8, SignJWT } from 'jose';
 import { createIdentity } from '../server/identity.js';
+import { recordPhoneTokenExchange } from '../server/auth-diagnostics.js';
 import { readBytes } from './request.js';
 import { z } from 'zod';
 import { reviewerLoginPage, reviewerUserId } from '../server/reviewer.js';
@@ -326,6 +327,12 @@ export async function identityRequest(request, env) {
   const response = await auth.handler(
     new Request(url, { method: request.method, headers, ...(body ? { body } : {}) }),
   );
+  if (
+    targetPath === '/oauth2/token' &&
+    body &&
+    new URLSearchParams(new TextDecoder().decode(body)).get('client_id') === 'myselfmd-phone'
+  )
+    recordPhoneTokenExchange(response.status);
   if (
     ['/oauth2/end-session', '/oauth2/end-session/confirm'].includes(targetPath) &&
     response.headers.get('content-type')?.includes('text/html')

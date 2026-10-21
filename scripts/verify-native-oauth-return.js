@@ -4,6 +4,19 @@ import { readFileSync } from 'node:fs';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createIdentity } from '../server/identity.js';
 import { z } from 'zod';
+import {
+  authDiagnosticLogger,
+  recordAuthCallback,
+  recordPhoneTokenExchange,
+} from '../server/auth-diagnostics.js';
+const originalInfo = console.info;
+const originalError = console.error;
+/** @type {unknown[][]} */
+const libraryErrors = [];
+console.error = (...args) => libraryErrors.push(args);
+/** @type {Record<string,unknown>[]} */
+const diagnosticEvents = [];
+console.info = (event) => diagnosticEvents.push(event);
 
 // Only the external Apple token/profile boundary is fictional. Exercise the real
 // signed authorization, stored provider state, callback hooks, PKCE and ownership.
@@ -324,6 +337,84 @@ db.prepare('UPDATE verification SET value=? WHERE identifier=?').run(
 const fallbackURL = destination(await complete(fallback, 'POST'));
 nativeDestination(fallbackURL, fallback.state);
 assert.equal(fallbackURL.searchParams.has('code'), false);
+// These checks exercise real hooks, rather than accepting a helper's claimed outcome.
+assert.ok(
+  diagnosticEvents.some(
+    (e) =>
+      e.phase === 'callback' &&
+      e.provider === 'apple' &&
+      e.target === 'native' &&
+      e.hasCode === true &&
+      e.error === 'none',
+  ),
+);
+assert.ok(
+  diagnosticEvents.some((e) => e.phase === 'state' && e.reason === 'browser_cookie_mismatch'),
+);
+assert.ok(diagnosticEvents.some((e) => e.phase === 'state' && e.reason === 'verification_missing'));
+const secretSentinel = 'DO_NOT_RETAIN_PRIVATE_VALUE';
+const adversarial = await startNative();
+await complete(adversarial, 'POST', secretSentinel);
+assert.equal(diagnosticEvents.at(-1)?.error, 'other');
+const eventCount = diagnosticEvents.length;
+authDiagnosticLogger(
+  'error',
+  'Failed to parse state',
+  Object.assign(new Error(secretSentinel), {
+    details: { state: secretSentinel },
+    stack: secretSentinel,
+  }),
+);
+assert.deepEqual(diagnosticEvents.at(-1), {
+  schema: 'myself.md.auth.v1',
+  phase: 'state',
+  reason: 'other',
+});
+authDiagnosticLogger('error', secretSentinel, { code: secretSentinel });
+assert.equal(diagnosticEvents.length, eventCount + 1, 'Unrecognized library logs must be ignored');
+recordAuthCallback(
+  '/callback/:id',
+  'apple',
+  'GET',
+  `myselfmd://oauth?state=${secretSentinel}&code=${secretSentinel}&error=${secretSentinel}&error_description=${secretSentinel}`,
+  issuer,
+);
+assert.equal(diagnosticEvents.at(-1)?.error, 'other');
+assert.equal(
+  JSON.stringify(diagnosticEvents).includes(secretSentinel),
+  false,
+  'Never retain URLs, OAuth values, raw errors or stacks',
+);
+recordPhoneTokenExchange(400);
+assert.deepEqual(diagnosticEvents.at(-1), {
+  schema: 'myself.md.auth.v1',
+  phase: 'phone_token',
+  httpStatus: 400,
+  outcome: 'rejected',
+});
+const beforeInvalid = diagnosticEvents.length;
+recordPhoneTokenExchange(1000);
+recordAuthCallback('/callback/:id', secretSentinel, 'GET', 'myselfmd://oauth', issuer);
+assert.equal(diagnosticEvents.length, beforeInvalid);
+console.info = () => {
+  throw new Error('fixture sink failure');
+};
+recordAuthCallback('/callback/:id', 'apple', 'GET', 'myselfmd://oauth?code=fixture', issuer);
+authDiagnosticLogger(
+  'error',
+  'Failed to parse state',
+  new Error('State mismatch: verification not found'),
+);
+assert.equal(
+  libraryErrors
+    .flat()
+    .map((value) => (value instanceof Error ? value.message + value.stack : String(value)))
+    .join('')
+    .includes(secretSentinel),
+  false,
+);
+console.info = originalInfo;
+console.error = originalError;
 console.log(
   'PASS native Apple POST/GET callbacks, PKCE exchange, account conflicts, browser-account isolation, replaced state, cancellation and safe fallback. No live provider credentials used.',
 );

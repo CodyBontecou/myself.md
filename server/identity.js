@@ -4,6 +4,7 @@ import { oauthProvider, verifyOAuthQueryParams } from '@better-auth/oauth-provid
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { reviewerEmail, reviewerUserId } from './reviewer.js';
 import { z } from 'zod';
+import { authDiagnosticLogger, recordAuthCallback } from './auth-diagnostics.js';
 
 const signInTimeoutSeconds = 15 * 60;
 const providerStateSchema = z.object({ expiresAt: z.number() }).passthrough();
@@ -25,7 +26,7 @@ export function identityOptions(database, config) {
     basePath: new URL(config.issuer).pathname,
     secret: config.secret,
     appName: 'myself.md',
-    logger: { disabled: true },
+    logger: { disabled: false, level: 'error', log: authDiagnosticLogger },
     trustedOrigins: [
       new URL(config.issuer).origin,
       'https://appleid.apple.com',
@@ -257,6 +258,25 @@ export function identityOptions(database, config) {
           )
         ),
       ),
+      {
+        id: 'safe-auth-diagnostics',
+        hooks: {
+          after: [
+            {
+              matcher: (ctx) => ctx.path?.startsWith('/callback/') === true,
+              handler: createAuthMiddleware(async (ctx) => {
+                recordAuthCallback(
+                  ctx.path,
+                  ctx.params?.id,
+                  ctx.method,
+                  ctx.context.responseHeaders?.get('location'),
+                  config.issuer,
+                );
+              }),
+            },
+          ],
+        },
+      },
     ],
   };
 }
