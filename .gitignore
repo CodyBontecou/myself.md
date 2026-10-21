@@ -50,6 +50,7 @@ yarn-error.*
 .argent/*
 !.argent/flows/
 .argent/flows/*
+!.argent/flows/scrawl-pairing-touch-ios.yaml
 !.argent/flows/qa-reset-populated.yaml
 !.argent/flows/qa-onboarding-completion.yaml
 !.argent/flows/qa-profile-edit-persistence.yaml
