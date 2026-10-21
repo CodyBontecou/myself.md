@@ -14,17 +14,17 @@ import { nextOccurrence } from '../core/schedules.js';
 import { formatNextExport, localCalendar } from './calendar.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
 import { useProfileEditor } from './ProfileEditorState.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderCollapsed?:(action:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderCollapsed?:(action:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
 function ProfileExportControls({
   session,
   profile,
   disabled,
   visible = true,
-  renderCollapsed,
+  renderProfile,
   quick = false,
   roomy = false,
   compact = false,
@@ -294,23 +294,21 @@ function ProfileExportControls({
       }
     />
   ));
-  // Hiding an accordion must not discard the active operation or its Cancel action.
-  if (!visible)
-    return (
-      renderCollapsed?.(
-        <ProfileQuickAction
-          testID={`profile-export-${profile.id}`}
-          label={busy ? 'Exporting…' : 'Export'}
-          icon="download-outline"
-          compact
-          iconOnly
-          disabled={disabled || busy}
-          busy={busy}
-          onPress={() => exportProfile()}
-          onDisabledPress={() => exportProfile()}
-        />,
-      ) ?? null
-    );
+  const headerAction = (
+    <ProfileQuickAction
+      testID={`profile-export-${profile.id}`}
+      label={busy ? 'Exporting…' : 'Export'}
+      icon="download-outline"
+      compact
+      iconOnly
+      disabled={disabled || busy}
+      busy={busy}
+      onPress={() => exportProfile()}
+      onDisabledPress={() => exportProfile()}
+    />
+  );
+  // Keep one export controller across both accordion states.
+  if (!visible) return renderProfile?.(headerAction, null) ?? null;
   if (filesOnly) return <Group compact>{fileControls}</Group>;
   if (destinationOnly)
     return (
@@ -390,7 +388,7 @@ function ProfileExportControls({
         </View>
       </View>
     );
-  return (
+  const controls = (
     <View testID="profile-exports" accessibilityState={{ busy }} style={styles.container}>
       <SectionHeader compact title="Exports" />
       {qaEnabled && (
@@ -432,6 +430,7 @@ function ProfileExportControls({
       {cloudControls}
     </View>
   );
+  return renderProfile ? renderProfile(headerAction, controls) : controls;
 }
 
 const styles = StyleSheet.create({

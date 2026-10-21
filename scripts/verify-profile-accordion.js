@@ -209,25 +209,18 @@ const initialButton = call(initialAction.type, initialAction.props);
 call(control(initialButton, 'profile-export-fixture').props.onPress, { stopPropagation: noop });
 assert.equal(controller(renderPanel()).props.visible, false, 'Export leaves the row closed.');
 
-call(
-  control(
-    controller(tree).props.visible ? tree : renderExports(controller(tree)),
-    'profile-row-fixture',
-  ).props.onPress,
-  {},
-);
+call(control(renderExports(controller(tree)), 'profile-row-fixture').props.onPress, {});
 tree = renderPanel();
 let exportTree = renderExports(controller(tree));
+assert.equal(
+  control(exportTree, 'profile-export-fixture').props.busy,
+  true,
+  'Expanded header shares the running export state.',
+);
 call(control(exportTree, 'export-now').props.onDisabledPress, {});
 exportTree = renderExports(controller(tree));
 control(exportTree, 'export-cancel');
-call(
-  control(
-    controller(tree).props.visible ? tree : renderExports(controller(tree)),
-    'profile-row-fixture',
-  ).props.onPress,
-  {},
-);
+call(control(renderExports(controller(tree)), 'profile-row-fixture').props.onPress, {});
 tree = renderPanel();
 exportTree = renderExports(controller(tree));
 const collapsedExport = control(exportTree, 'profile-export-fixture');
@@ -241,13 +234,7 @@ call(control(collapsedButton, 'profile-export-fixture').props.onPress, {
 });
 assert.equal(stopped, true, 'Export does not toggle the profile row.');
 assert.equal(started, 1, 'A collapsed busy export cannot start a second operation.');
-call(
-  control(
-    controller(tree).props.visible ? tree : renderExports(controller(tree)),
-    'profile-row-fixture',
-  ).props.onPress,
-  {},
-);
+call(control(renderExports(controller(tree)), 'profile-row-fixture').props.onPress, {});
 tree = renderPanel();
 exportTree = renderExports(controller(tree));
 call(control(exportTree, 'export-cancel').props.onPress, {});

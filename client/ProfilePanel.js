@@ -394,255 +394,249 @@ export default function ProfilePanel({
         <Text testID="profile-unavailable">This profile no longer exists.</Text>
       )}
       {profile && (
-        <>
-          {inline && expanded && profileHeader()}
-          {exportFirst && (
-            <ProfileExports
-              key={profile.id}
-              visible={!inline || expanded}
-              renderCollapsed={profileHeader}
-              session={session}
-              profile={profile}
-              disabled={disabled}
-            />
-          )}
-          <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
-            <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
+        <ProfileExports
+          key={profile.id}
+          visible={!inline || expanded}
+          session={session}
+          profile={profile}
+          disabled={disabled}
+          renderProfile={(action, exportControls) => (
             <>
-              <Group compact>
-                <Pressable
-                  testID="profile-agent-permissions-toggle"
-                  accessibilityRole="button"
-                  accessibilityLabel="Agent permissions"
-                  accessibilityState={{ expanded: permissionsExpanded }}
-                  onPress={() => setPermissionsExpanded((value) => !value)}
-                  style={({ pressed }) => [
-                    styles.permissionsHeader,
-                    { opacity: pressed ? 0.7 : 1 },
-                  ]}
-                >
-                  <Icon
-                    name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
-                    size={18}
-                    color={colors.secondary}
-                  />
-                  <Copy>Agent permissions</Copy>
-                  <Copy variant="caption" muted style={styles.permissionsSummary}>
-                    {profile.agentAccess ? 'Enabled' : 'Agents disabled'}
-                  </Copy>
-                </Pressable>
-              </Group>
-              {permissionsExpanded && permissionControls}
-            </>
-            <>
-              <SectionHeader compact title="Data selection" />
-              <Group compact>
-                <ProfileDataEditor
-                  key={profile.id}
-                  inline
-                  types={types}
-                  permissions={permissions}
-                  isTracking={isTracking}
-                  onRecordingChange={onRecordingChange}
-                  onAuthorize={onAuthorize}
-                  onOpenLocation={() => router.push('/data/location')}
-                  selection={profile.selection}
-                  onSelection={async (selection) => {
-                    if (actionRunning.current)
-                      throw new Error('Wait for the current profile action to finish.');
-                    actionRunning.current = true;
-                    setWorking(true);
-                    try {
-                      const updated = parseProfile({ ...profile, selection });
-                      await onChange({
-                        ...state,
-                        profiles: state.profiles.map((p) =>
-                          p.id === profile.id
-                            ? {
-                                ...updated,
-                                id: profile.id,
-                                agentAccess: profile.agentAccess === true,
-                                agentPermissions: profile.agentPermissions,
-                              }
-                            : p,
-                        ),
-                      });
-                    } finally {
-                      actionRunning.current = false;
-                      setWorking(false);
-                    }
-                  }}
-                  disabled={disabled}
-                />
-              </Group>
-            </>
-            <>
-              <SectionHeader compact title="Destination" />
-              <Group compact>
-                {setting(
-                  profile.export.destination === 'local'
-                    ? 'On this phone'
-                    : profile.export.destination === 'http'
-                      ? 'HTTPS endpoint'
-                      : 'Cloud service',
-                  profile.export.destination === 'local'
-                    ? ''
-                    : profile.export.destination === 'http'
-                      ? (profile.export.httpUrl ?? '')
-                      : session.server || 'Connect an agent to use cloud exports',
-                  'destination',
-                )}
-              </Group>
-              <SectionHeader compact title="Output" />
-              <Group compact>
-                {setting(
-                  'Schema version',
-                  profile.export.schema.split('.').at(-1) ?? 'v1',
-                  'output',
-                  'schema',
-                )}
-                {profile.export.destination === 'cloud' ? (
-                  <Row compact testID="export-format-cloud" title="Format" value="JSONL" />
-                ) : (
-                  setting(
-                    'Formats',
-                    deliveredFormats(profile.export).join(' + ').toUpperCase(),
-                    'output',
-                    'formats',
-                  )
-                )}
-                {setting(
-                  'Export window',
-                  `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
-                  'output',
-                  'window',
-                )}
-                {profile.export.destination === 'local' && (
-                  <>
-                    {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+              {profileHeader(action)}
+              {exportFirst && exportControls}
+              <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
+                <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
+                <>
+                  <Group compact>
+                    <Pressable
+                      testID="profile-agent-permissions-toggle"
+                      accessibilityRole="button"
+                      accessibilityLabel="Agent permissions"
+                      accessibilityState={{ expanded: permissionsExpanded }}
+                      onPress={() => setPermissionsExpanded((value) => !value)}
+                      style={({ pressed }) => [
+                        styles.permissionsHeader,
+                        { opacity: pressed ? 0.7 : 1 },
+                      ]}
+                    >
+                      <Icon
+                        name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
+                        size={18}
+                        color={colors.secondary}
+                      />
+                      <Copy>Agent permissions</Copy>
+                      <Copy variant="caption" muted style={styles.permissionsSummary}>
+                        {profile.agentAccess ? 'Enabled' : 'Agents disabled'}
+                      </Copy>
+                    </Pressable>
+                  </Group>
+                  {permissionsExpanded && permissionControls}
+                </>
+                <>
+                  <SectionHeader compact title="Data selection" />
+                  <Group compact>
+                    <ProfileDataEditor
+                      key={profile.id}
+                      inline
+                      types={types}
+                      permissions={permissions}
+                      isTracking={isTracking}
+                      onRecordingChange={onRecordingChange}
+                      onAuthorize={onAuthorize}
+                      onOpenLocation={() => router.push('/data/location')}
+                      selection={profile.selection}
+                      onSelection={async (selection) => {
+                        if (actionRunning.current)
+                          throw new Error('Wait for the current profile action to finish.');
+                        actionRunning.current = true;
+                        setWorking(true);
+                        try {
+                          const updated = parseProfile({ ...profile, selection });
+                          await onChange({
+                            ...state,
+                            profiles: state.profiles.map((p) =>
+                              p.id === profile.id
+                                ? {
+                                    ...updated,
+                                    id: profile.id,
+                                    agentAccess: profile.agentAccess === true,
+                                    agentPermissions: profile.agentPermissions,
+                                  }
+                                : p,
+                            ),
+                          });
+                        } finally {
+                          actionRunning.current = false;
+                          setWorking(false);
+                        }
+                      }}
+                      disabled={disabled}
+                    />
+                  </Group>
+                </>
+                <>
+                  <SectionHeader compact title="Destination" />
+                  <Group compact>
                     {setting(
-                      'Folders',
-                      `${exportFolderStatus(session, profile).name}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
-                      'output',
-                      'folders',
+                      profile.export.destination === 'local'
+                        ? 'On this phone'
+                        : profile.export.destination === 'http'
+                          ? 'HTTPS endpoint'
+                          : 'Cloud service',
+                      profile.export.destination === 'local'
+                        ? ''
+                        : profile.export.destination === 'http'
+                          ? (profile.export.httpUrl ?? '')
+                          : session.server || 'Connect an agent to use cloud exports',
+                      'destination',
                     )}
-                  </>
-                )}
-                {profile.export.destination !== 'http' && (
-                  <>
+                  </Group>
+                  <SectionHeader compact title="Output" />
+                  <Group compact>
                     {setting(
-                      'When files exist',
-                      exportWriteModes.find(
-                        (mode) => mode.value === (profile.export.writeMode ?? 'replace'),
-                      )?.title ?? 'Replace matching file',
+                      'Schema version',
+                      profile.export.schema.split('.').at(-1) ?? 'v1',
                       'output',
-                      'writeMode',
+                      'schema',
                     )}
-                  </>
-                )}
-              </Group>
+                    {profile.export.destination === 'cloud' ? (
+                      <Row compact testID="export-format-cloud" title="Format" value="JSONL" />
+                    ) : (
+                      setting(
+                        'Formats',
+                        deliveredFormats(profile.export).join(' + ').toUpperCase(),
+                        'output',
+                        'formats',
+                      )
+                    )}
+                    {setting(
+                      'Export window',
+                      `${profile.export.lookbackDays} days${profile.export.includeToday ? ' + today' : ''}`,
+                      'output',
+                      'window',
+                    )}
+                    {profile.export.destination === 'local' && (
+                      <>
+                        {setting('Filename', profile.export.filenameTemplate, 'output', 'filename')}
+                        {setting(
+                          'Folders',
+                          `${exportFolderStatus(session, profile).name}${profile.export.formatFolders ? ' · separate format folders' : ''}`,
+                          'output',
+                          'folders',
+                        )}
+                      </>
+                    )}
+                    {profile.export.destination !== 'http' && (
+                      <>
+                        {setting(
+                          'When files exist',
+                          exportWriteModes.find(
+                            (mode) => mode.value === (profile.export.writeMode ?? 'replace'),
+                          )?.title ?? 'Replace matching file',
+                          'output',
+                          'writeMode',
+                        )}
+                      </>
+                    )}
+                  </Group>
+                </>
+                <>
+                  <SectionHeader compact title="Schedule" />
+                  <Group compact>
+                    {setting(
+                      'Cadence',
+                      profile.schedule.frequency === 'custom'
+                        ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${scheduleIntervalMs(profile.schedule) ? '' : profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
+                        : profile.schedule.frequency === 'weekly'
+                          ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
+                          : 'Daily',
+                      'schedule',
+                      'cadence',
+                    )}
+                    {!scheduleIntervalMs(profile.schedule) &&
+                      setting(
+                        'Preferred time',
+                        profile.schedule.frequency === 'daily' &&
+                          profile.schedule.dailyTimes?.length
+                          ? `${profile.schedule.dailyTimes.join(', ')} local time`
+                          : `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
+                        'schedule',
+                        'time',
+                      )}
+                    {!scheduleIntervalMs(profile.schedule) &&
+                      setting(
+                        'Today Refresh',
+                        profile.schedule.todayRefresh
+                          ? `Every ${profile.schedule.refreshHours} hours`
+                          : 'Off',
+                        'schedule',
+                        'refresh',
+                      )}
+                  </Group>
+                </>
+              </AccordionBody>
+              {!exportFirst && exportControls}
+              <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
+                <>
+                  <SectionHeader compact title="Manage profile" />
+                  <Group compact>
+                    <Row
+                      compact
+                      testID="profile-duplicate-profile"
+                      title="Duplicate profile"
+                      disabled={disabled}
+                      onPress={() =>
+                        edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
+                      }
+                    />
+                    <Row
+                      compact
+                      testID="profile-share-profile-link"
+                      title="Share profile link"
+                      disabled={disabled || qaEnabled}
+                      onPress={() =>
+                        void run(async () => {
+                          const link = profileShareLink(profile);
+                          setShareLink(link);
+                          await Share.share({ message: link, title: profile.name });
+                        })
+                      }
+                    />
+                    <Row
+                      compact
+                      destructive
+                      testID="profile-delete-profile"
+                      title="Delete profile"
+                      disabled={disabled || state.profiles.length === 1}
+                      onPress={() =>
+                        Alert.alert(
+                          'Delete profile?',
+                          `Remove ${profile.name} and its schedule configuration?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () =>
+                                void run(async () => {
+                                  setDeletingProfile(profile);
+                                  const profiles = state.profiles.filter(
+                                    (p) => p.id !== profile.id,
+                                  );
+                                  await onChange({ profiles });
+                                  if (!inline) router.back();
+                                }),
+                            },
+                          ],
+                        )
+                      }
+                    />
+                  </Group>
+                </>
+              </AccordionBody>
             </>
-            <>
-              <SectionHeader compact title="Schedule" />
-              <Group compact>
-                {setting(
-                  'Cadence',
-                  profile.schedule.frequency === 'custom'
-                    ? `Every ${profile.schedule.interval} ${profile.schedule.unit}${profile.schedule.interval === 1 ? '' : 's'}${scheduleIntervalMs(profile.schedule) ? '' : profile.schedule.anchorDate ? ` · from ${profile.schedule.anchorDate}` : ' · anchored on opt-in day'}`
-                    : profile.schedule.frequency === 'weekly'
-                      ? `Weekly · ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][profile.schedule.weekday - 1]}`
-                      : 'Daily',
-                  'schedule',
-                  'cadence',
-                )}
-                {!scheduleIntervalMs(profile.schedule) &&
-                  setting(
-                    'Preferred time',
-                    profile.schedule.frequency === 'daily' && profile.schedule.dailyTimes?.length
-                      ? `${profile.schedule.dailyTimes.join(', ')} local time`
-                      : `${String(profile.schedule.hour).padStart(2, '0')}:${String(profile.schedule.minute).padStart(2, '0')} local time`,
-                    'schedule',
-                    'time',
-                  )}
-                {!scheduleIntervalMs(profile.schedule) &&
-                  setting(
-                    'Today Refresh',
-                    profile.schedule.todayRefresh
-                      ? `Every ${profile.schedule.refreshHours} hours`
-                      : 'Off',
-                    'schedule',
-                    'refresh',
-                  )}
-              </Group>
-            </>
-          </AccordionBody>
-          {!exportFirst && (
-            <ProfileExports
-              key={profile.id}
-              visible={!inline || expanded}
-              renderCollapsed={profileHeader}
-              session={session}
-              profile={profile}
-              disabled={disabled}
-            />
           )}
-          <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
-            <>
-              <SectionHeader compact title="Manage profile" />
-              <Group compact>
-                <Row
-                  compact
-                  testID="profile-duplicate-profile"
-                  title="Duplicate profile"
-                  disabled={disabled}
-                  onPress={() =>
-                    edit({ ...profile, name: uniqueProfileName(profile.name, state.profiles) })
-                  }
-                />
-                <Row
-                  compact
-                  testID="profile-share-profile-link"
-                  title="Share profile link"
-                  disabled={disabled || qaEnabled}
-                  onPress={() =>
-                    void run(async () => {
-                      const link = profileShareLink(profile);
-                      setShareLink(link);
-                      await Share.share({ message: link, title: profile.name });
-                    })
-                  }
-                />
-                <Row
-                  compact
-                  destructive
-                  testID="profile-delete-profile"
-                  title="Delete profile"
-                  disabled={disabled || state.profiles.length === 1}
-                  onPress={() =>
-                    Alert.alert(
-                      'Delete profile?',
-                      `Remove ${profile.name} and its schedule configuration?`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () =>
-                            void run(async () => {
-                              setDeletingProfile(profile);
-                              const profiles = state.profiles.filter((p) => p.id !== profile.id);
-                              await onChange({ profiles });
-                              if (!inline) router.back();
-                            }),
-                        },
-                      ],
-                    )
-                  }
-                />
-              </Group>
-            </>
-          </AccordionBody>
-        </>
+        />
       )}
       {draft ? (
         <View
