@@ -92,6 +92,7 @@
     "typecheck": "tsc -p jsconfig.json && tsc -p core/jsconfig.json && tsc -p server/jsconfig.json && tsc -p dashboard/jsconfig.json && tsc -p worker/jsconfig.json",
     "unused": "knip --no-progress",
     "auth:setup": "node scripts/setup-auth.js",
+    "auth:diagnostics": "node scripts/read-auth-diagnostics.js",
     "auth:start": "node --env-file=.env scripts/start-auth.js",
     "pair": "node --env-file=.env scripts/pair-phone.js",
     "auth:docker": "docker compose up -d",
