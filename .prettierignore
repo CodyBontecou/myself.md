@@ -10,3 +10,6 @@ package-lock.json
 content/blog/
 
 dashboard/dist/
+
+watch/.build/
+watch/.swiftpm/

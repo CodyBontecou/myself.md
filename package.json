@@ -168,7 +168,10 @@
     "video:capture-agent": "node scripts/capture-launch-agent.js",
     "verify:profile-sync": "node scripts/verify-profile-sync.js",
     "verify:profile-pairing": "node --experimental-vm-modules scripts/verify-profile-pairing.js",
-    "verify:native-location-capture": "node --experimental-vm-modules scripts/verify-native-location-capture.js"
+    "verify:native-location-capture": "node --experimental-vm-modules scripts/verify-native-location-capture.js",
+    "verify:watch": "node scripts/verify-watch.js && node scripts/verify-watch-store.js && node scripts/verify-watch-targets.js",
+    "verify:watch:swift": "node scripts/verify-watch-swift.js",
+    "build:watch": "node scripts/build-watch.js"
   },
   "private": true,
   "type": "module",

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { readJSONResponse } from '../packages/support-chat/errors.js';
+import { errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 
 let refreshes = 0;
 let refreshFailure = '';
@@ -168,6 +168,11 @@ let cancelled = false;
 let exchanges = 0;
 let billingCalls = 0;
 let clearedAllowance = 0;
+let billingWarning = '';
+context.errorMessage = errorMessage;
+context.setError = (/** @type {string} */ value) => {
+  billingWarning = value;
+};
 context.process = { env: {} };
 context.URL = URL;
 context.canonicalServiceOrigin = (/** @type {string} */ value) => value;
@@ -230,7 +235,8 @@ context.syncBilling = async () => {
 };
 const login = () => vm.runInContext(`({${signInHandler}}).signInAccount('google')`, context);
 billingFailure = true;
-await assert.rejects(login(), /Billing unavailable/);
+await login();
+assert.match(billingWarning, /Signed in.*Billing unavailable/);
 assert.ok(persisted, 'Successful OAuth must persist even when billing fails');
 assert.equal(JSON.parse(persisted).accessToken, 'signed-in');
 assert.equal(visible, await context.loadSession(), 'Browser return must show the saved account');

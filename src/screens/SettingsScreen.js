@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { AnalyticsConsent } from '../../client/AnalyticsControls.js';
 import CloudStorageUsage from '../../client/CloudStorageUsage.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
@@ -65,6 +66,14 @@ export default function SettingsScreen() {
           onPress={() => router.push('/pair')}
         />
       </Group>
+      {Platform.OS === 'ios' && (
+        <Row
+          testID="settings-watch"
+          title="Apple Watch"
+          subtitle="Steps, widgets, and direct HTTPS exports"
+          onPress={() => router.push('/settings/watch')}
+        />
+      )}
       <SectionHeader title="Privacy" />
       <Group>
         <AnalyticsConsent />

@@ -98,6 +98,10 @@ modules/*/android/build/
 # Local Argent secret placeholders
 .argent/secrets.env
 
+# Swift watch contract build artifacts
+/watch/.build/
+/watch/.swiftpm/
+
 # AEO reports and research belong in ignored .local/reports/aeo/.
 /docs/aeo-*.json
 /docs/aeo-*.md

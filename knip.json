@@ -17,7 +17,7 @@
     "launch-video/**/*.js"
   ],
   "ignoreDependencies": ["@types/punycode", "cloudflare"],
-  "ignoreBinaries": ["fly"],
+  "ignoreBinaries": ["fly", "swift"],
   "entry": [
     "scripts/*.js",
     "plugins/*.cjs",

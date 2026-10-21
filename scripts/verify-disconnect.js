@@ -19,11 +19,20 @@ const receive = app.match(/    const receive = \(url\) => \{[\s\S]*?\n    \};/)?
 assert.ok(receive);
 let incomingPairing;
 let linkError = '';
+let navigation = '';
 const linkContext = vm.createContext({
+  errorMessage,
   errorJSON,
   readJSONResponse,
   parsePairingQr,
-  router: { push: () => {} },
+  router: {
+    push: (/** @type {string} */ value) => {
+      navigation = value;
+    },
+    navigate: (/** @type {string} */ value) => {
+      navigation = value;
+    },
+  },
   profileFromLink: () => {},
   setIncoming: () => {},
   /** @param {unknown} value */
@@ -42,6 +51,12 @@ for (const link of links) {
   assert.deepEqual(incomingPairing, { server, ticket });
   assert.equal(linkContext.locked.current, true);
 }
+linkContext.receive('myselfmd://watch');
+assert.equal(
+  navigation,
+  '/settings/watch',
+  'Watch setup handoffs must open the actual settings screen.',
+);
 linkContext.receive('myselfmd://oauth?code=fixture');
 assert.equal(linkError, '');
 const disconnect = app.match(/  async function disconnect\(\) \{[\s\S]*?\n  \}/)?.[0];
@@ -144,6 +159,7 @@ let storage = 'old-session';
 /** @type {((value:unknown)=>void)|undefined} */
 let refresh;
 const context = vm.createContext({
+  errorMessage,
   errorJSON,
   readJSONResponse,
   URL,

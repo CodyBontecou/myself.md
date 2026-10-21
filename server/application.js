@@ -45,7 +45,8 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{analytics?:import('../core/analytics.js').AnalyticsService,analyticsMilestone?:(subject:string,name:'phone_connected',operation:string)=>Promise<void>,exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],ticketStatus:import('./pairing-store.js').PairingStore['ticketStatus'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} ApplicationServices */
+/** @typedef {{analytics?:import('../core/analytics.js').AnalyticsService,analyticsMilestone?:(subject:string,name:'phone_connected',operation:string)=>Promise<void>,exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],ticketStatus:import('./pairing-store.js').PairingStore['ticketStatus'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} BaseApplicationServices */
+/** @typedef {BaseApplicationServices & Partial<ReturnType<typeof import('./watch-service.js').createWatchService>>} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices & {cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>,storeNotification?:(source:'apple'|'google',bytes:Uint8Array,authorization:string|undefined,audience:string)=>Promise<unknown>}} services
  * @param {{jwksFetch?:import('jose').FetchImplementation}} [options]
@@ -53,6 +54,10 @@ async function bodyBytes(req, limit) {
 export function createApplication(
   config,
   {
+    watchOwnerApi,
+    watchRuntimeApi,
+    registerWatchTools,
+    cancelWatchParent,
     analytics,
     analyticsMilestone,
     exportSchedules,
@@ -610,6 +615,7 @@ export function createApplication(
         exportSchedules?.remove(subject, deviceId);
         disconnect(deviceId, subject);
         cancelPhone(deviceId, subject);
+        cancelWatchParent?.(deviceId, subject);
         return { content: [{ type: 'text', text: 'Disconnected.' }] };
       },
     );
@@ -623,6 +629,7 @@ export function createApplication(
           throw new PairingError(410, 'This account is being deleted or has been deleted.');
         if (client) cloud.observeAgent(subject, client);
       });
+    if (!chatgpt) registerWatchTools?.(mcp, subject, client);
     registerDataTools(mcp, subject, client, { chatgpt });
     registerCloudTools(mcp, subject, client);
     if (!chatgpt) exportSchedules?.registerTools(mcp, subject);
@@ -785,6 +792,16 @@ export function createApplication(
         pending(ticket);
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
         res.end(await qrPng(createPairingUrl(publicUrl, ticket), { width: 512 }));
+        return;
+      }
+      const watchToken = req.headers.authorization?.match(/^Watch ([A-Za-z0-9_-]{43})$/)?.[1];
+      if (watchToken && url.pathname === '/api/watch/runtime' && req.method === 'POST') {
+        if (!watchRuntimeApi) throw new PairingError(503, 'Watch service is not configured.');
+        json(
+          res,
+          200,
+          await watchRuntimeApi(watchToken, JSON.parse((await bodyBytes(req, 16384)).toString())),
+        );
         return;
       }
       const uploadToken = req.headers.authorization?.match(/^Upload ([A-Za-z0-9_-]{43})$/)?.[1];
@@ -1122,6 +1139,17 @@ export function createApplication(
         json(res, 200, accountProfile === undefined ? result : { ...result, accountProfile });
         return;
       }
+      if (url.pathname === '/api/watches' && req.method === 'POST') {
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(403, 'Watch setup requires the phone owner client.');
+        if (!watchOwnerApi) throw new PairingError(503, 'Watch service is not configured.');
+        json(
+          res,
+          200,
+          await watchOwnerApi(subject, null, JSON.parse((await bodyBytes(req, 16384)).toString())),
+        );
+        return;
+      }
       if (url.pathname === '/api/history' && req.method === 'POST') {
         if (payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'Phone OAuth client required.');
@@ -1280,6 +1308,7 @@ export function createApplication(
         exportSchedules?.remove(subject, url.pathname.slice(13));
         disconnect(url.pathname.slice(13), subject);
         cancelPhone(url.pathname.slice(13), subject);
+        cancelWatchParent?.(url.pathname.slice(13), subject);
         json(res, 200, { ok: true });
         return;
       }

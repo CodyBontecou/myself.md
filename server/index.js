@@ -1,3 +1,5 @@
+import { createWatchService } from './watch-service.js';
+import { join } from 'node:path';
 import { billing, billingApi, refreshEntitlement } from './billing.js';
 import { verifyMigrationPurchase } from './migration-purchases.js';
 import { createServer } from 'node:http';
@@ -27,6 +29,15 @@ import { createApplication } from './application.js';
 createServer(
   { requestTimeout: 60000, headersTimeout: 15000 },
   createApplication(process.env, {
+    ...createWatchService({
+      source: join(process.env.DATA_DIR ?? '.local', 'watch.sqlite'),
+      cloud,
+      billing,
+      history,
+      devices,
+      refreshEntitlement,
+      registerTicket: async () => {},
+    }),
     qrPng: (value, options) => QRCode.toBuffer(value, options),
     billing,
     billingApi,

@@ -127,7 +127,8 @@
       ],
       "./plugins/with-automatic-signing.cjs",
       "./plugins/with-embedded-debug.cjs",
-      "./plugins/with-scrawl.cjs"
+      "./plugins/with-scrawl.cjs",
+      "./plugins/with-watch.cjs"
     ],
     "scheme": "myselfmd",
     "updates": {

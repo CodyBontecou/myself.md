@@ -1,3 +1,4 @@
+import { createWatchService } from '../server/watch-service.js';
 import { createAnalytics } from './analytics.js';
 import { createExportSchedules } from '../server/export-schedules.js';
 import { createRemoteSupportCleanup } from '../server/support-remote.js';
@@ -216,6 +217,16 @@ export class Account extends DurableObject {
       refreshEntitlement: billingService.refreshEntitlement,
       cloudSubscriptions: this.cloudSubscriptions,
     });
+    const watchService = createWatchService({
+      source: this.db,
+      cloud: this.cloud,
+      billing: this.billing,
+      history: this.history,
+      devices: this.pairing.devices.bind(this.pairing),
+      refreshEntitlement: billingService.refreshEntitlement,
+      registerTicket: (token, subject, expires) =>
+        registerTicket(this.env, token, subject, null, expires),
+    });
     this.listener = createApplication(
       {
         WHOOP_CLIENT_ID: this.env.WHOOP_CLIENT_ID,
@@ -239,6 +250,7 @@ export class Account extends DurableObject {
         exportSchedules: this.exportSchedules,
         cloudSubscriptions: this.cloudSubscriptions,
         qrPng,
+        ...watchService,
         ...billingService,
         ...this.data,
         ...cloudService,
@@ -363,6 +375,7 @@ export class Account extends DurableObject {
         this.data.cancelPhone(String(device.id), subject);
         this.pairing.disconnect(String(device.id), subject);
       }
+      this.db.prepare('DELETE FROM watches WHERE subject=?').run(subject);
       this.db.prepare('DELETE FROM upload_keys WHERE subject=?').run(subject);
       this.db.prepare('DELETE FROM pairings WHERE subject=?').run(subject);
       await this.env.DIRECTORY.prepare('DELETE FROM tickets WHERE subject=?').bind(subject).run();
