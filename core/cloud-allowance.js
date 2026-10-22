@@ -14,9 +14,9 @@ const day = 86_400_000;
 /** Pending deletion after paid storage ended with usage above the included allowance.
  * @typedef {{startedAt:number,deleteAt:number,targetBytes:number}} CloudLapse */
 /** Server-derived account entitlement. Cloud subscriptions are independent of Lifetime access.
- * @typedef {{lifetime:boolean,subscription:CloudSubscription|null,lapse:CloudLapse|null}} CloudEntitlement */
+ * @typedef {{lifetime:boolean,subscription:CloudSubscription|null,lapse:CloudLapse|null,complimentaryCloud?:boolean}} CloudEntitlement */
 /** @typedef {'none'|'included'|import('./cloud-plans.js').CloudPlanId} CloudPlanState */
-/** @typedef {{eligible:boolean,plan:CloudPlanState,limitBytes:number,usedBytes:number,availableBytes:number,overLimit:boolean,retentionDays:number|null,subscription:CloudSubscription|null,lapse:(CloudLapse & {bytesToDelete:number})|null}} CloudAllowance */
+/** @typedef {{eligible:boolean,plan:CloudPlanState,limitBytes:number,usedBytes:number,availableBytes:number,overLimit:boolean,retentionDays:number|null,subscription:CloudSubscription|null,lapse:(CloudLapse & {bytesToDelete:number})|null,complimentaryCloud?:boolean}} CloudAllowance */
 
 /** @param {boolean} lifetime @returns {CloudEntitlement} */
 export function lifetimeEntitlement(lifetime) {
@@ -32,6 +32,7 @@ export function subscriptionEntitled(subscription) {
 }
 /** @param {CloudEntitlement} entitlement @returns {CloudPlanState} */
 function cloudPlanState(entitlement) {
+  if (entitlement.complimentaryCloud) return 'cloud_100gb';
   return subscriptionEntitled(entitlement.subscription) && entitlement.subscription
     ? entitlement.subscription.plan
     : entitlement.lifetime
@@ -50,6 +51,7 @@ export function cloudAllowance(entitlement, usedBytes) {
   const limitBytes = cloudCapacity(entitlement);
   const lapse = entitlement.lapse;
   return {
+    ...(entitlement.complimentaryCloud ? { complimentaryCloud: true } : {}),
     eligible: limitBytes > 0,
     plan: cloudPlanState(entitlement),
     limitBytes,
@@ -81,7 +83,7 @@ export function cloudUploadFits(value, bytes, replacedBytes = 0) {
  * Restored paid capacity or usage at or below the allowance cancels it. An existing lapse keeps its original deadline.
  * @param {CloudEntitlement} entitlement @param {number} usedBytes @param {number} now @returns {CloudLapse|null} */
 export function nextLapse(entitlement, usedBytes, now) {
-  if (subscriptionEntitled(entitlement.subscription)) return null;
+  if (entitlement.complimentaryCloud || subscriptionEntitled(entitlement.subscription)) return null;
   const targetBytes = entitlement.lifetime ? lifetimeCloudBytes : 0;
   if (usedBytes <= targetBytes) return null;
   return entitlement.lapse

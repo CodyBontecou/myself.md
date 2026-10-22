@@ -92,6 +92,7 @@ export async function migrationRequest(request, env, body) {
         'list_accounts',
         'verify_account',
         'grant_time',
+        'grant_cloud',
       ]),
       name: z.string().min(1).max(1000),
       batch: batchSchema.optional(),
@@ -100,6 +101,7 @@ export async function migrationRequest(request, env, body) {
         .string()
         .regex(/^(pi_|ch_)[A-Za-z0-9]+$/)
         .optional(),
+      reference: z.string().min(1).max(200).optional(),
       offset: z.number().int().min(0).default(0),
       ticket: z
         .object({
@@ -112,6 +114,14 @@ export async function migrationRequest(request, env, body) {
     })
     .strict()
     .parse(body);
+  if (input.action === 'grant_cloud') {
+    if (!input.reference || !input.name.startsWith(`${env.ACCOUNT_NAMESPACE}|`))
+      throw new PairingError(400, 'Account subject and operator reference required.');
+    const account = env.ACCOUNTS.getByName(digest(input.name));
+    await account.ensureAccount(input.name);
+    await account.grantLifetime(input.name, 'operator:cloud', input.reference);
+    return { ok: true };
+  }
   if (input.action === 'grant_time') {
     if (!input.payment || !input.name.startsWith(`${env.ACCOUNT_NAMESPACE}|`))
       throw new PairingError(400, 'Verified payment and account subject required.');

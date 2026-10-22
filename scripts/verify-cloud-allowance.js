@@ -5,7 +5,7 @@ import { generateKeyPair, SignJWT } from 'jose';
 import { CloudStore } from '../server/cloud-store.js';
 import { BillingStore } from '../server/billing-store.js';
 import { parseProfile } from '../core/profiles.js';
-import { lifetimeCloudBytes } from '../core/cloud-allowance.js';
+import { lifetimeCloudBytes, nextLapse } from '../core/cloud-allowance.js';
 import { cloudDebugFixture, cloudDebugAction, cloudDebugUsage } from '../core/cloud-debug.js';
 import { createCloudSubscriptions } from '../server/cloud-subscriptions.js';
 import { HistoryStore } from '../server/history-store.js';
@@ -87,6 +87,54 @@ try {
     allow(subject);
     assert.equal(cloud.storageStatus(subject).limitBytes, lifetimeCloudBytes);
   }
+  billing.grant('premium', 'operator:cloud', 'owner-authorized-premium');
+  allow('premium');
+  assert.equal(cloud.storageStatus('premium').limitBytes, 100_000_000_000);
+  assert.equal(cloud.storageStatus('premium').plan, 'cloud_100gb');
+  assert.equal(
+    billing.cloudEntitlement('premium').subscription,
+    null,
+    'Operator grants are not store purchases',
+  );
+  assert.equal(billing.snapshot('premium').unlocked, true);
+  assert.equal(nextLapse(billing.cloudEntitlement('premium'), 200_000_000, Date.now()), null);
+  billing.setLapse('premium', { startedAt: 1, deleteAt: 2, targetBytes: 0 });
+  assert.equal(
+    billing.cloudEntitlement('premium').lapse,
+    null,
+    'A prior lapse cannot delete granted storage',
+  );
+  assert.equal(
+    cloud.storageStatus('grant').limitBytes,
+    lifetimeCloudBytes,
+    'Ordinary complimentary Lifetime stays unchanged',
+  );
+  const premiumFile = begin('premium', '2026-10-01');
+  await cloud.commit('premium', 'device', profile.id, premiumFile, bytes);
+  cloud.db.prepare('UPDATE exports SET size=? WHERE id=?').run(lifetimeCloudBytes + 1, premiumFile);
+  assert.doesNotThrow(() => begin('premium', '2026-10-02'));
+  for (let index = 0; index < 129; index++) {
+    const day = new Date(Date.UTC(2010, 0, index + 1)).toISOString().slice(0, 10);
+    const id = begin('premium', day);
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Verify the real daily-file capacity boundary.
+    await cloud.commit('premium', 'device', profile.id, id, bytes);
+  }
+  const premiumFiles = cloud.usage('premium').length;
+  assert.ok(premiumFiles > 128, 'Premium All Time exports exceed the included-plan file limit');
+  billing.db
+    .prepare("DELETE FROM billing_grants WHERE subject=? AND source='operator:cloud'")
+    .run('premium');
+  assert.equal(
+    cloud.storageStatus('premium').limitBytes,
+    0,
+    'Grant removal immediately removes complimentary capacity',
+  );
+  assert.throws(() => begin('premium', '2026-10-03'), /verified Cloud/);
+  assert.equal(
+    cloud.usage('premium').length,
+    premiumFiles,
+    'Grant removal does not delete existing files',
+  );
   assert.equal(cloud.storageStatus('free').usedBytes, 0);
   const base = begin('paid', '2026-10-01');
   await cloud.commit('paid', 'device', profile.id, base, bytes);

@@ -336,10 +336,16 @@ export class BillingStore {
   /** @param {string} subject @param {number} [now] @returns {import('../core/cloud-allowance.js').CloudEntitlement} */
   cloudEntitlement(subject, now = Date.now()) {
     const access = this.snapshot(subject);
+    const complimentaryCloud = Boolean(
+      this.db
+        .prepare("SELECT 1 FROM billing_grants WHERE subject=? AND source='operator:cloud'")
+        .get(subject),
+    );
     return {
       lifetime: access.lifetime ?? access.unlocked,
       subscription: this.cloudSubscription(subject, now),
-      lapse: this.lapse(subject)?.lapse ?? null,
+      lapse: complimentaryCloud ? null : (this.lapse(subject)?.lapse ?? null),
+      ...(complimentaryCloud ? { complimentaryCloud: true } : {}),
     };
   }
   /** @param {string} subject @returns {{lapse:import('../core/cloud-allowance.js').CloudLapse,sent:number[]}|null} */
