@@ -179,7 +179,7 @@ export async function verifyScreenTimeInsights({
   restarted.db.close();
   rmSync(directory, { recursive: true });
   cloud.syncAgentPermissions(subject, device, [
-    { ...approved, agentPermissions: { ...approved.agentPermissions, time: false } },
+    { ...approved, selection: { ...approved.selection, time: [] } },
   ]);
   assert.equal(
     z

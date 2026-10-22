@@ -498,7 +498,7 @@ try {
     'Plans and observations are encrypted at rest',
   );
   cloud.syncAgentPermissions(subject, device, [
-    { ...approved, agentPermissions: { ...approved.agentPermissions, time: false } },
+    { ...approved, selection: { ...approved.selection, time: [] } },
   ]);
   assert.equal(
     experimentResult(
@@ -547,7 +547,7 @@ try {
     if (revoke) {
       revoke = false;
       cloud.syncAgentPermissions(subject, device, [
-        { ...approved, agentPermissions: { ...approved.agentPermissions, time: false } },
+        { ...approved, selection: { ...approved.selection, time: [] } },
       ]);
     }
     return bytes;
@@ -933,7 +933,9 @@ try {
     );
     const heatmapUsed = billing.snapshot(subject).used;
     await frame.getByRole('button', { name: 'Attention heatmap', exact: true }).click();
-    await frame.getByRole('heading', { name: 'Attention by hour', exact: true }).waitFor();
+    await frame
+      .getByRole('heading', { name: 'Attention by hour · period comparison', exact: true })
+      .waitFor();
     assert.equal(await frame.locator('.heatmap-table .heat-cell').count(), 336);
     await frame.getByRole('heading', { name: 'Experiments in this view', exact: true }).waitFor();
     assert.ok((await frame.locator('.heatmap-table th[title]').count()) > 0);

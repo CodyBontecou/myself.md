@@ -670,8 +670,8 @@ try {
       reviewerSubject,
       '2026-10-13',
     );
-    assert.equal(reviewerFixture.exports, 6);
-    assert.equal(reviewerFixture.sharedExports, 4);
+    assert.equal(reviewerFixture.exports, 8);
+    assert.equal(reviewerFixture.sharedExports, 8);
     assert.equal(
       (
         await seedReviewerFixtures(
@@ -685,10 +685,10 @@ try {
           '2026-10-13',
         )
       ).exports,
-      6,
+      8,
     );
     const reviewerEvents = fixtureHistory.list(reviewerSubject, null).events;
-    assert.equal(reviewerEvents.length, 6);
+    assert.equal(reviewerEvents.length, 8);
     assert.ok(reviewerEvents.every((event) => event.artifacts.length === 1));
     const tables = [
       exportRows(fixturePairing.db, ['devices'], 'devices', 0),
@@ -1239,8 +1239,10 @@ try {
     assert.ok(Array.isArray(listed.content));
     const text = listed.content[0];
     assert.ok(text && text.type === 'text');
-    const files = z.array(z.object({ id: z.string() })).parse(JSON.parse(text.text).exports);
-    assert.equal(files.length, 4);
+    const files = z
+      .array(z.object({ id: z.string(), profileId: z.string() }))
+      .parse(JSON.parse(text.text).exports);
+    assert.equal(files.length, 8);
     const firstListPage = await reviewerClient.callTool({
       name: 'list_cloud_exports',
       arguments: { limit: 1 },
@@ -1280,7 +1282,7 @@ try {
     const emptyListText = emptyListPage.content.find((part) => part.type === 'text');
     assert.ok(emptyListText && emptyListText.type === 'text');
     assert.deepEqual(JSON.parse(emptyListText.text), { exports: [], nextCursor: null });
-    const fileId = files[0]?.id;
+    const fileId = files.find((file) => file.profileId === 'reviewer-fixture-health')?.id;
     assert.ok(fileId);
     const page = await reviewerClient.callTool({
       name: 'read_cloud_export',
@@ -1469,7 +1471,7 @@ try {
     });
     const text = restrictedList.content.find((value) => value.type === 'text');
     assert.ok(text && text.type === 'text');
-    assert.equal(JSON.parse(text.text).exports.length, 4);
+    assert.equal(JSON.parse(text.text).exports.length, 8);
     assert.equal(
       (
         await restrictedClient.callTool({

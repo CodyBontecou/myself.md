@@ -59,7 +59,10 @@ export function createCloudService({
     try {
       await refreshEntitlement(subject);
       billing.reserve(subject, id, 'agent');
+      const permission = JSON.stringify(cloud.permission(subject, row.device, row.profile));
       const page = await cloud.page(subject, exportId, Number(cursor || 0), limit, true, domain);
+      if (JSON.stringify(cloud.permission(subject, row.device, row.profile)) !== permission)
+        throw new Error('Profile selection changed during the cloud read.');
       if (domain && !cloud.permission(subject, row.device, row.profile).agentPermissions[domain])
         throw new Error('Source permission was revoked during the cloud read.');
       if (client) cloud.observeAgent(subject, client);
