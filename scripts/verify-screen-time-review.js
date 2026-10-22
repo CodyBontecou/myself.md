@@ -1006,7 +1006,7 @@ try {
     );
     await frame.getByText('<img src=x onerror=alert(1)>', { exact: true }).waitFor();
     assert.equal(await frame.locator('img').count(), 0);
-    await frame.getByText('Weekly comparison unavailable', { exact: true }).waitFor();
+    await frame.getByText('Period comparison unavailable', { exact: true }).waitFor();
     await frame.locator('.daily-values summary').click();
     await frame
       .getByRole('button', { name: 'Explore 2026-10-10: No records', exact: true })
