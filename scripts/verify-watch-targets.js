@@ -110,6 +110,9 @@ try {
   const watchInfo = readFileSync(join(temp, 'ios', 'WatchNative', 'Watch-Info.plist'), 'utf8');
   assert.ok(watchInfo.includes('<key>WKApplication</key><true/>'));
   assert.ok(watchInfo.includes(config.ios.bundleIdentifier));
+  assert.ok(watchInfo.includes('<key>NSHealthShareUsageDescription</key>'));
+  assert.ok(watchInfo.includes('<key>NSHealthUpdateUsageDescription</key>'));
+  assert.ok(watchInfo.includes('It does not add or change Apple Health records.'));
   assert.ok(
     readFileSync(
       join(project, 'xcshareddata', 'xcschemes', 'MyselfWatch.xcscheme'),

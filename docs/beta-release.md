@@ -1,5 +1,9 @@
 # Beta release preparation
 
+## Export performance builds — 22 October 2026
+
+iOS **23** is VALID, APPROVED and available in the existing Internal QA and Demo Beta TestFlight groups. Android **22** is completed and available to internal testers after publication through Play Console; the API alone rejected the already completed Health declaration. Both signed builds include current canonical dirty-main source and the export optimization. Testers and other store tracks are preserved. The Watch purpose-string validation fix is included in iOS 23. [Artifacts, receipts and verification](mobile-updates.md#export-performance-beta-release--22-october-2026).
+
 ## MCP optimization builds — 20 October 2026
 
 Both signed store build 21 artifacts come from canonical local main including current uncommitted/untracked source. Filtered catalogs, scalar aggregation and bounded waiting are deployed in backend `0112d4e0-5edb-44b2-adf0-959a1a63c63d`, verified on both live MCP resources. iOS build 21 is VALID, APPROVED and IN_BETA_TESTING in the existing Internal QA and Demo Beta groups; tester/production-store state is preserved. Android build 21 is verified and uploaded, but Google validation and protected commit reject it with the Health declaration error even though Console shows the declaration completed and published; internal build 18 remains the pre-upload published baseline. No review or unrelated track was changed. The owner-authorized fresh release edit reuploaded the exact build 21 and preserved other tracks/tester resources, but validation and protected commit still return the same Health declaration HTTP 403. See [artifact hashes and store receipts](mobile-updates.md#mcp-optimization-release--20-october-2026). No phone installation or physical aggregation was observed.

@@ -46,6 +46,8 @@ function writeFiles(root, ios, phoneId) {
     WKRunsIndependentlyOfCompanionApp: false,
     NSHealthShareUsageDescription:
       'Read today’s step samples on your watch for your chosen HTTPS exports and widget.',
+    NSHealthUpdateUsageDescription:
+      'myself.md only reads the step samples you choose for exports. It does not add or change Apple Health records.',
     CFBundleURLTypes: [{ CFBundleURLSchemes: ['myselfmd-watch'] }],
   });
   plist(join(destination, 'Widget-Info.plist'), {
