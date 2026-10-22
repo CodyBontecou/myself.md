@@ -11,8 +11,8 @@ export default function ProfileImportReview({ review }) {
     <View testID="profile-import-review" style={styles.review}>
       <SectionHeader compact title="Ready for this phone" />
       <Copy variant="caption" muted>
-        Equivalent data types are selected automatically. Saving does not allow agent access or turn
-        on automatic exports.
+        Equivalent data types are selected automatically. Authenticated agents can read selected
+        data from a paired online phone. Automatic exports remain off.
       </Copy>
       {review.mapped.map((item) => (
         <Copy key={`${item.domain}:${item.from}`} testID={`profile-import-mapped-${item.from}`}>

@@ -1,3 +1,5 @@
+import { ScreenTimeReflectionStore } from './screen-time-reflection-store.js';
+import { ScreenTimeExperimentStore } from './screen-time-experiment-store.js';
 import { cloudAllowance, cloudUploadFits, lifetimeEntitlement } from '../core/cloud-allowance.js';
 import { appendExportContent } from '../core/export-files.js';
 import { parseExportSchema } from '../core/export-schemas.js';
@@ -47,6 +49,8 @@ export class CloudStore {
     )
       this.db.exec('ALTER TABLE cloud_access ADD COLUMN agent_permissions TEXT');
     this.profileSync = new ProfileSyncStore(this);
+    this.experiments = new ScreenTimeExperimentStore(this);
+    this.reflections = new ScreenTimeReflectionStore(this);
     const columns = new Set(
       this.db
         .prepare('PRAGMA table_info(exports)')
@@ -879,8 +883,8 @@ export class CloudStore {
         ),
       );
   }
-  /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] */
-  async page(subject, id, offset, limit, forMcp = false) {
+  /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] @param {import('../core/data.js').Domain} [domain] */
+  async page(subject, id, offset, limit, forMcp = false, domain) {
     this.cleanup();
     const row = this.row(subject, id),
       permission = this.permission(subject, row.device, row.profile);
@@ -899,6 +903,7 @@ export class CloudStore {
           currentPermission.agentPermissions[r.domain] &&
           currentPermission.selection[r.domain].includes(`native:${r.type}`),
       );
+    if (domain) records = records.filter((record) => record.domain === domain);
     const page = [];
     let size = 0;
     for (const r of records.slice(offset, offset + limit)) {

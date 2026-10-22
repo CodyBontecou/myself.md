@@ -3,7 +3,7 @@ import { queryWindow, nextQueryWindow } from '../core/data-range.js';
 import { whoopHealthTypes, whoopPage, whoopStatus } from './whoop.js';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
-import { profileAllows, agentProfileAllows } from '../core/profiles.js';
+import { profileAllows } from '../core/profiles.js';
 import { domains } from '../core/data.js';
 import { localPage } from './library.js';
 import { healthTypes, healthPage } from './health.js';
@@ -61,7 +61,7 @@ export async function catalog(_owner, grants, profile) {
       notes:
         domain === 'health'
           ? [
-              'WHOOP types need a separate Settings → WHOOP connection. Provider status and approved scopes are in catalog.whoop. Connecting never changes selections or Agent permissions. WHOOP body data is a current snapshot; recovery timestamps must be joined by cycle_id/sleep_id.',
+              'WHOOP types need a separate Settings → WHOOP connection. Provider status and approved scopes are in catalog.whoop. Connecting never changes profile selections. WHOOP body data is a current snapshot; recovery timestamps must be joined by cycle_id/sleep_id.',
               'HealthKit read authorization is private; empty samples never imply permission. Clinical records, attachments, medications, audiograms and vision prescriptions are not captured by this adapter.',
               'Characteristics are current snapshots captured at read time, not historical values for the selected day. Newly available types require profile selection; agents cannot add them or grant Health access.',
               'Exports preserve native records and explicit timeSeries without summaries. Workout selection includes genuinely associated heart-rate/form series and routes. Nested capture failures mark exports partial. Health Connect series remain intact; Android exercise membership is not inferred from overlapping times.',
@@ -90,8 +90,6 @@ function cursor(query, token) {
 }
 /** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} [forChat] @returns {Promise<import('../core/data.js').DataPage>} */
 export async function readPage(owner, query, profile, forChat = true) {
-  if (forChat && !agentProfileAllows(profile, query))
-    throw new Error('Agent access is not approved for this profile and data type.');
   if (!profileAllows(profile, query))
     throw new Error('This data type is disabled in this profile.');
   if (query.aggregation) {

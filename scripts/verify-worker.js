@@ -1,4 +1,8 @@
+import { verifyChatgptCatalogWorker } from './chatgpt-catalog-worker-fixture.js';
+import { verifyHeartRateContextWorker } from './heart-rate-context-worker-fixture.js';
+import { verifyHealthReviewWorker } from './health-review-worker-fixture.js';
 import { verifyAnalytics } from './verify-analytics.js';
+import { verifyWeeklyReviewWorker } from './weekly-review-worker-fixture.js';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { verifyBlogHTTP, verifyBlogMCP } from './verify-blog.js';
@@ -123,14 +127,14 @@ async function stop() {
     child = null;
   }
 }
-/** @param {string} subject @param {string} clientId */
-async function token(subject, clientId) {
+/** @param {string} subject @param {string} clientId @param {string} [path] */
+async function token(subject, clientId, path = '/mcp') {
   return (
     'Bearer ' +
     (await new SignJWT({ scope: 'myselfmd', azp: clientId })
       .setProtectedHeader({ alg: 'RS256', kid: 'fixture' })
       .setIssuer(issuer)
-      .setAudience(`${origin}/mcp`)
+      .setAudience(`${origin}${path}`)
       .setSubject(subject)
       .setExpirationTime('10m')
       .sign(privateKey))
@@ -337,6 +341,23 @@ try {
       ],
     },
   });
+  await migrate({
+    action: 'account',
+    name: `${namespace}|weekly-review-owner`,
+    batch: {
+      id: 'weekly-review-fixture-account',
+      subject: `${namespace}|weekly-review-owner`,
+      tables: [
+        {
+          name: 'billing_grants',
+          columns: ['source', 'reference', 'subject', 'created'],
+          rows: [
+            ['fixture', 'weekly-review-lifetime', `${namespace}|weekly-review-owner`, Date.now()],
+          ],
+        },
+      ],
+    },
+  });
   await stop();
   config.vars.MIGRATION_ENABLED = '0';
   await start();
@@ -418,6 +439,10 @@ try {
   await verifyDatasetHTTP(origin);
   await verifyDatasetMCP(client);
   await verifyBlogMCP(client);
+  await verifyWeeklyReviewWorker({ origin, request, token });
+  await verifyHealthReviewWorker({ origin, request, token });
+  await verifyHeartRateContextWorker({ origin, request, token });
+  await verifyChatgptCatalogWorker({ origin, token });
   const reviewedTools = reviewToolMetadata((await client.listTools()).tools);
   console.log(
     'MCP_REVIEW_METADATA ' + JSON.stringify({ runtime: 'workerd-fixture', tools: reviewedTools }),
@@ -671,12 +696,7 @@ try {
       .isError,
   );
   edited.export.lookbackDays = 14;
-  edited.agentPermissions = {
-    health: false,
-    time: false,
-    location: false,
-    logs: edited.agentPermissions?.logs === true,
-  };
+  edited.selection.health = [];
   const webSave = await request('/api/dashboard/profiles', aliceDashboard, 'PUT', {
     deviceId: device,
     profileId: edited.id,
@@ -703,17 +723,22 @@ try {
     ).isError,
     true,
   );
-  assert.equal(
-    (await client.callTool({ name: 'read_cloud_export', arguments: { exportId: id } })).isError,
-    true,
-    'Stored exports also deny immediately before acknowledgment',
+  const narrowedCloud = await client.callTool({
+    name: 'read_cloud_export',
+    arguments: { exportId: id },
+  });
+  assert.ok(!narrowedCloud.isError);
+  assert.deepEqual(
+    JSON.parse(narrowedCloud.content.find((item) => item.type === 'text')?.text ?? '{}').records,
+    [],
+    'Stored exports exclude removed selections before acknowledgment',
   );
   assert.equal(
     (
       await request('/api/dashboard/profiles', aliceDashboard, 'PUT', {
         deviceId: device,
         profileId: edited.id,
-        profile: { ...edited, agentPermissions: sync.state.profiles[0]?.agentPermissions },
+        profile: { ...edited, selection: sync.state.profiles[0]?.selection },
         revision: sync.revision + 1,
       })
     ).status,

@@ -7,14 +7,13 @@ import { useToast } from '../src/components/Toast.js';
 import { defaultExportSchema } from '../core/export-schemas.js';
 import { deliveredFormats, parseExportSettings, exportWriteModes } from '../core/export-files.js';
 import { errorMessage } from '../packages/support-chat/errors.js';
-import { router, useNavigation, useFocusEffect } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { qaEnabled } from './qa-runtime.js';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTheme } from '../src/lib/theme';
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Copy,
-  Checkbox,
   Icon,
   Group,
   Row,
@@ -33,13 +32,8 @@ import { scheduleIntervalMs } from '../core/schedules.js';
 import { domains } from '../core/data.js';
 import { compatibleProfile } from '../core/profile-compatibility.js';
 import ProfileImportReview from './ProfileImportReview.js';
-import {
-  parseProfile,
-  profileShareLink,
-  uniqueProfileName,
-  parseAgentPermissions,
-} from '../core/profiles.js';
-/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain,selected?:string[])=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,openAgentPermissions?:boolean,inline?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
+import { parseProfile, profileShareLink, uniqueProfileName } from '../core/profiles.js';
+/** @param {{session:import('./session.js').Session,state:import('../core/profiles.js').ProfileState,types:Record<import('../core/data.js').Domain,string[]>,permissions:Record<string,string>,onAuthorize:(domain:import('../core/data.js').Domain,selected?:string[])=>Promise<{message:string}>,busy:boolean,isTracking:boolean,onRecordingChange:(enabled:boolean)=>void,exportFirst?:boolean,onChange:(state:import('../core/profiles.js').ProfileState)=>Promise<void>,profileId?:string,inline?:boolean,draft:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void}} props */
 export default function ProfilePanel({
   session,
   state,
@@ -54,17 +48,10 @@ export default function ProfilePanel({
   draft,
   onDismiss,
   profileId,
-  openAgentPermissions = false,
   inline = false,
 }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
-  const [permissionsExpanded, setPermissionsExpanded] = useState(openAgentPermissions);
-  useFocusEffect(
-    useCallback(() => {
-      if (openAgentPermissions) setPermissionsExpanded(true);
-    }, [openAgentPermissions]),
-  );
   const showToast = useToast();
   const { start } = useProfileEditor();
   const actionRunning = useRef(false);
@@ -255,93 +242,6 @@ export default function ProfilePanel({
       setWorking(false);
     }
   }
-  const permissionControls = profile && (
-    <View
-      testID="profile-agent-permissions-content"
-      collapsable={false}
-      style={styles.permissionsBody}
-    >
-      <Copy variant="caption" muted>
-        Health, Screen time and Location permissions control what agents can read from your phone
-        and this profile’s old cloud exports.
-      </Copy>
-      <Copy variant="caption" muted>
-        After your phone syncs, turning a permission off blocks that data in old exports. Turning it
-        back on restores access to those selected data types. Your saved files and export selections
-        stay unchanged.
-      </Copy>
-      <Group compact>
-        {
-          /** @type {Array<import('../core/data.js').Domain|'logs'>} */ ([
-            'health',
-            'time',
-            'location',
-            'logs',
-          ]).map((key) => {
-            const label =
-              key === 'health'
-                ? 'Health'
-                : key === 'time'
-                  ? 'Screen time'
-                  : key === 'location'
-                    ? 'Location'
-                    : 'Logs';
-            return (
-              <Row
-                compact
-                key={key}
-                title={label}
-                subtitle={
-                  key === 'logs'
-                    ? 'Share app errors and diagnostic metadata through this profile.'
-                    : `${profile.selection[key].length} selected · system: ${permissions[key] ?? 'checking'}`
-                }
-                trailing={
-                  <Checkbox
-                    testID={`profile-agent-permission-${key}`}
-                    accessibilityLabel={`Allow agents to read ${label} through ${profile.name}`}
-                    value={parseAgentPermissions(profile.agentPermissions)[key]}
-                    disabled={disabled}
-                    onValueChange={(enabled) => {
-                      const save = () =>
-                        void run(() =>
-                          onChange({
-                            ...state,
-                            profiles: state.profiles.map((p) =>
-                              p.id === profile.id
-                                ? {
-                                    ...p,
-                                    agentAccess: true,
-                                    agentPermissions: {
-                                      ...parseAgentPermissions(p.agentPermissions),
-                                      [key]: enabled,
-                                    },
-                                  }
-                                : p,
-                            ),
-                          }),
-                        );
-                      if (!enabled) return save();
-                      Alert.alert(
-                        `Allow ${label} access?`,
-                        key === 'logs'
-                          ? `All agents you allow for this account can use ${profile.name} to read phone-wide app errors and event metadata while the app is open. Errors may contain sensitive information. Agents and their AI providers use their own privacy and retention policies and may keep copies. Turning Logs off stops future reads; it cannot recall copies already received.`
-                          : `All agents you allow for this account can read only ${profile.name}’s selected ${label} data when phone permissions allow it. After sync, this includes eligible old cloud exports. Approved data can reach the agents’ AI providers, which use their own privacy and retention policies and may keep copies. Turning access off stops future reads after sync; it cannot recall copies already received.`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Allow', onPress: save },
-                        ],
-                      );
-                    }}
-                  />
-                }
-              />
-            );
-          })
-        }
-      </Group>
-    </View>
-  );
   function toggleProfile() {
     leaveForm(() => {
       setEditing(null);
@@ -364,9 +264,6 @@ export default function ProfilePanel({
         >
           <View style={styles.profileIdentity}>
             <Copy variant="heading">{profile.name}</Copy>
-            <Copy variant="caption" muted>
-              {profile.agentAccess ? 'Agents enabled' : 'Agents disabled'}
-            </Copy>
           </View>
         </Pressable>
         {action}
@@ -406,32 +303,6 @@ export default function ProfilePanel({
               {exportFirst && exportControls}
               <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
                 <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
-                <>
-                  <Group compact>
-                    <Pressable
-                      testID="profile-agent-permissions-toggle"
-                      accessibilityRole="button"
-                      accessibilityLabel="Agent permissions"
-                      accessibilityState={{ expanded: permissionsExpanded }}
-                      onPress={() => setPermissionsExpanded((value) => !value)}
-                      style={({ pressed }) => [
-                        styles.permissionsHeader,
-                        { opacity: pressed ? 0.7 : 1 },
-                      ]}
-                    >
-                      <Icon
-                        name={permissionsExpanded ? 'chevron-down' : 'chevron-forward'}
-                        size={18}
-                        color={colors.secondary}
-                      />
-                      <Copy>Agent permissions</Copy>
-                      <Copy variant="caption" muted style={styles.permissionsSummary}>
-                        {profile.agentAccess ? 'Enabled' : 'Agents disabled'}
-                      </Copy>
-                    </Pressable>
-                  </Group>
-                  {permissionsExpanded && permissionControls}
-                </>
                 <>
                   <SectionHeader compact title="Data selection" />
                   <Group compact>
@@ -768,15 +639,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   container: { gap: 16 },
-  permissionsHeader: {
-    minHeight: 44,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  permissionsSummary: { marginLeft: 'auto' },
-  permissionsBody: { gap: 12 },
   feed: { flex: 1 },
   card: {
     gap: 8,

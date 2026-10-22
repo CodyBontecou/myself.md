@@ -106,8 +106,6 @@ export class ProfileSyncStore {
         ],
       }).profiles[0];
       if (!parsed) throw new PairingError(400, 'Invalid profile.');
-      if (parsed.agentPermissions?.logs !== previous.agentPermissions?.logs)
-        throw new PairingError(400, 'Change App logs consent on the phone.');
       // Folder permissions and secure destination credentials are selected on this phone.
       if (parsed.export.localFolderId !== previous.export.localFolderId)
         throw new PairingError(400, 'Choose local folders on the phone.');

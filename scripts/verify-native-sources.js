@@ -69,7 +69,7 @@ const storedProfiles =
       },
     })
   );
-// Exercise owner consent migration and the single profile control against real profile persistence.
+// Paired diagnostics normalize legacy flags; anonymous local partitions never publish logs.
 const logConsent = new Map();
 const profileLogs =
   /** @type {{loadAgentProfiles:(session:{owner:string,deviceId:string})=>import('../core/profiles.js').ProfileState|null,saveAgentProfiles:(session:{owner:string,deviceId:string},state:import('../core/profiles.js').ProfileState)=>void}} */ (
@@ -117,61 +117,44 @@ const logState = {
   ),
 };
 storedProfiles.saveProfiles(logSession.deviceId, logState);
-const deniedLogs = profileLogs.loadAgentProfiles(logSession);
-assert.ok(deniedLogs);
-assert.ok(
-  deniedLogs.profiles.every((p) => p.agentPermissions?.logs === false),
-  'Legacy global denial applies to every profile',
-);
-const firstLogs = deniedLogs.profiles[0];
-const secondLogs = deniedLogs.profiles[1];
-assert.ok(firstLogs?.agentPermissions);
-assert.ok(secondLogs?.agentPermissions);
-firstLogs.agentPermissions.logs = true;
-profileLogs.saveAgentProfiles(logSession, deniedLogs);
+const pairedLogs = profileLogs.loadAgentProfiles(logSession);
+assert.ok(pairedLogs);
+assert.ok(pairedLogs.profiles.every((p) => p.agentPermissions?.logs === true));
 assert.equal(logConsent.get('logs-owner:logs-device'), true);
-assert.equal(
-  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
-  false,
-  'Enabling one profile never grants another',
-);
-secondLogs.agentPermissions.logs = true;
-profileLogs.saveAgentProfiles(logSession, deniedLogs);
-firstLogs.agentPermissions.logs = false;
-profileLogs.saveAgentProfiles(logSession, deniedLogs);
+const legacyDeniedLogs = {
+  profiles: pairedLogs.profiles.map((profile) => ({
+    ...profile,
+    agentAccess: false,
+    agentPermissions: { health: false, time: false, location: false, logs: false },
+  })),
+};
+profileLogs.saveAgentProfiles(logSession, legacyDeniedLogs);
+const normalizedLogs = profileLogs.loadAgentProfiles(logSession);
+assert.ok(normalizedLogs);
+assert.ok(normalizedLogs.profiles.every((p) => p.agentPermissions?.logs === true));
 assert.equal(
   logConsent.get('logs-owner:logs-device'),
   true,
-  'Other approved profile retains publication',
+  'Legacy flags do not disable paired diagnostics',
 );
-secondLogs.agentAccess = false;
-profileLogs.saveAgentProfiles(logSession, deniedLogs);
-assert.equal(
-  logConsent.get('logs-owner:logs-device'),
-  false,
-  'Legacy master denial stops publication',
+assert.deepEqual(
+  normalizedLogs.profiles.map((p) => p.selection),
+  pairedLogs.profiles.map((p) => p.selection),
 );
-assert.equal(
-  profileLogs.loadAgentProfiles(logSession)?.profiles[1]?.agentPermissions?.logs,
-  false,
-  'Legacy master denial migrates to an individual Logs denial across restart',
+const localLogSession = { owner: 'local-device', deviceId: 'local-device' };
+profileLogs.saveAgentProfiles(localLogSession, legacyDeniedLogs);
+assert.notEqual(
+  logConsent.get('local-device:local-device'),
+  true,
+  'Unpaired local data does not publish diagnostics',
 );
-const approvedSession = { ...logSession, deviceId: 'previously-approved' };
-logConsent.set('logs-owner:previously-approved', true);
 const originalSecond = logState.profiles[1];
 assert.ok(originalSecond);
-originalSecond.agentPermissions.logs = false;
-storedProfiles.saveProfiles(approvedSession.deviceId, logState);
-assert.deepEqual(
-  profileLogs.loadAgentProfiles(approvedSession),
-  logState,
-  'Migration preserves existing explicit approvals and denials',
-);
 assert.equal(
   profiles.saveProfileDraft(logState, originalSecond, 'new').profiles.at(-1)?.agentPermissions
     ?.logs,
-  false,
-  'New profiles never inherit log consent',
+  true,
+  'New profiles expose paired diagnostics through the same normalization',
 );
 // System folder grants stay account/device-local and writes use the selected provider.
 const folderNodes = new Map();
@@ -612,20 +595,20 @@ db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
 const migrated = storedProfiles.loadProfiles('phone');
 assert.ok(migrated);
 assert.equal(migrated.profiles[0]?.agentAccess, true);
-assert.equal(migrated.profiles[1]?.agentAccess, false);
+assert.equal(migrated.profiles[1]?.agentAccess, true);
 assert.ok(!('activeId' in migrated));
 assert.deepEqual(
   migrated.profiles[1]?.agentPermissions,
-  { health: false, time: false, location: false, logs: false },
-  'Legacy master-off profiles never gain access',
+  { health: true, time: true, location: true, logs: true },
+  'Legacy flags normalize to paired-phone compatibility access',
 );
 assert.deepEqual(migrated.profiles[0]?.agentPermissions, {
   health: true,
-  time: false,
+  time: true,
   location: true,
   logs: true,
 });
-// A single permission now grants access without another owner switch.
+// Selected types determine paired access, independently of legacy permission fields.
 const individual = profiles.parseProfileState({
   profiles: [
     {
@@ -651,9 +634,17 @@ assert.equal(
     source: 'native',
     type: 'points',
   }),
+  true,
+);
+assert.equal(
+  profiles.agentProfileAllows(individuallyAllowed, {
+    domain: 'location',
+    source: 'native',
+    type: 'unselected',
+  }),
   false,
 );
-assert.equal(profiles.agentLogsAllowed(individuallyAllowed), false);
+assert.equal(profiles.agentLogsAllowed(individuallyAllowed), true);
 const individualOff = profiles.parseProfileState({
   profiles: [
     {
@@ -664,21 +655,21 @@ const individualOff = profiles.parseProfileState({
 });
 assert.equal(
   individualOff.profiles[0]?.agentAccess,
-  false,
-  'Compatibility summary follows the last individual permission',
+  true,
+  'Legacy denials normalize to paired-phone access',
 );
 assert.deepEqual(
   individualOff.profiles[0]?.selection,
   individuallyAllowed.selection,
-  'Permission revocation preserves selections',
+  'Compatibility normalization preserves selections',
 );
-// A migrated phone-wide denial remains a per-profile denial across restarts.
+// Legacy phone-wide flags cannot change selected-type access across restarts.
 db.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(
   'phone',
   JSON.stringify({ health: false, time: true, location: false }),
 );
 assert.deepEqual(storedProfiles.loadProfiles('phone'), migrated);
-// A different device partition with no legacy approval must not inherit any source access.
+// Another saved partition receives effective compatibility fields without adding selected types.
 db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
   'unapproved',
   JSON.stringify({
@@ -687,9 +678,9 @@ db.prepare('INSERT OR REPLACE INTO export_profiles VALUES (?,?)').run(
 );
 const unapproved = storedProfiles.loadProfiles('unapproved');
 assert.deepEqual(unapproved?.profiles[0]?.agentPermissions, {
-  health: false,
-  time: false,
-  location: false,
+  health: true,
+  time: true,
+  location: true,
   logs: true,
 });
 storedProfiles.saveProfiles('phone', migrated);
@@ -699,6 +690,61 @@ assert.deepEqual(migrated.profiles[0]?.selection, {
   time: [],
   location: ['native:points'],
 });
+// Cached validation still observes every database change and returns isolated mutable drafts.
+const cachedOwner = 'cached-profile-owner';
+storedProfiles.saveProfiles(cachedOwner, migrated);
+const cachedBaseline = storedProfiles.loadProfiles(cachedOwner);
+assert.ok(cachedBaseline);
+const callerDraft = storedProfiles.loadProfiles(cachedOwner);
+assert.ok(callerDraft);
+const callerProfile = callerDraft.profiles[0];
+assert.ok(callerProfile);
+callerProfile.selection.health.length = 0;
+callerProfile.export.destination = 'http';
+callerProfile.export.httpUrl = 'https://caller-only.test/export';
+callerProfile.schedule.hour = 23;
+callerDraft.profiles.pop();
+assert.deepEqual(storedProfiles.loadProfiles(cachedOwner), cachedBaseline);
+const externalProfile = cachedBaseline.profiles[0];
+assert.ok(externalProfile);
+externalProfile.selection.location = [];
+externalProfile.export.destination = 'http';
+externalProfile.export.httpUrl = 'https://saved-external.test/export';
+const externalState = profiles.parseProfileState(cachedBaseline);
+const externalRaw = JSON.stringify({ ...externalState, agentConsentVersion: 1 });
+db.prepare('UPDATE export_profiles SET value=? WHERE owner=?').run(externalRaw, cachedOwner);
+assert.deepEqual(storedProfiles.loadProfiles(cachedOwner), externalState);
+assert.equal(
+  profiles.agentProfileAllows(externalProfile, {
+    domain: 'location',
+    source: 'native',
+    type: 'points',
+  }),
+  false,
+);
+storedProfiles.saveProfiles('cached-other-owner', migrated);
+assert.deepEqual(storedProfiles.loadProfiles('cached-other-owner'), migrated);
+assert.deepEqual(storedProfiles.loadProfiles(cachedOwner), externalState);
+db.prepare('DELETE FROM export_profiles WHERE owner=?').run(cachedOwner);
+assert.equal(storedProfiles.loadProfiles(cachedOwner), null);
+db.prepare('INSERT INTO export_profiles VALUES (?,?)').run(cachedOwner, '{"profiles":[]}');
+assert.throws(() => storedProfiles.loadProfiles(cachedOwner), /Invalid saved profiles/);
+// A legacy row must migrate even after a validated modern row occupied the cache.
+db.prepare('UPDATE export_profiles SET value=? WHERE owner=?').run(
+  JSON.stringify({ profiles: [{ ...legacy, agentAccess: false }] }),
+  cachedOwner,
+);
+const migratedAgain = storedProfiles.loadProfiles(cachedOwner);
+assert.deepEqual(migratedAgain?.profiles[0]?.selection, migrated.profiles[0]?.selection);
+assert.equal(
+  JSON.parse(
+    String(
+      db.prepare('SELECT value FROM export_profiles WHERE owner=?').get(cachedOwner)?.value ?? '',
+    ),
+  ).agentConsentVersion,
+  1,
+);
+assert.deepEqual(storedProfiles.loadProfiles(cachedOwner), migratedAgain);
 const stamp = '2026-10-08T08:00:00.000Z';
 for (const source of ['expo-location', 'imported'])
   library.saveRecord(
@@ -867,9 +913,17 @@ const blockedAggregation = {
   ...profile,
   agentPermissions: { health: false, time: false, location: false, logs: false },
 };
+assert.deepEqual(
+  (await phone.readPage('aggregate-owner', aggregateQuery, blockedAggregation)).records,
+  aggregated.records,
+  'Legacy flags do not block selected aggregate reads',
+);
 await assert.rejects(
-  phone.readPage('aggregate-owner', aggregateQuery, blockedAggregation),
-  /approved/,
+  phone.readPage('aggregate-owner', aggregateQuery, {
+    ...profile,
+    selection: { ...profile.selection, [aggregateQuery.domain]: [] },
+  }),
+  /disabled/,
 );
 const capped = dataAggregation.aggregateRecords(aggregateQuery, {
   start: query.start,
@@ -945,13 +999,23 @@ await assert.rejects(
   ),
   /different query/,
 );
+assert.deepEqual(
+  (
+    await phone.readPage(
+      'alice',
+      { ...longQuery, cursor: emptyWindow.nextCursor },
+      { ...profile, agentAccess: false },
+    )
+  ).records,
+  lastWindow.records,
+);
 await assert.rejects(
   phone.readPage(
     'alice',
     { ...longQuery, cursor: emptyWindow.nextCursor },
-    { ...profile, agentAccess: false },
+    { ...profile, selection: { ...profile.selection, location: [] } },
   ),
-  /approved/,
+  /disabled/,
 );
 const blocked = {
   ...profile,
@@ -960,9 +1024,13 @@ const blocked = {
 storedProfiles.saveProfiles('independent', { profiles: [blocked, { ...profile, id: 'other' }] });
 const independent = storedProfiles.loadProfiles('independent');
 assert.ok(independent);
-assert.equal(independent.profiles[0]?.agentPermissions?.location, false);
+assert.equal(independent.profiles[0]?.agentPermissions?.location, true);
 assert.equal(independent.profiles[1]?.agentPermissions?.location, true);
-await assert.rejects(phone.readPage('alice', query, blocked), /approved/);
+assert.equal((await phone.readPage('alice', query, blocked)).records.length, 1);
+await assert.rejects(
+  phone.readPage('alice', query, { ...blocked, selection: { ...blocked.selection, location: [] } }),
+  /disabled/,
+);
 assert.equal(
   (await phone.readPage('alice', query, blocked, false)).records.length,
   1,
@@ -975,7 +1043,7 @@ assert.ok(
 assert.throws(() => profiles.parseAgentPermissions({ location: false }), /explicitly/);
 const privateProfile = migrated.profiles[1];
 assert.ok(privateProfile);
-await assert.rejects(phone.readPage('alice', query, privateProfile), /approved/);
+assert.equal((await phone.readPage('alice', query, privateProfile)).records.length, 1);
 assert.equal(
   (await phone.readPage('alice', query, privateProfile, false)).records.length,
   1,
@@ -994,7 +1062,7 @@ await assert.rejects(
     ...profiles.parseProfile(legacy, true),
     id: 'existing',
   }),
-  /approved/,
+  /disabled/,
 );
 assert.equal(
   db.prepare("SELECT COUNT(*) AS count FROM records WHERE source LIKE 'imported%'").get()?.count,

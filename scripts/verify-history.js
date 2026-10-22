@@ -71,6 +71,15 @@ try {
   assert.ok(
     !exportFailureMessage(new Error('https://private.example/?token=secret')).includes('secret'),
   );
+  for (const message of [
+    'Phone account, connection or foreground changed.',
+    'Export request stopped.',
+    'Export request expired.',
+    'Export review expired.',
+    'Export request is no longer running.',
+    'Sign in again to resume cloud uploads.',
+  ])
+    assert.equal(exportFailureMessage(new Error(message)), message);
   assert.equal(event.destination, 'example.com');
   profile.name = 'Renamed';
   profile.selection.health.push('native:steps');

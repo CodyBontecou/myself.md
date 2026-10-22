@@ -81,14 +81,10 @@ export function profileAllows(profile, query) {
     profile.selection[query.domain].includes(`${query.source}:${query.type}`)
   );
 }
-/** Live access requires individually approved permissions and the profile selection.
+/** A paired phone exposes only the types selected in the requested profile.
  * @param {ExportProfile|undefined} profile @param {Pick<import('./data.js').DataQuery,'domain'|'source'|'type'>} query */
 export function agentProfileAllows(profile, query) {
-  return (
-    profile?.agentAccess === true &&
-    parseAgentPermissions(profile.agentPermissions)[query.domain] &&
-    profileAllows(profile, query)
-  );
+  return profile !== undefined && profileAllows(profile, query);
 }
 /** Legacy profiles retain their existing source eligibility; portable profiles never carry consent.
  * @param {unknown} value @returns {AgentPermissions} */
@@ -109,7 +105,7 @@ export function parseAgentPermissions(value) {
 }
 /** @param {{agentAccess?:boolean,agentPermissions?:AgentPermissions|undefined}|undefined} profile */
 export function agentLogsAllowed(profile) {
-  return profile?.agentAccess === true && parseAgentPermissions(profile.agentPermissions).logs;
+  return Boolean(profile);
 }
 /** @param {string} name @param {ExportProfile[]} profiles */
 export function uniqueProfileName(name, profiles) {
@@ -158,13 +154,8 @@ export function parseProfileState(state) {
       if (typeof profile.id !== 'string' || !profile.id || ids.has(profile.id))
         throw new Error('Use unique profile IDs.');
       ids.add(profile.id);
-      // Legacy master denials become individual denials. agentAccess is now only a
-      // compatibility summary for older catalog readers, never a separate setting.
-      const savedPermissions = parseAgentPermissions(profile.agentPermissions);
-      const permissions =
-        profile.agentAccess !== true
-          ? { health: false, time: false, location: false, logs: false }
-          : savedPermissions;
+      // Retain the wire fields for older clients; paired-phone access has no separate opt-in.
+      const permissions = { health: true, time: true, location: true, logs: true };
       return {
         ...parseProfile(profile),
         id: profile.id,

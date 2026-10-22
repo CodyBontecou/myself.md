@@ -28,6 +28,7 @@ export const publicNavigation = [
   { label: 'Home', href: '/' },
   { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: '/docs' },
+  { label: 'ChatGPT', href: '/apps/chatgpt' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'FAQ', href: '/faq' },
   { label: 'About', href: '/about' },
@@ -72,7 +73,7 @@ Give your agent this prompt: ${agentSetupPrompt}
 
 Start with public discovery: GET https://myself.md/v1/dataset-catalog and GET https://myself.md/v1/docs need no account. Read https://myself.md/docs/reference for exact request schemas and tool availability in your client. For private data, discover connected phones and approved profiles with get_phone_data_catalog, request a bounded query with query_phone_data, then poll get_phone_request until it reaches a terminal state. Phone query states are queued, running, complete and failed; use records only after complete, and stop if the request is expired or missing. Other owner-reviewed operations may require awaiting_user handoffs or report cancelled outcomes; follow returned pagination cursors and capture warnings. Do not retry a mutation blindly after a lost response. Stored cloud exports use list_cloud_exports and read_cloud_export, subject to existing profile and source grants. If a restricted client does not expose an operation, report that limitation and use its documented owner handoff.
 
-Add https://myself.md/mcp as a remote MCP server in a compatible client. OAuth 2.0 signs you in and asks for consent. Pair your phone and approve specific profiles and data grants before requesting private records. Agents cannot grant themselves access. Read the developer guide at https://myself.md/docs and the privacy policy at https://myself.md/privacy.
+Add https://myself.md/mcp as a remote MCP server in a compatible client. OAuth 2.0 signs you in and asks for consent. Pair your phone and select profile data before requesting private records. Paired online phones approve authenticated agent queries; OS permissions still require you. Read the developer guide at https://myself.md/docs and the privacy policy at https://myself.md/privacy.
 
 Find myself.md in the Smithery MCP directory: ${smitheryListingUrl}.
 
@@ -85,7 +86,7 @@ export const publicFAQs = [
   {
     question: 'What is myself.md?',
     answer:
-      'myself.md is an open-source app for iOS and Android that exports selected health, screen time and recorded location data to files you control. Its MCP server lets compatible AI assistants query approved phone profiles or read authorized cloud exports. You choose the data types, date ranges, destinations and agent permissions.',
+      'myself.md is an open-source app for iOS and Android that exports selected health, screen time and recorded location data to files you control. Its MCP server lets compatible AI assistants query approved phone profiles or read authorized cloud exports. You choose the data types, date ranges and destinations.',
   },
   {
     question: 'Is myself.md the same project as self.md?',
@@ -100,7 +101,7 @@ export const publicFAQs = [
   {
     question: 'How can I connect Apple Health to an AI assistant with myself.md?',
     answer:
-      'On iPhone, myself.md reads supported Apple Health data through HealthKit after you grant operating-system permission. Select health types and a date range in an export profile. For agent queries, sign in, pair the phone, approve the profile’s agent access and connect https://myself.md/mcp in a compatible client. The phone must be available to complete a live query; an authorized stored cloud export is a separate read path.',
+      'On iPhone, myself.md reads supported Apple Health data through HealthKit after you grant operating-system permission. Select health types and a date range in an export profile. For agent queries, sign in, pair the phone, select the profile’s data and connect https://myself.md/mcp in a compatible client. The phone must be available to complete a live query; an authorized stored cloud export is a separate read path.',
   },
   {
     question: 'Does myself.md support Android Health Connect?',
@@ -120,7 +121,7 @@ export const publicFAQs = [
   {
     question: 'Can an agent access my data without approval?',
     answer:
-      'No. OAuth sign-in, a paired phone, approved profiles and data grants are required. Agents cannot grant themselves access.',
+      'No. OAuth sign-in, a paired phone, selected profile types and OS source permissions are required.',
   },
   {
     question: 'Can I try myself.md without an account?',
@@ -184,8 +185,8 @@ Live reads require an installed myself.md app. Public App Store and Google Play 
 1. Verify the intended account using get_account_logins where exposed, then list_connected_phones. Reuse the intended paired phone. If an existing connection points to the wrong account, ask the owner to correct it before reading records; do not silently switch accounts.
 2. If a phone still needs pairing and tools/list exposes create_phone_pairing, call it once. Show its returned pairingUrl or QR to the owner. On the installed app, open **Settings → Agent connection**, scan the QR or paste the pairing link, sign in to the same account and confirm. If sign-in returns to **Account**, go Back to the retained **Confirm connection** screen and finish there. On the same phone, the pairing page's **Open in myself.md** button opens the app. Pairing links expire after five minutes and are single-use; keep the link private.
 3. Where exposed, poll get_pairing_status with the returned pairingId, then refresh list_connected_phones and get_phone_data_catalog. Verify the returned device ID identifies the intended phone in that refreshed list and catalog; a non-null device alone is not enough. A displayed QR, browser sign-in or opened app is not a confirmed pairing. For an expired uncompleted link, create a new pairing handoff rather than reusing it.
-4. Open **Profiles**, select the intended profile, and review **Data selection**. Select only the types needed for the task and complete the app's OS/provider permission prompts. On Android, Health Connect may list additional categories; enable only the intended types rather than Allow all. If an earlier denial prevents a new prompt, the owner must re-enable that access in Health Connect → App permissions for the installed myself.md app. Under that saved profile's **Agent permissions**, approve only the relevant Health, Screen time or Location permission. Saving a profile or selecting a type does not grant agent access. Keep the app open while verifying a live query.
-5. Refresh get_phone_data_catalog and confirm the intended phone is online, the saved profile exists, and its selections and individual agentPermissions cover the request before querying. If catalog is null, there is no discoverable live profile yet; do not guess IDs or enqueue a query.
+4. Open **Profiles**, select the intended profile, and review **Data selection**. Select only the types needed for the task and complete the app's OS/provider permission prompts. On Android, Health Connect may list additional categories; enable only the intended types rather than Allow all. If an earlier denial prevents a new prompt, the owner must re-enable that access in Health Connect → App permissions for the installed myself.md app. A paired online phone approves authenticated agent reads of the saved profile’s selected data without a separate agent toggle. Keep the app open while verifying a live query.
+5. Refresh get_phone_data_catalog and confirm the intended phone is online, the saved profile exists, and its selections cover the request before querying. If catalog is null, there is no discoverable live profile yet; do not guess IDs or enqueue a query.
 
 Some directory connections use the separate read-only resource https://myself.md/mcp/chatgpt. Reuse that connection for its approved reads. It does not expose pairing-ticket creation or profile proposals. If those tools are absent, explain the owner step: pair using a compatible full MCP client connected to https://myself.md/mcp, then return to this connection and rediscover. Both clients and the phone must use the same intended account; verify that identity before continuing. Do not change the existing connector's resource or try hidden tool names to bypass its restrictions. Owners always control profile and OS permissions in the phone app.
 `;
@@ -223,7 +224,7 @@ Your assistant can read only what you approve. Keep the phone app open and conne
 
 ## Verify your first health question
 
-Ask: “Discover my approved phone profiles and available health types. Tell me which source, profile and date range you can read before querying.” Confirm the intended phone and individual Health agent permission. Then ask one bounded question, such as the step records for one explicit day and time zone. Wait for the request to complete and check its returned source, interval and pagination before interpreting the records. Empty records do not prove zero activity or authorization.
+Ask: “Discover my approved phone profiles and available health types. Tell me which source, profile and date range you can read before querying.” Confirm the intended phone and selected Health types. Then ask one bounded question, such as the step records for one explicit day and time zone. Wait for the request to complete and check its returned source, interval and pagination before interpreting the records. Empty records do not prove zero activity or authorization.
 
 On iPhone, Apple Health reads use HealthKit. Select only the intended types and grant OS read permission; HealthKit does not disclose read denial. On Android, use Health Connect and enable only the intended read categories, rather than Allow all; older history and exercise routes may require additional consent. Follow the [health examples and platform limits](/datasets/health). Compatible Claude and Codex clients use the same endpoint above; connector tool availability varies.
 
@@ -526,6 +527,10 @@ You can also email us with privacy or account deletion questions.
 `;
 /** Public descriptions contain no account records or credentials. */
 export const publicPages = new Map([
+  [
+    '/apps/chatgpt',
+    '# ChatGPT visualization catalog\n\nTry interactive fictional screen-time, health, location and heart-rate examples at https://myself.md/apps/chatgpt. Agents can read the same structured fixtures with get_public_visualization_catalog or https://myself.md/apps/chatgpt/catalog.json?includeData=1. No account or personal records are needed.\n',
+  ],
   ['/', `${home}\n## Pricing\n\n${publicPricing}\n\n${faqMarkdown}`],
   ['/docs', overview],
   ['/docs/reference', guide],
@@ -552,6 +557,7 @@ export const agentIndex = `# myself.md — Personal data for AI agents
 Already connected? Read [MCP workflows](https://myself.md/docs/mcp-workflows) for filtered discovery, scalar summaries, bounded waiting, pagination and export receipts.
 
 Website: https://myself.md
+ChatGPT visualization catalog (fictional examples): https://myself.md/apps/chatgpt
 Remote MCP server (Streamable HTTP): https://myself.md/mcp
 Source and self-hosting: https://github.com/CodyBontecou/myself.md
 
@@ -614,7 +620,7 @@ For filtered catalogs, scalar aggregation, bounded waiting, cursors and file exp
 
 1. Select an intended owned phone from list_connected_phones.
 2. Filter get_phone_data_catalog by needed domains; use detail summary for counts and full for exact type IDs. Resolve current profile names to stable IDs and disambiguate duplicates.
-3. Intersect source availability, profile selections and individual agentPermissions. Refresh after an owner handoff; an offline catalog may be stale. Pairing, OS consent and agent permission are separate.
+3. Intersect source availability and profile selections. A paired online phone approves authenticated agent queries. Refresh after OS permission handoffs; an offline catalog may be stale.
 4. Convert the person's dates to explicit UTC start/end. Use raw records or scalar aggregation according to the task. Aggregation requires catalog.dataQuery.aggregation equal to 1; a backend update alone does not update the phone.
 5. Call query_phone_data with a new requestKey for the page and optional waitMs up to 25000. Retain requestId and honor retryAfterMs while queued or running. A state change can return running; use records only after complete. Stop on failed, expired or missing work.
 6. Follow result.page.nextCursor with the same query configuration and a new page key. Preserve source/unit separation, coverage, skipped counts and warnings. Missing days and empty HealthKit results are not zero measurements or proof of authorization.

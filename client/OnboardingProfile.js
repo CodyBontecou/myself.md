@@ -84,7 +84,6 @@ export default function OnboardingProfile({ step }) {
       const emptyStarter =
         starter?.id === 'default' &&
         starter.name === 'Default' &&
-        !starter.agentAccess &&
         JSON.stringify(parseProfile(starter)) ===
           JSON.stringify(
             parseProfile({
@@ -244,9 +243,9 @@ export default function OnboardingProfile({ step }) {
               subtitle={`${draft.export.formats.map((format) => format.toUpperCase()).join(' + ')} · ${draft.export.lookbackDays} completed days${draft.export.includeToday ? ' + today' : ''}`}
             />
             <Copy muted>
-              Agent access and automatic exports are off. Saving does not export data. Use Export
-              profile now when you’re ready; source permissions and your export allowance still
-              apply.
+              A paired online phone lets authenticated agents read your selected data. Automatic
+              exports are off. Use Export profile now when you’re ready; source permissions and your
+              export allowance still apply.
             </Copy>
           </>
         )}

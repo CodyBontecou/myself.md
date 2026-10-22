@@ -166,8 +166,8 @@ function ProfileExportControls({
           phone.
         </Copy>
         <Copy variant="caption" muted>
-          Agent permissions control which selected Health, Screen time and Location data agents can
-          read from this profile’s cloud exports. Changes apply after your phone syncs.
+          Profile data selections control which Health, Screen time and Location data authenticated
+          agents can read from this profile’s cloud exports. Changes apply after your phone syncs.
         </Copy>
         <Row
           compact

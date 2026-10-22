@@ -114,7 +114,15 @@ function configureProject(project, config, root) {
       delete sections[type][item.value];
       delete sections[type][`${item.value}_comment`];
     }
-    project.addBuildPhase(files, type, label, entry.uuid);
+    const added = project.addBuildPhase(files, type, label, entry.uuid);
+    // xcode reuses build-file IDs by path; CocoaPods requires one owner per build file.
+    for (const file of added.buildPhase.files) {
+      const original = file.value;
+      const uuid = project.generateUuid();
+      sections.PBXBuildFile[uuid] = { ...sections.PBXBuildFile[original] };
+      sections.PBXBuildFile[`${uuid}_comment`] = sections.PBXBuildFile[`${original}_comment`];
+      file.value = uuid;
+    }
   }
   const shared = readdirSync(join(root, 'watch', 'Shared'))
     .filter((file) => file.endsWith('.swift'))
@@ -133,6 +141,29 @@ function configureProject(project, config, root) {
   );
   phase(watch, ['WatchNative/App/Assets.xcassets'], 'PBXResourcesBuildPhase', 'Resources');
   phase(widget, [], 'PBXResourcesBuildPhase', 'Resources');
+  const sourcesGroupKey = project.findPBXGroupKey({ name: 'WatchNativeSources' });
+  const sourcesGroup = sourcesGroupKey
+    ? { uuid: sourcesGroupKey, pbxGroup: project.getPBXGroupByKey(sourcesGroupKey) }
+    : project.addPbxGroup([], 'WatchNativeSources', '.');
+  if (!sourcesGroupKey)
+    project.addToPbxGroup(sourcesGroup.uuid, project.getFirstProject().firstProject.mainGroup);
+  // Build phases alone leave file references parentless, which CocoaPods cannot resolve.
+  for (const [key, file] of Object.entries(project.pbxFileReferenceSection())) {
+    if (
+      !key.endsWith('_comment') &&
+      typeof file === 'object' &&
+      file.path?.replaceAll('"', '').startsWith('WatchNative/') &&
+      !Object.values(project.hash.project.objects.PBXGroup).some(
+        (group) =>
+          typeof group === 'object' &&
+          group.children?.some((/** @type {{value:string}} */ child) => child.value === key),
+      )
+    )
+      sourcesGroup.pbxGroup.children.push({
+        value: key,
+        comment: file.name ?? basename(file.path),
+      });
+  }
   const configs = project.pbxXCBuildConfigurationSection(),
     lists = project.pbxXCConfigurationList();
   for (const [entry, isWidget] of [

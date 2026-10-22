@@ -23,12 +23,20 @@ function serviceScope(session) {
     throw new Error('A signed-in paired phone is required to preserve setup.');
   return JSON.stringify([canonicalServiceOrigin(session.server), session.issuer]);
 }
+/** Cache validation work, never the database read or a caller's mutable state.
+ * @type {{owner:string,raw:string,normalized:string}|null} */
+let validatedProfiles = null;
 /** @param {string} owner @returns {import('../core/profiles.js').ProfileState|null} */
 export function loadProfiles(owner) {
   if (qaEnabled && owner === qaSession.deviceId) return qaSnapshot().profiles;
   const row = /** @type {{value:string}|null} */ (
     db.getFirstSync('SELECT value FROM export_profiles WHERE owner=?', owner)
   );
+  if (row && validatedProfiles?.owner === owner && validatedProfiles.raw === row.value)
+    return /** @type {import('../core/profiles.js').ProfileState} */ (
+      JSON.parse(validatedProfiles.normalized)
+    );
+  validatedProfiles = null;
   if (!row) return null;
   const state =
     /** @type {import('../core/profiles.js').ProfileState & {activeId?:string,agentConsentVersion?:number}} */ (
@@ -67,6 +75,7 @@ export function loadProfiles(owner) {
     }),
   });
   if (legacyGrants) saveProfiles(owner, result);
+  else validatedProfiles = { owner, raw: row.value, normalized: JSON.stringify(result) };
   return result;
 }
 /** @param {string} owner @param {import('../core/profiles.js').ProfileState} state */
@@ -76,6 +85,7 @@ export function saveProfiles(owner, state) {
     updateQa({ profiles: state });
     return;
   }
+  validatedProfiles = null;
   db.runSync(
     'INSERT OR REPLACE INTO export_profiles VALUES (?,?)',
     owner,

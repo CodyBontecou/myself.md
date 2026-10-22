@@ -208,10 +208,16 @@ const nativeWorkout = {
 };
 let childQueries = 0;
 /** @type {string[]} */ let requestedHealthTypes = [];
+let availabilityChecks = 0;
+let healthAvailable = true;
+let objectAvailable = true;
 const hk = {
   WorkoutActivityType: { running: 37, cycling: 13 },
-  isObjectTypeAvailable: () => true,
-  isHealthDataAvailable: () => true,
+  isObjectTypeAvailable: () => {
+    availabilityChecks++;
+    return objectAvailable;
+  },
+  isHealthDataAvailable: () => healthAvailable,
   requestAuthorization: async (/** @type {{toRead:string[]}} */ request) => {
     requestedHealthTypes = request.toRead;
     assert.ok(!request.toRead.some((type) => type.startsWith('HKCorrelation')));
@@ -334,7 +340,16 @@ const snapshotQuery = {
   limit: 1,
   format: /** @type {const} */ ('json'),
 };
+availabilityChecks = 0;
 const snapshotPage = await health.healthPage(snapshotQuery, '');
+assert.equal(availabilityChecks, 1, 'A page checks only its requested native type');
+objectAvailable = false;
+await assert.rejects(health.healthPage(snapshotQuery, ''), /unavailable/);
+objectAvailable = true;
+healthAvailable = false;
+await assert.rejects(health.healthPage(snapshotQuery, ''), /unavailable/);
+healthAvailable = true;
+await assert.rejects(health.healthPage({ ...snapshotQuery, type: 'unknown' }, ''), /unavailable/);
 const snapshotRow = snapshotPage.records[0];
 assert.ok(snapshotRow);
 assert.equal(snapshotPage.capture, 'current-characteristic-snapshot');
@@ -401,9 +416,11 @@ const selectedProfile = {
   agentAccess: true,
 };
 assert.equal((await phone.readPage('owner', snapshotQuery, selectedProfile)).records.length, 1);
-await assert.rejects(
-  phone.readPage('owner', snapshotQuery, { ...selectedProfile, agentAccess: false }),
-  /not approved/,
+assert.equal(
+  (await phone.readPage('owner', snapshotQuery, { ...selectedProfile, agentAccess: false })).records
+    .length,
+  1,
+  'Legacy agentAccess does not override saved profile selections',
 );
 await assert.rejects(
   phone.readPage(
@@ -416,7 +433,7 @@ await assert.rejects(
 );
 await assert.rejects(
   phone.readPage('owner', { ...snapshotQuery, type: 'HKWorkoutTypeIdentifier' }, selectedProfile),
-  /not approved/,
+  /disabled/,
 );
 for (const format of /** @type {const} */ (['json', 'jsonl'])) {
   const restored = JSON.parse(data.exportPage(snapshotPage, format));

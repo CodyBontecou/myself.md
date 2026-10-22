@@ -110,9 +110,7 @@ export function GettingStarted({ workspace }) {
       workspace.devices.some((device) => device.id === profile.deviceId) &&
       profile.permissionsSynced &&
       (!profile.revision || profile.confirmedRevision === profile.revision) &&
-      (profile.agentPermissions?.health ||
-        profile.agentPermissions?.time ||
-        profile.agentPermissions?.location),
+      Object.values(profile.selection).some((types) => types.length > 0),
   );
   return (
     <div className="getting-started">
@@ -284,7 +282,7 @@ export function GettingStarted({ workspace }) {
             <p>
               Add <code>https://myself.md/mcp</code> as a remote MCP server in a compatible
               assistant and sign in. The assistant guides pairing; you confirm on your phone and
-              review OS and Agent permissions.
+              review OS permissions and profile data selections.
             </p>
             <p>
               Connection and permission badges reflect the latest account snapshot, not phone

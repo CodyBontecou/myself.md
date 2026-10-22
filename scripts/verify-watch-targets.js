@@ -24,6 +24,45 @@ try {
       ([key, value]) => !key.endsWith('_comment') && typeof value === 'object',
     );
   }
+  const generated = fixture.hash.project.objects;
+  for (const [id, file] of Object.entries(generated.PBXFileReference)) {
+    if (id.endsWith('_comment') || typeof file !== 'object' || !file.path?.includes('WatchNative/'))
+      continue;
+    const parents = Object.values(generated.PBXGroup).filter(
+      (group) =>
+        typeof group === 'object' &&
+        group.children?.some((/** @type {{value:string}} */ child) => child.value === id),
+    );
+    assert.equal(
+      parents.length,
+      1,
+      `Generated file ${file.path} needs one group parent for CocoaPods.`,
+    );
+  }
+  const phaseOwners = new Map();
+  for (const section of [
+    'PBXSourcesBuildPhase',
+    'PBXResourcesBuildPhase',
+    'PBXCopyFilesBuildPhase',
+  ]) {
+    for (const phase of Object.values(generated[section] ?? {})) {
+      if (typeof phase !== 'object') continue;
+      for (const file of phase.files ?? []) {
+        assert.ok(
+          !phaseOwners.has(file.value),
+          `Build file ${file.value} must belong to only one phase for CocoaPods.`,
+        );
+        phaseOwners.set(file.value, true);
+      }
+    }
+  }
+  const sourcesGroupKey = fixture.findPBXGroupKey({ name: 'WatchNativeSources' });
+  assert.ok(sourcesGroupKey);
+  assert.equal(
+    fixture.getPBXGroupByKey(sourcesGroupKey).path,
+    '.',
+    'Watch files must resolve from the iOS project root.',
+  );
   const before = targets().length;
   withWatch.configureProject(fixture, config, process.cwd());
   assert.equal(targets().length, before, 'Prebuild must not duplicate watch targets.');

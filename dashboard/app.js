@@ -833,53 +833,15 @@ function PermissionLists({ workspace, view, busy, onConfirm, onReload }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="break-words text-lg font-semibold">{profile.name}</h2>
-                        <Badge variant={profile.shared ? 'secondary' : 'outline'}>
-                          {profile.shared ? (
-                            <IconCloud aria-hidden="true" />
-                          ) : (
-                            <IconLock aria-hidden="true" />
-                          )}
-                          {profile.shared ? 'Agents enabled' : 'Agents disabled'}
-                        </Badge>
                       </div>
                       <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
                         <IconDeviceMobile className="size-4" />
                         {deviceName(workspace, profile.deviceId)}
                       </p>
                       <p className="mt-2 text-sm text-muted-foreground">
-                        {profile.shared
-                          ? 'Agent permissions control these cloud exports. Turning a category off blocks its data; turning it back on restores access to selected data after your phone syncs.'
-                          : 'Only you can view these stored exports. Agent access is off.'}
+                        Authenticated agents can read the selected data after the paired phone
+                        syncs.
                       </p>
-                      <div
-                        className="mt-3 flex flex-wrap gap-2"
-                        aria-label="Profile agent permission status"
-                      >
-                        {
-                          /** @type {const} */ (['health', 'time', 'location']).map((domain) => (
-                            <Badge
-                              key={domain}
-                              variant={
-                                profile.permissionsSynced && profile.agentPermissions?.[domain]
-                                  ? 'secondary'
-                                  : 'outline'
-                              }
-                            >
-                              {domain === 'health'
-                                ? 'Health'
-                                : domain === 'time'
-                                  ? 'Screen time'
-                                  : 'Location'}
-                              :{' '}
-                              {profile.permissionsSynced
-                                ? profile.agentPermissions?.[domain]
-                                  ? 'On'
-                                  : 'Off'
-                                : 'Unknown — sync phone'}
-                            </Badge>
-                          ))
-                        }
-                      </div>
                       <p className="mt-2 text-xs text-muted-foreground">
                         {profile.lastSeen
                           ? `Phone last synced ${new Date(profile.lastSeen).toLocaleString()}. `

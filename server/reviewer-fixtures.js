@@ -33,6 +33,13 @@ export async function seedReviewerFixtures(
   const warning = 'Fictional directory-review fixture. Not captured from a person or a phone.';
   const specs = [
     {
+      id: 'activity-sleep',
+      domain: /** @type {const} */ ('health'),
+      types: ['HKQuantityTypeIdentifierStepCount', 'HKCategoryTypeIdentifierSleepAnalysis'],
+      count: 8,
+      shared: true,
+    },
+    {
       id: 'health',
       domain: /** @type {const} */ ('health'),
       types: ['HKQuantityTypeIdentifierStepCount', 'HKQuantityTypeIdentifierHeartRate'],
@@ -86,6 +93,22 @@ export async function seedReviewerFixtures(
     for (let dayOffset = 1; dayOffset <= 2; dayOffset++) {
       const day = new Date(Date.parse(anchorDay) - dayOffset * 86400000).toISOString().slice(0, 10);
       const records = Array.from({ length: spec.count }, (_, index) => {
+        if (spec.id === 'activity-sleep') {
+          const sleep = index >= 4;
+          const hour = sleep ? (index - 4) * 1.5 : index * 3;
+          const stamp = new Date(Date.parse(day) + hour * 3600000).toISOString();
+          return {
+            domain: spec.domain,
+            type: spec.types[sleep ? 1 : 0] ?? '',
+            source: 'reviewer-fixture',
+            start: stamp,
+            end: new Date(Date.parse(stamp) + (sleep ? 1.5 : 0.5) * 3600000).toISOString(),
+            native: {
+              fictional: true,
+              ...(sleep ? { value: [1, 3, 4, 5][index - 4] } : { quantity: 1000, unit: 'count' }),
+            },
+          };
+        }
         const start = new Date(Date.parse(day) + index * 600000).toISOString();
         return {
           domain: spec.domain,

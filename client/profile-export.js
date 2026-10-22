@@ -14,7 +14,7 @@ import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {()=>Promise<void>} [check] */
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {(force?:boolean)=>Promise<void>} [check] @param {import('./destinations.js').DestinationCredential|null} [cloudAuthorization] */
 export async function exportProfileDay(
   session,
   profile,
@@ -24,6 +24,7 @@ export async function exportProfileDay(
   onArtifact = () => {},
   billingOperationId = '',
   check = async () => {},
+  cloudAuthorization = null,
 ) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
@@ -46,18 +47,79 @@ export async function exportProfileDay(
     return { format, target, stage };
   });
   let count = 0;
+  let lastSourceProgress = -Infinity;
   const coverage = new Set();
   /** @type {unknown[]} */ const captures = [];
   /** @type {{domain:import('../core/data.js').Domain,type:string,source:string,message:string,recordCount:number}[]} */
   const failures = [];
   let completedSources = 0;
+  /** @typedef {{kind:'page',page:import('../core/data.js').DataPage}|{kind:'provider'|'fatal',error:unknown}} PrefetchedPage */
+  /** @type {Map<string,Promise<PrefetchedPage>>} */
+  const prefetched = new Map();
+  const whoop = profile.selection.health.filter(
+    (key) =>
+      key.startsWith('native:whoop.') &&
+      info.domains.find((v) => v.domain === 'health')?.types.includes(key),
+  );
+  let nextWhoop = 0;
+  let stopped = false;
+  /** @type {{fatal:{error:unknown}|null}} */
+  const pendingState = { fatal: null };
+  function checkPrefetchFailure() {
+    if (pendingState.fatal) throw pendingState.fatal.error;
+  }
+  /** @param {import('../core/data.js').Domain} domain @param {string} type @param {string} cursor */
+  const readSourcePage = (domain, type, cursor) =>
+    readPage(
+      session.owner,
+      {
+        domain,
+        type,
+        source: 'native',
+        start: interval.start,
+        end: interval.end,
+        cursor,
+        limit: 50,
+        format: 'json',
+      },
+      profile,
+      false,
+    );
+  // Keep at most three selected provider sources in flight, including the source being consumed.
+  // Native Health and usage reads retain their existing sequential execution.
+  function fillWhoop() {
+    if (stopped || pendingState.fatal) return;
+    while (prefetched.size < 3 && nextWhoop < whoop.length) {
+      const key = whoop[nextWhoop++];
+      if (!key) break;
+      /** @returns {Promise<PrefetchedPage>} */
+      const pending = async () => {
+        try {
+          await check(false);
+          checkPrefetchFailure();
+          if (stopped || !valid())
+            throw new Error('Export cancelled: profile or schedule changed.');
+          try {
+            return { kind: 'page', page: await readSourcePage('health', key.slice(7), '') };
+          } catch (error) {
+            return { kind: 'provider', error };
+          }
+        } catch (error) {
+          pendingState.fatal ??= { error };
+          return { kind: 'fatal', error };
+        }
+      };
+      prefetched.set(key, pending());
+    }
+  }
   try {
+    fillWhoop();
     for (const domain of domains)
       for (const key of profile.selection[domain]) {
         const source = /** @type {const} */ ('native'),
           type = key.slice(key.indexOf(':') + 1);
-        if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
         if (!info.domains.find((v) => v.domain === domain)?.types.includes(key)) {
+          if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
           failures.push({
             domain,
             type,
@@ -68,33 +130,36 @@ export async function exportProfileDay(
           continue;
         }
         const sourceStart = count;
+        const hadPrefetch = prefetched.has(key);
         let failed = false;
         let cursor = '';
         do {
           if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
-          // Revalidate a remote request before reading each page.
+          // Local validity runs every page; remote read checks may reuse a short-lived success.
           // oxlint-disable-next-line eslint/no-await-in-loop
-          await check();
-          progress(`${interval.day}: ${type} · ${count} records`);
+          await check(false);
+          checkPrefetchFailure();
+          const now = Date.now();
+          if (now - lastSourceProgress >= 100) {
+            progress(`${interval.day}: ${type} · ${count} records`);
+            lastSourceProgress = now;
+          }
+          // A provider failure is reported only when its original source position is reached.
+          // Remote validity failures abort the entire operation rather than becoming partial data.
+          const pending = cursor ? null : prefetched.get(key);
+          // oxlint-disable-next-line eslint/no-await-in-loop -- Consume prefetched pages in profile order.
+          const queued = pending ? await pending : null;
+          if (pending) prefetched.delete(key);
+          if (queued?.kind === 'fatal') throw queued.error;
           /** @type {import('../core/data.js').DataPage} */ let page;
           try {
-            // Pages depend on the previous cursor.
-            // oxlint-disable-next-line eslint/no-await-in-loop
-            page = await readPage(
-              session.owner,
-              {
-                domain,
-                type,
-                source,
-                start: interval.start,
-                end: interval.end,
-                cursor,
-                limit: 5,
-                format: 'json',
-              },
-              profile,
-              false,
-            );
+            if (queued?.kind === 'provider') throw queued.error;
+            if (queued?.kind === 'page') page = queued.page;
+            else {
+              // Pages depend on the previous cursor.
+              // oxlint-disable-next-line eslint/no-await-in-loop
+              page = await readSourcePage(domain, type, cursor);
+            }
             recordDebug(session, 'export', 'succeeded');
           } catch (error) {
             recordDebug(session, 'export', 'failed', { error });
@@ -110,11 +175,18 @@ export async function exportProfileDay(
             failed = true;
             break;
           }
-          for (const row of page.records) {
+          checkPrefetchFailure();
+          if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
+          // Bound serialization to one provider page and cross the native file boundary once.
+          if (page.records.length)
             for (const f of files)
-              f.stage.write(recordChunk(f.format, row, count, settings.schema), { append: true });
-            count++;
-          }
+              f.stage.write(
+                page.records
+                  .map((row, index) => recordChunk(f.format, row, count + index, settings.schema))
+                  .join(''),
+                { append: true },
+              );
+          count += page.records.length;
           if (page.complete === false && !failed) {
             failed = true;
             failures.push({
@@ -132,7 +204,9 @@ export async function exportProfileDay(
           cursor = page.nextCursor ?? '';
         } while (cursor);
         if (!failed) completedSources++;
+        if (hadPrefetch) fillWhoop();
       }
+    checkPrefetchFailure();
     if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');
     if (!completedSources && !count)
       throw new Error('No selected sources could be read. Review permissions or edit the profile.');
@@ -163,6 +237,7 @@ export async function exportProfileDay(
       // Revalidate before publishing each file, including after slow native reads.
       // oxlint-disable-next-line eslint/no-await-in-loop
       await check();
+      checkPrefetchFailure();
       if (!valid()) throw new Error('Export cancelled: profile changed.');
       if (settings.destination !== 'local') {
         // Destinations acknowledge each complete daily file before progress advances.
@@ -174,6 +249,7 @@ export async function exportProfileDay(
           f.format,
           manifest,
           valid,
+          cloudAuthorization,
         );
         onArtifact({
           day: interval.day,
@@ -242,6 +318,8 @@ export async function exportProfileDay(
       failedSources: new Set(failures.map((failure) => `${failure.domain}:${failure.type}`)).size,
     };
   } finally {
+    stopped = true;
+    prefetched.clear();
     for (const f of files)
       if (f.stage.name.endsWith('.partial') && f.stage.exists) f.stage.delete();
   }

@@ -5,6 +5,12 @@ import { domains } from './data.js';
 export function exportFailureMessage(error) {
   const message = error instanceof Error ? error.message : '';
   const safe = [
+    'Phone account, connection or foreground changed.',
+    'Export request stopped.',
+    'Export request expired.',
+    'Export review expired.',
+    'Export request is no longer running.',
+    'Sign in again to resume cloud uploads.',
     'Select at least one data type.',
     'No selected sources could be read. Review permissions or edit the profile.',
     'Use an HTTPS endpoint without credentials or fragments.',

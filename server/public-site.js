@@ -1,3 +1,4 @@
+import { chatgptCatalogResponse } from './chatgpt-catalog.js';
 import { randomUUID } from 'node:crypto';
 import { notFoundPage } from './not-found-page.js';
 import { pricingPage } from './pricing-page.js';
@@ -57,6 +58,8 @@ export function publicResponse(
   resource = 'https://myself.md/mcp',
   params = new URLSearchParams(),
 ) {
+  const catalogPage = chatgptCatalogResponse(pathname, accept, params);
+  if (catalogPage) return catalogPage;
   const withoutSlash = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
   const markdownAlias = withoutSlash.endsWith('.md') && publicPages.has(withoutSlash.slice(0, -3));
   const normalized = markdownAlias ? withoutSlash.slice(0, -3) : withoutSlash;

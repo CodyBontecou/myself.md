@@ -112,6 +112,7 @@ export async function reviewPhoneExport(session, request, active) {
         throw new Error('Profile changed.');
       const started = await report(request.requestId, { action: 'start' });
       if (started.status !== 'running') throw new Error('Export request is no longer running.');
+      let checkedAt = -Infinity;
       const receipt = await exportNow(
         session,
         latest,
@@ -120,11 +121,14 @@ export async function reviewPhoneExport(session, request, active) {
           domains: request.domains,
           range: request.range,
           requestId: `export-${request.requestId}`,
-          check: async () => {
+          check: async (force = true) => {
             if (!current()) throw new Error('Phone account, connection or foreground changed.');
+            // Read-only staging uses a bounded heartbeat; publication always checks afresh.
+            if (!force && Date.now() - checkedAt < 2000) return;
             const outcome = await report(request.requestId, { action: 'check' });
             if (!current() || outcome.status !== 'running')
               throw new Error('Export request stopped.');
+            checkedAt = Date.now();
           },
         },
       );

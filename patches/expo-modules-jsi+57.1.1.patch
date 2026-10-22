@@ -1,0 +1,14 @@
+diff --git a/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh b/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+--- a/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
++++ b/node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+@@ -216,6 +216,10 @@
+   if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+     env_args+=(DEVELOPER_DIR="$DEVELOPER_DIR")
+   fi
++  # Preserve an explicit toolchain configuration in the isolated nested build.
++  if [[ -n "${XCODE_XCCONFIG_FILE:-}" ]]; then
++    env_args+=(XCODE_XCCONFIG_FILE="$XCODE_XCCONFIG_FILE")
++  fi
+ 
+   (cd "$PACKAGE_DIR" && env -i "${env_args[@]}" \
+     xcodebuild \

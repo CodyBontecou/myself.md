@@ -338,7 +338,7 @@ export async function stopAccountExports() {
   }
   throw new Error('An export is still stopping. Retry account cleanup shortly.');
 }
-/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{range?:import('../core/data-range.js').DataRange,domains?:import('../core/data.js').Domain[],requestId?:string,check?:()=>Promise<void>}} [options] */
+/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{range?:import('../core/data-range.js').DataRange,domains?:import('../core/data.js').Domain[],requestId?:string,check?:(force?:boolean)=>Promise<void>}} [options] */
 export async function exportNow(session, profile, progress, options = {}) {
   if (running) throw new Error('An export is already running.');
   running = true;
@@ -352,27 +352,34 @@ export async function exportNow(session, profile, progress, options = {}) {
   if (profile.export.includeToday) dates.push(day);
   let intervalStart = localCalendar.instant(dates[0] ?? day, 0, 0);
   let intervalEnd = profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0);
-  const valid = () =>
-    epoch === generation &&
-    loadExportContext()?.deviceId === session.deviceId &&
-    loadExportContext()?.owner === session.owner &&
-    loadProfiles(session.deviceId)?.profiles.some(
-      (p) => p.id === profile.id && fingerprint(p) === fingerprint(original),
-    ) === true;
+  const valid = () => {
+    if (epoch !== generation) return false;
+    // One fresh context read checks both fields in the same local snapshot.
+    const context = loadExportContext();
+    return (
+      context?.deviceId === session.deviceId &&
+      context.owner === session.owner &&
+      loadProfiles(session.deviceId)?.profiles.some(
+        (p) => p.id === profile.id && fingerprint(p) === fingerprint(original),
+      ) === true
+    );
+  };
   let historyId = '';
   let billingId = '';
   let produced = false;
   let recordCount = 0;
   let batches = 1;
   const original = profile;
-  const check = async () => {
-    if (!valid()) throw new Error('Export cancelled: profile changed.');
-    await options.check?.();
+  const check = async (force = true) => {
+    // Staging already checks locally immediately before calling this callback.
+    // Always recheck after its asynchronous remote boundary; publication checks both sides.
+    if (force && !valid()) throw new Error('Export cancelled: profile changed.');
+    await options.check?.(force);
     if (!valid()) throw new Error('Export cancelled: profile changed.');
   };
   try {
     await check();
-    await requireCloudAuthorization(session, profile);
+    const cloudAuthorization = await requireCloudAuthorization(session, profile);
     const selected =
       options.domains ?? domains.filter((domain) => profile.selection[domain].length);
     if (!selected.length || selected.some((domain) => !profile.selection[domain].length))
@@ -503,6 +510,7 @@ export async function exportNow(session, profile, progress, options = {}) {
         },
         billingId,
         check,
+        cloudAuthorization,
       );
       recordCount += result.count;
       state.files.push(...result.files);
@@ -617,7 +625,7 @@ async function executeScheduledExports(profileId, requested) {
       let produced = false;
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop -- Check approval before each scheduled profile.
-        await requireCloudAuthorization(session, job.profile);
+        const cloudAuthorization = await requireCloudAuthorization(session, job.profile);
         // Reuse the occurrence ID across OS restarts and retries.
         // oxlint-disable-next-line eslint/no-await-in-loop
         await reserveExport(session, historyId, {
@@ -649,6 +657,8 @@ async function executeScheduledExports(profileId, requested) {
               recordArtifact(session, historyId, artifact);
             },
             historyId,
+            undefined,
+            cloudAuthorization,
           );
           // Count output even if the profile changes immediately after delivery.
           // oxlint-disable-next-line eslint/no-await-in-loop

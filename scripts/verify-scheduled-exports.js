@@ -40,6 +40,12 @@ let pendingPushToken = null;
 let pendingDayExport = null;
 let reservations = 0;
 let historyStarts = 0;
+/** @type {typeof session|null} */
+let currentExportContext = session;
+/** @type {((valid:()=>boolean,check:(force?:boolean)=>Promise<void>)=>Promise<void>)|null} */
+let beforeDayDelivery = null;
+/** @type {string[]} */
+const historyOutcomes = [];
 /** @type {Map<string,()=>Promise<number>>} */
 const backgroundTasks = new Map();
 const mocks = {
@@ -53,7 +59,7 @@ const mocks = {
     /** @param {string} _sql @param {string} device @param {string} id @param {string} value */
     runSync: (_sql, device, id, value) => rows.set(`${device}/${id}`, value),
   }),
-  loadExportContext: () => session,
+  loadExportContext: () => currentExportContext,
   loadSession: async () => session,
   loadProfiles: () => ({ profiles }),
   /** @param {unknown} _session @param {string} _path @param {{body:string}} options */
@@ -112,12 +118,30 @@ const mocks = {
     return 'history';
   },
   recordArtifact() {},
-  finishExport() {},
+  finishExport(
+    /** @type {unknown} */ _session,
+    /** @type {string} */ _id,
+    /** @type {string} */ status,
+  ) {
+    historyOutcomes.push(status);
+  },
   errorJSON: String,
   exportFailureMessage: String,
   deliveredFormats,
-  /** @param {unknown} _session @param {import("../core/profiles.js").ExportProfile} profile @param {{day:string}} day */
-  exportProfileDay: async (_session, profile, day) => {
+  /** @param {unknown} _session @param {import("../core/profiles.js").ExportProfile} profile @param {{day:string}} day
+   * @param {()=>boolean} valid @param {unknown} _progress @param {unknown} _artifact @param {string} _billing
+   * @param {(force?:boolean)=>Promise<void>} [check] */
+  exportProfileDay: async (
+    _session,
+    profile,
+    day,
+    valid,
+    _progress,
+    _artifact,
+    _billing,
+    check = async () => {},
+  ) => {
+    await beforeDayDelivery?.(valid, check);
     exported.push({ profile: profile.id, day: day.day, writeMode: profile.export.writeMode });
     await pendingDayExport;
     return { files: [], count: 0, failedSources: 0 };
@@ -145,18 +169,23 @@ await module.link((specifier) => {
 });
 // A headless launch evaluates the entry module without mounting the router or PhoneProvider.
 const headlessEntry = new SourceTextModule(
-  await readFile(new URL('../index.js', import.meta.url), 'utf8'),
+  `const __DEV__ = false;\n${await readFile(new URL('../index.js', import.meta.url), 'utf8')}`,
 );
-await headlessEntry.link((specifier) =>
-  specifier === './client/export-task.js' ? module : new SyntheticModule([], function () {}),
-);
+await headlessEntry.link((specifier) => {
+  if (specifier === './client/export-task.js') return module;
+  const values =
+    specifier === 'react-native' ? { LogBox: { ignoreLogs() {} }, NativeModules: {} } : {};
+  return new SyntheticModule(Object.keys(values), function () {
+    for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+  });
+});
 await headlessEntry.evaluate();
 assert.ok(
   backgroundTasks.has('profile-file-exports'),
   'A cold headless launch must define scheduled exports before the UI mounts.',
 );
 const task =
-  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void)=>Promise<unknown>,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,reminderError?:string|null},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>,reconcileExports:()=>Promise<void>}} */ (
+  /** @type {{exportNow:(context:typeof session,profile:import('../core/profiles.js').ExportProfile,progress:(message:string,percentage?:number)=>void,options?:{check?:(force?:boolean)=>Promise<void>})=>Promise<unknown>,cancelExports:()=>void,setScheduleEnabled:(device:string,profile:import('../core/profiles.js').ExportProfile,enabled:boolean)=>Promise<void>,scheduleState:(device:string,profile:import('../core/profiles.js').ExportProfile)=>{progress:import('../core/schedules.js').ScheduleProgress,reminderError?:string|null},runScheduledExports:(profileId?:string)=>Promise<void>,openScheduledExport:(value:unknown)=>Promise<boolean>,reconcileExports:()=>Promise<void>}} */ (
     /** @type {unknown} */ (module.namespace)
   );
 const first = profiles[0];
@@ -368,12 +397,78 @@ console.log(
 
 second.export.destination = originalDestination;
 
+// Local validity must be re-read after remote checks yield, before any destination effect.
+beforeDayDelivery = async (valid, check) => {
+  assert.equal(valid(), true);
+  await check(false);
+  await check();
+};
+for (const boundary of /** @type {const} */ (['preflight', 'staging', 'publication'])) {
+  for (const change of /** @type {const} */ (['cancel', 'profile', 'account', 'disconnect'])) {
+    const beforeDelivery = exported.length;
+    const beforeOutcomes = historyOutcomes.length;
+    const savedProfile = profiles[1];
+    assert.ok(savedProfile);
+    let changed = false;
+    let stagingChecked = false;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- Each case must release the single-export guard.
+      await assert.rejects(
+        task.exportNow(session, savedProfile, () => {}, {
+          check: async (force = true) => {
+            await Promise.resolve();
+            if (!force) stagingChecked = true;
+            if (
+              changed ||
+              (boundary === 'staging' && force) ||
+              (boundary === 'publication' && (!force || !stagingChecked))
+            )
+              return;
+            changed = true;
+            if (change === 'cancel') task.cancelExports();
+            if (change === 'profile')
+              profiles[1] = {
+                ...savedProfile,
+                selection: { ...savedProfile.selection, health: [] },
+              };
+            if (change === 'account')
+              currentExportContext = { ...session, owner: 'replacement-owner' };
+            if (change === 'disconnect') currentExportContext = null;
+          },
+        }),
+        /Export cancelled/,
+        `${boundary}/${change}: no stale success receipt after an asynchronous validity change`,
+      );
+      assert.equal(changed, true, 'The asynchronous check reached the intended race');
+      assert.equal(
+        exported.length,
+        beforeDelivery,
+        'Cancellation prevents source/destination delivery',
+      );
+      assert.ok(
+        historyOutcomes.slice(beforeOutcomes).every((outcome) => outcome === 'cancelled'),
+        'A stale export cannot complete its history',
+      );
+    } finally {
+      profiles[1] = savedProfile;
+      currentExportContext = session;
+    }
+  }
+}
+beforeDayDelivery = null;
+console.log(
+  'Async preflight/staging/publication checks reject cancellation, changed selections, account replacement and disconnect before delivery or success receipts.',
+);
+
 // Exercise the real credential service: saved destination consent, coalesced creation and renewal.
 let storedCredential = '';
 let renewalFails = false;
 let creationFails = false;
 let renewals = 0;
 let creations = 0;
+let uploadDenied = false;
+/** @type {string[]} */
+const uploadMethods = [];
 const cloudProfile = {
   ...second,
   export: { ...second.export, destination: /** @type {const} */ ('cloud') },
@@ -393,7 +488,14 @@ const credentialMocks = {
     storedCredential = value;
   },
   deleteItemAsync: async () => {},
-  fetch: async () => Response.json({}),
+  /** @param {string} _url @param {{method:string,headers:Record<string,string>}} options */
+  fetch: async (_url, options) => {
+    uploadMethods.push(options.method);
+    assert.equal(options.headers.Authorization, 'Upload synthetic-upload-token');
+    return uploadDenied
+      ? Response.json({ error: 'Approval revoked' }, { status: 403 })
+      : Response.json({ id: 'synthetic-file', recordCount: 1, bytes: 1 });
+  },
   api: async (/** @type {unknown} */ _session, /** @type {string} */ path) => {
     if (path === '/api/cloud/credential') {
       creations++;
@@ -414,7 +516,7 @@ await destinationModule.link(
 );
 await destinationModule.evaluate();
 const credentials =
-  /** @type {{requireCloudAuthorization:(context:typeof session,profile:import('../core/profiles.js').ExportProfile)=>Promise<unknown>}} */ (
+  /** @type {{requireCloudAuthorization:(context:typeof session,profile:import('../core/profiles.js').ExportProfile)=>Promise<{server:string,token:string}|null>,deliverExport:(...args:unknown[])=>Promise<{id:string}|null>}} */ (
     /** @type {unknown} */ (destinationModule.namespace)
   );
 await credentials.requireCloudAuthorization(session, second);
@@ -472,7 +574,68 @@ await assert.rejects(
 );
 assert.equal(creations, beforeRevocation, 'Revoked credentials are not silently rotated');
 renewalFails = false;
-await credentials.requireCloudAuthorization(session, cloudProfile);
+const operationCredential = await credentials.requireCloudAuthorization(session, cloudProfile);
+assert.ok(operationCredential);
+const beforeDeliveries = renewals;
+const stagedFile = { size: 1, arrayBuffer: async () => new Uint8Array([1]).buffer };
+const stagedManifest = { interval: { day: '2026-10-14' } };
+assert.equal(
+  (
+    await credentials.deliverExport(
+      session,
+      cloudProfile,
+      stagedFile,
+      'jsonl',
+      stagedManifest,
+      () => true,
+      operationCredential,
+    )
+  )?.id,
+  'synthetic-file',
+);
+await credentials.deliverExport(
+  session,
+  cloudProfile,
+  stagedFile,
+  'jsonl',
+  stagedManifest,
+  () => true,
+  operationCredential,
+);
+assert.equal(renewals, beforeDeliveries, 'Daily deliveries reuse the export preflight renewal');
+assert.deepEqual(uploadMethods, ['POST', 'PUT', 'POST', 'PUT']);
+await assert.rejects(
+  credentials.deliverExport(
+    session,
+    cloudProfile,
+    stagedFile,
+    'jsonl',
+    stagedManifest,
+    () => false,
+    operationCredential,
+  ),
+  /cancelled/,
+);
+assert.equal(uploadMethods.length, 4, 'Local cancellation precedes all publication');
+uploadDenied = true;
+await assert.rejects(
+  credentials.deliverExport(
+    session,
+    cloudProfile,
+    stagedFile,
+    'jsonl',
+    stagedManifest,
+    () => true,
+    operationCredential,
+  ),
+  /403.*Approval revoked/,
+);
+assert.deepEqual(
+  uploadMethods,
+  ['POST', 'PUT', 'POST', 'PUT', 'POST'],
+  'Revoked server approval prevents file PUT despite prepared credentials',
+);
+uploadDenied = false;
 console.log(
   'Cloud destination consent: first-use/retry/concurrent creation, credential reuse, local/HTTP exemption and owner/device/server/revocation boundaries passed.',
 );

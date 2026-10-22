@@ -118,8 +118,16 @@ export async function requireCloudAuthorization(context, profile) {
   await renewCredential(session, profile.id, credential);
   return credential;
 }
-/** @param {import('./export-context.js').ExportContext} context @param {import('../core/profiles.js').ExportProfile} profile @param {import('expo-file-system').File} file @param {import('../core/export-files.js').ExportFormat} format @param {Record<string,unknown>} manifest @param {()=>boolean} valid */
-export async function deliverExport(context, profile, file, format, manifest, valid) {
+/** @param {import('./export-context.js').ExportContext} context @param {import('../core/profiles.js').ExportProfile} profile @param {import('expo-file-system').File} file @param {import('../core/export-files.js').ExportFormat} format @param {Record<string,unknown>} manifest @param {()=>boolean} valid @param {DestinationCredential|null} [cloudAuthorization] */
+export async function deliverExport(
+  context,
+  profile,
+  file,
+  format,
+  manifest,
+  valid,
+  cloudAuthorization = null,
+) {
   if (!valid()) throw new Error('Export cancelled before delivery.');
   const headers = {
     'Content-Type': format === 'json' ? 'application/json' : 'application/x-ndjson',
@@ -151,7 +159,8 @@ export async function deliverExport(context, profile, file, format, manifest, va
     if (!response.ok) throw new Error(`HTTP export failed (${response.status}).`);
     return null;
   }
-  const approved = await requireCloudAuthorization(context, profile);
+  // The export runner renews once before staging; every upload still checks server authorization.
+  const approved = cloudAuthorization ?? (await requireCloudAuthorization(context, profile));
   if (!approved) throw new Error('Cloud upload authorization is required.');
   if (!valid()) throw new Error('Export cancelled before upload.');
   if (file.size > 16 * 1024 * 1024)

@@ -6,6 +6,17 @@ import * as exportFiles from '../core/export-files.js';
 import * as errors from '../packages/support-chat/errors.js';
 /** @type {Map<string,string>} */
 const files = new Map();
+/** @type {{uri:string,value:string}[]} */
+const writes = [];
+/** @type {import('../core/data.js').DataRecord[]} */
+const bulkRecords = Array.from({ length: 103 }, (_, index) => ({
+  domain: 'health',
+  type: 'bulk',
+  source: 'native',
+  start: null,
+  end: null,
+  native: { index, label: `Record ${index} · café`, detail: { values: [index, index + 1] } },
+}));
 class Directory {
   /** @param {(string|Directory)[]} parts */
   constructor(...parts) {
@@ -41,6 +52,7 @@ class File {
   /** @param {string} value @param {{append?:boolean}} [options] */
   write(value, options) {
     if (failWrite) throw new Error('Disk full');
+    writes.push({ uri: this.uri, value });
     files.set(this.uri, (options?.append ? (files.get(this.uri) ?? '') : '') + value);
   }
   /** @param {File} target */
@@ -121,6 +133,11 @@ let failMove = false,
 let failDetail = false;
 /** @type {string[]} */
 const delivered = [];
+/** @type {Map<string,string>} */
+const deliveredPayloads = new Map();
+const whoopTypes = ['whoop.cycle', 'whoop.sleep', 'whoop.workout', 'whoop.recovery'];
+/** @type {((query:import('../core/data.js').DataQuery)=>Promise<import('../core/data.js').DataPage|null>)|null} */
+let sourceRead = null;
 const mocks = {
   recordDebug: () => {},
 
@@ -130,14 +147,38 @@ const mocks = {
   Paths: { document: 'documents', cache: 'cache' },
   catalog: async () => ({
     domains: [
-      { domain: 'health', types: ['native:denied', 'native:steps', 'native:paged'] },
+      {
+        domain: 'health',
+        types: [
+          'native:denied',
+          'native:steps',
+          'native:paged',
+          'native:bulk',
+          ...whoopTypes.map((type) => `native:${type}`),
+        ],
+      },
       { domain: 'time', types: ['native:applications'] },
     ],
   }),
   /** @param {string} _owner @param {import('../core/data.js').DataQuery} query */
   readPage: async (_owner, query) => {
+    const controlled = await sourceRead?.(query);
+    if (controlled) return controlled;
     if (query.type === 'denied' || (query.type === 'paged' && query.cursor))
       throw new Error('Authorization not determined');
+    if (query.type === 'bulk') {
+      assert.equal(query.limit, 50);
+      const offset = Number(query.cursor || 0);
+      const records = bulkRecords.slice(offset, offset + query.limit);
+      return {
+        records,
+        nextCursor:
+          offset + records.length < bulkRecords.length ? String(offset + records.length) : null,
+        capture: 'native',
+        warnings: [],
+        complete: true,
+      };
+    }
     return {
       records: [
         {
@@ -155,10 +196,11 @@ const mocks = {
       complete: !failDetail,
     };
   },
-  /** @param {unknown} _context @param {unknown} _profile @param {unknown} _file @param {string} format */
-  deliverExport: async (_context, _profile, _file, format) => {
+  /** @param {unknown} _context @param {unknown} _profile @param {File} file @param {string} format */
+  deliverExport: async (_context, _profile, file, format) => {
     if (failDelivery) throw new Error('Upload failed');
     delivered.push(format);
+    deliveredPayloads.set(format, await file.text());
   },
 };
 const folderModule = new SourceTextModule(
@@ -213,7 +255,7 @@ await exporter.link((specifier) => {
 });
 await exporter.evaluate();
 const { exportProfileDay } =
-  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void,onArtifact?:(artifact:import('../core/history.js').HistoryArtifact)=>void)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
+  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void,onArtifact?:(artifact:import('../core/history.js').HistoryArtifact)=>void,billing?:string,check?:(force?:boolean)=>Promise<void>)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
     exporter.namespace
   );
 const { parseExportSettings } = exportFiles;
@@ -454,6 +496,352 @@ assert.deepEqual(
 );
 assert.equal(openHandles, 0, 'All provider handles close after successful or failed writes');
 
+// Three provider pages plus another source preserve exact bytes and global JSON commas.
+/** @type {import('../core/data.js').DataRecord[]} */
+const expectedRecords = [
+  ...bulkRecords,
+  { domain: 'time', type: 'applications', source: 'native', start: null, end: null, native: {} },
+];
+for (const destination of /** @type {const} */ (['local', 'http', 'cloud'])) {
+  writes.length = 0;
+  deliveredPayloads.clear();
+  const bulkProfile = {
+    ...profile,
+    selection: { health: ['native:bulk'], time: ['native:applications'], location: [] },
+    export: { ...profile.export, destination, httpUrl: 'https://example.test/hook' },
+  };
+  // oxlint-disable-next-line eslint/no-await-in-loop -- Verify each complete destination separately.
+  const bulkResult = await exportProfileDay(
+    session,
+    bulkProfile,
+    interval,
+    () => true,
+    () => {},
+  );
+  assert.equal(bulkResult.count, 104);
+  assert.equal(bulkResult.failedSources, 0);
+  for (const format of exportFiles.deliveredFormats(bulkProfile.export)) {
+    const payload =
+      destination === 'local'
+        ? files.get(`documents/Exports/phone/default/2026-10-07.v1.${format}`)
+        : deliveredPayloads.get(format);
+    assert.ok(payload);
+    const chunks = expectedRecords
+      .map((row, index) => exportFiles.recordChunk(format, row, index, profile.export.schema))
+      .join('');
+    if (format === 'json') {
+      const { records: exportedRecords, ...metadata } = JSON.parse(payload);
+      assert.deepEqual(exportedRecords, expectedRecords);
+      assert.equal(
+        payload,
+        exportFiles.fileHeader(format, profile.export.schema) +
+          chunks +
+          exportFiles.fileFooter(format, metadata),
+        `${destination}: page batching preserves the legacy record-by-record JSON bytes`,
+      );
+    } else {
+      assert.equal(payload, chunks, `${destination}: JSONL bytes and record order are unchanged`);
+    }
+    const stageWrites = writes.filter(
+      ({ uri }) => uri === `cache/Exports/phone/default/2026-10-07.v1.${format}.partial`,
+    );
+    assert.equal(stageWrites.length, 6, '104 records use four page writes plus header/footer');
+    assert.deepEqual(
+      stageWrites.slice(1, -1).map(({ value }) => value),
+      [
+        expectedRecords.slice(0, 50),
+        expectedRecords.slice(50, 100),
+        expectedRecords.slice(100, 103),
+        expectedRecords.slice(103),
+      ].map((rows, page) =>
+        rows
+          .map((row, index) =>
+            exportFiles.recordChunk(
+              format,
+              row,
+              (page === 3 ? 103 : page * 50) + index,
+              profile.export.schema,
+            ),
+          )
+          .join(''),
+      ),
+      'Each native write contains exactly one provider page',
+    );
+  }
+}
+
+// Source UI updates are bounded without throttling reads, validity checks or file output.
+const actualNow = Date.now;
+let clock = 0;
+let progressReads = 0;
+let stagingChecks = 0;
+/** @type {{message:string,time:number}[]} */
+const sourceProgress = [];
+try {
+  Date.now = () => clock;
+  sourceRead = async (query) => {
+    progressReads++;
+    clock += 20;
+    if (query.type !== 'bulk') return null;
+    const index = Number(query.cursor || 0);
+    return {
+      records: [
+        {
+          domain: 'health',
+          type: 'bulk',
+          source: 'native',
+          start: null,
+          end: null,
+          native: { index },
+        },
+      ],
+      nextCursor: index < 24 ? String(index + 1) : null,
+      capture: 'native',
+      warnings: [],
+      complete: true,
+    };
+  };
+  deliveredPayloads.clear();
+  const throttled = await exportProfileDay(
+    session,
+    {
+      ...profile,
+      selection: { health: ['native:bulk'], time: ['native:applications'], location: [] },
+      export: { ...profile.export, destination: 'http', httpUrl: 'https://example.test/hook' },
+    },
+    interval,
+    () => true,
+    (message) => sourceProgress.push({ message, time: clock }),
+    () => {},
+    '',
+    async (force = true) => {
+      if (!force) stagingChecks++;
+    },
+  );
+  assert.equal(throttled.count, 26);
+  assert.equal(progressReads, 26);
+  assert.equal(stagingChecks, 26, 'Every provider page retains its validity check');
+  assert.deepEqual(
+    sourceProgress,
+    [0, 5, 10, 15, 20, 25].map((count) => ({
+      time: count * 20,
+      message: `${interval.day}: ${count === 25 ? 'applications' : 'bulk'} · ${count} records`,
+    })),
+  );
+  const progressJSON = JSON.parse(deliveredPayloads.get('json') ?? '');
+  assert.equal(progressJSON.records.length, 26);
+  assert.deepEqual(
+    progressJSON.records
+      .slice(0, 25)
+      .map(
+        (/** @type {import('../core/data.js').DataRecord} */ row) =>
+          /** @type {{index:number}} */ (row.native).index,
+      ),
+    Array.from({ length: 25 }, (_, index) => index),
+  );
+  assert.equal((deliveredPayloads.get('jsonl') ?? '').trim().split('\n').length, 26);
+} finally {
+  Date.now = actualNow;
+  sourceRead = null;
+}
+
+// Provider lookahead overlaps independent network reads without reordering output or cursor pages.
+const providerProfile = {
+  ...profile,
+  selection: {
+    health: ['native:steps', ...whoopTypes.map((type) => `native:${type}`)],
+    time: [],
+    location: [],
+  },
+  export: {
+    ...profile.export,
+    destination: /** @type {const} */ ('http'),
+    httpUrl: 'https://example.test/hook',
+  },
+};
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const unreleased = () => assert.fail('Controlled promise has not been initialized');
+/** @param {string} type @param {string|null} [nextCursor] @returns {import('../core/data.js').DataPage} */
+const providerPage = (type, nextCursor = null) => ({
+  records: [
+    {
+      domain: 'health',
+      type,
+      source: 'native',
+      start: null,
+      end: null,
+      native: { cursorPage: Boolean(nextCursor) },
+    },
+  ],
+  nextCursor,
+  capture: type,
+  warnings: [],
+  complete: true,
+});
+for (const failProvider of [false, true]) {
+  /** @type {Map<string,{resolve:(page:import('../core/data.js').DataPage)=>void,reject:(error:Error)=>void}>} */
+  const pending = new Map();
+  let active = 0,
+    maxActive = 0;
+  /** @type {string[]} */
+  const started = [];
+  /** @type {()=>void} */
+  let releaseNative = unreleased;
+  const nativeGate = new Promise((resolve) => {
+    releaseNative = () => resolve(null);
+  });
+  sourceRead = async (query) => {
+    if (!query.type.startsWith('whoop.')) {
+      await nativeGate;
+      return null;
+    }
+    const key = `${query.type}:${query.cursor}`;
+    started.push(key);
+    active++;
+    maxActive = Math.max(maxActive, active);
+    try {
+      return await new Promise((resolve, reject) => pending.set(key, { resolve, reject }));
+    } finally {
+      active--;
+    }
+  };
+  deliveredPayloads.clear();
+  const run = exportProfileDay(
+    session,
+    providerProfile,
+    interval,
+    () => true,
+    () => {},
+  );
+  // oxlint-disable-next-line eslint/no-await-in-loop -- Advance the controlled provider promises.
+  await tick();
+  assert.deepEqual(
+    started,
+    whoopTypes.slice(0, 3).map((type) => `${type}:`),
+  );
+  assert.equal(active, 3, 'Provider requests overlap while native reads are pending');
+  if (failProvider)
+    pending.get('whoop.workout:')?.reject(new Error('Workout provider temporarily unavailable'));
+  else pending.get('whoop.workout:')?.resolve(providerPage('whoop.workout'));
+  if (failProvider)
+    pending.get('whoop.sleep:')?.reject(new Error('Provider temporarily unavailable'));
+  else pending.get('whoop.sleep:')?.resolve(providerPage('whoop.sleep'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.equal(
+    started.length,
+    3,
+    'Completed lookahead slots are retained until source consumption',
+  );
+  releaseNative();
+  pending.get('whoop.cycle:')?.resolve(providerPage('whoop.cycle', 'next'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.deepEqual(started, ['whoop.cycle:', 'whoop.sleep:', 'whoop.workout:', 'whoop.cycle:next']);
+  pending.get('whoop.cycle:next')?.resolve(providerPage('whoop.cycle'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.equal(started.at(-1), 'whoop.recovery:');
+  pending.get('whoop.recovery:')?.resolve(providerPage('whoop.recovery'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  const providerResult = await run;
+  assert.ok(maxActive <= 3);
+  assert.equal(providerResult.failedSources, Number(failProvider) * 2);
+  /** @type {{records:import('../core/data.js').DataRecord[],failures:{type:string}[]}} */
+  const providerJSON = JSON.parse(deliveredPayloads.get('json') ?? '');
+  const expectedTypes = [
+    'steps',
+    'whoop.cycle',
+    'whoop.cycle',
+    ...(!failProvider ? ['whoop.sleep', 'whoop.workout'] : []),
+    'whoop.recovery',
+  ];
+  assert.deepEqual(
+    providerJSON.records.map((row) => row.type),
+    expectedTypes,
+  );
+  assert.deepEqual(
+    providerJSON.failures.map((failure) => failure.type),
+    failProvider ? ['whoop.sleep', 'whoop.workout'] : [],
+  );
+  assert.equal(
+    deliveredPayloads.get('jsonl'),
+    providerJSON.records
+      .map((row, index) => exportFiles.recordChunk('jsonl', row, index, profile.export.schema))
+      .join(''),
+  );
+  sourceRead = null;
+}
+
+// Captured rejections cannot become unhandled or publish after cancellation/remote revocation.
+/** @type {unknown[]} */
+const unhandled = [];
+const rejected = (/** @type {unknown} */ error) => {
+  unhandled.push(error);
+};
+process.on('unhandledRejection', rejected);
+try {
+  for (const scenario of ['before-dispatch', 'prefetched', 'remote-check', 'late-remote-check']) {
+    let valid = scenario !== 'before-dispatch';
+    let reads = 0;
+    /** @type {()=>void} */
+    let release = unreleased;
+    const gate = new Promise((resolve) => {
+      release = () => resolve(null);
+    });
+    /** @type {(error:Error)=>void} */
+    let rejectRemote = unreleased;
+    const remoteGate = new Promise((_resolve, reject) => {
+      rejectRemote = reject;
+    });
+    let checks = 0;
+    sourceRead = async () => {
+      reads++;
+      await gate;
+      throw new Error('Discarded provider failure');
+    };
+    delivered.length = 0;
+    const run = exportProfileDay(
+      session,
+      providerProfile,
+      interval,
+      () => valid,
+      () => {},
+      () => {},
+      '',
+      async () => {
+        if (scenario === 'late-remote-check' && ++checks === 1) await remoteGate;
+        if (scenario === 'remote-check') throw new Error('Remote request revoked');
+      },
+    );
+    // Attach the rejection handler before releasing any asynchronous failure.
+    const failure = assert.rejects(
+      run,
+      scenario.includes('remote-check') ? /Remote request revoked/ : /cancelled/,
+    );
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await tick();
+    if (scenario === 'prefetched') {
+      assert.ok(reads >= 3);
+      valid = false;
+    } else if (scenario === 'late-remote-check') {
+      assert.ok(reads >= 2, 'Other source reads can progress while one validity check waits');
+      rejectRemote(new Error('Remote request revoked'));
+    } else assert.equal(reads, 0);
+    release();
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await failure;
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await tick();
+    assert.deepEqual(delivered, []);
+    sourceRead = null;
+  }
+  assert.deepEqual(unhandled, []);
+} finally {
+  process.off('unhandledRejection', rejected);
+  sourceRead = null;
+}
+
 // Cloud keeps one JSONL file per day; HTTP receives every selected format.
 for (const [destination, expected] of /** @type {const} */ ([
   ['cloud', ['jsonl']],
@@ -488,5 +876,5 @@ await assert.rejects(
 );
 assert.equal(artifacts.length, 0);
 console.log(
-  'Export resilience: partial records, skipped sources, manifests, all-failed preservation, cancellation, disk and delivery failures verified.',
+  'Export resilience: partial records, skipped sources, manifests, all-failed preservation, cancellation, disk and delivery failures verified. Multi-page payload equivalence passed; 104 records use four native page writes per format. Bounded WHOOP lookahead preserves source/cursor order, partial failures and cancellation/remote revocation without unhandled rejections.',
 );

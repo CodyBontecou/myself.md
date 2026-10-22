@@ -202,7 +202,7 @@ export default function WatchScreen() {
           <Row
             title={watch.name}
             value={watch.ready ? 'Configured' : 'Awaiting watch'}
-            subtitle={`${watch.destination} · ${watch.agentAccess ? 'Agents enabled' : 'Private'}`}
+            subtitle={watch.destination}
           />
           {watch.jobs.slice(-3).map((job) => (
             <Row

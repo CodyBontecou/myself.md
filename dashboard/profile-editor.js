@@ -69,7 +69,7 @@ export function ProfileEditor({ entry, onSaved, onCancel, onConfirm, suggestion 
           onConfirm({
             title: 'Save profile changes?',
             description:
-              'These settings will sync to this phone when myself.md is open. Enabled Agent permissions let all agents you allow for this account read only selected phone data and eligible old cloud exports; system permission still requires your phone. Agents and their AI providers use their own privacy and retention policies and may keep copies. Revoking access stops future reads; it cannot recall copies already received. The same permissions control cloud exports; no separate sharing switch is needed. Automatic exports, local folders and destination credentials still need setup on the phone.',
+              'These settings will sync to this phone when myself.md is open. Authenticated agents for this account can read selected data from the paired phone and eligible cloud exports; system permission still requires your phone. Agents and their AI providers use their own privacy and retention policies and may keep copies. Changing selections limits future reads after sync; it cannot recall copies already received. Automatic exports, local folders and destination credentials still need setup on the phone.',
             label: 'Save changes',
             action: async () => {
               await api('/api/dashboard/profiles', 'PUT', {
@@ -94,35 +94,6 @@ export function ProfileEditor({ entry, onSaved, onCancel, onConfirm, suggestion 
         </p>
       )}
       {input('Profile name', draft.name, (name) => change({ name }))}
-      <fieldset className="space-y-2">
-        <legend className="mb-2 font-medium">Agent permissions</legend>
-        {domains.map((domain) => (
-          <div key={domain}>
-            {checkbox(
-              domain === 'time' ? 'Screen time' : domain === 'health' ? 'Health' : 'Location',
-              draft.agentPermissions?.[domain] === true,
-              (value) =>
-                change({
-                  agentAccess: true,
-                  agentPermissions: {
-                    health: false,
-                    time: false,
-                    location: false,
-                    logs: false,
-                    ...draft.agentPermissions,
-                    [domain]: value,
-                  },
-                }),
-            )}
-          </div>
-        ))}
-        <p className="text-xs text-muted-foreground">
-          Turning a permission off blocks that data in old cloud exports. Turning it back on
-          restores eligible access after this phone syncs. Access applies to all agents you allow
-          for this account. Agents and their AI providers may keep received copies under their own
-          privacy and retention policies. App logs consent is managed on the phone.
-        </p>
-      </fieldset>
       {domains.map((domain) => (
         <fieldset key={domain} className="space-y-2">
           <legend className="mb-2 font-medium">

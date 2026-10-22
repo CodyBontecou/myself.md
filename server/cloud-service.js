@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { registerHeartRateContext } from './heart-rate-context.js';
+import { registerLocationReview } from './location-review.js';
+import { registerHealthReview } from './health-review.js';
+import { registerScreenTimeReview } from './screen-time-review.js';
 const content = (/** @type {unknown} */ value) => ({
   content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 });
@@ -11,6 +15,70 @@ export function createCloudService({
   refreshEntitlement,
   cloudSubscriptions,
 }) {
+  /** Shared authorized and metered read path for raw records and weekly reviews.
+   * @param {string} subject @param {string|null} client @param {string} exportId
+   * @param {string} cursor @param {number} limit @param {import('../core/data.js').Domain} [domain] */
+  async function readCloudExportPage(subject, client, exportId, cursor, limit, domain) {
+    const row = cloud.row(subject, exportId),
+      metadata = cloud.metadata(row);
+    const stamp = new Date().toISOString(),
+      id = randomUUID();
+    const interval = /** @type {{start:string,end:string}} */ (
+      metadata.manifest.interval ?? {
+        start: new Date(row.day).toISOString(),
+        end: new Date(Date.parse(row.day) + 86400000).toISOString(),
+      }
+    );
+    /** @type {import('../core/history.js').HistoryEvent} */
+    const event = {
+      id,
+      kind: 'access',
+      schema: metadata.profile.export.schema,
+      startedAt: stamp,
+      updatedAt: stamp,
+      status: 'running',
+      actor: 'agent',
+      client,
+      target: 'cloud',
+      destination: 'myself.md Cloud',
+      profile: {
+        id: row.profile,
+        name: metadata.profile.name,
+        selection: metadata.profile.selection,
+      },
+      interval,
+      timezone: 'UTC',
+      formats: [row.format],
+      recordCount: null,
+      artifacts: [],
+      warnings: [],
+      relatedId: exportId,
+      error: null,
+    };
+    history.record(subject, row.device, event);
+    try {
+      await refreshEntitlement(subject);
+      billing.reserve(subject, id, 'agent');
+      const page = await cloud.page(subject, exportId, Number(cursor || 0), limit, true, domain);
+      if (domain && !cloud.permission(subject, row.device, row.profile).agentPermissions[domain])
+        throw new Error('Source permission was revoked during the cloud read.');
+      if (client) cloud.observeAgent(subject, client);
+      billing.complete(subject, id);
+      history.update(subject, id, {
+        status: 'complete',
+        recordCount: page.records.length,
+        warnings: page.nextCursor ? ['This returned page has more records available.'] : [],
+      });
+      return page;
+    } catch (error) {
+      billing.release(subject, id);
+      history.update(subject, id, {
+        status: 'failed',
+        error: 'Cloud access was denied or the export could not be read.',
+      });
+      throw error;
+    }
+  }
   /** @param {import('@modelcontextprotocol/server').McpServer} mcp @param {string} subject @param {string|null} [client] */
   function registerCloudTools(mcp, subject, client = null) {
     mcp.registerTool(
@@ -153,65 +221,30 @@ export function createCloudService({
         },
       },
       async ({ exportId, cursor, limit }) => {
-        const row = cloud.row(subject, exportId),
-          metadata = cloud.metadata(row);
-        const stamp = new Date().toISOString(),
-          id = randomUUID();
-        const interval = /** @type {{start:string,end:string}} */ (
-          metadata.manifest.interval ?? {
-            start: new Date(row.day).toISOString(),
-            end: new Date(Date.parse(row.day) + 86400000).toISOString(),
-          }
-        );
-        /** @type {import('../core/history.js').HistoryEvent} */
-        const event = {
-          id,
-          kind: 'access',
-          schema: metadata.profile.export.schema,
-          startedAt: stamp,
-          updatedAt: stamp,
-          status: 'running',
-          actor: 'agent',
-          client,
-          target: 'cloud',
-          destination: 'myself.md Cloud',
-          profile: {
-            id: row.profile,
-            name: metadata.profile.name,
-            selection: metadata.profile.selection,
-          },
-          interval,
-          timezone: 'UTC',
-          formats: [row.format],
-          recordCount: null,
-          artifacts: [],
-          warnings: [],
-          relatedId: exportId,
-          error: null,
-        };
-        history.record(subject, row.device, event);
-        try {
-          await refreshEntitlement(subject);
-          billing.reserve(subject, id, 'agent');
-          const page = await cloud.page(subject, exportId, Number(cursor || 0), limit, true);
-          if (client) cloud.observeAgent(subject, client);
-          billing.complete(subject, id);
-          history.update(subject, id, {
-            status: 'complete',
-            recordCount: page.records.length,
-            warnings: page.nextCursor ? ['This returned page has more records available.'] : [],
-          });
-          return content(page);
-        } catch (error) {
-          billing.release(subject, id);
-          history.update(subject, id, {
-            status: 'failed',
-            error: 'Cloud access was denied or the export could not be read.',
-          });
-          throw error;
-        }
+        return content(await readCloudExportPage(subject, client, exportId, cursor, limit));
       },
     );
+    registerHeartRateContext(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor, domain) =>
+        readCloudExportPage(subject, client, id, cursor, 50, domain),
+    });
+    registerLocationReview(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor) => readCloudExportPage(subject, client, id, cursor, 50, 'location'),
+    });
+    registerHealthReview(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor) => readCloudExportPage(subject, client, id, cursor, 50, 'health'),
+    });
+    registerScreenTimeReview(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor) => readCloudExportPage(subject, client, id, cursor, 50, 'time'),
+    });
     mcp.registerTool(
       'delete_cloud_export',
       {

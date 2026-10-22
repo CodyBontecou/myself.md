@@ -79,9 +79,22 @@ export async function authorizeHealth(selected) {
     );
   }
 }
+/** Check only the requested iOS type; availability is rechecked on every page.
+ * Android retains its dynamic per-type permission lookup.
+ * @param {string} type */
+async function readableHealthType(type) {
+  if (Platform.OS !== 'ios') return (await healthTypes()).includes(type);
+  if (![...quantities, ...categories, ...special, ...characteristics].includes(type)) return false;
+  if (!HK.isHealthDataAvailable()) return false;
+  try {
+    return HK.isObjectTypeAvailable(/** @type {HKType} */ (type));
+  } catch {
+    return false;
+  }
+}
 /** @param {import('../core/data.js').DataQuery} query @param {string} token @returns {Promise<import('../core/data.js').DataPage>} */
 export async function healthPage(query, token) {
-  if (!(await healthTypes()).includes(query.type))
+  if (!(await readableHealthType(query.type)))
     throw new Error('This health type is unavailable or not permitted.');
   if (Platform.OS === 'android') {
     const result = await HC.readRecords(

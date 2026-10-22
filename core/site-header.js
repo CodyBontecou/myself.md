@@ -3,7 +3,9 @@ import { publicNavigation } from './public-site.js';
 /** Shared public navigation. Paths select a known active link and are never reflected into markup. @param {string} [path] */
 export function publicSiteHeader(path = '') {
   const links = publicNavigation
-    .filter(({ label }) => ['Blog', 'Docs', 'Pricing', 'Contact', 'Privacy'].includes(label))
+    .filter(({ label }) =>
+      ['Blog', 'Docs', 'ChatGPT', 'Pricing', 'Contact', 'Privacy'].includes(label),
+    )
     .map(
       ({ label, href }) =>
         `<a href="${href}"${path === href || (href === '/docs' && path.startsWith('/docs/')) || (href === '/blog' && path.startsWith('/blog/')) ? ' aria-current="page"' : ''}>${label}</a>`,

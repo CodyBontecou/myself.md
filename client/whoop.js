@@ -49,7 +49,7 @@ export async function whoopStatus(owner) {
     provider: 'whoop',
     handoff: whoopRedirect,
     instructions:
-      'Open Settings → WHOOP on this phone to connect or disconnect. WHOOP sign-in and consent require the owner. Select WHOOP types in a profile separately; Agent permissions govern reads.',
+      'Open Settings → WHOOP on this phone to connect or disconnect. WHOOP sign-in and consent require the owner. Select WHOOP types in a profile separately; paired online phones allow authenticated reads of selected types.',
   };
   try {
     await persistence;

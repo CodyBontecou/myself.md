@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import ts from 'typescript';
 import { errorMessage, readJSONResponse } from '../packages/support-chat/errors.js';
 
 let refreshes = 0;
@@ -61,6 +62,7 @@ vm.runInContext(
 );
 const session = () => ({
   requiresSignIn: false,
+  authenticationRequired: false,
   server: 'https://fixture.test',
   issuer: 'https://fixture.test/auth',
   resource: 'https://fixture.test/mcp',
@@ -88,10 +90,15 @@ assert.equal(refreshes, before, 'Permission failures must not refresh login');
 status = 401;
 const missing = session();
 missing.refreshToken = '';
-await assert.rejects(context.api(missing, '/api/support/v1'), /OAuth sign-in/);
+missing.deviceId = 'retained-phone';
+await assert.rejects(context.api(missing, '/api/support/v1'), /sign in again/i);
+assert.equal(missing.authenticationRequired, true, 'Rejected login must expose recovery state');
+assert.equal(missing.owner, 'fixture', 'Recovery must preserve ownership');
 assert.equal(refreshes, before, 'Missing refresh token cannot silently sign in');
 context.fetch = async () => Response.json({ error: 'Still unauthorized' }, { status: 401 });
-await assert.rejects(context.api(session(), '/api/support/v1'), /Still unauthorized/);
+const rejectedAgain = session();
+await assert.rejects(context.api(rejectedAgain, '/api/support/v1'), /sign in again/i);
+assert.equal(rejectedAgain.authenticationRequired, true);
 assert.equal(refreshes, before + 1, 'An unsuccessful refresh is retried only once');
 console.log(
   'PASS session 401 recovery, concurrent refresh, permission isolation, missing credentials and bounded retry. No live credentials used.',
@@ -114,6 +121,7 @@ assert.ok(
   ),
 );
 assert.equal(refreshes, beforeRevocation + 1);
+assert.equal(expired.authenticationRequired, true);
 assert.equal(expired.accessToken, '');
 assert.equal(expired.refreshToken, '');
 assert.ok(
@@ -380,4 +388,74 @@ assert.equal(JSON.parse(persisted).refreshToken, overlapping.refreshToken);
 assert.equal(await context.loadSession(), overlapping);
 console.log(
   'PASS provisional OAuth 401 refresh cannot bypass same-owner deletion recovery; accepted, failed and overlapping secure-save token rotations retain their persistence contracts.',
+);
+
+// Render the actual pairing screen against the retained session after a rejected login.
+let destination = '';
+const screenContext = vm.createContext({
+  React: {
+    /** @param {unknown} type @param {unknown} props @param {...unknown} children */
+    createElement: (type, props, ...children) => ({ type, props, children }),
+  },
+  useTheme: () => ({ colors: {} }),
+  usePhone: () => ({
+    session: missing,
+    connected: true,
+    error: 'OAuth sign-in required or token expired.',
+  }),
+  StyleSheet: { create: (/** @type {unknown} */ styles) => styles },
+  Stack: { Screen: 'StackScreen' },
+  router: {
+    push: (/** @type {string} */ path) => {
+      destination = path;
+    },
+  },
+  errorMessage,
+  ...Object.fromEntries(
+    [
+      'Screen',
+      'Copy',
+      'Group',
+      'Row',
+      'Button',
+      'Icon',
+      'Notice',
+      'View',
+      'Pressable',
+      'TextInput',
+      'CameraView',
+    ].map((name) => [name, name]),
+  ),
+});
+const pairingSource = readFileSync('client/PairScreen.js', 'utf8')
+  .replace(/^import .*;\n/gm, '')
+  .replace('export default ', '');
+vm.runInContext(
+  ts.transpileModule(pairingSource, {
+    compilerOptions: {
+      jsx: ts.JsxEmit.React,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText,
+  screenContext,
+);
+const screen = screenContext.PairScreen();
+/** @param {any} node @returns {any[]} */
+function screenNodes(node) {
+  if (!node || typeof node !== 'object') return [];
+  return [node, ...(node.children ?? []).flatMap(screenNodes)];
+}
+const nodes = screenNodes(screen);
+assert.ok(nodes.some((node) => node.children?.includes('Sign in to reconnect')));
+assert.ok(!nodes.some((node) => node.children?.includes('Your phone is connected')));
+const recoveryButton = nodes.find((node) => node.props?.testID === 'pair-sign-in-again');
+assert.ok(recoveryButton, 'A rejected login must offer recovery on the agent screen');
+recoveryButton.props.onPress();
+assert.equal(destination, '/login?reauthenticate=1');
+assert.ok(
+  nodes.some((node) => node.props?.testID === 'pair-disconnect-agent' && !node.props.disabled),
+);
+assert.equal(missing.deviceId, 'retained-phone', 'Recovery must retain the paired phone');
+console.log(
+  'PASS expired-login screen exposes same-owner recovery and keeps disconnect available.',
 );

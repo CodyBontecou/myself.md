@@ -11,7 +11,6 @@ import {
   profileLink,
   profileShareLink,
   agentProfileAllows,
-  parseAgentPermissions,
 } from '../core/profiles.js';
 import { domains, exportPage } from '../core/data.js';
 import { compatibleProfile } from '../core/profile-compatibility.js';
@@ -84,7 +83,7 @@ const queryFields = {
     .min(1)
     .max(100)
     .describe(
-      'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
+      'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires a selected data type and OS source permission.',
     ),
   domain: domainSchema.describe(
     'Data domain from get_phone_data_catalog. The chosen profile and phone-wide grant must both permit it.',
@@ -767,7 +766,7 @@ export function createDataService({
       {
         title: 'Browse phone logs',
         description:
-          'Browse owned-phone app, export and agent logs. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require owner-approved Logs access in an enabled profile, a consented phone report, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of authorized JSON metadata. Use selectedIds to select up to 350 unique IDs from the current page; unavailableIds identifies missing or inaccessible selections without widening grants. JSONL returns the same authorized projection. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Raw error messages may contain sensitive information. Does not consume export allowance.',
+          'Browse owned-phone app, export and agent logs. Merges a page of 50 export/agent history entries with up to 300 retained internal app events. App events require a paired phone profile, a phone diagnostic report, and a heartbeat within 15 seconds; history retains its existing ownership rules. historyOffset paginates the history source before category/profile filtering; follow nextHistoryOffset even for empty filtered pages. App entries repeat across pages; deduplicate by id. Use query for a case-insensitive literal search of authorized JSON metadata. Use selectedIds to select up to 350 unique IDs from the current page; unavailableIds identifies missing or inaccessible selections without widening grants. JSONL returns the same authorized projection. Repeated reads poll the latest heartbeat/history snapshot; deduplicate by id and replace updated history entries. This is polling, not a push subscription. Offline history may be stale. Raw error messages may contain sensitive information. Does not consume export allowance.',
         inputSchema: z
           .object({
             deviceId: z
@@ -812,7 +811,7 @@ export function createDataService({
               .max(100)
               .optional()
               .describe(
-                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
+                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires a selected data type and OS source permission.',
               ),
             selectedIds: z
               .array(z.string().min(1).max(1000))
@@ -1100,7 +1099,7 @@ export function createDataService({
       {
         title: 'Discover approved phone data',
         description:
-          'Discover phone data types, profiles with independent agentPermissions (agentAccess is a compatibility summary), profile-derived source availability and collection limits before querying. Select an approved profile and intersect its selections with domain types. When the user refers to a profile by name, match that name against catalog.profiles[].name and use the corresponding stable id for subsequent tools. Names can change and are not unique: refresh the catalog for each new name reference; if multiple profiles match, ask the user to disambiguate, and if none match, report that instead of guessing an ID. Online means a heartbeat within 15 seconds; offline catalogs may be stale. Keep myself.md open. No tool can grant permissions.',
+          'Discover phone data types, profiles, source availability and collection limits before querying. Paired online phones approve authenticated agent reads of selected data; agentAccess and agentPermissions are compatibility fields. Intersect profile selections with domain types. When the user refers to a profile by name, match that name against catalog.profiles[].name and use the corresponding stable id for subsequent tools. Names can change and are not unique: refresh the catalog for each new name reference; if multiple profiles match, ask the user to disambiguate, and if none match, report that instead of guessing an ID. Online means a heartbeat within 15 seconds; offline catalogs may be stale. Keep myself.md open. No tool can grant permissions.',
         inputSchema: z.object({
           domains: z
             .array(domainSchema)
@@ -1235,7 +1234,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Initiate a user approval handoff for an existing owned phone profile. Open the returned profile link on the phone and have the user review individual Agent permissions. There is no master switch; enabled requests at least one permission, disabled requests all permissions off. This tool never changes consent. Verify the saved outcome with get_phone_data_catalog; an offline catalog may be stale.',
+          'Compatibility read for a retired setting. Paired online phones permit authenticated access to selected data without an agent enable switch. enabled=false cannot disable access; change data selections or disconnect the phone instead.',
         inputSchema: z.object({
           deviceId: z
             .string()
@@ -1248,13 +1247,11 @@ export function createDataService({
             .min(1)
             .max(100)
             .describe(
-              'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
+              'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires a selected data type and OS source permission.',
             ),
           enabled: z
             .boolean()
-            .describe(
-              "Requested enabled state. This initiates the tool's owner approval flow; it cannot grant consent by itself.",
-            ),
+            .describe('Retired setting: true reads effective access; false returns unsupported.'),
         }),
       },
       async ({ deviceId, profileId, enabled }) => {
@@ -1268,16 +1265,12 @@ export function createDataService({
           deviceId,
           profileId,
           enabled,
-          agentAccess: profile.agentAccess,
-          status: profile.agentAccess === enabled ? 'completed' : 'awaiting_user',
+          agentAccess: true,
+          status: enabled ? 'completed' : 'unsupported',
           lastSeen: phone.seen,
-          handoff:
-            profile.agentAccess === enabled
-              ? null
-              : {
-                  deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}?section=agent-permissions`,
-                  instruction: `On the phone, ${enabled ? 'enable the needed individual permissions and confirm each Allow' : 'turn off every individual permission'} in Agent permissions for ${profile.name}.`,
-                },
+          handoff: null,
+          message:
+            'Agent access has no separate switch. Change profile data selections or disconnect the phone to stop access.',
         });
       },
     );
@@ -1293,7 +1286,7 @@ export function createDataService({
           openWorldHint: false,
         },
         description:
-          'Request owner review of independent Health, Screen time, Location and Logs permissions for an existing phone profile. Never changes consent. The owner uses Profile → Agent permissions; verify via a fresh get_phone_data_catalog. Export selections and OS access remain separate; Logs approval includes diagnostics consent.',
+          'Compatibility read for retired per-profile agent permissions. Authenticated access to a paired online phone follows data selections and OS permissions. Requests to disable agent permissions are unsupported; change selections or disconnect instead.',
         inputSchema: z
           .object({
             deviceId: z
@@ -1307,34 +1300,34 @@ export function createDataService({
               .min(1)
               .max(100)
               .describe(
-                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires the relevant individual data permission.',
+                'Stable profile ID returned by get_phone_data_catalog. Resolve user-provided names from catalog.profiles first; ask when names are ambiguous. Query access requires a selected data type and OS source permission.',
               ),
             permissions: z
               .object({
                 health: z
                   .boolean()
                   .describe(
-                    'Requested health agent permission. Owner confirmation, profile selections and OS permissions remain required.',
+                    'Retired health agent permission; true reflects effective access. Profile selections and OS permissions apply.',
                   ),
                 time: z
                   .boolean()
                   .describe(
-                    'Requested time agent permission. Owner confirmation, profile selections and OS permissions remain required.',
+                    'Retired time agent permission; true reflects effective access. Profile selections and OS permissions apply.',
                   ),
                 location: z
                   .boolean()
                   .describe(
-                    'Requested location agent permission. Owner confirmation, profile selections and OS permissions remain required.',
+                    'Retired location agent permission; true reflects effective access. Profile selections and OS permissions apply.',
                   ),
                 logs: z
                   .boolean()
                   .describe(
-                    'Requested permission for agent access to app logs; the owner must approve it on the phone.',
+                    'Retired Logs permission; diagnostics are included for a paired online phone.',
                   ),
               })
               .strict()
               .describe(
-                'Requested independent per-domain agent permissions. The phone owner must confirm changes; existing selections and OS permissions remain separate.',
+                'Compatibility fields: requests containing false return unsupported. Profile selections and OS permissions still apply.',
               ),
           })
           .strict(),
@@ -1346,27 +1339,19 @@ export function createDataService({
           throw new PairingError(409, 'Phone is offline. Open myself.md first.');
         const profile = phone.catalog.profiles.find((p) => p.id === profileId);
         if (!profile) throw new PairingError(404, 'Phone profile not found.');
-        const current = parseAgentPermissions(profile.agentPermissions);
-        const completed = Object.keys(current).every(
-          (key) =>
-            current[/** @type {keyof typeof current} */ (key)] ===
-            permissions[/** @type {keyof typeof current} */ (key)],
-        );
+        const current = { health: true, time: true, location: true, logs: true };
+        const completed = Object.values(permissions).every(Boolean);
         return content({
           deviceId,
           profileId,
           permissions: current,
           requestedPermissions: permissions,
-          agentAccess: profile.agentAccess,
+          agentAccess: true,
           lastSeen: phone.seen,
-          status: completed ? 'completed' : 'awaiting_user',
-          handoff: completed
-            ? null
-            : {
-                deepLink: `myselfmd://profiles/${encodeURIComponent(profileId)}?section=agent-permissions`,
-                instruction:
-                  'Review Agent permissions on this profile and confirm each new access. Re-read the catalog to verify the saved state.',
-              },
+          status: completed ? 'completed' : 'unsupported',
+          handoff: null,
+          message:
+            'Agent permissions have been retired. Change profile data selections or disconnect the phone to stop access.',
         });
       },
     );
@@ -1375,7 +1360,7 @@ export function createDataService({
       {
         title: 'Queue approved phone query',
         description:
-          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId with the relevant individual permission enabled. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. Phone-side consent is required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; long intervals continue through opaque cursors. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
+          'Queue a read of one discovered data type on an owned phone in a UTC interval under a profileId whose selection includes that type. Creates a job and activity entry and reserves an export/query allowance; successful capture consumes that allowance. Does not modify native source records. A paired online phone and OS source permissions are required. Returns requestId for get_phone_request. Records keep native units and metadata; sources differ. nextCursor paginates each page; long intervals continue through opaque cursors. Empty HealthKit results do not prove read authorization. Optional requestKey provides safe retries: identical arguments retrieve the original live job without another charge. Without a requestKey, repeated calls create separate jobs. Changed inputs, revoked grants and unavailable originals fail instead of re-dispatching. Activity fingerprints are retained for 90 days.',
         inputSchema: querySchema,
         annotations: {
           title: 'Queue approved phone query',
@@ -1648,6 +1633,11 @@ export function createDataService({
           agentPermissions: profile.agentPermissions,
         })),
       });
+      catalog.profiles = catalog.profiles.map((profile) => ({
+        ...profile,
+        agentAccess: true,
+        agentPermissions: { health: true, time: true, location: true, logs: true },
+      }));
       const sync = cloud.profileSync?.poll(
         subject,
         deviceId,
@@ -1673,7 +1663,7 @@ export function createDataService({
         phoneState.profiles.map((profile) => {
           const approvedProfile = approved.profiles.find((p) => p.id === profile.id);
           const remote = approvedProfile?.agentPermissions;
-          const local = parseAgentPermissions(profile.agentPermissions);
+          const local = profile.agentPermissions;
           return Object.assign({}, profile, {
             selection: Object.fromEntries(
               domains.map((domain) => [
@@ -1685,10 +1675,10 @@ export function createDataService({
             ),
             agentAccess: true,
             agentPermissions: {
-              health: local.health && remote?.health === true,
-              time: local.time && remote?.time === true,
-              location: local.location && remote?.location === true,
-              logs: local.logs && remote?.logs === true,
+              health: local?.health === true && remote?.health === true,
+              time: local?.time === true && remote?.time === true,
+              location: local?.location === true && remote?.location === true,
+              logs: local?.logs === true && remote?.logs === true,
             },
           });
         }),

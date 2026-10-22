@@ -52,13 +52,12 @@ Open your profile in \`Profiles\`:
 
 1. Under \`Data selection\`, choose the health types you need, such as steps.
 2. In Apple's permission sheet, enable only the types you need. If extra types are on, tap Turn Off All, then enable your chosen types.
-3. Save the profile and approve \`Health\` under \`Agent permissions\`.
+3. Save the profile. A paired online phone approves authenticated agent reads of its selected data.
 
 ![Expand Health to choose data types and review Apple Health permissions.](https://myself.md/dashboard/guide-images/iphone-health-data-selection.png)
 
-These controls are separate. Pairing or selecting a type does not grant agent access. Leave unrelated permissions off.
+OS permissions and data selections limit reads. Leave unrelated OS permissions off.
 
-![Agent permissions are separate from data selection. This profile has agent access off.](https://myself.md/dashboard/guide-images/iphone-agent-permissions.png)
 
 ## 4. Check your first read
 
@@ -72,9 +71,9 @@ Queued work is not a completed read. Check the returned interval and completenes
 
 ## Missing data and stopping access
 
-Check the account, phone connection, selected types, Apple Health access and profile's Health agent permission. HealthKit does not reveal read denial, so empty results do not prove zero activity. Overlapping sources can make raw totals differ from Apple Health. See [supported data and limits](https://myself.md/datasets/health).
+Check the account, phone connection, selected types, Apple Health access and profile selections. HealthKit does not reveal read denial, so empty results do not prove zero activity. Overlapping sources can make raw totals differ from Apple Health. See [supported data and limits](https://myself.md/datasets/health).
 
-Disable the profile's Health agent permission to stop reads through that grant; manage Apple Health permission separately. Already-delivered copies cannot be recalled. An authorized cloud export can be read separately without a new live phone query. See [privacy](https://myself.md/privacy) and [setup](https://myself.md/docs).
+Remove selected health types or disconnect the phone to stop live reads; manage Apple Health permission separately. Already-delivered copies cannot be recalled. An authorized cloud export can be read separately without a new live phone query. See [privacy](https://myself.md/privacy) and [setup](https://myself.md/docs).
 
 [About myself.md](https://myself.md/about) · [Source code](https://github.com/CodyBontecou/myself.md)
 `,
@@ -88,7 +87,7 @@ Disable the profile's Health agent permission to stop reads through that grant; 
       'Use myself.md to query selected Android Health Connect records through MCP. Choose permissions, pair your phone and verify a completed health query.',
     markdown: `# Connect Android Health Connect to an AI assistant with MCP
 
-Use myself.md to share selected Health Connect records with a compatible MCP assistant. You choose the records, grant Android permission and approve agent access separately.
+Use myself.md to share selected Health Connect records with a compatible MCP assistant. You choose the records and grant Android source permission. Paired online phones approve authenticated agent reads of selected data.
 
 ## Before you start
 
@@ -128,11 +127,10 @@ On the phone, open \`Settings → Agent connection\`, scan the QR or paste the l
 
 Read-only connections cannot create pairing links. Pair through a compatible full MCP client first. [Pairing help](https://myself.md/docs#pair-a-phone-and-approve-a-profile)
 
-## 3. Approve agent access
+## 3. Save your selection
 
-Save the profile and approve \`Health\` under its \`Agent permissions\`. Pairing and OS permission do not grant agent access.
+Save the profile. A paired online phone approves authenticated agent reads of selected data when OS permissions allow it.
 
-![Health agent access is a separate profile permission. Shown here with one type selected and agent access off.](https://myself.md/dashboard/guide-images/android-agent-permissions.png)
 
 Ask the assistant to refresh its phone catalog and confirm the device, profile and selected types. Finish setup before querying if no profile is discoverable.
 
@@ -152,7 +150,7 @@ Older history may require additional permission; exercise routes can need separa
 
 Overlapping sources can double count activity. A sum of raw records may differ from the platform total; see [Google's aggregation guidance](https://developer.android.com/health-and-fitness/health-connect/read-data).
 
-Disable the profile's Health agent permission to stop reads through that grant; manage Health Connect permission separately. You can also export selected types, dates and formats to files. A destination does not grant MCP access, and copies sent to an assistant cannot be recalled. See [privacy](https://myself.md/privacy) and [setup](https://myself.md/docs).
+Remove selected health types or disconnect the phone to stop live reads; manage Health Connect permission separately. You can also export selected types, dates and formats to files. A destination does not grant MCP access, and copies sent to an assistant cannot be recalled. See [privacy](https://myself.md/privacy) and [setup](https://myself.md/docs).
 
 [About myself.md](https://myself.md/about) · [Source code](https://github.com/CodyBontecou/myself.md)
 `,
@@ -180,19 +178,18 @@ iPhone reads have been verified. Android, unattended exports and automatic token
 
 In myself.md, open \`Settings → WHOOP → Connect WHOOP\`. Complete WHOOP sign-in and consent yourself, then confirm the app shows Connected.
 
-![WHOOP connected on iPhone. Connecting alone grants no agent access.](https://myself.md/dashboard/guide-images/iphone-whoop-connected.png)
+![WHOOP connected on iPhone. Select WHOOP data in a profile to make it available to authenticated agents.](https://myself.md/dashboard/guide-images/iphone-whoop-connected.png)
 
 You do not need your own developer app or credentials in Claude. [WHOOP authorization details](https://developer.whoop.com/docs/developing/oauth/)
 
 ## 2. Approve selected data
 
-Open a profile’s \`Data selection → Health\`, search WHOOP and choose the types you need. Save it, then approve \`Health\` under \`Agent permissions\`.
+Open a profile’s \`Data selection → Health\`, search WHOOP and choose the types you need. Save it. Authenticated agents can read these types when the paired phone is online.
 
 ![Search WHOOP to choose cycles, recovery, sleep, workouts or body measurements. Shown before selection.](https://myself.md/dashboard/guide-images/iphone-whoop-data-types.png)
 
-![Approve Health under Agent permissions after choosing your types. Shown here with access off.](https://myself.md/dashboard/guide-images/iphone-agent-permissions.png)
 
-Connecting WHOOP does not grant agent access. WHOOP-only selections need no Apple Health or Health Connect permission; selecting OS health sources requires those permissions separately.
+Agents can read only the WHOOP types selected in the profile. WHOOP-only selections need no Apple Health or Health Connect permission; selecting OS health sources requires those permissions separately.
 
 ## 3. Connect Claude and pair
 
@@ -214,7 +211,7 @@ On the phone, open \`Settings → Agent connection\`, scan the QR or paste the l
 
 ## 4. Check your first read
 
-Keep myself.md open and online. Ask Claude to confirm the intended phone, profile, Health agent permission and selected WHOOP types. Use your dates and time zone in this example:
+Keep myself.md open and online. Ask Claude to confirm the intended phone, profile and selected WHOOP types. Use your dates and time zone in this example:
 
 \`\`\`text
 Read WHOOP sleep records from my approved profile for October 12–18, 2026, using America/Puerto_Rico day boundaries. Wait for completion and read every page. Report durations, sources, missing nights and warnings. Keep Apple Health records separate.
@@ -230,9 +227,9 @@ Check that results identify WHOOP as the source. A pending query or connected pr
 - WHOOP RMSSD and Apple Health SDNN are different HRV metrics.
 - WHOOP and OS records are not automatically deduplicated; associations do not establish causes.
 
-For failures, check provider connection, profile selections, Health agent permission and phone connectivity. Use Reconnect for expired or revoked authorization. Sandbox access limits require provider/app access, not another prompt.
+For failures, check provider connection, profile selections and phone connectivity. Use Reconnect for expired or revoked authorization. Sandbox access limits require provider/app access, not another prompt.
 
-Disable the profile's Health agent permission to stop reads through that grant. To disconnect WHOOP, use \`Settings → WHOOP → Disconnect\` and verify success. Existing exports and copies sent to Claude remain. See [privacy](https://myself.md/privacy), [supported data](https://myself.md/datasets/health) and [setup](https://myself.md/docs).
+Remove selected health types or disconnect the phone to stop live reads. To disconnect WHOOP, use \`Settings → WHOOP → Disconnect\` and verify success. Existing exports and copies sent to Claude remain. See [privacy](https://myself.md/privacy), [supported data](https://myself.md/datasets/health) and [setup](https://myself.md/docs).
 
 [About myself.md](https://myself.md/about) · [Source code](https://github.com/CodyBontecou/myself.md)
 `,

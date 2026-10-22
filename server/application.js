@@ -1,3 +1,4 @@
+import { registerVisualizationCatalog } from './chatgpt-catalog.js';
 import { boundedWait, waitMsInput } from './bounded-wait.js';
 import { whoopOAuth } from './whoop.js';
 import { registerAnalyticsTools } from './analytics-tools.js';
@@ -240,6 +241,7 @@ export function createApplication(
       },
     );
     registerBlogTool(mcp);
+    registerVisualizationCatalog(mcp);
     mcp.registerTool(
       'get_public_documentation',
       {

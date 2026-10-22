@@ -60,8 +60,8 @@ assert.equal(
 );
 assert.equal(
   cloud.permission(subject, device, 'one').agentPermissions.health,
-  false,
-  'Web revocation applies before phone acknowledgment',
+  true,
+  'Retired agent toggles cannot disable paired-phone access',
 );
 assert.equal(
   cloud.permission(subject, device, 'one').shared,
@@ -150,12 +150,6 @@ assert.throws(
   () => cloud.profileSync.update(subject, device, 'one', after.revision, invalid, undefined),
   /catalog/,
 );
-const logs = structuredClone(profile);
-logs.agentPermissions = { health: true, time: true, location: true, logs: true };
-assert.throws(
-  () => cloud.profileSync.update(subject, device, 'one', after.revision, logs, undefined),
-  /Logs|logs/,
-);
 const raw = cloud.db.prepare('SELECT value FROM profile_sync').get();
 assert.ok(raw);
 assert.equal(
@@ -206,7 +200,7 @@ assert.equal(
   'cancelled',
   'A superseding phone edit must not falsely complete an agent suggestion',
 );
-/** @param {'source'|'agent'|'disconnect'} change */
+/** @param {'source'|'agent'|'disconnect'|'approved'} change */
 async function verifyAuthorizationDuringAwait(change) {
   const owner = `synthetic-await-${change}`;
   const deviceId = randomUUID();
@@ -237,7 +231,12 @@ async function verifyAuthorizationDuringAwait(change) {
     },
   });
   service.phoneApi(`/api/phones/${deviceId}/poll`, 'POST', owner, {
-    profiles: original.profiles,
+    profiles: original.profiles.map((p) => ({
+      ...p,
+      agentAccess: false,
+      agentPermissions: { health: false, time: false, location: false, logs: false },
+    })),
+    dispatch: true,
     profileSync: { base: null },
     domains: domains.map((domain) =>
       Object.assign({}, domain, { enabled: true, types: domain.availableTypes, notes: [] }),
@@ -271,18 +270,62 @@ async function verifyAuthorizationDuringAwait(change) {
     if (change === 'source') {
       const denied = structuredClone(profile);
       assert.ok(denied);
-      denied.agentPermissions = { health: false, time: true, location: true, logs: false };
+      denied.selection.health = [];
       cloud.profileSync.update(owner, deviceId, 'one', 1, denied, undefined);
       service.revokeQueries(owner, deviceId);
     } else if (change === 'agent') {
       cloud.setAgent(owner, clientId, true);
       service.cancelAgent(owner, clientId);
-    } else {
+    } else if (change === 'disconnect') {
       connected = false;
       service.cancelPhone(deviceId, owner);
     }
     release();
-    assert.equal((await queued).isError, true, `${change} during entitlement I/O rejects enqueue`);
+    const response = await queued;
+    if (change === 'approved') {
+      assert.ok(!response.isError, JSON.stringify(response));
+      const job = [...jobs.values()][0];
+      assert.ok(job);
+      service.phoneApi(`/api/phones/${deviceId}/poll`, 'POST', owner, {
+        profiles: original.profiles,
+        dispatch: true,
+        domains: domains.map((d) => ({ ...d, enabled: true, types: d.availableTypes, notes: [] })),
+      });
+      service.phoneApi(`/api/phones/${deviceId}/result`, 'POST', owner, {
+        id: job.id,
+        page: {
+          records: [
+            {
+              domain: 'health',
+              source: 'native',
+              type: 'steps',
+              start: null,
+              end: null,
+              native: { count: 42 },
+            },
+          ],
+          nextCursor: null,
+          warnings: [],
+          capture: 'synthetic',
+          complete: true,
+        },
+      });
+      const result = await client.callTool({
+        name: 'get_phone_request',
+        arguments: { requestId: job.id },
+      });
+      assert.ok(!result.isError, JSON.stringify(result));
+      assert.equal(jobs.get(job.id)?.state, 'complete');
+      assert.equal(jobs.get(job.id)?.result?.page.records.length, 1);
+      const retired = await client.callTool({
+        name: 'request_phone_profile_agent_access',
+        arguments: { deviceId, profileId: 'one', enabled: false },
+      });
+      assert.ok(!retired.isError);
+      assert.match(JSON.stringify(retired), /unsupported/);
+      return;
+    }
+    assert.equal(response.isError, true, `${change} during entitlement I/O rejects enqueue`);
     assert.equal(jobs.size, 0, 'Revoked work cannot appear after the cancellation sweep');
     assert.equal(billing.snapshot(owner).reserved, 0);
   } finally {
@@ -292,6 +335,7 @@ async function verifyAuthorizationDuringAwait(change) {
     history.db.close();
   }
 }
+await verifyAuthorizationDuringAwait('approved');
 await verifyAuthorizationDuringAwait('source');
 await verifyAuthorizationDuringAwait('agent');
 await verifyAuthorizationDuringAwait('disconnect');

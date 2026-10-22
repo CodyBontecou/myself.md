@@ -7,6 +7,16 @@ import { mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSyn
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
+import { buildScreenTimeReview } from './build-screen-time-review.js';
+import { buildHealthReview } from './build-health-review.js';
+import { buildLocationReview } from './build-location-review.js';
+import { buildChatgptCatalog } from './build-chatgpt-catalog.js';
+import { buildHeartRateContext } from './build-heart-rate-context.js';
+await buildScreenTimeReview();
+await buildHealthReview();
+await buildHeartRateContext();
+await buildChatgptCatalog();
+await buildLocationReview();
 mkdirSync('dashboard/dist', { recursive: true });
 await buildBlog();
 await buildProfileShare();

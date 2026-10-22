@@ -558,9 +558,17 @@ export function createWatchService({
       ['cancel_watch_export', 'cancel'],
       ['disconnect_watch', 'revoke'],
     ])) {
+      const title = {
+        list: 'List connected watches',
+        get: 'Read watch state',
+        request: 'Request watch export',
+        cancel: 'Cancel watch export',
+        revoke: 'Disconnect watch',
+      }[action];
       mcp.registerTool(
         name,
         {
+          title,
           description:
             action === 'request'
               ? 'Request today’s available watch step samples at its approved HTTPS destination. Explicit watch agent consent is required. Reuse requestId on retries; inspect get_watch_state for actual delivery.'
@@ -575,11 +583,28 @@ export function createWatchService({
             action === 'list'
               ? z.object({}).strict()
               : action === 'request' || action === 'cancel'
-                ? z.object({ deviceId: idSchema, requestId: idSchema }).strict()
-                : z.object({ deviceId: idSchema }).strict(),
+                ? z
+                    .object({
+                      deviceId: idSchema.describe(
+                        'Owned watch UUID returned by list_connected_watches.',
+                      ),
+                      requestId: idSchema.describe(
+                        'Stable watch export request UUID; reuse on retries.',
+                      ),
+                    })
+                    .strict()
+                : z
+                    .object({
+                      deviceId: idSchema.describe(
+                        'Owned watch UUID returned by list_connected_watches.',
+                      ),
+                    })
+                    .strict(),
           annotations: {
+            title,
+            openWorldHint: action === 'request',
             readOnlyHint: action === 'list' || action === 'get',
-            destructiveHint: action === 'revoke',
+            destructiveHint: action !== 'list' && action !== 'get',
             idempotentHint: true,
           },
         },
@@ -595,6 +620,14 @@ export function createWatchService({
     mcp.registerTool(
       'setup_watch',
       {
+        title: 'Set up watch',
+        annotations: {
+          title: 'Set up watch',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         description:
           'Initiate owner setup, HTTPS credential entry and watch agent consent. Agents cannot approve permissions or receive credentials. Verify with list_connected_watches.',
         inputSchema: z.object({}).strict(),

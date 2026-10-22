@@ -7,7 +7,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
-/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string,lastActiveAt?:number,requiresSignIn?:boolean}} Session */
+/** @typedef {{server:string,issuer:string,resource:string,accessToken:string,refreshToken:string,expires:number,deviceId:string,account:string,owner:string,lastActiveAt?:number,requiresSignIn?:boolean,authenticationRequired?:boolean}} Session */
 const key = 'myselfmd-session';
 const legacyKey = 'qr-connect-session';
 const inactiveSessions = new WeakSet();
@@ -416,6 +416,7 @@ export async function reauthenticateSession(previous, provider) {
 export async function api(session, path, options) {
   activeSession(session);
   if (session.requiresSignIn) throw new Error('Sign in again to finish the myself.md upgrade.');
+  if (session.authenticationRequired) throw signInRequired();
   if (session.lastActiveAt !== undefined && Date.now() - session.lastActiveAt >= idleTimeout)
     throw new Error('Your session expired after 365 days of inactivity. Please sign in again.');
   if (session.expires < Date.now() + 30000) await refreshSession(session);
@@ -437,19 +438,39 @@ export async function api(session, path, options) {
   try {
     body = await send();
   } catch (error) {
-    if (
-      !session.refreshToken ||
-      !error ||
-      typeof error !== 'object' ||
-      !('status' in error) ||
-      error.status !== 401
-    )
-      throw error;
-    await refreshSession(session, rejectedToken);
-    body = await send();
+    if (!isUnauthorized(error)) throw error;
+    if (session.refreshToken) {
+      await refreshSession(session, rejectedToken);
+      try {
+        body = await send();
+      } catch (retryError) {
+        if (!isUnauthorized(retryError)) throw retryError;
+        await requireAuthentication(session);
+        throw signInRequired(retryError);
+      }
+    } else {
+      await requireAuthentication(session);
+      throw signInRequired(error);
+    }
   }
   activeSession(session);
   return /** @type {T} */ (body);
+}
+
+/** @param {unknown} error */
+function isUnauthorized(error) {
+  return Boolean(error && typeof error === 'object' && 'status' in error && error.status === 401);
+}
+/** @param {unknown} [cause] */
+function signInRequired(cause) {
+  return new Error('Your sign-in has expired. Sign in again to reconnect your agent.', { cause });
+}
+/** Preserve the paired partition while exposing an actionable login state.
+ * @param {Session} session */
+async function requireAuthentication(session) {
+  activeSession(session);
+  session.authenticationRequired = true;
+  await updateSession(session);
 }
 
 /** Refresh a rejected token once; concurrent requests share its rotation.
@@ -457,8 +478,10 @@ export async function api(session, path, options) {
 async function refreshSession(session, rejectedToken) {
   activeSession(session);
   if (rejectedToken !== undefined && session.accessToken !== rejectedToken) return;
-  if (!session.refreshToken)
-    throw new Error('Your sign-in has expired. Open Settings → Account → Sign in again.');
+  if (!session.refreshToken) {
+    await requireAuthentication(session);
+    throw signInRequired();
+  }
   const refreshKey = `${session.issuer}|${session.resource}|${session.refreshToken}`;
   let pending = refreshes.get(refreshKey);
   if (!pending) {
@@ -485,10 +508,8 @@ async function refreshSession(session, rejectedToken) {
       session.accessToken = '';
       session.refreshToken = '';
       session.expires = 0;
-      await updateSession(session);
-      throw new Error('Your sign-in has expired. Open Settings → Account → Sign in again.', {
-        cause: error,
-      });
+      await requireAuthentication(session);
+      throw signInRequired(error);
     }
     throw error;
   }

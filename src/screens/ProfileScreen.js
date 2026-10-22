@@ -19,7 +19,6 @@ export default function ProfileScreen() {
         <ProfilePanel
           key={profileId}
           profileId={profileId}
-          openAgentPermissions={section === 'agent-permissions'}
           exportFirst={firstExport === '1'}
           session={session}
           state={profiles}

@@ -25,12 +25,7 @@ import ProfilePanel from './ProfilePanel.js';
 import ProfileFeed from './ProfileFeed.js';
 import LocationSettings from './LocationSettings.js';
 import { loadAgentProfiles, saveAgentProfiles } from './profile-logs.js';
-import {
-  parseProfile,
-  parseProfileState,
-  agentProfileAllows,
-  parseAgentPermissions,
-} from '../core/profiles.js';
+import { parseProfile, parseProfileState, agentProfileAllows } from '../core/profiles.js';
 /** @typedef {{session:import('./session.js').Session,incoming:import('../core/profiles.js').ProfileDraft|null,onDismiss:()=>void,children:import('react').ReactNode}} DataProviderProps */
 const PhoneDataContext = createContext(
   /** @type {ReturnType<typeof usePhoneDataState>|null} */ (null),
@@ -144,12 +139,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
       domains: raw.domains.map((d) =>
         Object.assign({}, d, {
           enabled:
-            profileState.current?.profiles.some(
-              (p) =>
-                p.agentAccess === true &&
-                parseAgentPermissions(p.agentPermissions)[d.domain] &&
-                p.selection[d.domain].length > 0,
-            ) ?? false,
+            profileState.current?.profiles.some((p) => p.selection[d.domain].length > 0) ?? false,
           availableTypes: d.types,
           types: d.types.filter((key) =>
             profileState.current?.profiles.some((p) =>

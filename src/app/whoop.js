@@ -130,8 +130,9 @@ export default function WhoopScreen() {
       )}
       <SectionHeader title="Export & agent access" />
       <Copy>
-        After connecting, select WHOOP data in a profile’s Data selection. Agent permissions control
-        whether agents can read those selected types. Connecting alone grants no agent access.
+        After connecting, select WHOOP data in a profile’s Data selection. Profile data selections
+        control whether agents can read those selected types. Connecting alone grants no agent
+        access.
       </Copy>
       <Button
         secondary

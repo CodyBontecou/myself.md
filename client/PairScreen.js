@@ -1,4 +1,4 @@
-import { errorJSON } from '../packages/support-chat/errors.js';
+import { errorMessage } from '../packages/support-chat/errors.js';
 import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { Stack, router } from 'expo-router';
@@ -27,6 +27,7 @@ export default function PairScreen() {
     switchConnection,
     signIn,
   } = usePhone();
+  const authenticationRequired = Boolean(session?.authenticationRequired);
   return (
     <Screen compact testID="pair-screen">
       <Stack.Screen options={{ title: connected ? 'Your agent' : 'Connect agent' }} />
@@ -47,15 +48,28 @@ export default function PairScreen() {
         <>
           <View style={styles.intro}>
             <Copy variant="heading" style={styles.heading}>
-              Your phone is connected
+              {authenticationRequired ? 'Sign in to reconnect' : 'Your phone is connected'}
             </Copy>
-            <Copy muted>Manage what your agent can access in each profile.</Copy>
+            <Copy muted>
+              {authenticationRequired
+                ? 'Your login has expired. Sign in to the same account to reconnect this phone.'
+                : 'Manage what your agent can access in each profile.'}
+            </Copy>
           </View>
           <Group>
             <Row testID="pair-account" title="Account" subtitle={session?.account} />
             <Row testID="pair-server" title="Server" subtitle={session?.server} />
           </Group>
           <View style={styles.actions}>
+            {authenticationRequired && (
+              <Button
+                testID="pair-sign-in-again"
+                label="Sign in again"
+                filled
+                disabled={busy}
+                onPress={() => router.push('/login?reauthenticate=1')}
+              />
+            )}
             <Button
               testID="pair-check-connection"
               label="Check connection"
@@ -255,7 +269,7 @@ export default function PairScreen() {
       )}
       {error && (
         <View testID="pair-error" accessibilityRole="alert">
-          <Notice title="Connection needs attention" body={errorJSON(error)} />
+          <Notice title="Connection needs attention" body={errorMessage(error)} />
         </View>
       )}
     </Screen>
