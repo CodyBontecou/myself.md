@@ -1,5 +1,5 @@
 import { errorMessage } from '../packages/support-chat/errors.js';
-import { Alert, AppState } from 'react-native';
+import { AppState } from 'react-native';
 import { api } from './session.js';
 import { loadExportContext } from './export-context.js';
 import { loadProfiles } from './profiles.js';
@@ -16,7 +16,6 @@ db.execSync(
   'CREATE TABLE IF NOT EXISTS phone_export_receipts (owner TEXT, device TEXT, request TEXT, value TEXT, PRIMARY KEY(owner,device,request))',
 );
 const activeRequests = new Set();
-let showing = false;
 /** @param {import('./session.js').Session} session @param {string} requestId @param {Record<string,unknown>} value */
 function save(session, requestId, value) {
   const context = loadExportContext();
@@ -29,7 +28,7 @@ function save(session, requestId, value) {
     JSON.stringify(value),
   );
 }
-/** Request retries replay delivery receipts; a runtime restart never repeats an approved export.
+/** Request retries replay delivery receipts; a runtime restart never repeats an started export.
  * @param {import('./session.js').Session} session @param {PhoneExportRequest|null|undefined} request @param {()=>boolean} active */
 export async function reviewPhoneExport(session, request, active) {
   if (qaEnabled) return;
@@ -77,7 +76,6 @@ export async function reviewPhoneExport(session, request, active) {
   if (
     !request ||
     !current() ||
-    showing ||
     activeRequests.has(request.requestId) ||
     Date.parse(request.expiresAt) <= Date.now()
   )
@@ -96,95 +94,64 @@ export async function reviewPhoneExport(session, request, active) {
     await report(request.requestId, { action: 'fail', error: 'profile_changed' });
     return;
   }
-  showing = true;
-  const destination =
-    profile.export.destination === 'local'
-      ? 'on this phone'
-      : profile.export.destination === 'cloud'
-        ? 'in your myself.md cloud storage'
-        : `at ${new URL(profile.export.httpUrl ?? '').host}`;
-  Alert.alert(
-    'Export phone data?',
-    `${profile.name}: export selected ${request.domains.join(', ')} data from ${request.range.start ?? 'the earliest readable record'} until ${request.range.end} ${destination}. This uses the profile’s formats and file replacement settings and your export allowance. Existing files may be replaced. Keep the app open. System permissions still apply. This does not give the agent permission to read your records.`,
-    [
-      {
-        text: 'Cancel',
-        style: 'cancel',
-        onPress: () => {
-          showing = false;
-          save(session, request.requestId, { action: 'cancel' });
-          void report(request.requestId, { action: 'cancel' }).catch(() => {});
+  activeRequests.add(request.requestId);
+  save(session, request.requestId, { action: 'running' });
+  const toast = showToast({
+    message: 'Exporting phone data',
+    kind: 'loading',
+    progress: 0,
+  });
+  void (async () => {
+    try {
+      if (!current() || Date.parse(request.expiresAt) <= Date.now())
+        throw new Error('Export request expired.');
+      const latest = loadProfiles(session.deviceId)?.profiles.find(
+        (p) => p.id === request.profileId,
+      );
+      if (!latest || JSON.stringify(parseProfile(latest)) !== request.configuration)
+        throw new Error('Profile changed.');
+      const started = await report(request.requestId, { action: 'start' });
+      if (started.status !== 'running') throw new Error('Export request is no longer running.');
+      const receipt = await exportNow(
+        session,
+        latest,
+        (detail, progress) => toast({ detail, progress }),
+        {
+          domains: request.domains,
+          range: request.range,
+          requestId: `export-${request.requestId}`,
+          check: async () => {
+            if (!current()) throw new Error('Phone account, connection or foreground changed.');
+            const outcome = await report(request.requestId, { action: 'check' });
+            if (!current() || outcome.status !== 'running')
+              throw new Error('Export request stopped.');
+          },
         },
-      },
-      {
-        text: 'Export',
-        onPress: () => {
-          showing = false;
-          activeRequests.add(request.requestId);
-          save(session, request.requestId, { action: 'running' });
-          const toast = showToast({
-            message: 'Exporting phone data',
-            kind: 'loading',
-            progress: 0,
-          });
-          void (async () => {
-            try {
-              if (!current() || Date.parse(request.expiresAt) <= Date.now())
-                throw new Error('Export review expired.');
-              const latest = loadProfiles(session.deviceId)?.profiles.find(
-                (p) => p.id === request.profileId,
-              );
-              if (!latest || JSON.stringify(parseProfile(latest)) !== request.configuration)
-                throw new Error('Profile changed.');
-              const started = await report(request.requestId, { action: 'start' });
-              if (started.status !== 'running')
-                throw new Error('Export request is no longer running.');
-              const receipt = await exportNow(
-                session,
-                latest,
-                (detail, progress) => toast({ detail, progress }),
-                {
-                  domains: request.domains,
-                  range: request.range,
-                  requestId: `export-${request.requestId}`,
-                  check: async () => {
-                    if (!current())
-                      throw new Error('Phone account, connection or foreground changed.');
-                    const outcome = await report(request.requestId, { action: 'check' });
-                    if (!current() || outcome.status !== 'running')
-                      throw new Error('Export request stopped.');
-                  },
-                },
-              );
-              save(session, request.requestId, { action: 'complete', receipt });
-              toast({
-                message: receipt.failedSources ? 'Data partially exported' : 'Data exported',
-                detail: `${receipt.days} days · ${receipt.recordCount} records`,
-                kind: receipt.failedSources ? 'warning' : 'success',
-                progress: 100,
-              });
-              await report(request.requestId, { action: 'complete', receipt }).catch(() => {});
-            } catch (error) {
-              const code =
-                error instanceof Error && /past-data access/.test(error.message)
-                  ? 'history_permission_required'
-                  : 'export_failed';
-              save(session, request.requestId, { action: 'fail', error: code });
-              toast({
-                message:
-                  errorMessage(error) ||
-                  'Export stopped. Check export history for saved files and details.',
-                kind: 'error',
-                progress: undefined,
-              });
-              await report(request.requestId, { action: 'fail', error: code }).catch(() => {});
-            } finally {
-              activeRequests.delete(request.requestId);
-            }
-          })();
-        },
-      },
-    ],
-    { cancelable: false },
-  );
+      );
+      save(session, request.requestId, { action: 'complete', receipt });
+      toast({
+        message: receipt.failedSources ? 'Data partially exported' : 'Data exported',
+        detail: `${receipt.days} days · ${receipt.recordCount} records`,
+        kind: receipt.failedSources ? 'warning' : 'success',
+        progress: 100,
+      });
+      await report(request.requestId, { action: 'complete', receipt }).catch(() => {});
+    } catch (error) {
+      const code =
+        error instanceof Error && /past-data access/.test(error.message)
+          ? 'history_permission_required'
+          : 'export_failed';
+      save(session, request.requestId, { action: 'fail', error: code });
+      toast({
+        message:
+          errorMessage(error) ||
+          'Export stopped. Check export history for saved files and details.',
+        kind: 'error',
+        progress: undefined,
+      });
+      await report(request.requestId, { action: 'fail', error: code }).catch(() => {});
+    } finally {
+      activeRequests.delete(request.requestId);
+    }
+  })();
 }

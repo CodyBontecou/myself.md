@@ -11,7 +11,7 @@ export const phoneExportInput = z
       .enum(['request', 'status', 'cancel'])
       .default('request')
       .describe(
-        'Request owner review, inspect delivery, or stop remaining work. Existing files are retained on cancellation.',
+        'Request an export, inspect delivery, or stop remaining work. Existing files are retained on cancellation.',
       ),
     deviceId: z.string().uuid().describe('Owned online phone from list_connected_phones.'),
     profileId: z
@@ -50,7 +50,7 @@ export const phoneExportInput = z
       .string()
       .uuid()
       .describe(
-        'Caller-chosen UUID. Reuse for retries/status/cancellation; a new UUID requests a new export and requires new owner approval.',
+        'Caller-chosen UUID. Reuse for retries/status/cancellation; a new UUID requests a new export using the saved profile settings.',
       ),
   })
   .strict()
@@ -82,10 +82,10 @@ const phoneInput = z
       .optional(),
   })
   .strict();
-/** @typedef {'accepted'|'awaiting_user'|'running'|'completed'|'failed'|'cancelled'|'expired'} Status */
+/** @typedef {'accepted'|'queued'|'awaiting_user'|'running'|'completed'|'failed'|'cancelled'|'expired'} Status */
 /** @typedef {{requestId:string,subject:string,client:string|null,deviceId:string,profileId:string,configuration:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string},parameters:string,status:Status,createdAt:number,expiresAt:number,receipt?:z.infer<typeof receiptSchema>,error?:'export_failed'|'interrupted'|'profile_changed'|'history_permission_required'}} PhoneExport */
 const terminal = new Set(['completed', 'failed', 'cancelled', 'expired']);
-/** Owner confirmation authorizes export delivery, never access to the records by the requesting agent.
+/** Exports use the owner-saved profile destination and selections with no per-request confirmation.
  * @param {{requests:Map<string,PhoneExport>,own:(deviceId:string,subject:string)=>void,phone:(deviceId:string)=>{seen:number,catalog:{dataExport?:{version:1}|undefined,profiles:{id:string,selection:Record<import('../core/data.js').Domain,string[]>}[]}}|undefined,authorize:(subject:string,client:string|null)=>void}} dependencies */
 export function createPhoneExports({ requests, own, phone, authorize }) {
   /** @param {PhoneExport} request */
@@ -128,9 +128,9 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       canCancel: !terminal.has(request.status),
       ownerHandoff: {
         deepLink: 'myselfmd://profiles',
-        requiresUserApproval: true,
+        requiresUserApproval: false,
         instructions:
-          'Open myself.md and review the requested data export, date interval and saved destination. Keep the phone open. OS permissions, past-data access and secure destination setup require the owner. This does not enable agent read access.',
+          'Keep myself.md open to export automatically using the saved profile selections and destination. No per-request approval is required. OS permissions, past-data access and secure destination setup may still require the owner.',
       },
       ...(request.receipt
         ? { receipt: request.receipt, partial: request.receipt.failedSources > 0 }
@@ -238,7 +238,7 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       if (
         request.subject !== subject ||
         request.deviceId !== deviceId ||
-        !['accepted', 'awaiting_user'].includes(expire(request).status)
+        !['accepted', 'queued', 'awaiting_user'].includes(expire(request).status)
       )
         continue;
       try {
@@ -248,7 +248,7 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
         continue;
       }
       if (terminal.has(request.status)) continue;
-      request.status = 'awaiting_user';
+      request.status = 'queued';
       requests.set(request.requestId, request);
       return {
         requestId: request.requestId,
@@ -272,8 +272,9 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
     if (terminal.has(request.status) || input.action === 'check') return result(request);
     if (input.action === 'cancel') request.status = 'cancelled';
     else if (input.action === 'start') {
-      if (request.status !== 'awaiting_user')
-        throw new PairingError(409, 'Wait for owner review before starting export.');
+      // Accept persisted requests dispatched before per-request approval was retired.
+      if (!['queued', 'awaiting_user'].includes(request.status))
+        throw new PairingError(409, 'Wait for phone dispatch before starting export.');
       request.status = 'running';
       request.expiresAt = Date.now() + 86400000;
     } else if (input.action === 'complete') {

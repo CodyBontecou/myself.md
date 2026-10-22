@@ -450,6 +450,7 @@ async function status(client, id, action = 'status') {
   return z
     .object({
       status: z.string(),
+      ownerHandoff: z.object({ requiresUserApproval: z.boolean() }),
       receipt: z.unknown().optional(),
       partial: z.boolean().optional(),
     })
@@ -494,6 +495,7 @@ try {
   assert.equal((await call(foreign, id)).isError, true);
   assert.equal((await status(owner, id, 'request')).status, 'accepted');
   assert.equal((await status(owner, id, 'request')).receipt, undefined);
+  assert.equal((await status(owner, id)).ownerHandoff.requiresUserApproval, false);
   assert.equal(requests.size, 1);
   assert.equal(
     (
@@ -514,7 +516,7 @@ try {
   assert.equal((await call(sibling, id, 'status')).isError, true);
   poll(true, otherDevice);
   assert.equal((await call(owner, id, 'status', otherDevice)).isError, true);
-  assert.throws(() => report(id, { action: 'start' }), /owner review/);
+  assert.throws(() => report(id, { action: 'start' }), /phone dispatch/);
   assert.equal(poll().phoneExport?.requestId, id);
   assert.throws(() => report(id, { action: 'complete' }), /receipt/);
   report(id, { action: 'start' });
@@ -581,16 +583,15 @@ try {
   assert.equal(
     billing.snapshot(subject).used,
     0,
-    'Queueing and review do not consume export allowance',
+    'Queueing and dispatch do not consume export allowance',
   );
   assert.equal(
     catalog.profiles[0].agentAccess,
     false,
-    'Export approval does not grant agent reads',
+    'Export execution does not change agent read configuration',
   );
-  // Join the actual MCP request, phone review, export orchestration and receipt replay.
+  // Join the actual MCP request, automatic phone execution, export orchestration and receipt replay.
   const journal = new Map();
-  let buttons = /** @type {{text:string,onPress:()=>void}[]} */ ([]);
   let runCount = 0,
     dropCompletion = true;
   /** @type {(()=>void)|undefined} */ let finish;
@@ -617,15 +618,7 @@ try {
   const mobileMocks = {
     'react-native': {
       AppState: { currentState: 'active' },
-      Alert: {
-        alert: (
-          /** @type {string} */ _title,
-          /** @type {string} */ _description,
-          /** @type {typeof buttons} */ actions,
-        ) => {
-          buttons = actions;
-        },
-      },
+      Alert: { alert: () => assert.fail('Agent exports must not prompt for approval') },
     },
     './session.js': {
       api: async (
@@ -676,10 +669,6 @@ try {
   cancelAfter = Infinity;
   writes.length = 0;
   await mobile.reviewPhoneExport(context, dispatched, () => true);
-  assert.equal(runCount, 0, 'A delivered review cannot export until the owner confirms');
-  const approve = buttons.find((button) => button.text === 'Export');
-  assert.ok(approve);
-  approve.onPress();
   await finished;
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(runCount, 1);
@@ -889,9 +878,13 @@ try {
     arguments: { requestId: revokeId, waitMs: 1000 },
   });
   await delay(30);
-  catalog.profiles[0] = { ...profile, agentAccess: false };
+  catalog.profiles[0] = {
+    ...profile,
+    agentAccess: true,
+    selection: { ...profile.selection, health: [] },
+  };
   poll();
-  assert.equal((await revoked).isError, true, 'Profile grants are rechecked during wait');
+  assert.equal((await revoked).isError, true, 'Profile selections are rechecked during wait');
   catalog.profiles[0] = { ...profile, agentAccess: true };
   poll();
   const waitExport = randomUUID();
@@ -911,15 +904,15 @@ try {
   assert.notEqual(exportOutcome.isError, true, JSON.stringify(exportOutcome));
   assert.equal(
     z.object({ status: z.string() }).parse(exportOutcome.structuredContent).status,
-    'awaiting_user',
-    'Bounded waits return the owner handoff promptly',
+    'queued',
+    'Bounded waits expose dispatched work without requiring owner approval',
   );
   await status(owner, waitExport, 'cancel');
   console.log(
     'MCP optimization: full/restricted filtered discovery, aggregate query dispatch/results, idempotent wait arguments, state-change waits, owner handoff, blocked-client and revoked-grant denial pass.',
   );
   console.log(
-    'All Time Health: multi-year calendar coverage, snapshots, history batching, one allowance, discovery failure, cancellation, Android history consent, real MCP lifecycle/ownership/client isolation, durable retries, expiry, profile changes, owner-approved phone execution, lost acknowledgments and JS restart recovery pass.',
+    'All Time Health: multi-year calendar coverage, snapshots, history batching, one allowance, discovery failure, cancellation, Android history consent, real MCP lifecycle/ownership/client isolation, durable retries, expiry, profile changes, automatic phone execution, lost acknowledgments and JS restart recovery pass.',
   );
 } finally {
   await Promise.all(clients.map((c) => c.close()));

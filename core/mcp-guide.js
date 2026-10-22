@@ -5,7 +5,7 @@ export const mcpGuide = {
   navigationTitle: 'MCP workflows',
   title: 'Query and export approved data with MCP',
   description:
-    'Agent workflow for filtered discovery, scalar aggregation, bounded waiting, safe retries, cloud pagination and owner-reviewed file exports.',
+    'Agent workflow for filtered discovery, scalar aggregation, bounded waiting, safe retries, cloud pagination and automatic file exports.',
   markdown: `# Query and export approved data with MCP
 
 Use this guide after [connecting your assistant](/docs). It covers both /mcp and /mcp/chatgpt. Initialize the connection and call tools/list for authoritative inputs and available operations. The ChatGPT connection has a restricted tool set; its OAuth tokens cannot authorize the full MCP resource.
@@ -56,7 +56,7 @@ The hosted backend may update before the installed phone. Read capabilities from
 | --- | --- |
 | Queries longer than 31 days | dataQuery.version equals 1 |
 | Scalar query aggregation | dataQuery.aggregation equals 1 |
-| Flexible owner-reviewed file exports | dataExport.version equals 1 |
+| Flexible automatic file exports | dataExport.version equals 1 |
 
 An update-required response means the owner needs a compatible phone app. Repeated query attempts cannot add that capability. Older phones can still perform supported raw queries under their existing grants.
 
@@ -133,7 +133,7 @@ Cloud availability depends on the last synchronized profile/source grants, not a
 
 Discover export_phone_data and a phone advertising dataExport.version 1. Supply the saved profileId, caller-chosen UUID requestId, selected domains, action request and range. For All Time Health use domains ["health"] and range {"start":null,"end":null}. Null start discovers earliest readable selected history; null end freezes the current time at acceptance. Screen Time requires an explicit start because its adapter cannot discover earliest retention.
 
-The owner reviews the selected domains, exact interval and saved destination on the phone before execution. Native Health history permission and source retention still apply. Keep the app open. Reuse the same IDs and frozen parameters for safe retries/status, with action status and optional waitMs. Report success only after a completed receipt; inspect partial, recordCount, failedSources and history for actual delivery. Cancellation stops remaining work but retains files already written. Approval to export does not grant agent record-read access.
+The phone automatically exports the selected domains and requested interval using the saved profile destination, formats and conflict policy; existing files may be replaced. No per-request phone approval is required. Native Health history permission and source retention still apply. Keep the app open. Reuse the same IDs and frozen parameters for safe retries/status, with action status and optional waitMs. Report success only after a completed receipt; inspect partial, recordCount, failedSources and history for actual delivery. Cancellation stops remaining work but retains files already written. Export execution does not change profile selections or OS permissions.
 
 ## Resolve blockers and report the result
 
