@@ -13,7 +13,7 @@ import {ToastProvider,showToast} from './src/components/Toast.js';
 import SettingsScreen from './src/screens/SettingsScreen.js';
 window.invokeHeader=()=>React.isValidElement(window.header());
 let update;
-window.fixture={show:(value)=>{update=showToast(value)},update:(value)=>update(value)};
+window.fixture={show:(value)=>{update=showToast(value);return update},update:(value)=>update(value)};
 createRoot(document.getElementById('root')).render(<ToastProvider><SettingsScreen /><View style={{flex:1}}><Pressable testID="underlying" onPress={()=>window.taps=(window.taps||0)+1}><Text>Underlying action</Text></Pressable></View></ToastProvider>);
 `,
     resolveDir: process.cwd(),
@@ -39,8 +39,24 @@ createRoot(document.getElementById('root')).render(<ToastProvider><SettingsScree
                   ? 'export const useBilling=()=>({unlocked:false,remaining:5});'
                   : path.includes('qa-runtime')
                     ? 'export const qaEnabled=false;'
-                    : 'export default ()=>null;export const AnalyticsConsent=()=>null;export const Screen=({children})=>children;export const Group=()=>null;export const Row=()=>null;export const SectionHeader=()=>null;',
+                    : 'export default ()=>null;export const AnalyticsConsent=()=>null;export const Screen=({children})=>children;export const Group=()=>null;export const Row=()=>null;export const SectionHeader=()=>null;export const IconButton=()=>null;',
           loader: 'jsx',
+          resolveDir: process.cwd(),
+        }));
+        // Motion is a native boundary here; device QA exercises the real worklets.
+        builder.onResolve({ filter: /^react-native-reanimated$/ }, ({ path }) => ({
+          path,
+          namespace: 'motion-host',
+        }));
+        builder.onLoad({ filter: /.*/, namespace: 'motion-host' }, () => ({
+          contents: `import {useRef} from 'react';import {View} from 'react-native-web';
+const transition={duration:()=>transition,reduceMotion:()=>transition};
+export const LinearTransition=transition,FadeIn=transition,ReduceMotion={System:'system'};
+export const Easing={bezier:()=>null};export const useReducedMotion=()=>false;
+export const useSharedValue=(initial)=>useRef({value:initial,get(){return this.value},set(value){this.value=value}}).current;
+export const withTiming=(value)=>value;export const useAnimatedStyle=()=>({});
+export default {View};`,
+          loader: 'js',
           resolveDir: process.cwd(),
         }));
         builder.onResolve(
@@ -104,6 +120,7 @@ try {
   assert.equal(await page.evaluate('window.taps'), 1, 'Toast must not block other app controls');
   await page.getByTestId('action-toast-dismiss').tap();
   await page.evaluate("window.fixture.update({message:'Finished',kind:'success'})");
+  await page.getByTestId('action-toast-message').waitFor({ state: 'hidden' });
   assert.equal(
     await page.getByTestId('action-toast').count(),
     0,
@@ -114,9 +131,36 @@ try {
   );
   await page.getByTestId('action-toast-content').tap();
   assert.equal(await page.evaluate('window.actions'), 1);
+  await page.evaluate(`
+    window.stale=window.fixture.show({message:'Old export',kind:'loading'});
+    window.fixture.show({message:'Newest export',kind:'loading',progress:120,detail:'Delivering day 7'});
+    window.stale({message:'Stale completion',kind:'success'});
+  `);
+  assert.equal(await page.getByTestId('action-toast-message').textContent(), 'Newest export');
+  assert.equal(await page.getByTestId('action-toast-percentage').textContent(), '100%');
+  assert.equal(await page.getByTestId('action-toast-progress').getAttribute('role'), 'progressbar');
+  await page.getByTestId('action-toast-dismiss').tap();
+  // Start a new notification before the previous exit timer completes.
+  await page.evaluate("window.fixture.show({message:'Survives old exit',kind:'loading'})");
+  await page.waitForTimeout(250);
+  assert.equal(await page.getByTestId('action-toast-message').textContent(), 'Survives old exit');
+  await page.evaluate(`window.fixture.show({message:'Choose next step',kind:'warning',actions:[
+    {label:'Retry',primary:true,onPress:()=>window.fixture.show({message:'Retry started',kind:'loading'})},
+    {label:'Later',onPress:()=>window.later=true}
+  ]})`);
+  await page.getByTestId('action-toast-action-1').waitFor();
+  await page.waitForTimeout(5100);
+  assert.equal(await page.getByTestId('action-toast-message').textContent(), 'Choose next step');
+  await page.getByTestId('action-toast-action-0').tap();
+  assert.equal(await page.getByTestId('action-toast-message').textContent(), 'Retry started');
+  await page.waitForTimeout(250);
+  assert.equal(await page.getByTestId('action-toast-message').textContent(), 'Retry started');
+  await page.evaluate("window.fixture.show({message:'Saved',kind:'success'})");
+  await page.getByTestId('action-toast').waitFor({ state: 'detached', timeout: 6000 });
+  await page.getByTestId('action-toast-message').waitFor({ state: 'hidden' });
   assert.deepEqual(errors, [], 'Toast transitions must not produce React errors');
   console.log(
-    'PASS toast body and close taps, underlying controls, progress dismissal and action dispatch. Native window hit testing needs separate device verification.',
+    'PASS toast dismissal, underlying controls, stale updates, exit/replacement races, progress, two actions, follow-up feedback, persistence and expiry. Motion is a native boundary; window hit testing requires device QA.',
   );
 } finally {
   await browser.close();

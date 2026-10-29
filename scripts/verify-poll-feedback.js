@@ -39,6 +39,7 @@ const context = vm.createContext({
   version: { current: 0 },
   profileState: { current: { profiles: [] } },
   reviewWhoopRequest: async () => {},
+  reviewPhoneExport: async () => {},
   acceptAllowance: () => {},
   acceptProfileSync: () => {},
   reviewLocationCapture: async () => {},
