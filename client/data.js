@@ -88,8 +88,8 @@ function cursor(query, token) {
     token,
   });
 }
-/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} [forChat] @returns {Promise<import('../core/data.js').DataPage>} */
-export async function readPage(owner, query, profile, forChat = true) {
+/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} [forChat] @param {(owner:string,query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>} [readWhoop] @returns {Promise<import('../core/data.js').DataPage>} */
+export async function readPage(owner, query, profile, forChat = true, readWhoop = whoopPage) {
   if (!profileAllows(profile, query))
     throw new Error('This data type is disabled in this profile.');
   if (query.aggregation) {
@@ -118,6 +118,7 @@ export async function readPage(owner, query, profile, forChat = true) {
         },
         profile,
         forChat,
+        readWhoop,
       );
       if (page.complete === false)
         throw new Error('Source capture is partial; aggregate totals cannot be confirmed.');
@@ -149,6 +150,7 @@ export async function readPage(owner, query, profile, forChat = true) {
       { ...query, start: window.start, end: window.end, cursor: window.token },
       profile,
       true,
+      readWhoop,
     );
     return {
       ...page,
@@ -173,7 +175,7 @@ export async function readPage(owner, query, profile, forChat = true) {
     query.domain === 'location'
       ? localPage(owner, query, token)
       : query.domain === 'health'
-        ? await readHealth(owner, query, token)
+        ? await readHealth(owner, query, token, readWhoop)
         : await usagePage(query, token);
   let limit = query.limit;
   if (forChat) {
@@ -188,7 +190,7 @@ export async function readPage(owner, query, profile, forChat = true) {
           : query.domain === 'health'
             ? // Re-read the same cursor with a smaller page to avoid skipping any records.
               // oxlint-disable-next-line eslint/no-await-in-loop
-              await readHealth(owner, reduced, token)
+              await readHealth(owner, reduced, token, readWhoop)
             : // oxlint-disable-next-line eslint/no-await-in-loop
               await usagePage(reduced, token);
     }
@@ -196,9 +198,9 @@ export async function readPage(owner, query, profile, forChat = true) {
   return { ...page, nextCursor: page.nextCursor === null ? null : cursor(query, page.nextCursor) };
 }
 
-/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} token */
-function readHealth(owner, query, token) {
+/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} token @param {typeof whoopPage} readWhoop */
+function readHealth(owner, query, token, readWhoop) {
   return query.type.startsWith('whoop.')
-    ? whoopPage(owner, query, token)
+    ? readWhoop(owner, query, token)
     : healthPage(query, token);
 }

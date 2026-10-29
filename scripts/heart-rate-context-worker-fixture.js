@@ -128,6 +128,7 @@ export async function verifyHeartRateContextWorker({ origin, request, token }) {
         end: '2026-10-14',
         timezone: 'UTC',
         maxOffsetSeconds: 300,
+        mapTiles: true,
       },
     });
     assert.ok(!result.isError, JSON.stringify(result));
@@ -144,6 +145,30 @@ export async function verifyHeartRateContextWorker({ origin, request, token }) {
         }),
       ),
     });
+    assert.equal(Reflect.get(result.structuredContent ?? {}, 'mapTiles'), true);
+    const locations = await client.callTool({
+      name: 'review_recorded_locations',
+      arguments: {
+        exportIds: [id],
+        start: '2026-10-08',
+        end: '2026-10-14',
+        timezone: 'UTC',
+        mapTiles: true,
+      },
+    });
+    assert.ok(!locations.isError, JSON.stringify(locations));
+    assert.equal(Reflect.get(locations.structuredContent ?? {}, 'mapTiles'), true);
+    const mapResource = await client.readResource({
+      uri: 'ui://myself-md/location-review-v2.html',
+    });
+    assert.match(
+      String(
+        mapResource.contents[0] && 'text' in mapResource.contents[0]
+          ? mapResource.contents[0].text
+          : '',
+      ),
+      /mountLocationMap|map-tiles/,
+    );
     const review = parse.parse(result.structuredContent);
     assert.equal(review.sources[0]?.observations[0]?.heartRates[0]?.bpm, 72);
     assert.equal(review.sources[0]?.observations[2]?.heartRates[0]?.bpm, null);
@@ -182,6 +207,7 @@ export async function verifyHeartRateContextWorker({ origin, request, token }) {
             end: '2026-10-14',
             timezone: 'UTC',
             maxOffsetSeconds: 300,
+            mapTiles: true,
           },
         })
       ).isError,

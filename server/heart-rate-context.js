@@ -1,3 +1,4 @@
+import { registerReviewResourceAlias } from './review-resource.js';
 import { z } from 'zod';
 import { heartRateContext } from '../core/heart-rate-context.js';
 import { readReviewExports } from './review-exports.js';
@@ -6,9 +7,22 @@ import { heartRateContextHtml, heartRateContextUri } from './heart-rate-context-
 /** @param {import('@modelcontextprotocol/server').McpServer} mcp
  * @param {{cloud:import('./cloud-store.js').CloudStore,subject:string,readPage:(id:string,cursor:string,domain:import('../core/data.js').Domain)=>ReturnType<import('./cloud-store.js').CloudStore['page']>}} dependencies */
 export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
-  for (const uri of ['ui://myself-md/heart-rate-context-v1.html', heartRateContextUri])
+  registerReviewResourceAlias(
+    mcp,
+    'ui://myself-md/heart-rate-context-v4.html',
+    heartRateContextHtml,
+    ['https://myself.md'],
+  );
+  for (const uri of [
+    'ui://myself-md/heart-rate-context-v1.html',
+    'ui://myself-md/heart-rate-context-v2.html',
+    'ui://myself-md/heart-rate-context-v3.html',
+    heartRateContextUri,
+  ])
     mcp.registerResource(
-      uri === heartRateContextUri ? 'heart-rate-context' : 'heart-rate-context-v1',
+      uri === heartRateContextUri
+        ? 'heart-rate-context'
+        : (uri.split('/').at(-1) ?? 'heart-rate-context-legacy'),
       uri,
       {},
       async () => ({
@@ -18,7 +32,10 @@ export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
             mimeType: 'text/html;profile=mcp-app',
             text: heartRateContextHtml,
             _meta: {
-              ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
+              ui: {
+                prefersBorder: true,
+                csp: { connectDomains: [], resourceDomains: ['https://myself.md'] },
+              },
             },
           },
         ],
@@ -48,6 +65,12 @@ export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
             .describe('Location point matching or clock-hour screen-time overlay.'),
           start: z.iso.date().describe('Inclusive start date, YYYY-MM-DD, in the chosen timezone.'),
           end: z.iso.date().describe('Inclusive end date; choose 1–31 completed local days.'),
+          mapTiles: z
+            .boolean()
+            .default(false)
+            .describe(
+              'Show OpenStreetMap tiles. Set true only after the user agrees to share viewed map areas with OpenStreetMap through myself.md; heart-rate readings and exact point records are not sent. False keeps coordinate plots.',
+            ),
           timezone: z
             .string()
             .min(1)
@@ -70,6 +93,7 @@ export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
         timezone: z.string(),
         windowSeconds: z.number(),
         fictional: z.boolean(),
+        mapTiles: z.boolean(),
         days: z.array(z.object({ date: z.string(), start: z.string(), end: z.string() })),
         healthSources: z.array(
           z.object({
@@ -145,6 +169,7 @@ export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
       end,
       timezone,
       maxOffsetSeconds,
+      mapTiles,
     }) => {
       // Validate both scopes before any metered reads, then recheck both after all awaits.
       const domain = context === 'location' ? 'location' : 'time';
@@ -200,6 +225,7 @@ export function registerHeartRateContext(mcp, { cloud, subject, readPage }) {
       return {
         structuredContent: {
           ...data,
+          mapTiles: mapTiles && domain === 'location',
           exports: [
             ...new Map([...health.exports, ...contexts.exports].map((f) => [f.id, f])).values(),
           ],

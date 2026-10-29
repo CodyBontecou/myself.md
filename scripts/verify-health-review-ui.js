@@ -27,6 +27,30 @@ const records = [
     native: { value: 4, fictional: true },
   },
 ];
+records.push({
+  domain: 'health',
+  type: 'whoop.sleep',
+  source: 'whoop',
+  start: '2026-10-18T22:00:00Z',
+  end: '2026-10-19T06:00:00Z',
+  native: {
+    id: 'whoop-ui-fixture',
+    user_id: 1,
+    score_state: 'SCORED',
+    nap: false,
+    fictional: true,
+    score: {
+      stage_summary: {
+        total_light_sleep_time_milli: 4 * 3600000,
+        total_slow_wave_sleep_time_milli: 3600000,
+        total_rem_sleep_time_milli: 2 * 3600000,
+        total_awake_time_milli: 3600000,
+        total_no_data_time_milli: 0,
+        total_in_bed_time_milli: 8 * 3600000,
+      },
+    },
+  },
+});
 const review = {
   ...healthReview(
     days,
@@ -95,6 +119,21 @@ try {
         assert.equal(await frame.getByText('No recorded intervals', { exact: true }).count(), 1);
         await page.screenshot({
           path: `.local/health-review-release/health-${width}-${colorScheme}.png`,
+        });
+        await frame.getByRole('button', { name: 'Back to all days', exact: true }).click();
+        await frame.locator('.review-sources > summary').click();
+        await frame.getByRole('combobox', { name: 'sleep source', exact: true }).selectOption('1');
+        await frame.getByRole('button', { name: '2026-10-19 · 7.00 h', exact: true }).click();
+        assert.equal(
+          await frame.locator('.sleep-segment').count(),
+          0,
+          'WHOOP has no stage timeline',
+        );
+        assert.match(await frame.locator('.whoop-session').innerText(), /Light · 4.00 h/);
+        assert.match(await frame.locator('.whoop-session').innerText(), /SCORED · 7.00 h asleep/);
+        assert.match(await frame.locator('.whoop-session').innerText(), /Oct 18.*Oct 19/);
+        await page.screenshot({
+          path: `.local/health-review-release/whoop-${width}-${colorScheme}.png`,
         });
         await page.close();
       }),

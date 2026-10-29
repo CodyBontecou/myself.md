@@ -1,0 +1,16 @@
+{
+  "name": "myself-md",
+  "displayName": "myself.md",
+  "version": "1.0.0",
+  "description": "Explore owner-approved phone data and explicitly shared health, screen-time and recorded-location exports.",
+  "author": {
+    "name": "Isotech",
+    "email": "cody@isolated.tech"
+  },
+  "homepage": "https://myself.md",
+  "repository": "https://github.com/CodyBontecou/myself-md-claude-code",
+  "license": "MIT",
+  "icon": "./icon.png",
+  "supportUrl": "https://myself.md/contact",
+  "privacyPolicyUrl": "https://myself.md/privacy"
+}

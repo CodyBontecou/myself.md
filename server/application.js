@@ -1,4 +1,4 @@
-import { registerVisualizationCatalog } from './chatgpt-catalog.js';
+import { catalogMapTileResponse, registerVisualizationCatalog } from './chatgpt-catalog.js';
 import { boundedWait, waitMsInput } from './bounded-wait.js';
 import { whoopOAuth } from './whoop.js';
 import { registerAnalyticsTools } from './analytics-tools.js';
@@ -662,9 +662,12 @@ export function createApplication(
       const chatgpt = url.pathname === chatgptMcpPath;
       const requestResource = `${requestOrigin}${chatgpt ? chatgptMcpPath : '/mcp'}`;
       if (req.method === 'GET' || req.method === 'HEAD') {
-        const limit = publicApiPath(url.pathname)
-          ? limitPublicRead(req.socket.remoteAddress ?? 'unknown')
-          : null;
+        const limit =
+          publicApiPath(url.pathname) ||
+          url.pathname.startsWith('/apps/chatgpt/tiles/') ||
+          url.pathname.startsWith('/apps/chatgpt/map-tiles/')
+            ? limitPublicRead(req.socket.remoteAddress ?? 'unknown')
+            : null;
         if (limit)
           for (const [name, value] of Object.entries(limit.headers)) res.setHeader(name, value);
         if (limit && !limit.allowed) {
@@ -672,6 +675,15 @@ export function createApplication(
           json(res, 429, {
             error: 'Public read rate limit exceeded. Retry after the indicated delay.',
           });
+          return;
+        }
+        const mapTile = await catalogMapTileResponse(
+          new Request(url, { method: req.method }),
+          undefined,
+        );
+        if (mapTile) {
+          res.writeHead(mapTile.status, Object.fromEntries(mapTile.headers));
+          res.end(new Uint8Array(await mapTile.arrayBuffer()));
           return;
         }
         const page = publicResponse(

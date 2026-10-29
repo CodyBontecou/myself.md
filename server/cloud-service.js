@@ -1,3 +1,4 @@
+import { registerSleepScreenTime } from './sleep-screen-time.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { registerHeartRateContext } from './heart-rate-context.js';
@@ -17,8 +18,8 @@ export function createCloudService({
 }) {
   /** Shared authorized and metered read path for raw records and weekly reviews.
    * @param {string} subject @param {string|null} client @param {string} exportId
-   * @param {string} cursor @param {number} limit @param {import('../core/data.js').Domain} [domain] */
-  async function readCloudExportPage(subject, client, exportId, cursor, limit, domain) {
+   * @param {string} cursor @param {number} limit @param {import('../core/data.js').Domain} [domain] @param {string} [recordType] */
+  async function readCloudExportPage(subject, client, exportId, cursor, limit, domain, recordType) {
     const row = cloud.row(subject, exportId),
       metadata = cloud.metadata(row);
     const stamp = new Date().toISOString(),
@@ -60,7 +61,15 @@ export function createCloudService({
       await refreshEntitlement(subject);
       billing.reserve(subject, id, 'agent');
       const permission = JSON.stringify(cloud.permission(subject, row.device, row.profile));
-      const page = await cloud.page(subject, exportId, Number(cursor || 0), limit, true, domain);
+      const page = await cloud.page(
+        subject,
+        exportId,
+        Number(cursor || 0),
+        limit,
+        true,
+        domain,
+        recordType,
+      );
       if (JSON.stringify(cloud.permission(subject, row.device, row.profile)) !== permission)
         throw new Error('Profile selection changed during the cloud read.');
       if (domain && !cloud.permission(subject, row.device, row.profile).agentPermissions[domain])
@@ -227,6 +236,20 @@ export function createCloudService({
         return content(await readCloudExportPage(subject, client, exportId, cursor, limit));
       },
     );
+    registerSleepScreenTime(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor, domain) =>
+        readCloudExportPage(
+          subject,
+          client,
+          id,
+          cursor,
+          50,
+          domain,
+          domain === 'health' ? 'whoop.sleep' : undefined,
+        ),
+    });
     registerHeartRateContext(mcp, {
       cloud,
       subject,

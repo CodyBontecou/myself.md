@@ -49,6 +49,9 @@ const historyOutcomes = [];
 /** @type {Map<string,()=>Promise<number>>} */
 const backgroundTasks = new Map();
 const mocks = {
+  createWhoopExportReader: () => async () => {
+    throw new Error('Scheduled exports must not create an All Time reader');
+  },
   earliestHealthDate: async () => null,
   requireHealthHistory: async () => {},
   phoneDatabase: () => ({

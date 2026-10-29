@@ -163,6 +163,10 @@ let settlements = 0,
   completed = false,
   cancelAfter = Infinity;
 let discoveryKeys = /** @type {string[]} */ ([]);
+/** @type {boolean[]} */ const healthLookahead = [];
+/** @type {unknown[]} */ const whoopReaders = [];
+/** @type {string[]} */ const historyOutcomes = [];
+/** @type {(()=>boolean)[]} */ const exportValidity = [];
 const taskMocks = {
   '../core/data-range.js': dataRange,
   '../core/data.js': { domains },
@@ -221,8 +225,13 @@ const taskMocks = {
       return id;
     },
     recordArtifact() {},
-    finishExport: () => {
+    finishExport: (
+      /** @type {unknown} */ _context,
+      /** @type {unknown} */ _id,
+      /** @type {string} */ outcome,
+    ) => {
       completed = true;
+      historyOutcomes.push(outcome);
     },
   },
   './profile-export.js': {
@@ -235,8 +244,14 @@ const taskMocks = {
       /** @type {(artifact:unknown)=>void} */ artifact,
       /** @type {string} */ billing,
       /** @type {()=>Promise<void>} */ check,
+      /** @type {unknown} */ _cloudAuthorization,
+      prefetchHealth = false,
+      /** @type {unknown} */ readWhoop,
     ) => {
+      healthLookahead.push(prefetchHealth);
+      whoopReaders.push(readWhoop);
       assert.equal(valid(), true);
+      exportValidity.push(valid);
       await check();
       writes.push({ profile: current, ...interval, billing });
       artifact({});
@@ -245,6 +260,11 @@ const taskMocks = {
   },
   './destinations.js': { requireCloudAuthorization: async () => {} },
   './export-notification-registration.js': { reconcileExportNotificationTask: async () => {} },
+  './whoop-export.js': {
+    createWhoopExportReader: () => async () => {
+      throw new Error('Unexpected provider read in lifecycle fixture');
+    },
+  },
   './health-history.js': {
     requireHealthHistory: async () => {},
     earliestHealthDate: async (/** @type {string} */ _owner, /** @type {string[]} */ keys) => {
@@ -293,6 +313,15 @@ assert.ok(
 );
 assert.equal(settlements, 1);
 assert.equal(result.recordCount, writes.length);
+assert.ok(
+  exportValidity.every((current) => !current()),
+  'Completed operations invalidate pending source dispatch',
+);
+assert.ok(healthLookahead.every(Boolean), 'All Time enables bounded Health lookahead');
+assert.ok(
+  whoopReaders.every((reader) => typeof reader === 'function' && reader === whoopReaders[0]),
+  'All Time shares one provider quota/proof reader across every history batch',
+);
 assert.equal(result.batches, Math.ceil(result.days / 30));
 assert.ok(
   [...intervals.values()].every((i) => Date.parse(i.end) - Date.parse(i.start) <= 31 * 86400000),
@@ -301,12 +330,22 @@ assert.ok(
 assert.deepEqual(task.scheduleState(context.deviceId, profile).progress, beforeSchedule);
 assert.equal(profile.selection.time.length, 1, 'All Time does not change the saved profile');
 writes.length = 0;
+healthLookahead.length = 0;
+whoopReaders.length = 0;
 const boundedRange = { start: '2026-01-05T12:34:00.000Z', end: '2026-01-07T04:56:00.000Z' };
 const boundedResult = await task.exportNow(context, profile, () => {}, {
   domains: ['health', 'location'],
   range: boundedRange,
 });
 assert.equal(writes.length, 3);
+assert.ok(
+  healthLookahead.every((enabled) => !enabled),
+  'Bounded exports retain their read mode',
+);
+assert.ok(
+  whoopReaders.every((reader) => reader === undefined),
+  'Bounded exports retain their original provider transport',
+);
 assert.equal(writes[0]?.start, boundedRange.start);
 assert.equal(writes.at(-1)?.end, boundedRange.end);
 assert.equal(boundedResult.start, boundedRange.start);
@@ -349,6 +388,29 @@ await assert.rejects(
 );
 assert.equal(writes.length, 2, 'Cancellation stops remaining daily effects');
 assert.ok(reservedDays.length > 2000);
+writes.length = 0;
+historyOutcomes.length = 0;
+const unavailable = new Error('Approval service temporarily unavailable');
+await assert.rejects(
+  task.exportNow(context, profile, () => {}, {
+    domains: ['health'],
+    range: { start: null, end: null },
+    check: async () => {
+      if (writes.length >= 1) throw unavailable;
+    },
+  }),
+  (error) => error === unavailable,
+);
+assert.equal(writes.length, 1, 'A failed approval check aborts remaining daily effects');
+assert.ok(
+  exportValidity.every((current) => !current()),
+  'Failed operations invalidate pending source dispatch',
+);
+assert.equal(
+  historyOutcomes.at(-1),
+  'failed',
+  'Service failures do not become local cancellations',
+);
 
 const subject = 'all-time-owner',
   deviceId = randomUUID(),

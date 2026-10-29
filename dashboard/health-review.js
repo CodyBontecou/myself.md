@@ -1,3 +1,4 @@
+import { compactReview } from './review-presentation.js';
 /** @param {string} tag @param {string} [text] @param {string} [className] */
 function el(tag, text = '', className = '') {
   const node = document.createElement(tag);
@@ -88,13 +89,7 @@ function mountHealthReview() {
       const s = series[choices[kind]] ?? series[0];
       if (!s) continue;
       const count = s.daily.filter((d) => d.value !== null).length;
-      section.append(
-        el(
-          'p',
-          `${count}/${data.days.length} days with ${kind === 'activity' ? 'step' : 'asleep'} observations. Recorded days may be incomplete.`,
-          'muted',
-        ),
-      );
+      section.append(el('p', `${count}/${data.days.length} observed days`, 'muted'));
       const maximum = Math.max(1, ...s.daily.map((d) => d.value ?? 0));
       if (selectedDay) {
         const mini = el('div', '', 'mini');
@@ -113,12 +108,21 @@ function mountHealthReview() {
         }
         overview.append(mini);
       }
-      if (kind === 'sleep') {
+      const sessionBased = s.basis === 'session_end';
+      if (sessionBased)
+        section.append(
+          el(
+            'p',
+            'WHOOP whole-session totals, including naps, assigned to the local day the session ends. Stage timing is unavailable; pending, unscorable or overlapping sessions keep the daily total unknown.',
+            'muted review-note',
+          ),
+        );
+      if (kind === 'sleep' && !sessionBased) {
         section.append(
           el(
             'p',
             'Sleep intervals across each local calendar day. 00:00 → next midnight; awake/in-bed intervals are shown separately.',
-            'muted',
+            'muted review-note',
           ),
         );
         const legend = el('div', '', 'sleep-legend');
@@ -146,15 +150,66 @@ function mountHealthReview() {
             render();
           }),
         );
-        if (kind === 'activity') {
+        if (kind === 'activity' || sessionBased) {
           const track = el('div', '', 'track'),
-            bar = el('div', '', d.value === null ? 'missing' : 'step-bar');
+            bar = el(
+              'div',
+              '',
+              d.value === null ? 'missing' : sessionBased ? 'stage-bar' : 'step-bar',
+            );
           bar.style.width =
             d.value === null
               ? '100%'
               : `${Math.max(d.value === 0 ? 0 : 1, (d.value / maximum) * 100)}%`;
           track.append(bar);
           row.append(track);
+          if (sessionBased) {
+            row.append(el('p', `${d.sessions?.length ?? 0} sessions ending this day`, 'muted'));
+            if (selectedDay) {
+              const clock = new Intl.DateTimeFormat('en', {
+                timeZone: data.timezone,
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short',
+              });
+              for (const session of d.sessions ?? []) {
+                const detail = el('section', '', 'whoop-session');
+                detail.setAttribute('aria-label', 'WHOOP sleep session');
+                detail.append(
+                  el(
+                    'h3',
+                    session.nap === true
+                      ? 'Nap'
+                      : session.nap === false
+                        ? 'Sleep session'
+                        : 'Session (nap status unknown)',
+                  ),
+                  el(
+                    'p',
+                    `${clock.format(new Date(session.start))} – ${clock.format(new Date(session.end))}`,
+                  ),
+                  el('p', `${session.scoreState} · ${format(session.asleepHours, 'h')} asleep`),
+                  el(
+                    'p',
+                    'Aggregate stage durations; their positions within the session are unknown.',
+                    'muted review-note',
+                  ),
+                );
+                for (const stage of session.stageDurations)
+                  detail.append(el('p', `${stage.kind} · ${stage.hours.toFixed(2)} h`));
+                detail.append(
+                  el(
+                    'p',
+                    `Session ${session.id} · exports ${session.exportIds.join(', ')}`,
+                    'muted review-note',
+                  ),
+                );
+                row.append(detail);
+              }
+            }
+          }
         } else {
           const day = data.days.find((item) => item.date === d.date);
           const track = el('div', '', 'sleep-track');
@@ -182,7 +237,7 @@ function mountHealthReview() {
               el(
                 'p',
                 `Bars run from 0 to ${day ? (Date.parse(day.end) - Date.parse(day.start)) / 3600000 : 24} hours. Each label is unioned separately; conflicting labels may overlap. These are calendar-day portions.`,
-                'muted',
+                'muted review-note',
               ),
             );
             for (const stage of d.stageDurations ?? []) {
@@ -220,13 +275,13 @@ function mountHealthReview() {
       }
       root.append(section);
     }
-    const limits = el('details');
-    limits.append(el('summary', 'Sources & limits'));
+    const limits = el('details', '', 'review-notes');
+    limits.append(el('summary', 'About this data'));
     for (const warning of data.warnings) limits.append(el('p', warning));
     limits.append(
       el(
         'p',
-        `Excluded: ${data.counts.invalid} invalid, ${data.counts.crossingDay} midnight-crossing steps, ${data.counts.overlaps} overlapping steps, ${data.counts.unsupported} unsupported records. ${data.counts.duplicates} exact duplicates removed.`,
+        `Excluded: ${data.counts.invalid} invalid, ${data.counts.crossingDay} midnight-crossing steps, ${data.counts.overlaps} overlapping steps, ${data.counts.sleepOverlaps ?? 0} overlapping WHOOP sessions, ${data.counts.unsupported} unsupported records. ${data.counts.duplicates} exact duplicates removed.`,
       ),
     );
     for (const file of data.exports)
@@ -238,11 +293,12 @@ function mountHealthReview() {
       el(
         'p',
         'Select a day to inspect. Navigation uses the loaded review without additional reads.',
-        'muted',
+        'muted review-note',
       ),
     );
     if (data.exports.some((f) => f.partial))
       overview.append(el('p', 'A selected export is partial.', 'muted'));
+    compactReview(root);
   }
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;

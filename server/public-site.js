@@ -1,3 +1,4 @@
+import { chineseHomepage, chineseHomepageMarkdown } from './chinese-homepage.js';
 import { chatgptCatalogResponse } from './chatgpt-catalog.js';
 import { randomUUID } from 'node:crypto';
 import { notFoundPage } from './not-found-page.js';
@@ -77,6 +78,18 @@ export function publicResponse(
     'X-Content-Type-Options': 'nosniff',
     Vary: 'Accept',
   };
+  if (path === '/zh-hans' || path === '/zh-hans.md') {
+    const markdown = accept.includes('text/markdown') || path.endsWith('.md');
+    return {
+      status: 200,
+      headers: {
+        ...headers,
+        'Content-Type': markdown ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',
+        'Content-Language': 'zh-Hans',
+      },
+      body: markdown ? chineseHomepageMarkdown : analyticsHTML(chineseHomepage),
+    };
+  }
   const datasetDocument = datasetPage(path.endsWith('.md') ? path.slice(0, -3) : path);
   if (datasetDocument && (accept.includes('text/markdown') || path.endsWith('.md')))
     return {
@@ -194,7 +207,7 @@ export function publicResponse(
   else if (path === '/llms.txt' || path === '/llms-full.txt') body = agentIndex + blogAgentIndex;
   else if (path === '/sitemap.xml') {
     type = 'application/xml';
-    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/datasets', ...Object.keys(datasets).map((slug) => `/datasets/${slug}`)].map((page) => `<url><loc>https://myself.md${page}</loc></url>`).join('')}${blogSitemap}</urlset>`;
+    body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[...publicPages.keys(), '/zh-hans/', '/datasets', ...Object.keys(datasets).map((slug) => `/datasets/${slug}`)].map((page) => `<url><loc>https://myself.md${page}</loc></url>`).join('')}${blogSitemap}</urlset>`;
   } else {
     const markdown = publicPages.get(path);
     if (!markdown) return null;

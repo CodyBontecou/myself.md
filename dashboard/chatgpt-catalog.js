@@ -1,5 +1,7 @@
+import { mountCatalogNavigation } from './catalog-navigation.js';
 /** Public host for sandboxed fictional previews. It has no account/tool transport. */
 async function mountCatalog() {
+  mountCatalogNavigation();
   /** @type {NodeListOf<HTMLIFrameElement>} */
   const frames = document.querySelectorAll('iframe[data-example]');
   const status = document.getElementById('catalog-status');
@@ -55,28 +57,17 @@ async function mountCatalog() {
     }
   });
   /** @type {NodeListOf<HTMLButtonElement>} */
-  const filters = document.querySelectorAll('button[data-filter]');
-  for (const filter of filters)
-    filter.addEventListener('click', () => {
-      for (const item of filters) item.setAttribute('aria-pressed', String(item === filter));
-      /** @type {NodeListOf<HTMLElement>} */
-      const cards = document.querySelectorAll('article[data-category]');
-      let count = 0;
-      for (const card of cards) {
-        card.hidden =
-          filter.dataset.filter !== 'all' && card.dataset.category !== filter.dataset.filter;
-        if (!card.hidden) count++;
-      }
-      const label = document.getElementById('example-count');
-      if (label) label.textContent = `${count} interactive ${count === 1 ? 'example' : 'examples'}`;
-    });
-  /** @type {NodeListOf<HTMLButtonElement>} */
   const resets = document.querySelectorAll('button[data-reset]');
   for (const reset of resets)
     reset.addEventListener('click', () => {
       const frame = [...frames].find((f) => f.dataset.example === reset.dataset.reset);
       if (frame) send(frame);
     });
+  // The gallery's data-derived SVG thumbnails need no embedded apps or record payload.
+  if (!frames.length) {
+    if (status) status.textContent = '';
+    return;
+  }
   try {
     const params = new URLSearchParams(location.search),
       query = new URLSearchParams({ includeData: '1' });

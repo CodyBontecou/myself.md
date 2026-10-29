@@ -27,6 +27,7 @@
     "dashboard/browser-tools.js",
     "dashboard/screen-time-review.js",
     "dashboard/health-review.js",
+    "dashboard/sleep-screen-time.js",
     "dashboard/location-review.js",
     "dashboard/heart-rate-context.js",
     "dashboard/chatgpt-catalog.js",

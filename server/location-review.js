@@ -1,3 +1,4 @@
+import { registerReviewResourceAlias } from './review-resource.js';
 import { z } from 'zod';
 import { locationReview } from '../core/location-review.js';
 import { readReviewExports } from './review-exports.js';
@@ -6,16 +7,30 @@ import { locationReviewHtml, locationReviewUri } from './location-review-ui.js';
 /** @param {import('@modelcontextprotocol/server').McpServer} mcp
  * @param {{cloud:import('./cloud-store.js').CloudStore,subject:string,readPage:(id:string,cursor:string)=>ReturnType<import('./cloud-store.js').CloudStore['page']>}} dependencies */
 export function registerLocationReview(mcp, { cloud, subject, readPage }) {
-  mcp.registerResource('location-review', locationReviewUri, {}, async () => ({
-    contents: [
-      {
-        uri: locationReviewUri,
-        mimeType: 'text/html;profile=mcp-app',
-        text: locationReviewHtml,
-        _meta: { ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } } },
-      },
-    ],
-  }));
+  registerReviewResourceAlias(mcp, 'ui://myself-md/location-review-v2.html', locationReviewHtml, [
+    'https://myself.md',
+  ]);
+  for (const uri of ['ui://myself-md/location-review-v1.html', locationReviewUri])
+    mcp.registerResource(
+      uri === locationReviewUri ? 'location-review' : 'location-review-v1',
+      uri,
+      {},
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: 'text/html;profile=mcp-app',
+            text: locationReviewHtml,
+            _meta: {
+              ui: {
+                prefersBorder: true,
+                csp: { connectDomains: [], resourceDomains: ['https://myself.md'] },
+              },
+            },
+          },
+        ],
+      }),
+    );
   mcp.registerTool(
     'review_recorded_locations',
     {
@@ -40,6 +55,12 @@ export function registerLocationReview(mcp, { cloud, subject, readPage }) {
             .describe(
               'Inclusive local end date, YYYY-MM-DD. Must be on or after start and completed in timezone.',
             ),
+          mapTiles: z
+            .boolean()
+            .default(false)
+            .describe(
+              'Show OpenStreetMap tiles. Set true only after the user agrees to share viewed map areas with OpenStreetMap through myself.md; heart-rate readings and exact point records are not sent. False keeps coordinate plots.',
+            ),
           timezone: z
             .string()
             .min(1)
@@ -53,6 +74,7 @@ export function registerLocationReview(mcp, { cloud, subject, readPage }) {
         version: z.string(),
         timezone: z.string(),
         fictional: z.boolean(),
+        mapTiles: z.boolean(),
         scope: z.object({ deviceId: z.string(), profileId: z.string() }),
         days: z.array(z.object({ date: z.string(), start: z.string(), end: z.string() })),
         series: z.array(
@@ -91,7 +113,7 @@ export function registerLocationReview(mcp, { cloud, subject, readPage }) {
       },
       _meta: { ui: { resourceUri: locationReviewUri }, 'openai/outputTemplate': locationReviewUri },
     },
-    async ({ exportIds, start, end, timezone }) => {
+    async ({ exportIds, start, end, timezone, mapTiles }) => {
       const { days, rows, exports, scope } = await readReviewExports(
         { exportIds, start, end, timezone },
         { cloud, subject, readPage },
@@ -99,6 +121,7 @@ export function registerLocationReview(mcp, { cloud, subject, readPage }) {
       );
       const structuredContent = {
         ...locationReview(days, rows, timezone),
+        mapTiles,
         scope,
         exports,
       };

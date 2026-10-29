@@ -112,6 +112,29 @@ try {
           await frame
             .getByText('No context observations. Coverage is unknown.', { exact: true })
             .waitFor();
+          if (context === 'location') {
+            await page.evaluate(
+              `window.frames[0].postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify({ ...data, mapTiles: true, fictional: false })}}},'*')`,
+            );
+            await frame.locator('.catalog-map').waitFor();
+            assert.match(
+              (await frame.locator('.map-tiles img').first().getAttribute('src')) ?? '',
+              /map-tiles/,
+            );
+            await frame.getByRole('button', { name: 'Show coordinate plot', exact: true }).click();
+            assert.equal(await frame.locator('.catalog-map').count(), 0);
+            await page.evaluate(
+              `window.frames[0].postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify({ ...data, mapTiles: true, healthSources: [] })}}},'*')`,
+            );
+            await frame.getByText('Heart rate unknown', { exact: true }).waitFor();
+            assert.equal(await frame.locator('.catalog-map .dot').count(), 3);
+            await frame.locator('.catalog-map .dot').last().click();
+            assert.equal(await frame.locator('.timeline').count(), 0);
+            assert.match(
+              await frame.locator('.match-detail').innerText(),
+              /No matching heart-rate observations/,
+            );
+          }
           assert.deepEqual(errors, []);
           await page.close();
         }),

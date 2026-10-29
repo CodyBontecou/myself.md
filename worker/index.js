@@ -1,3 +1,4 @@
+import { catalogMapTileResponse } from '../server/chatgpt-catalog.js';
 import { createAnalytics } from './analytics.js';
 import { chatgptMcpPath } from '../server/chatgpt-tools.js';
 import {
@@ -95,9 +96,12 @@ export default {
     try {
       const url = new URL(request.url);
       if (request.method === 'GET' || request.method === 'HEAD') {
-        const limit = publicApiPath(url.pathname)
-          ? limitPublicRead(request.headers.get('cf-connecting-ip') ?? 'unknown')
-          : null;
+        const limit =
+          publicApiPath(url.pathname) ||
+          url.pathname.startsWith('/apps/chatgpt/tiles/') ||
+          url.pathname.startsWith('/apps/chatgpt/map-tiles/')
+            ? limitPublicRead(request.headers.get('cf-connecting-ip') ?? 'unknown')
+            : null;
         if (limit && !limit.allowed)
           return Response.json(
             { error: 'Public read rate limit exceeded. Retry after the indicated delay.' },
@@ -110,6 +114,8 @@ export default {
               },
             },
           );
+        const mapTile = await catalogMapTileResponse(request, caches.default);
+        if (mapTile) return mapTile;
         const page = publicResponse(
           url.pathname,
           request.headers.get('accept') ?? '',

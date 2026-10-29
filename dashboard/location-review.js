@@ -1,3 +1,5 @@
+import { compactReview } from './review-presentation.js';
+import { mountLocationMap } from './chatgpt-catalog-map.js';
 /** @param {string} tag @param {string} [text] @param {string} [className] */
 function el(tag, text = '', className = '') {
   const node = document.createElement(tag);
@@ -16,15 +18,20 @@ function button(text, action) {
 function mount() {
   const root = document.getElementById('location-review');
   if (!root) return;
-  /** @typedef {ReturnType<typeof import('../core/location-review.js').locationReview> & {exports:{id:string,day:string,partial:boolean}[]}} Review */
+  /** @typedef {ReturnType<typeof import('../core/location-review.js').locationReview> & {mapTiles?:boolean,exports:{id:string,day:string,partial:boolean}[]}} Review */
   /** @type {Review|null} */
   let review = null;
+  let mapEnabled = false;
+  /** @type {(()=>void)|undefined} */
+  let mapCleanup;
   let choice = 0,
     day = '',
     selected = '',
     page = 0;
   function render() {
     if (!review || !root) return;
+    mapCleanup?.();
+    root.dataset.map = String(mapEnabled);
     const data = review,
       series = data.series[choice];
     root.replaceChildren(
@@ -87,7 +94,7 @@ function mount() {
       root.append(
         el(
           'p',
-          `${series.daily.filter((d) => d.count !== null).length}/${data.days.length} days with recorded points. Recording may be sparse.`,
+          `${series.daily.filter((d) => d.count !== null).length}/${data.days.length} observed days`,
           'muted',
         ),
       );
@@ -116,7 +123,22 @@ function mount() {
           `${shown.length} of ${points.length} points. Latitude ${south} to ${north}; longitude ${west} to ${east}. Point details follow.`,
         );
         for (const p of shown) {
-          const dot = el('span', '', 'dot');
+          const dot =
+            root.dataset.map === 'true'
+              ? button('', () => {
+                  day = series.daily.find((d) => d.pointIds.includes(p.id))?.date ?? '';
+                  selected = p.id;
+                  page = 0;
+                  render();
+                })
+              : el('span', '', 'dot');
+          dot.classList.add('dot');
+          dot.dataset.latitude = String(p.latitude);
+          dot.dataset.longitude = String(p.longitude);
+          dot.setAttribute(
+            'aria-label',
+            `Location ${p.start} · ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`,
+          );
           dot.style.left = `${5 + (east === west ? 45 : ((p.longitude - west) / (east - west)) * 90)}%`;
           dot.style.top = `${5 + (north === south ? 45 : ((north - p.latitude) / (north - south)) * 90)}%`;
           dot.dataset.selected = String(p.id === selected);
@@ -129,7 +151,7 @@ function mount() {
           el(
             'p',
             `${shown.length} of ${points.length} points plotted · coordinate degrees, not distance scale`,
-            'muted',
+            'muted review-note',
           ),
         );
       } else plot.append(el('p', 'No recorded points in this selection. Coverage is unknown.'));
@@ -209,8 +231,8 @@ function mount() {
         root.append(list);
       }
     } else root.append(el('p', 'No supported location points in the selected exports.'));
-    const limits = el('details');
-    limits.append(el('summary', 'Sources & limits'));
+    const limits = el('details', '', 'review-notes');
+    limits.append(el('summary', 'About this data'));
     for (const warning of data.warnings) limits.append(el('p', warning));
     limits.append(
       el(
@@ -229,9 +251,24 @@ function mount() {
       el(
         'p',
         'Day, source and point navigation use loaded data without additional reads.',
-        'muted',
+        'muted review-note',
       ),
     );
+    if (root.dataset.preview !== 'true' && true) {
+      const toggle = button(
+        mapEnabled ? 'Show coordinate plot' : 'Show map · OpenStreetMap',
+        () => {
+          mapEnabled = !mapEnabled;
+          render();
+        },
+      );
+      const notice = el('p', 'Map shares the viewed area with OpenStreetMap.', 'muted');
+      root.prepend(toggle, notice);
+    }
+    compactReview(root);
+    const mapField = root.querySelector('.coordinate-field');
+    if (mapEnabled && mapField instanceof HTMLElement)
+      mapCleanup = mountLocationMap(mapField, data.fictional);
   }
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
@@ -250,6 +287,8 @@ function mount() {
     }
     const data = event.data.params?.structuredContent;
     if (data?.version !== 'myself.md.location-review.v1' || !Array.isArray(data.series)) return;
+    mapEnabled =
+      data.mapTiles === true || (root.dataset.preview === 'true' && root.dataset.map === 'true');
     review = data;
     choice = 0;
     day = '';

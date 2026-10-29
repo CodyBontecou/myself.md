@@ -255,7 +255,7 @@ await exporter.link((specifier) => {
 });
 await exporter.evaluate();
 const { exportProfileDay } =
-  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void,onArtifact?:(artifact:import('../core/history.js').HistoryArtifact)=>void,billing?:string,check?:(force?:boolean)=>Promise<void>)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
+  /** @type {{exportProfileDay:(session:{owner:string,deviceId:string},profile:import('../core/profiles.js').ExportProfile,interval:{day:string,start:string,end:string},valid:()=>boolean,progress:(message:string)=>void,onArtifact?:(artifact:import('../core/history.js').HistoryArtifact)=>void,billing?:string,check?:(force?:boolean)=>Promise<void>,cloudAuthorization?:{server?:string,url?:string,token:string}|null,prefetchHealth?:boolean)=>Promise<{count:number,failedSources:number,files:string[]}>}} */ (
     exporter.namespace
   );
 const { parseExportSettings } = exportFiles;
@@ -773,6 +773,122 @@ for (const failProvider of [false, true]) {
   sourceRead = null;
 }
 
+// All Time lookahead shares three slots across native Health and provider first pages.
+const allTimeProfile = {
+  ...providerProfile,
+  selection: {
+    health: ['native:steps', 'native:whoop.cycle', 'native:paged', 'native:missing', 'native:bulk'],
+    time: ['native:applications'],
+    location: [],
+  },
+};
+for (const failNative of [false, true]) {
+  /** @type {Map<string,{resolve:(page:import('../core/data.js').DataPage)=>void,reject:(error:Error)=>void}>} */
+  const pending = new Map();
+  /** @type {string[]} */
+  const started = [];
+  let active = 0,
+    maximum = 0;
+  sourceRead = async (query) => {
+    const key = `${query.type}:${query.cursor}`;
+    started.push(key);
+    if (query.domain !== 'health') return providerPage(query.type);
+    active++;
+    maximum = Math.max(maximum, active);
+    try {
+      return await new Promise((resolve, reject) => pending.set(key, { resolve, reject }));
+    } finally {
+      active--;
+    }
+  };
+  delivered.length = 0;
+  deliveredPayloads.clear();
+  const run = exportProfileDay(
+    session,
+    allTimeProfile,
+    interval,
+    () => true,
+    () => {},
+    () => {},
+    '',
+    async () => {},
+    null,
+    true,
+  );
+  // oxlint-disable-next-line eslint/no-await-in-loop -- Control independent first-page completion.
+  await tick();
+  assert.deepEqual(started, ['steps:', 'whoop.cycle:', 'paged:']);
+  assert.equal(active, 3, 'Native and provider sources share one three-page budget');
+  pending.get('whoop.cycle:')?.resolve(providerPage('whoop.cycle'));
+  if (failNative) pending.get('paged:')?.reject(new Error('Native source read failed'));
+  else pending.get('paged:')?.resolve(providerPage('paged'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.equal(started.length, 3, 'Resolved lookahead pages retain their slots until consumption');
+  assert.deepEqual(delivered, [], 'Out-of-order page completion cannot publish a file');
+  pending.get('steps:')?.resolve(providerPage('steps', 'next'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.deepEqual(started, ['steps:', 'whoop.cycle:', 'paged:', 'steps:next']);
+  assert.equal(pending.has('bulk:'), false, 'Current native cursor chain retains its slot');
+  pending.get('steps:next')?.resolve(providerPage('steps'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  await tick();
+  assert.equal(started.at(-1), 'bulk:');
+  assert.equal(started.includes('applications:'), false, 'Usage reads wait for Health consumption');
+  assert.equal(
+    started.includes('missing:'),
+    false,
+    'Unavailable selected types are never prefetched',
+  );
+  pending.get('bulk:')?.resolve(providerPage('bulk'));
+  // oxlint-disable-next-line eslint/no-await-in-loop
+  const allTimeResult = await run;
+  assert.ok(maximum <= 3, 'Cursor continuations and first pages share the concurrency bound');
+  assert.equal(started.at(-1), 'applications:');
+  const expectedTypes = [
+    'steps',
+    'steps',
+    'whoop.cycle',
+    ...(!failNative ? ['paged'] : []),
+    'bulk',
+    'applications',
+  ];
+  assert.equal(allTimeResult.count, expectedTypes.length);
+  assert.equal(allTimeResult.failedSources, 1 + Number(failNative));
+  /** @type {{records:import('../core/data.js').DataRecord[],failures:{type:string}[],captures:{type:string,capture:string}[]}} */
+  const payload = JSON.parse(deliveredPayloads.get('json') ?? '');
+  assert.deepEqual(
+    payload.records.map((row) => row.type),
+    expectedTypes,
+  );
+  assert.deepEqual(
+    payload.captures.map((capture) => capture.type),
+    expectedTypes,
+  );
+  assert.deepEqual(
+    payload.captures.map((capture) => capture.capture),
+    expectedTypes,
+  );
+  assert.deepEqual(
+    payload.failures.map((failure) => failure.type),
+    [...(failNative ? ['paged'] : []), 'missing'],
+    'Prefetched native failures stay in the original source position',
+  );
+  assert.deepEqual(
+    payload.records.slice(0, 2).map((row) => row.native),
+    [{ cursorPage: true }, { cursorPage: false }],
+  );
+  assert.equal(
+    deliveredPayloads.get('jsonl'),
+    payload.records
+      .map((row, index) => exportFiles.recordChunk('jsonl', row, index, profile.export.schema))
+      .join(''),
+    'Native lookahead preserves exact JSONL bytes and global record order',
+  );
+  sourceRead = null;
+}
+
 // Captured rejections cannot become unhandled or publish after cancellation/remote revocation.
 /** @type {unknown[]} */
 const unhandled = [];
@@ -836,6 +952,75 @@ try {
     assert.deepEqual(delivered, []);
     sourceRead = null;
   }
+  for (const scenario of [
+    'before-dispatch',
+    'prefetched-success',
+    'remote-check',
+    'late-remote-check',
+  ]) {
+    let valid = scenario !== 'before-dispatch';
+    let reads = 0,
+      checks = 0;
+    /** @type {()=>void} */
+    let release = unreleased;
+    const gate = new Promise((resolve) => {
+      release = () => resolve(null);
+    });
+    /** @type {(error:Error)=>void} */
+    let rejectRemote = unreleased;
+    const remoteGate = new Promise((_resolve, reject) => {
+      rejectRemote = reject;
+    });
+    sourceRead = async (query) => {
+      reads++;
+      if (query.type !== 'steps' && scenario === 'prefetched-success')
+        return providerPage(query.type);
+      await gate;
+      if (scenario === 'prefetched-success') return providerPage(query.type);
+      throw new Error('Discarded native Health failure');
+    };
+    delivered.length = 0;
+    const run = exportProfileDay(
+      session,
+      allTimeProfile,
+      interval,
+      () => valid,
+      () => {},
+      () => {},
+      '',
+      async () => {
+        if (scenario === 'late-remote-check' && ++checks === 1) await remoteGate;
+        if (scenario === 'remote-check') throw new Error('Remote All Time request revoked');
+      },
+      null,
+      true,
+    );
+    const failure = assert.rejects(
+      run,
+      scenario.includes('remote-check') ? /Remote All Time request revoked/ : /cancelled/,
+    );
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Allow all three independent checks to dispatch.
+    await tick();
+    if (scenario === 'prefetched-success') {
+      assert.equal(reads, 3);
+      valid = false;
+    } else if (scenario === 'late-remote-check') {
+      assert.equal(reads, 2, 'A delayed remote rejection cannot authorize other pending pages');
+      rejectRemote(new Error('Remote All Time request revoked'));
+    } else assert.equal(reads, 0);
+    release();
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await failure;
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await tick();
+    assert.deepEqual(
+      delivered,
+      [],
+      `${scenario}: native lookahead cannot publish after revocation`,
+    );
+    assert.ok(![...files.keys()].some((path) => path.endsWith('.partial')));
+    sourceRead = null;
+  }
   assert.deepEqual(unhandled, []);
 } finally {
   process.off('unhandledRejection', rejected);
@@ -876,5 +1061,5 @@ await assert.rejects(
 );
 assert.equal(artifacts.length, 0);
 console.log(
-  'Export resilience: partial records, skipped sources, manifests, all-failed preservation, cancellation, disk and delivery failures verified. Multi-page payload equivalence passed; 104 records use four native page writes per format. Bounded WHOOP lookahead preserves source/cursor order, partial failures and cancellation/remote revocation without unhandled rejections.',
+  'Export resilience: partial records, skipped sources, manifests, all-failed preservation, cancellation, disk and delivery failures verified. Multi-page payload equivalence passed; 104 records use four native page writes per format. Bounded WHOOP and opt-in All Time native Health lookahead preserve three shared slots, source/cursor/payload order, partial failures and cancellation/remote revocation without publication or unhandled rejections.',
 );

@@ -3,11 +3,27 @@ import { errorJSON } from '../../packages/support-chat/errors.js';
 import { qaEnabled } from '../../client/qa-runtime.js';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
-import { Screen, Copy, Button, Group, Row } from '../components/ui';
+import { Stack, router } from 'expo-router';
+import { Screen, Copy, Button, Group, Row, IconButton } from '../components/ui';
 import { useBilling } from '../../client/BillingPaywalls';
 import { buyLifetime, restoreLifetime, lifetimeProduct } from '../../client/store-purchases';
 import { existingCustomerGuide } from '../../core/billing';
+
+function closePaywall() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/');
+}
+function headerClose() {
+  return (
+    <IconButton
+      plain
+      icon="close"
+      label="Close paywall"
+      testID="unlock-close"
+      onPress={closePaywall}
+    />
+  );
+}
 export default function UnlockScreen() {
   const current = useBilling();
   const guide = existingCustomerGuide();
@@ -23,7 +39,7 @@ export default function UnlockScreen() {
       .catch((e) => setError(errorJSON(e)));
   }, []);
   useEffect(() => {
-    if (current.unlocked) router.back();
+    if (current.unlocked) closePaywall();
   }, [current.unlocked]);
   /** @param {()=>Promise<unknown>} action */
   async function run(action) {
@@ -39,6 +55,9 @@ export default function UnlockScreen() {
   }
   return (
     <Screen compact testID="unlock-screen">
+      <Stack.Screen
+        options={{ title: 'Lifetime unlock', headerBackVisible: false, headerRight: headerClose }}
+      />
       <View style={styles.intro}>
         <Copy variant="heading" style={styles.heading}>
           {current.used >= 5
@@ -61,7 +80,7 @@ export default function UnlockScreen() {
         />
         <Row
           compact
-          title={`${price || '$19.99'} · one-time purchase`}
+          title={price ? `${price} · one-time purchase` : 'One-time purchase · price unavailable'}
           subtitle="Lifetime access. No subscription."
         />
       </Group>
@@ -103,10 +122,11 @@ export default function UnlockScreen() {
           onPress={() => void run(() => restoreLifetime(true))}
         />
         <Button
+          testID="unlock-dismiss"
           label={current.used >= 5 ? 'Close' : 'Maybe later'}
           secondary
           disabled={busy}
-          onPress={() => router.back()}
+          onPress={closePaywall}
         />
       </View>
       <Copy variant="caption" muted>

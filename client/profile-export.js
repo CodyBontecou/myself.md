@@ -14,7 +14,7 @@ import { deliverExport } from './destinations.js';
 import { catalog, readPage } from './data.js';
 /** Stream a day into staging files; report source failures while preserving available records.
  * @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile
- * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {(force?:boolean)=>Promise<void>} [check] @param {import('./destinations.js').DestinationCredential|null} [cloudAuthorization] */
+ * @param {{day:string,start:string,end:string}} interval @param {()=>boolean} valid @param {(message:string)=>void} progress @param {(artifact:import('../core/history.js').HistoryArtifact)=>void} [onArtifact] @param {string} [billingOperationId] @param {(force?:boolean)=>Promise<void>} [check] @param {import('./destinations.js').DestinationCredential|null} [cloudAuthorization] @param {boolean} [prefetchHealth] Overlap independent Health first pages for All Time exports. @param {(owner:string,query:import('../core/data.js').DataQuery,token:string)=>Promise<import('../core/data.js').DataPage>} [readWhoop] */
 export async function exportProfileDay(
   session,
   profile,
@@ -25,6 +25,8 @@ export async function exportProfileDay(
   billingOperationId = '',
   check = async () => {},
   cloudAuthorization = null,
+  prefetchHealth = false,
+  readWhoop,
 ) {
   const info = await catalog(session.owner, { health: true, time: true, location: true });
   if (!domains.some((d) => profile.selection[d].length))
@@ -56,12 +58,12 @@ export async function exportProfileDay(
   /** @typedef {{kind:'page',page:import('../core/data.js').DataPage}|{kind:'provider'|'fatal',error:unknown}} PrefetchedPage */
   /** @type {Map<string,Promise<PrefetchedPage>>} */
   const prefetched = new Map();
-  const whoop = profile.selection.health.filter(
+  const lookahead = profile.selection.health.filter(
     (key) =>
-      key.startsWith('native:whoop.') &&
+      (prefetchHealth || key.startsWith('native:whoop.')) &&
       info.domains.find((v) => v.domain === 'health')?.types.includes(key),
   );
-  let nextWhoop = 0;
+  let nextSource = 0;
   let stopped = false;
   /** @type {{fatal:{error:unknown}|null}} */
   const pendingState = { fatal: null };
@@ -84,13 +86,14 @@ export async function exportProfileDay(
       },
       profile,
       false,
+      readWhoop,
     );
-  // Keep at most three selected provider sources in flight, including the source being consumed.
-  // Native Health and usage reads retain their existing sequential execution.
-  function fillWhoop() {
+  // Keep at most three Health pages pending, including the current cursor chain.
+  // Only All Time overlaps native reads; usage and daily delivery remain sequential.
+  function fillLookahead() {
     if (stopped || pendingState.fatal) return;
-    while (prefetched.size < 3 && nextWhoop < whoop.length) {
-      const key = whoop[nextWhoop++];
+    while (prefetched.size < 3 && nextSource < lookahead.length) {
+      const key = lookahead[nextSource++];
       if (!key) break;
       /** @returns {Promise<PrefetchedPage>} */
       const pending = async () => {
@@ -113,7 +116,7 @@ export async function exportProfileDay(
     }
   }
   try {
-    fillWhoop();
+    fillLookahead();
     for (const domain of domains)
       for (const key of profile.selection[domain]) {
         const source = /** @type {const} */ ('native'),
@@ -204,7 +207,7 @@ export async function exportProfileDay(
           cursor = page.nextCursor ?? '';
         } while (cursor);
         if (!failed) completedSources++;
-        if (hadPrefetch) fillWhoop();
+        if (hadPrefetch) fillLookahead();
       }
     checkPrefetchFailure();
     if (!valid()) throw new Error('Export cancelled: profile or schedule changed.');

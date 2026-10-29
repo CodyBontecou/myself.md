@@ -139,6 +139,9 @@ export async function connectWhoop(owner) {
           body: JSON.stringify({ action: 'exchange', code }),
         })
       );
+      if ((revisions.get(owner) ?? 0) !== revision)
+        throw new Error('WHOOP connection was cancelled.');
+      revisions.set(owner, revision + 1);
       await save(owner, { ...token, expires: Date.now() + token.expires_in * 1000 });
     });
     return { status: 'completed' };
@@ -214,6 +217,20 @@ export async function whoopHealthTypes(owner, selectable = false) {
         .map(([type]) => type)
     : [];
 }
+/** Private operation identity; never publish it in diagnostics or export metadata.
+ * Refresh, disconnect, reconnect and scope changes invalidate empty export proofs.
+ * @param {string} owner @param {string} name */
+export async function whoopReadIdentity(owner, name) {
+  if (owner === 'local-device') owner = (await loadSession())?.owner ?? owner;
+  const revision = revisions.get(owner) ?? 0;
+  const token = await access(owner);
+  const type = whoopType(name);
+  if (!type || !token.scope.split(/\s+/).includes(type.scope))
+    throw new Error('Reconnect WHOOP and approve this data type.');
+  if (revision !== (revisions.get(owner) ?? 0))
+    throw new Error('WHOOP connection changed during this read. Retry the export.');
+  return `${revision}|${token.access_token}|${token.scope}`;
+}
 /** Native fetch may not expose a response stream. Bound advertised and decoded payload size.
  * @param {Response} response */
 async function boundedJSON(response) {
@@ -237,9 +254,10 @@ async function providerRequest(url, options) {
     clearTimeout(timeout);
   }
 }
-/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} cursor @returns {Promise<import('../core/data.js').DataPage>} */
-export async function whoopPage(owner, query, cursor) {
+/** @param {string} owner @param {import('../core/data.js').DataQuery} query @param {string} cursor @param {()=>Promise<void>} [beforeRequest] @returns {Promise<import('../core/data.js').DataPage>} */
+export async function whoopPage(owner, query, cursor, beforeRequest = async () => {}) {
   if (owner === 'local-device') owner = (await loadSession())?.owner ?? owner;
+  const revision = revisions.get(owner) ?? 0;
   const type = whoopType(query.type);
   if (!type) throw new Error('Unknown WHOOP data type.');
   if (cursor.length > 8192 || (query.type === 'whoop.body' && cursor))
@@ -257,11 +275,20 @@ export async function whoopPage(owner, query, cursor) {
       ...(cursor ? { nextToken: cursor } : {}),
     }).toString();
   }
-  const request = () =>
-    providerRequest(url.href, {
+  const request = async () => {
+    await beforeRequest();
+    // Pacing can wait a minute. Reacquire refreshes and revalidate local consent at dispatch.
+    token = await access(owner);
+    await current(owner);
+    if ((revisions.get(owner) ?? 0) !== revision)
+      throw new Error('WHOOP connection changed during this read. Retry the export.');
+    if (!token.scope.split(/\s+/).includes(type.scope))
+      throw new Error('Reconnect WHOOP and approve this data type.');
+    return providerRequest(url.href, {
       headers: { Authorization: `Bearer ${token.access_token}` },
       redirect: 'error',
     });
+  };
   let response = await request();
   if (response.status === 401) {
     await response.body?.cancel();
@@ -281,7 +308,12 @@ export async function whoopPage(owner, query, cursor) {
   const payload = await boundedJSON(response);
   await current(owner);
   // Do not deliver a request completed after local disconnection.
-  if ((await stored(owner))?.access_token !== token.access_token)
+  const retained = await stored(owner);
+  if (
+    (revisions.get(owner) ?? 0) !== revision ||
+    retained?.access_token !== token.access_token ||
+    !retained.scope.split(/\s+/).includes(type.scope)
+  )
     throw new Error('WHOOP connection changed during this read. Retry the query.');
   const rows = snapshot ? [payload] : payload.records;
   if (

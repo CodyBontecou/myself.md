@@ -639,6 +639,9 @@ export function Landing() {
           <a href="/blog">Blog</a>
           <a href="/contact">Contact</a>
           <a href="/privacy">Privacy</a>
+          <a href="/zh-hans/" lang="zh-Hans" hrefLang="zh-Hans">
+            简体中文
+          </a>
           <a href="/terms">Terms</a>
           <a href="https://logo.dev" rel="noreferrer">
             Logos provided by Logo.dev

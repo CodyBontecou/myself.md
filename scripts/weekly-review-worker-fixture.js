@@ -523,7 +523,7 @@ export async function verifyWeeklyReviewWorker({ origin, request, token }) {
     const { _meta: metadata } = tool;
     const uiUri = z.object({ ui: z.object({ resourceUri: z.string() }) }).parse(metadata)
       .ui.resourceUri;
-    assert.equal(uiUri, 'ui://myself-md/weekly-screen-time-review-v14.html');
+    assert.equal(uiUri, 'ui://myself-md/weekly-screen-time-review-v15.html');
     const resource = await client.readResource({ uri: uiUri });
     assert.equal(
       (await client.readResource({ uri: 'ui://myself-md/weekly-screen-time-review.html' }))

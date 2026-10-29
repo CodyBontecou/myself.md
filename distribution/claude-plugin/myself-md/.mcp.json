@@ -1,0 +1,9 @@
+{
+  "myself-md": {
+    "type": "http",
+    "url": "https://myself.md/mcp",
+    "oauth": {
+      "scopes": "myselfmd offline_access"
+    }
+  }
+}

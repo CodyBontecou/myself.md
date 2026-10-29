@@ -1,3 +1,4 @@
+import { registerReviewResourceAlias } from './review-resource.js';
 import { screenTimePresetPeriod } from '../core/screen-time-period.js';
 import { registerScreenTimeInsights } from './screen-time-insights.js';
 import { experimentCoaching, exportReadiness } from '../core/screen-time-insights.js';
@@ -133,6 +134,11 @@ const outputSchema = z.object({
 /** @param {import('@modelcontextprotocol/server').McpServer} mcp
  * @param {{cloud:import('./cloud-store.js').CloudStore,subject:string,readPage:(id:string,cursor:string)=>ReturnType<import('./cloud-store.js').CloudStore['page']>}} dependencies */
 export function registerScreenTimeReview(mcp, { cloud, subject, readPage }) {
+  registerReviewResourceAlias(
+    mcp,
+    'ui://myself-md/weekly-screen-time-review-v14.html',
+    screenTimeReviewHtml,
+  );
   for (const [name, uri] of /** @type {const} */ ([
     ['weekly-screen-time-review', screenTimeReviewUri],
     ['weekly-screen-time-review-legacy', legacyScreenTimeReviewUri],

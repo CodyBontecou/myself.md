@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "myself-md": {
+      "type": "streamableHttp",
+      "url": "https://myself.md/mcp",
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}

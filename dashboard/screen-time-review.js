@@ -1,3 +1,5 @@
+import { experimentHourChart } from './experiment-hour-chart.js';
+import { compactReview, reviewDisclosure } from './review-presentation.js';
 /** @typedef {import('../server/screen-time-reflection-store.js').ScreenTimeReflection} Reflection */
 /** @typedef {import('../server/screen-time-experiment-store.js').ScreenTimeExperiment} SavedExperiment */
 /** @typedef {{source:string,type:string,granularity:string,device:string}} SeriesKey */
@@ -301,7 +303,7 @@ function mountScreenTimeReview() {
       );
     });
     form.append(save, status);
-    container.append(form);
+    container.append(reviewDisclosure('Plan an experiment', [form]));
   }
   /** @param {{deviceId:string,profileId:string}} experiment */
   async function experimentExportIds(experiment) {
@@ -506,7 +508,7 @@ function mountScreenTimeReview() {
         card.append(
           element('h2', suggestion.appName),
           element('p', `Try ${suggestion.targetMinutesPerDay} minutes a day`, 'comparison'),
-          element('p', suggestion.reason, 'subtle'),
+          element('p', suggestion.reason, 'subtle review-note'),
           element('p', suggestion.plan),
         );
         if (current)
@@ -523,7 +525,7 @@ function mountScreenTimeReview() {
         element(
           'p',
           'These are optional starting points. Customize the cap, plan and start date before saving; no goal is created by viewing suggestions.',
-          'subtle',
+          'subtle review-note',
         ),
       );
     } else if (value.kind === 'reflections') {
@@ -605,7 +607,7 @@ function mountScreenTimeReview() {
         monthRead,
         monthStatus,
       );
-      container.append(monthForm);
+      container.append(data.month ? reviewDisclosure('Change month', [monthForm]) : monthForm);
 
       container.append(element('p', `${data.month ?? ''} · ${data.timezone ?? ''}`, 'subtle'));
       if (data.fictional) container.append(element('p', 'FICTIONAL EXAMPLE', 'eyebrow'));
@@ -619,7 +621,7 @@ function mountScreenTimeReview() {
             `${item.series.source} · ${item.series.type} · ${item.series.granularity}${item.series.device ? ` · ${item.series.device}` : ''}`,
           ),
           element('p', duration(story.observedDurationMs), 'total'),
-          element('p', story.narrative),
+          element('p', story.narrative, 'review-note'),
         );
         const weeks = element('ol', '', 'apps');
         for (const week of story.weeks) {
@@ -631,52 +633,58 @@ function mountScreenTimeReview() {
             ),
             element('span', duration(week.durationMs), 'app-duration'),
           );
+          rankRow(row, week.durationMs, Math.max(1, ...story.weeks.map((w) => w.durationMs ?? 0)));
           weeks.append(row);
         }
-        section.append(
-          element('h3', 'Weekly blocks'),
-          weeks,
+        section.append(element('h3', 'Weekly blocks'), weeks);
+        const patterns = reviewDisclosure('Apps & patterns', [
           element('h3', 'Leading observed hours'),
-        );
+        ]);
         story.leadingHours.forEach((hour) =>
-          section.append(
+          patterns.append(
             element(
               'p',
               `${String(hour.hour).padStart(2, '0')}:00 · ${duration(hour.durationMs)} across ${hour.observedDays} observed days`,
             ),
           ),
         );
-        section.append(element('h3', 'Top apps'));
+        patterns.append(element('h3', 'Top apps'));
         story.topApps.forEach((app) =>
-          section.append(element('p', `${app.name} · ${duration(app.currentMs)}`)),
+          patterns.append(element('p', `${app.name} · ${duration(app.currentMs)}`)),
         );
-        section.append(element('h3', 'First to final week'));
+        patterns.append(element('h3', 'First to final week'));
         story.shifts
           .slice(0, 10)
           .forEach((shift) =>
-            section.append(
+            patterns.append(
               element(
                 'p',
                 `${shift.appName}: ${shift.firstDays}/7 → ${shift.lastDays}/7 app days · ${shift.changeMs === null ? 'Change unavailable' : `${duration(Math.abs(shift.changeMs))} ${shift.changeMs < 0 ? 'less' : 'more'} observed usage`}`,
               ),
             ),
           );
-        section.append(element('p', story.note, 'subtle'));
+        patterns.append(element('p', story.note, 'subtle review-note'));
+        section.append(patterns);
         container.append(section);
       }
       if (data.month && !(data.series ?? []).length)
         container.append(element('p', 'No usable observations in this month.'));
-      container.append(element('h2', 'Experiments this month'));
+      const context = reviewDisclosure('Experiments & reflections', [
+        element('h2', 'Experiments this month'),
+      ]);
       for (const experiment of data.experiments ?? [])
-        container.append(
+        context.append(
           element(
             'p',
             `${experiment.appName} · ${experiment.weekStart} – ${experiment.weekEnd} · ${experiment.state} · ${experiment.latestReview?.outcome ?? 'Not reviewed'}${experiment.retrospective ? ' · Retrospective' : ''}`,
           ),
         );
-      container.append(element('h2', 'Your reflections'));
-      reflectionList(container, data.reflections ?? []);
-      (data.warnings ?? []).forEach((warning) => container.append(element('p', warning, 'subtle')));
+      context.append(element('h2', 'Your reflections'));
+      reflectionList(context, data.reflections ?? []);
+      (data.warnings ?? []).forEach((warning) =>
+        container.append(element('p', warning, 'subtle review-note')),
+      );
+      container.append(context);
     } else if (value.kind === 'experiment_hours') {
       if (data.experiment)
         container.append(
@@ -688,12 +696,13 @@ function mountScreenTimeReview() {
           ),
         );
       if (data.comparison) {
+        container.append(experimentHourChart(data.comparison));
         container.append(
           element(
             'p',
             `${data.comparison.pairedHours}/168 hours have goal-app observations in both periods.`,
           ),
-          element('p', data.comparison.note, 'subtle'),
+          element('p', data.comparison.note, 'subtle review-note'),
         );
         const table = element('table');
         table.append(element('caption', 'Same local weekday/hour: baseline → experiment'));
@@ -709,16 +718,18 @@ function mountScreenTimeReview() {
           body.append(row);
         }
         table.append(body);
-        container.append(table);
+        container.append(reviewDisclosure('Hourly values', [table]));
       }
+      const coverage = reviewDisclosure('Coverage', []);
       if (data.baselineCoverage) {
-        container.append(element('h3', 'Baseline coverage'));
-        readinessCard(container, data.baselineCoverage);
+        coverage.append(element('h3', 'Baseline coverage'));
+        readinessCard(coverage, data.baselineCoverage);
       }
       if (data.experimentCoverage) {
-        container.append(element('h3', 'Experiment coverage'));
-        readinessCard(container, data.experimentCoverage);
+        coverage.append(element('h3', 'Experiment coverage'));
+        readinessCard(coverage, data.experimentCoverage);
       }
+      if (data.baselineCoverage || data.experimentCoverage) container.append(coverage);
     } else if (value.kind === 'chart') {
       const context = data.context;
       if (context) {
@@ -769,11 +780,15 @@ function mountScreenTimeReview() {
               ? 'Comparison unavailable.'
               : `${duration(Math.abs(context.changeMs))} ${context.changeMs < 0 ? 'less' : 'more'} observed usage.`,
           ),
-          element('p', context.note, 'subtle'),
+          element('p', context.note, 'subtle review-note'),
         );
       }
       container.append(
-        element('p', 'Ask your question in chat using this selected context.', 'subtle'),
+        element(
+          'p',
+          'Ask your question in chat using this selected context.',
+          'subtle review-note',
+        ),
       );
     }
   }
@@ -838,7 +853,7 @@ function mountScreenTimeReview() {
           status.textContent = `${error instanceof Error ? error.message : 'Host messaging unavailable.'} Ask in chat and use inspect_screen_time_chart with the selected date/app/hour.`;
         });
     });
-    form.append(label, send, status, element('p', context.note, 'subtle'));
+    form.append(label, send, status, element('p', context.note, 'subtle review-note'));
     return form;
   }
 
@@ -1025,7 +1040,7 @@ function mountScreenTimeReview() {
   let heatmapStart = -1;
   /** @param {NonNullable<typeof review>['series'][number]} series */
   function renderAppComparison(series) {
-    container.append(element('h2', 'Top apps · period comparison'));
+    const section = reviewDisclosure(`Apps · ${series.topApps.length}`, []);
     const apps = element('ol', '', 'apps app-comparisons');
     const maximum = Math.max(
       1,
@@ -1101,14 +1116,15 @@ function mountScreenTimeReview() {
       }
       apps.append(row);
     }
-    container.append(
+    section.append(
       apps,
       element(
         'p',
         'Up to 10 apps ranked by observed review usage. Bar lengths share one scale across apps and periods. Changes require comparable periods and app records on every selected day; absent records are unknown.',
-        'subtle',
+        'subtle review-note',
       ),
     );
+    container.append(section);
   }
 
   /** @param {NonNullable<typeof review>['series'][number]} series */
@@ -1207,7 +1223,7 @@ function mountScreenTimeReview() {
       element(
         'p',
         'Hover or focus to inspect. Select a day to explore its apps. Dashed marks mean unknown usage.',
-        'chart-hint',
+        'chart-hint review-note',
       ),
     );
     container.append(card);
@@ -1216,7 +1232,7 @@ function mountScreenTimeReview() {
   function renderHeatmap(series) {
     const heatmap = series.heatmap;
     const section = element('section', '', 'attention-heatmap');
-    section.append(element('h2', 'Attention by hour · period comparison'));
+    section.append(element('h2', 'Hourly usage'));
     const comparisonDays = series.daily.filter(
       (day) => day.date >= series.previous.start && day.date <= series.previous.end,
     );
@@ -1226,7 +1242,7 @@ function mountScreenTimeReview() {
     const count = Math.max(comparisonDays.length, reviewDays.length);
     if (heatmapStart < 0 || heatmapStart >= count) heatmapStart = 0;
     const columns = Math.min(7, count - heatmapStart);
-    const label = element('label', 'Paired days', 'source-label');
+    const label = element('label', 'Dates', 'source-label');
     const select = element('select');
     select.setAttribute('aria-label', 'Heatmap dates');
     for (let offset = 0; offset < count; offset += 7) {
@@ -1247,16 +1263,12 @@ function mountScreenTimeReview() {
       element(
         'p',
         'Periods align by day position and local clock hour, even when weekdays differ. Dots mean unknown usage; 0 means an explicit zero observation. Outside range is not missing data.',
-        'subtle',
+        'subtle review-note',
       ),
     );
     const readout = element('div', '', 'heatmap-readout');
-    const readoutTitle = element('p', 'Explore your attention');
-    const readoutValue = element(
-      'p',
-      'Hover or focus an hour for its observed usage and leading app.',
-      'subtle',
-    );
+    const readoutTitle = element('p', 'Select an hour');
+    const readoutValue = element('p', 'Observed usage · gaps unknown', 'subtle');
     readout.append(readoutTitle, readoutValue);
     section.append(readout);
     const scale = element('div', '', 'heatmap-scale');
@@ -1294,7 +1306,7 @@ function mountScreenTimeReview() {
       element(
         'p',
         'Summed observed app minutes per local clock hour. App durations can overlap; totals can exceed 60 minutes. Scale uses both selected periods.',
-        'subtle',
+        'subtle review-note',
       ),
     );
     section.append(scale);
@@ -1306,7 +1318,7 @@ function mountScreenTimeReview() {
       element(
         'p',
         'Only intervals fully bounded by one local clock hour are mapped. Other valid usage remains in daily totals. Partial files and review exclusions still apply.',
-        'subtle',
+        'subtle review-note',
       ),
     );
     container.append(section);
@@ -1343,7 +1355,7 @@ function mountScreenTimeReview() {
           element(
             'p',
             `${duration(mapped)} mapped to hours · ${duration(unallocated)} without hourly placement${skipped ? ` (${skipped} records)` : ''}.`,
-            'subtle',
+            'subtle review-note',
           ),
         );
       if (!days.length)
@@ -1382,7 +1394,7 @@ function mountScreenTimeReview() {
           element(
             'p',
             '◆ marks the experiment start date. Compare hourly patterns in My experiments; collection coverage can differ.',
-            'subtle',
+            'subtle review-note',
           ),
         );
         notes.append(markers);
@@ -1406,7 +1418,12 @@ function mountScreenTimeReview() {
           new Date(day.date).getUTCDay()
         ];
         const starts = annotations.filter((experiment) => experiment.weekStart === day.date);
-        const th = element('th', `${weekday}\n${day.date.slice(5)}${starts.length ? ' ◆' : ''}`);
+        const th = element(
+          'th',
+          `${weekday}\n${Number(day.date.slice(-2))}${starts.length ? ' ◆' : ''}`,
+        );
+        th.setAttribute('aria-label', day.date);
+        th.title = day.date;
         if (starts.length)
           th.title = starts
             .map((experiment) => `${experiment.appName} experiment starts ${day.date}`)
@@ -1479,7 +1496,7 @@ function mountScreenTimeReview() {
           element(
             'p',
             'Clock changes apply: repeated clock hours are combined; — marks a nonexistent hour. A clock-hour label may cover fewer or more than 60 elapsed minutes.',
-            'subtle',
+            'subtle review-note',
           ),
         );
       return panel;
@@ -1521,13 +1538,13 @@ function mountScreenTimeReview() {
           ? `Hour: ${drilldown.key} · ${String(drilldown.hour).padStart(2, '0')}:00`
           : `Day: ${drilldown.key}`;
     const header = element('div', '', 'detail-overview-heading');
-    header.append(element('strong', 'All apps · daily observed usage'), element('span', selection));
+    header.append(element('strong', 'Period overview'), element('span', selection));
     overview.append(
       header,
       element(
         'p',
         `${review?.timezone ?? ''} · ${series.source}${series.device ? ` · ${series.device}` : ''}`,
-        'detail-overview-source',
+        'detail-overview-source review-note',
       ),
     );
     const ceiling = Math.max(
@@ -1583,7 +1600,7 @@ function mountScreenTimeReview() {
       element(
         'p',
         `Shared daily scale: 0–${duration(ceiling)} · dashed = unknown · solid baseline = zero · — = outside range${selectedDate ? ' · outlined column = selected day' : ''}`,
-        'detail-overview-key',
+        'detail-overview-key review-note',
       ),
     );
     container.append(overview);
@@ -1630,7 +1647,7 @@ function mountScreenTimeReview() {
           element(
             'p',
             'Up to 10 leading apps. Select an app to explore its daily observations.',
-            'subtle',
+            'subtle review-note',
           ),
         );
       }
@@ -1685,14 +1702,14 @@ function mountScreenTimeReview() {
         element(
           'p',
           'Up to 10 leading apps from intervals wholly inside this clock hour. These are observed app durations, not unique screen-on time or proof of full collection.',
-          'subtle',
+          'subtle review-note',
         ),
       );
     } else {
       const app = series.appDrilldowns.find((item) => item.identifier === drilldown?.key);
       if (!app) return;
       heading.textContent = `${app.name} · daily usage`;
-      panel.append(element('p', app.identifier, 'subtle'));
+      panel.append(element('p', app.identifier, 'subtle review-note'));
       if (returnDay) {
         const date = returnDay;
         panel.append(button(`Back to ${date}`, () => openDetail('day', date)));
@@ -1712,12 +1729,14 @@ function mountScreenTimeReview() {
         element(
           'p',
           'No records means unknown usage for this app. Collection may be incomplete even on days with records. These are observed totals, not an explanation of why usage changed.',
-          'subtle',
+          'subtle review-note',
         ),
       );
     }
-    panel.append(element('p', 'Uses the loaded review. No additional reads or charges.', 'subtle'));
-    panel.append(chartConversation(series));
+    panel.append(
+      element('p', 'Uses the loaded review. No additional reads or charges.', 'subtle review-note'),
+    );
+    panel.append(reviewDisclosure('Ask about selection', [chartConversation(series)]));
     container.append(panel);
     if (drilldown.kind === 'app') {
       const app = series.appDrilldowns.find((item) => item.identifier === drilldown?.key);
@@ -1732,13 +1751,34 @@ function mountScreenTimeReview() {
     }
   }
 
+  function finishPresentation() {
+    container.classList.add('screen-time-visual');
+    if (drilldown && !insightView && !experimentView) {
+      const context = [
+        ...container.querySelectorAll(
+          ':scope > .review-answer, :scope > .stats, :scope > .review-controls, :scope > .review-modes',
+        ),
+      ];
+      container.append(reviewDisclosure('Period & view', context));
+    }
+    let notes = container.querySelector(':scope > details.review-notes');
+    if (!notes) {
+      notes = reviewDisclosure('About this data', []);
+      notes.classList.add('review-notes');
+      container.append(notes);
+    }
+    compactReview(container);
+  }
+
   function render() {
     if (insightView) {
       renderInsights();
+      finishPresentation();
       return;
     }
     if (experimentView) {
       renderExperiments();
+      finishPresentation();
       return;
     }
     if (!review) return;
@@ -1760,7 +1800,7 @@ function mountScreenTimeReview() {
         'eyebrow',
       ),
     );
-    const pageTitle = element('h1', 'Where your time went');
+    const pageTitle = element('h1', 'Screen time');
     pageTitle.tabIndex = -1;
     const reviewHeader = element('div', '', 'review-header');
     reviewHeader.append(pageTitle);
@@ -1775,7 +1815,7 @@ function mountScreenTimeReview() {
     container.append(reviewHeader);
     const controls = element('details', '', 'review-controls');
     controls.open = controlsOpen;
-    controls.append(element('summary', 'Change dates or explore a day / hour'));
+    controls.append(element('summary', 'Dates & filters'));
     controls.addEventListener('toggle', () => {
       controlsOpen = controls.open;
     });
@@ -1818,10 +1858,6 @@ function mountScreenTimeReview() {
         'subtle comparison-range',
       ),
     );
-    const presets = controls.querySelector('.period-presets');
-    const presetStatus = controls.querySelector('.period-status');
-    if (presets) container.append(presets);
-    if (presetStatus) container.append(presetStatus);
     container.append(controls);
     const series = value.series[selected];
     const actions = element('div', '', 'insight-actions');
@@ -1896,6 +1932,7 @@ function mountScreenTimeReview() {
       if (value.series.length > 1) {
         const label = element('label', 'Usage source', 'source-label');
         const select = element('select');
+        select.setAttribute('aria-label', 'Usage source');
         value.series.forEach((item, index) => {
           const option = element(
             'option',
@@ -1919,17 +1956,17 @@ function mountScreenTimeReview() {
       const hasPrevious = series.previous.observedDays > 0;
       const current = element('div');
       current.append(
-        element('p', 'Observed review period', 'subtle'),
+        element('p', 'Review', 'subtle'),
         element('p', duration(series.current.observedDurationMs), 'total'),
       );
       const previous = element('div');
       previous.append(
-        element('p', 'Observed comparison period', 'subtle'),
+        element('p', 'Comparison', 'subtle'),
         element('p', duration(series.previous.observedDurationMs), 'previous-total'),
         element(
           'p',
           `${series.previous.observedDays ? duration((series.previous.observedDurationMs ?? 0) / series.previous.observedDays) : 'Unknown'} per observed comparison day`,
-          'subtle',
+          'subtle review-note',
         ),
       );
       summary.append(current);
@@ -1988,7 +2025,7 @@ function mountScreenTimeReview() {
         element(
           'p',
           `${series.current.observedDays}/${value.currentDays} review days with records · ${series.previous.observedDays}/${value.comparisonDays} comparison days with records. Missing days are unknown; observed days may be incomplete.`,
-          'subtle coverage-summary',
+          'subtle coverage-summary review-note',
         ),
       );
       container.insertBefore(answer, controls);
@@ -2090,7 +2127,7 @@ function mountScreenTimeReview() {
             element(
               'p',
               'Select a day or app to explore. Uses the loaded review without additional reads.',
-              'subtle',
+              'subtle review-note',
             ),
           );
       }
@@ -2098,12 +2135,12 @@ function mountScreenTimeReview() {
         element(
           'p',
           `${series.source} · ${series.type} · ${series.granularity}${series.device ? ` · ${series.device}` : ''}`,
-          'subtle',
+          'subtle review-note',
         ),
       );
     }
-    container.append(actions, experimentsStatus);
-    const details = element('details');
+    container.append(reviewDisclosure('Explore more', [actions, experimentsStatus]));
+    const details = element('details', '', 'review-notes');
     details.append(element('summary', 'Sources & limits'));
     const list = element('ul');
     value.warnings.forEach((warning) => list.append(element('li', warning)));
@@ -2123,7 +2160,8 @@ function mountScreenTimeReview() {
     );
     details.append(list);
     container.append(details);
-    container.append(element('p', value.nextStep, 'reflection'));
+    container.append(element('p', value.nextStep, 'reflection review-note'));
+    finishPresentation();
     window.parent.postMessage(
       {
         jsonrpc: '2.0',

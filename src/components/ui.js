@@ -69,8 +69,8 @@ export function Screen({ children, compact = false, testID }) {
     </ScrollView>
   );
 }
-/** @param {{icon:IconName,label:string,onPress:()=>void,testID?:string}} props */
-export function IconButton({ icon, label, onPress, testID }) {
+/** @param {{icon:IconName,label:string,onPress:()=>void,testID?:string,plain?:boolean}} props */
+export function IconButton({ icon, label, onPress, testID, plain = false }) {
   const { colors } = useTheme();
   return (
     <Pressable
@@ -80,7 +80,7 @@ export function IconButton({ icon, label, onPress, testID }) {
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
-        { backgroundColor: colors.subtle, opacity: pressed ? 0.6 : 1 },
+        { backgroundColor: plain ? 'transparent' : colors.subtle, opacity: pressed ? 0.6 : 1 },
       ]}
     >
       <Icon name={icon} size={21} />

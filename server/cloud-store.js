@@ -883,8 +883,8 @@ export class CloudStore {
         ),
       );
   }
-  /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] @param {import('../core/data.js').Domain} [domain] */
-  async page(subject, id, offset, limit, forMcp = false, domain) {
+  /** @param {string} subject @param {string} id @param {number} offset @param {number} limit @param {boolean} [forMcp] @param {import('../core/data.js').Domain} [domain] @param {string} [recordType] */
+  async page(subject, id, offset, limit, forMcp = false, domain, recordType) {
     this.cleanup();
     const row = this.row(subject, id),
       permission = this.permission(subject, row.device, row.profile);
@@ -904,6 +904,7 @@ export class CloudStore {
           currentPermission.selection[r.domain].includes(`native:${r.type}`),
       );
     if (domain) records = records.filter((record) => record.domain === domain);
+    if (recordType) records = records.filter((record) => record.type === recordType);
     const page = [];
     let size = 0;
     for (const r of records.slice(offset, offset + limit)) {

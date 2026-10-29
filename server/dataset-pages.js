@@ -154,27 +154,31 @@ export function datasetDocument(template, pathname) {
       ],
     },
   };
-  return template
-    .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)}</title>`)
-    .replace(
-      /(<meta\s+name="description"\s+content=")[^"]*"/,
-      () => `<meta name="description" content="${escape(page.description)}"`,
-    )
-    .replace(/(<link rel="canonical" href=")[^"]*"/, () => `<link rel="canonical" href="${url}"`)
-    .replace(
-      /(<meta\s+property="og:(title|url|description)"\s+content=")[^"]*"/g,
-      (_match, _prefix, field) =>
-        `<meta property="og:${field}" content="${escape(field === 'title' ? title : field === 'url' ? url : page.description)}"`,
-    )
-    .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, '')
-    .replace(
-      /<link rel="alternate" type="text\/markdown" href="[^"]*"\s*\/>/,
-      () => `<link rel="alternate" type="text/markdown" href="${page.canonical}.md" />`,
-    )
-    .replace(
-      '</head>',
-      () =>
-        `<link rel="stylesheet" href="/dashboard/docs.css"><script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script></head>`,
-    )
-    .replace('__PUBLIC_CONTENT__', () => docsHTML(page.markdown, page.canonical));
+  return (
+    template
+      // Dataset pages have no translated equivalents; homepage alternates do not apply.
+      .replace(/<link rel="alternate" hreflang="[^"]+" href="[^"]+"\s*\/?>/g, '')
+      .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)}</title>`)
+      .replace(
+        /(<meta\s+name="description"\s+content=")[^"]*"/,
+        () => `<meta name="description" content="${escape(page.description)}"`,
+      )
+      .replace(/(<link rel="canonical" href=")[^"]*"/, () => `<link rel="canonical" href="${url}"`)
+      .replace(
+        /(<meta\s+property="og:(title|url|description)"\s+content=")[^"]*"/g,
+        (_match, _prefix, field) =>
+          `<meta property="og:${field}" content="${escape(field === 'title' ? title : field === 'url' ? url : page.description)}"`,
+      )
+      .replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, '')
+      .replace(
+        /<link rel="alternate" type="text\/markdown" href="[^"]*"\s*\/>/,
+        () => `<link rel="alternate" type="text/markdown" href="${page.canonical}.md" />`,
+      )
+      .replace(
+        '</head>',
+        () =>
+          `<link rel="stylesheet" href="/dashboard/docs.css"><script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script></head>`,
+      )
+      .replace('__PUBLIC_CONTENT__', () => docsHTML(page.markdown, page.canonical))
+  );
 }

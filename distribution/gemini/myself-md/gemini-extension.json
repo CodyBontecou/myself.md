@@ -1,0 +1,26 @@
+{
+  "name": "myself-md",
+  "version": "1.0.0",
+  "description": "Explore owner-approved phone data and explicitly shared cloud exports from myself.md.",
+  "mcpServers": {
+    "myself-md": {
+      "httpUrl": "https://myself.md/mcp",
+      "includeTools": [
+        "get_account_logins",
+        "get_public_documentation",
+        "get_privacy_policy",
+        "get_phone_data_catalog",
+        "list_export_schemas",
+        "list_connected_phones",
+        "list_cloud_exports",
+        "read_cloud_export"
+      ],
+      "oauth": {
+        "enabled": true,
+        "scopes": ["myselfmd", "offline_access"],
+        "redirectUri": "http://localhost:7777/oauth/callback",
+        "audiences": ["https://myself.md/mcp"]
+      }
+    }
+  }
+}

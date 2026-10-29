@@ -1,13 +1,17 @@
 /** Shared public disclosures for the phone, website and MCP. */
 export const privacyPolicy = {
   title: 'myself.md Privacy Policy',
-  updated: '2026-10-20',
+  updated: '2026-10-22',
   url: 'https://myself.md/privacy',
   supportUrl: 'https://myself.md/contact',
   supportEmail: 'cody@isolated.tech',
   issuesUrl: 'https://github.com/CodyBontecou/myself.md/issues',
   discordUrl: 'https://discord.gg/RaQYS4t6gn',
   sections: [
+    {
+      title: 'Optional maps in ChatGPT',
+      body: 'Map views are optional. When you choose Show map, or ask an agent to enable map tiles, myself.md requests basemap tiles from OpenStreetMap for the viewed geographic areas. OpenStreetMap receives the requested tile areas and the service IP address, not your account identity, precise point records or heart-rate readings. Tile images are cached for seven days. Coordinate plots remain available without external map requests.',
+    },
     {
       title: 'Public website logo images',
       body: 'The public homepage loads WHOOP artwork from img.logo.dev. This image service receives the ordinary network request, including your IP address; requests suppress the page referrer and contain no account, phone, health, screen-time or location records. Other homepage product icons are served by myself.md.',

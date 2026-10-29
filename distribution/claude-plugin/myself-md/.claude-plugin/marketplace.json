@@ -1,0 +1,17 @@
+{
+  "name": "myself-md-plugins",
+  "owner": {
+    "name": "Isotech"
+  },
+  "metadata": {
+    "description": "Official myself.md data access workflows."
+  },
+  "plugins": [
+    {
+      "name": "myself-md",
+      "source": "./",
+      "description": "Explore owner-approved phone data and explicitly shared health, screen-time and recorded-location exports.",
+      "version": "1.0.0"
+    }
+  ]
+}

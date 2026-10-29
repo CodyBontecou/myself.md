@@ -7,9 +7,9 @@ import { whoopPage } from './whoop.js';
 
 /** Find the earliest readable sample without loading its series or workout children.
  * Snapshots have no historical start. Any discovery failure stops the export rather than truncating it.
- * @param {string} owner @param {string[]} keys @param {string} end @param {()=>Promise<void>} check
+ * @param {string} owner @param {string[]} keys @param {string} end @param {()=>Promise<void>} check @param {typeof whoopPage} [readWhoop]
  * @returns {Promise<string|null>} */
-export async function earliestHealthDate(owner, keys, end, check) {
+export async function earliestHealthDate(owner, keys, end, check, readWhoop = whoopPage) {
   let earliest = null;
   for (const key of keys) {
     // Discovery is deliberately sequential to respect provider query quotas and cancellation.
@@ -18,13 +18,13 @@ export async function earliestHealthDate(owner, keys, end, check) {
     const type = key.slice(key.indexOf(':') + 1);
     if (characteristics.includes(type) || type === 'whoop.body') continue;
     // oxlint-disable-next-line eslint/no-await-in-loop
-    const start = await earliestType(owner, type, end, check);
+    const start = await earliestType(owner, type, end, check, readWhoop);
     if (start && (!earliest || Date.parse(start) < Date.parse(earliest))) earliest = start;
   }
   return earliest;
 }
-/** @param {string} owner @param {string} type @param {string} end @param {()=>Promise<void>} check @returns {Promise<string|null>} */
-async function earliestType(owner, type, end, check) {
+/** @param {string} owner @param {string} type @param {string} end @param {()=>Promise<void>} check @param {typeof whoopPage} readWhoop @returns {Promise<string|null>} */
+async function earliestType(owner, type, end, check, readWhoop) {
   if (type.startsWith('whoop.')) {
     let cursor = '',
       earliest = null;
@@ -36,7 +36,7 @@ async function earliestType(owner, type, end, check) {
       // oxlint-disable-next-line eslint/no-await-in-loop
       await check();
       // oxlint-disable-next-line eslint/no-await-in-loop
-      const page = await whoopPage(
+      const page = await readWhoop(
         owner,
         {
           domain: 'health',
@@ -52,7 +52,8 @@ async function earliestType(owner, type, end, check) {
       );
       for (const row of page.records) {
         const native = /** @type {{created_at?:string}} */ (row.native);
-        // WHOOP recovery has no start; provider filtering uses creation time.
+        // Recovery has no independent start. Creation time is only a discovery fallback;
+        // daily membership remains determined by the provider's actual interval query.
         const date = row.start ?? native.created_at;
         if (!date || !Number.isFinite(Date.parse(date)))
           throw new Error(

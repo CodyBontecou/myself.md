@@ -181,7 +181,11 @@
     "location-review:build": "node scripts/build-location-review.js",
     "verify:location-review": "npm run location-review:build && node scripts/verify-location-review.js && node scripts/verify-location-review-ui.js",
     "health-review:build": "node scripts/build-health-review.js",
-    "verify:health-review": "npm run health-review:build && node scripts/verify-health-review.js && node scripts/verify-health-review-ui.js"
+    "verify:health-review": "npm run health-review:build && node scripts/verify-health-review.js && node scripts/verify-health-review-ui.js",
+    "sleep-screen-time:build": "node scripts/build-sleep-screen-time.js",
+    "verify:sleep-screen-time": "npm run sleep-screen-time:build && node scripts/verify-sleep-screen-time.js && node scripts/verify-sleep-screen-time-ui.js",
+    "app-stores:render": "node scripts/render-app-stores.js",
+    "app-stores:build": "node scripts/build-store-assets.js"
   },
   "private": true,
   "type": "module",

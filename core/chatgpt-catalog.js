@@ -1,3 +1,4 @@
+import { catalogExtras } from './chatgpt-catalog-extras.js';
 import { screenTimeReview } from './screen-time-review.js';
 import { healthReview } from './health-review.js';
 import { locationReview } from './location-review.js';
@@ -10,6 +11,17 @@ export const visualizationIds = /** @type {const} */ ([
   'locations',
   'heart-locations',
   'heart-screen-time',
+  'whoop-sleep',
+  'sleep-screen-time',
+  'before-sleep',
+  'sleep-performance',
+  'monthly-attention',
+  'experiment-hours',
+  'experiments',
+  'coaching',
+  'readiness',
+  'chart-context',
+  'reflections',
 ]);
 /** @param {import('./health-review.js').HealthDay} d @param {number} hour */
 function at(d, hour) {
@@ -232,7 +244,8 @@ export function visualizationCatalog() {
         id: 'locations',
         category: 'location',
         title: 'Recorded locations',
-        description: 'Explore the points that were recorded, alongside daily counts and accuracy.',
+        description:
+          'Explore fictional recorded points on an OpenStreetMap basemap, alongside daily counts and accuracy.',
         hint: 'Choose a day, then a point. Sparse observations do not establish a route or visit.',
         renderer: 'location',
         tool: 'review_recorded_locations',
@@ -244,7 +257,7 @@ export function visualizationCatalog() {
         category: 'combined',
         title: 'Heart rate & locations',
         description:
-          'Color location points by the nearest observed heart-rate sample within five minutes.',
+          'Color fictional map markers by the nearest observed heart-rate sample within five minutes.',
         hint: 'Point details show GPS accuracy, the signed time offset and the matching sample.',
         renderer: 'heart',
         tool: 'review_heart_rate_context',
@@ -265,6 +278,7 @@ export function visualizationCatalog() {
           'Overlay heart-rate observations on my screen-time hours for the last completed week.',
         data: heartTime,
       },
+      ...catalogExtras(days, time, exports, comparison),
     ],
   };
 }

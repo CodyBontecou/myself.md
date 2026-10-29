@@ -2,6 +2,7 @@ import { exportIntervals } from '../core/data-range.js';
 import { domains } from '../core/data.js';
 import { earliestLocationDate } from './library.js';
 import { earliestHealthDate, requireHealthHistory } from './health-history.js';
+import { createWhoopExportReader } from './whoop-export.js';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Alert, Platform } from 'react-native';
@@ -352,7 +353,9 @@ export async function exportNow(session, profile, progress, options = {}) {
   if (profile.export.includeToday) dates.push(day);
   let intervalStart = localCalendar.instant(dates[0] ?? day, 0, 0);
   let intervalEnd = profile.export.includeToday ? stamp : localCalendar.instant(day, 0, 0);
-  const valid = () => {
+  let active = true;
+  const authorization = { failure: /** @type {{error:unknown}|null} */ (null) };
+  const locallyValid = () => {
     if (epoch !== generation) return false;
     // One fresh context read checks both fields in the same local snapshot.
     const context = loadExportContext();
@@ -364,6 +367,9 @@ export async function exportNow(session, profile, progress, options = {}) {
       ) === true
     );
   };
+  const valid = () => active && !authorization.failure && locallyValid();
+  /** @type {import('./whoop-export.js').WhoopReader|undefined} */
+  let readWhoop;
   let historyId = '';
   let billingId = '';
   let produced = false;
@@ -373,8 +379,14 @@ export async function exportNow(session, profile, progress, options = {}) {
   const check = async (force = true) => {
     // Staging already checks locally immediately before calling this callback.
     // Always recheck after its asynchronous remote boundary; publication checks both sides.
+    if (authorization.failure) throw authorization.failure.error;
     if (force && !valid()) throw new Error('Export cancelled: profile changed.');
-    await options.check?.(force);
+    try {
+      await options.check?.(force);
+    } catch (error) {
+      authorization.failure ??= { error };
+      throw error;
+    }
     if (!valid()) throw new Error('Export cancelled: profile changed.');
   };
   try {
@@ -398,13 +410,25 @@ export async function exportNow(session, profile, progress, options = {}) {
         throw new Error('Export end cannot be in the future.');
       let start = options.range.start;
       if (start === null) {
+        readWhoop = createWhoopExportReader(
+          session.owner,
+          { start: '1970-01-01T00:00:00.000Z', end: intervalEnd },
+          valid,
+          check,
+        );
         if (profile.selection.time.length)
           throw new Error(
             'Choose a start date for Screen Time; the OS does not expose its earliest retained date.',
           );
         progress('Finding earliest readable data…', 0);
         const healthStart = profile.selection.health.length
-          ? await earliestHealthDate(session.owner, profile.selection.health, intervalEnd, check)
+          ? await earliestHealthDate(
+              session.owner,
+              profile.selection.health,
+              intervalEnd,
+              check,
+              readWhoop,
+            )
           : null;
         const locationStart = earliestLocationDate(
           session.owner,
@@ -511,6 +535,8 @@ export async function exportNow(session, profile, progress, options = {}) {
         billingId,
         check,
         cloudAuthorization,
+        options.range?.start === null,
+        readWhoop,
       );
       recordCount += result.count;
       state.files.push(...result.files);
@@ -537,16 +563,18 @@ export async function exportNow(session, profile, progress, options = {}) {
       end: intervalEnd,
     };
   } catch (error) {
+    const failure = authorization.failure?.error ?? error;
     if (billingId) await settleExport(session, billingId, produced).catch(() => {});
     if (historyId)
       finishExport(
         session,
         historyId,
-        valid() ? 'failed' : 'cancelled',
-        exportFailureMessage(error),
+        locallyValid() ? 'failed' : 'cancelled',
+        exportFailureMessage(failure),
       );
-    throw error;
+    throw failure;
   } finally {
+    active = false;
     running = false;
   }
 }

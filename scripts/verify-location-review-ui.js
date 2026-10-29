@@ -85,6 +85,12 @@ try {
         await page.screenshot({
           path: `.local/location-review-release/location-${width}-${colorScheme}.png`,
         });
+        await frame.getByRole('button', { name: 'Back to all days', exact: true }).click();
+        assert.equal(await frame.locator('.catalog-map').count(), 0);
+        await frame.getByRole('button', { name: 'Show map · OpenStreetMap', exact: true }).click();
+        assert.equal(await frame.locator('.catalog-map .dot').count(), 27);
+        await frame.getByRole('button', { name: 'Show coordinate plot', exact: true }).click();
+        assert.equal(await frame.locator('.catalog-map').count(), 0);
         await page.close();
       }),
     ),

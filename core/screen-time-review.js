@@ -6,22 +6,10 @@ import { sorted } from './collections.js';
 /** @typedef {{id:string,day:string,created:string,partial:boolean}} ReviewExport */
 /** @typedef {{exportId:string,record:import('./data.js').DataRecord}} ReviewRecord */
 
-/** Summarize only observed, non-overlapping usage. Calendar boundaries are supplied by I/O.
- * @param {ReviewDay[]} days Fourteen local days: comparison week first, review week second. Periods must not overlap.
- * @param {ReviewRecord[]} records Authorized screen-time records only.
- * @param {ReviewExport[]} exports
- * @param {string} timezone @param {string} [focusAppIdentifier]
- * @param {import('./attention-heatmap.js').ReviewHourSlot[]} [hourSlots]
- * @param {number} [previousDays] Number of leading comparison days; zero for a single period. */
-export function screenTimeReview(
-  days,
-  records,
-  exports,
-  timezone,
-  focusAppIdentifier,
-  hourSlots = [],
-  previousDays = 7,
-) {
+/** Shared validated usage intervals, without inventing timing inside aggregate records.
+ * @param {ReviewDay[]|undefined} days Undefined retains all selected intervals for session-window matching.
+ * @param {ReviewRecord[]} records */
+export function usageRecordGroups(days, records) {
   const counts = { duplicates: 0, invalid: 0, outside: 0, crossingDay: 0, overlaps: 0 };
   const seen = new Set();
   /** @type {Map<string,{source:string,type:string,granularity:string,device:string,rows:{day:number,start:number,end:number,durationMs:number,identifier:string,name:string,exportId:string,conflict:boolean}[]}>} */
@@ -55,14 +43,14 @@ export function screenTimeReview(
       counts.invalid++;
       continue;
     }
-    const day = days.findIndex(
-      (value) => start >= Date.parse(value.start) && start < Date.parse(value.end),
-    );
+    const day = days
+      ? days.findIndex((value) => start >= Date.parse(value.start) && start < Date.parse(value.end))
+      : 0;
     if (day < 0) {
       counts.outside++;
       continue;
     }
-    if (end > Date.parse(days[day]?.end ?? '')) {
+    if (days && end > Date.parse(days[day]?.end ?? '')) {
       counts.crossingDay++;
       continue;
     }
@@ -97,7 +85,7 @@ export function screenTimeReview(
       conflict: false,
     });
   }
-  const series = [...groups.values()].map((group) => {
+  for (const group of groups.values()) {
     // Repeated snapshots with different values cannot be safely added or arbitrarily preferred.
     const ordered = sorted(
       group.rows,
@@ -111,6 +99,28 @@ export function screenTimeReview(
       }
       if (!active || active.identifier !== row.identifier || row.end > active.end) active = row;
     }
+  }
+  return { counts, groups, fictional };
+}
+
+/** Summarize only observed, non-overlapping usage. Calendar boundaries are supplied by I/O.
+ * @param {ReviewDay[]} days Fourteen local days: comparison week first, review week second. Periods must not overlap.
+ * @param {ReviewRecord[]} records Authorized screen-time records only.
+ * @param {ReviewExport[]} exports
+ * @param {string} timezone @param {string} [focusAppIdentifier]
+ * @param {import('./attention-heatmap.js').ReviewHourSlot[]} [hourSlots]
+ * @param {number} [previousDays] Number of leading comparison days; zero for a single period. */
+export function screenTimeReview(
+  days,
+  records,
+  exports,
+  timezone,
+  focusAppIdentifier,
+  hourSlots = [],
+  previousDays = 7,
+) {
+  const { counts, groups, fictional } = usageRecordGroups(days, records);
+  const series = [...groups.values()].map((group) => {
     const daily = days.map((day) => ({
       date: day.date,
       durationMs: /** @type {number|null} */ (null),

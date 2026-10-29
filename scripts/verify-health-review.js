@@ -106,6 +106,138 @@ assert.equal(
   25,
 );
 
+const whoop = sample(
+  'whoop.sleep',
+  '2026-10-18T22:00:00Z',
+  '2026-10-19T06:00:00Z',
+  {
+    id: 'whoop-sleep',
+    user_id: 1,
+    updated_at: '2026-10-19T07:00:00Z',
+    nap: false,
+    score_state: 'SCORED',
+    fictional: true,
+    score: {
+      stage_summary: {
+        total_light_sleep_time_milli: 4 * 3600000,
+        total_slow_wave_sleep_time_milli: 3600000,
+        total_rem_sleep_time_milli: 2 * 3600000,
+        total_awake_time_milli: 3600000,
+        total_no_data_time_milli: 0,
+        total_in_bed_time_milli: 8 * 3600000,
+      },
+    },
+  },
+  'whoop',
+);
+const whoopRows = [whoop, whoop].map((record) => ({ record, exportId: 'whoop-export' }));
+const whoopResult = healthReview([day], whoopRows, 'UTC');
+assert.equal(whoopResult.series[0]?.basis, 'session_end');
+assert.equal(whoopResult.series[0]?.daily[0]?.value, 7);
+assert.equal(whoopResult.series[0]?.daily[0]?.intervals.length, 0, 'No fabricated stage intervals');
+assert.equal(whoopResult.series[0]?.daily[0]?.sessions?.[0]?.start, '2026-10-18T22:00:00.000Z');
+assert.equal(whoopResult.counts.duplicates, 1);
+assert.equal(whoopResult.counts.unsupported, 0);
+const whoopNative = /** @type {Record<string,unknown>} */ (whoop.native);
+const pending = {
+  ...whoop,
+  native: { ...whoopNative, score_state: 'PENDING_SCORE', score: undefined },
+};
+assert.equal(
+  healthReview([day], [{ record: pending, exportId: 'p' }], 'UTC').series[0]?.daily[0]?.value,
+  null,
+);
+const invalidWhoop = {
+  ...whoop,
+  native: { ...whoopNative, score: { stage_summary: { total_in_bed_time_milli: 1 } } },
+};
+assert.equal(
+  healthReview([day], [{ record: invalidWhoop, exportId: 'p' }], 'UTC').counts.invalid,
+  1,
+);
+const newer = { ...pending, native: { ...pending.native, updated_at: '2026-10-19T08:00:00Z' } };
+assert.equal(
+  healthReview([day], [...whoopRows, { record: newer, exportId: 'new' }], 'UTC').series[0]?.daily[0]
+    ?.value,
+  null,
+  'New provider revision replaces stale scored values',
+);
+const overlappingWhoop = { ...whoop, native: { ...whoopNative, id: 'overlap' } };
+assert.equal(
+  healthReview(
+    [day],
+    [
+      { record: whoop, exportId: 'a' },
+      { record: overlappingWhoop, exportId: 'b' },
+    ],
+    'UTC',
+  ).series[0]?.daily[0]?.value,
+  null,
+);
+const otherDay = { date: '2026-10-18', start: '2026-10-18T00:00:00Z', end: day.start };
+const whole = healthReview([otherDay, day], whoopRows, 'UTC').series[0];
+assert.equal(whole?.daily[0]?.value, null);
+assert.equal(whole?.daily[1]?.value, 7, 'Whole session belongs to local end date, never prorated');
+
+const nap = {
+  ...whoop,
+  start: '2026-10-19T12:00:00Z',
+  end: '2026-10-19T20:00:00Z',
+  native: { ...whoopNative, id: 'nap', nap: true },
+};
+const withNap = healthReview(
+  [day],
+  [
+    { record: whoop, exportId: 'night' },
+    { record: nap, exportId: 'nap' },
+  ],
+  'UTC',
+);
+assert.equal(withNap.series[0]?.daily[0]?.value, 14);
+assert.equal(withNap.series[0]?.daily[0]?.sessions?.[1]?.nap, true);
+const unscorable = { ...pending, native: { ...pending.native, score_state: 'UNSCORABLE' } };
+assert.equal(
+  healthReview([day], [{ record: unscorable, exportId: 'u' }], 'UTC').series[0]?.daily[0]?.value,
+  null,
+);
+const dstWhoop = {
+  ...whoop,
+  start: dst.start,
+  end: new Date(Date.parse(dst.start) + 8 * 3600000).toISOString(),
+};
+assert.equal(
+  healthReview([dst], [{ record: dstWhoop, exportId: 'dst' }], 'America/New_York').series[0]
+    ?.daily[0]?.value,
+  7,
+);
+
+const midnight = { ...whoop, end: day.start };
+const midnightReview = healthReview(
+  [otherDay, day],
+  [{ record: midnight, exportId: 'midnight' }],
+  'UTC',
+);
+assert.equal(midnightReview.series[0]?.daily[0]?.value, null);
+assert.equal(
+  midnightReview.series[0]?.daily[1]?.value,
+  7,
+  'An exact midnight session end belongs to the new local day',
+);
+const conflicting = healthReview(
+  [day],
+  [
+    { record: whoop, exportId: 'a' },
+    { record: pending, exportId: 'b' },
+  ],
+  'UTC',
+);
+assert.equal(
+  conflicting.counts.invalid,
+  1,
+  'Conflicting provider snapshots without an ordered revision are excluded',
+);
+assert.equal(conflicting.series.length, 0);
+
 const cloud = new CloudStore(':memory:', randomBytes(32)),
   billing = new BillingStore(':memory:'),
   history = new HistoryStore(':memory:', cloud);
@@ -115,7 +247,11 @@ const profile = {
   ...parseProfile({
     schema: 'myself.md.profile.v1',
     name: 'Fictional health review',
-    selection: { health: [`native:${step.type}`, `native:${sleep.type}`], time: [], location: [] },
+    selection: {
+      health: [`native:${step.type}`, `native:${sleep.type}`, 'native:whoop.sleep'],
+      time: [],
+      location: [],
+    },
     export: { destination: 'cloud', formats: ['jsonl'] },
   }),
   id: 'health-review-test',
@@ -129,6 +265,7 @@ cloud.syncAgentPermissions(subject, device, [
   },
 ]);
 billing.grant(subject, 'health-review-fixture', 'fictional');
+rows.push(whoop);
 const file = cloud.begin(subject, device, profile.id, {
   day: day.date,
   format: 'jsonl',
@@ -168,6 +305,7 @@ try {
   assert.ok(!response.isError, JSON.stringify(response));
   const review = /** @type {typeof result} */ (response.structuredContent);
   assert.equal(review.series.find((s) => s.kind === 'sleep')?.daily[0]?.value, 6);
+  assert.equal(review.series.find((s) => s.source === 'whoop')?.daily[0]?.value, 7);
   assert.ok(
     (await owner.client.readResource({ uri: 'ui://myself-md/activity-sleep-review-v1.html' }))
       .contents.length,

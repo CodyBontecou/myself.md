@@ -1,8 +1,9 @@
+import { whoopSleepReview } from './whoop-sleep-review.js';
 import { sorted } from './collections.js';
 /** @typedef {{date:string,start:string,end:string}} HealthDay */
 /** @typedef {{start:string,end:string,kind:string,exportIds:string[]}} SleepInterval */
-/** @typedef {{date:string,value:number|null,records:number,intervals:SleepInterval[],stageDurations:{kind:string,hours:number}[]}} HealthObservation */
-/** @typedef {{source:string,type:string,device:string,unit:string,kind:'activity'|'sleep',daily:HealthObservation[]}} HealthSeries */
+/** @typedef {{date:string,value:number|null,records:number,intervals:SleepInterval[],stageDurations:{kind:string,hours:number}[],sessions?:import('./whoop-sleep-review.js').WhoopSleep[]}} HealthObservation */
+/** @typedef {{source:string,type:string,device:string,unit:string,kind:'activity'|'sleep',basis?:'session_end',daily:HealthObservation[]}} HealthSeries */
 /** @param {unknown} value @returns {Record<string,unknown>} */
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -32,14 +33,25 @@ export function healthReview(days, rows, timezone) {
   /** @type {Map<string,HealthSeries>} */
   const groups = new Map();
   const seen = new Set();
-  const counts = { duplicates: 0, invalid: 0, unsupported: 0, crossingDay: 0, overlaps: 0 };
+  const counts = {
+    duplicates: 0,
+    invalid: 0,
+    unsupported: 0,
+    crossingDay: 0,
+    overlaps: 0,
+    sleepOverlaps: 0,
+  };
+  const whoop = whoopSleepReview(days, rows);
+  counts.invalid += whoop.counts.invalid;
+  counts.duplicates += whoop.counts.duplicates;
+  counts.sleepOverlaps += whoop.counts.overlaps;
   let fictional = rows.length > 0;
   /** @type {Map<string,{start:number,end:number,day:HealthObservation,value:number}[]>} */
   const activity = new Map();
   for (const { exportId, record: r } of rows) {
     const n = object(r.native);
     fictional &&= n.fictional === true;
-    if (r.domain !== 'health') continue;
+    if (r.domain !== 'health' || (r.type === 'whoop.sleep' && r.source === 'whoop')) continue;
     const kind =
       r.type === 'HKQuantityTypeIdentifierStepCount' || r.type === 'Steps'
         ? 'activity'
@@ -203,13 +215,13 @@ export function healthReview(days, rows, timezone) {
     timezone,
     fictional,
     days,
-    series,
+    series: [...series, ...whoop.series],
     counts,
     warnings: [
       'Observed records are not full-day coverage. Missing values are unknown, not zero. No clinical targets or health conclusions are inferred.',
       'Activity shows steps only. Separate sources/devices are never added together. Overlapping step intervals and intervals crossing local midnight are excluded; totals may be incomplete.',
       'Sleep shows HealthKit intervals and Health Connect stages, split at local midnight. Observed asleep hours use the union of asleep/core/deep/REM intervals; in-bed and awake intervals are not sleep. These are calendar-day portions, not whole-night totals.',
-      'Other health types, including WHOOP provider records, are counted as unsupported. Discover and select supported exports before reviewing.',
+      'WHOOP sleep shows whole-session stage totals on the local day the session ends, including naps. Stage timestamps are unavailable: totals are not placed on a stage timeline or split at midnight. Pending, unscorable, malformed or overlapping sessions leave the daily total unknown. Other health types remain unsupported.',
     ],
   };
 }

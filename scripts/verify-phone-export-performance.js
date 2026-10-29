@@ -172,3 +172,5 @@ assert.ok(stale.checks > after.checks, 'Read checks refresh after two seconds');
 console.log(
   `Phone export: 1,470 source reads, ${before.checks} → ${after.checks} remote checks; modeled elapsed ${before.elapsed} → ${after.elapsed} ms (1 s network / 10 ms native). Cancellation, blocked agent, foreground/account changes and cache expiry passed. This is an isolated model, not phone timing.`,
 );
+
+await import('./verify-whoop-export.js');

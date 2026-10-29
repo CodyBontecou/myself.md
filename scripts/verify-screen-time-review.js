@@ -848,7 +848,36 @@ try {
     await page.evaluate(
       `window.frames[0].postMessage({jsonrpc:'2.0', method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify(review)}}}, '*')`,
     );
-    await frame.getByRole('heading', { name: 'Where your time went' }).waitFor();
+    await frame.getByRole('heading', { name: 'Screen time' }).waitFor();
+    await page.setViewportSize({ width: 375, height: 850 });
+    const chartBox = await frame.locator('.chart-card').boundingBox();
+    assert.ok(
+      chartBox && chartBox.y < 420 && chartBox.y + chartBox.height < 850,
+      'Main chart is visible without scrolling',
+    );
+    assert.equal(await frame.locator('.review-notes').getAttribute('open'), null);
+    assert.ok(
+      (await frame.locator('main').innerText()).split(/\s+/).length < 130,
+      'Default review stays concise',
+    );
+    await page.screenshot({ path: '.local/weekly-review/compact-overview-375.png' });
+    await frame.getByRole('button', { name: 'Attention heatmap', exact: true }).click();
+    const panels = await frame.locator('.heatmap-period').all();
+    const firstPanel = await panels[0]?.boundingBox();
+    const secondPanel = await panels[1]?.boundingBox();
+    assert.ok(
+      firstPanel &&
+        secondPanel &&
+        secondPanel.x > firstPanel.x &&
+        Math.abs(secondPanel.y - firstPanel.y) < 2,
+      'Paired heatmaps stay side by side on a phone',
+    );
+    await frame.locator('.heat-cell').first().focus();
+    assert.match(await frame.locator('.heatmap-readout').innerText(), /30m observed/);
+    await frame.locator('body').press('Home');
+    await page.screenshot({ path: '.local/weekly-review/compact-heatmap-375.png' });
+    await frame.getByRole('button', { name: 'Period totals', exact: true }).click();
+
     await frame.locator('.daily-values summary').click();
     assert.equal(await frame.getByRole('row').count(), 8);
     assert.equal(await frame.locator('.apps li').count(), 3);
@@ -866,6 +895,7 @@ try {
     await verifyWidth(760);
     await verifyWidth(375);
     const browsingBefore = billing.snapshot(subject).used;
+    await frame.getByText('Explore more', { exact: true }).click();
     await frame.getByRole('button', { name: 'Help me choose a change', exact: true }).click();
     await frame.getByRole('heading', { name: 'Choose one small change', exact: true }).waitFor();
     assert.equal(
@@ -877,13 +907,16 @@ try {
       .first()
       .click();
     await frame.getByRole('heading', { name: 'Browser · daily usage', exact: true }).waitFor();
+    await frame.getByText('Plan an experiment', { exact: true }).click();
     assert.equal(await frame.getByLabel('Daily limit in minutes').inputValue(), '102');
+    await frame.getByText('Ask about selection', { exact: true }).click();
     await frame.getByRole('button', { name: 'Ask ChatGPT', exact: true }).click();
     await frame
       .getByText('Question and selected context sent to ChatGPT.', { exact: true })
       .waitFor();
     assert.match(await page.evaluate('JSON.stringify(window.chartMessages)'), /fictional.app.0/);
     await frame.getByRole('button', { name: 'Back to weekly review', exact: true }).click();
+    await frame.getByText('Explore more', { exact: true }).click();
     await frame.getByRole('button', { name: 'Export readiness', exact: true }).click();
     await frame
       .getByRole('heading', { name: '14/14 days with observations', exact: true })
@@ -894,6 +927,7 @@ try {
       browsingBefore,
       'Coaching, context and loaded readiness do not reread exports',
     );
+    await frame.getByText('Explore more', { exact: true }).click();
     await frame.getByRole('button', { name: 'My reflections', exact: true }).click();
     await frame
       .getByLabel('What affected your attention?')
@@ -910,6 +944,7 @@ try {
     await frame.getByRole('button', { name: 'Refresh reflections', exact: true }).click();
     await frame.getByText('Fictional reflection edited from the card.', { exact: true }).waitFor();
     await frame.getByRole('button', { name: 'Back to review', exact: true }).click();
+    await frame.getByText('Explore more', { exact: true }).click();
     await frame.getByRole('button', { name: 'Monthly story', exact: true }).click();
     await frame.getByLabel('Calendar month').fill('2026-09');
     await frame
@@ -933,9 +968,7 @@ try {
     );
     const heatmapUsed = billing.snapshot(subject).used;
     await frame.getByRole('button', { name: 'Attention heatmap', exact: true }).click();
-    await frame
-      .getByRole('heading', { name: 'Attention by hour · period comparison', exact: true })
-      .waitFor();
+    await frame.getByRole('heading', { name: 'Hourly usage', exact: true }).waitFor();
     assert.equal(await frame.locator('.heatmap-table .heat-cell').count(), 336);
     await frame.getByRole('heading', { name: 'Experiments in this view', exact: true }).waitFor();
     assert.ok((await frame.locator('.heatmap-table th[title]').count()) > 0);
@@ -980,6 +1013,8 @@ try {
     await frame.getByRole('button', { name: 'Explore 2026-10-08: 6h 0m', exact: true }).click();
     await frame.getByRole('heading', { name: 'Apps on 2026-10-08' }).waitFor();
     assert.equal(await frame.locator('.apps li').count(), 3);
+    if (!(await frame.getByRole('button', { name: 'Browser', exact: true }).isVisible()))
+      await frame.getByText(/^Apps · \d+$/, { exact: true }).click();
     await frame.getByRole('button', { name: 'Browser', exact: true }).click();
     await frame.getByRole('heading', { name: 'Browser · daily usage' }).waitFor();
     assert.equal(await frame.locator('.apps li').count(), 14);
@@ -987,6 +1022,8 @@ try {
     await frame.getByRole('button', { name: 'Back to 2026-10-08', exact: true }).click();
     await frame.getByRole('heading', { name: 'Apps on 2026-10-08' }).waitFor();
     await frame.getByRole('button', { name: 'Back to weekly review', exact: true }).click();
+    if (!(await frame.getByRole('button', { name: 'Browser', exact: true }).isVisible()))
+      await frame.getByText(/^Apps · \d+$/, { exact: true }).click();
     await frame.getByRole('button', { name: 'Browser', exact: true }).click();
     await frame.getByRole('button', { name: '2026-10-01', exact: true }).click();
     await frame.getByRole('heading', { name: 'Apps on 2026-10-01' }).waitFor();
@@ -1004,6 +1041,7 @@ try {
     await page.evaluate(
       `window.frames[0].postMessage({jsonrpc:'2.0', method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify(attack)}}}, '*')`,
     );
+    await frame.getByText(/^Apps · \d+$/, { exact: true }).click();
     await frame.getByText('<img src=x onerror=alert(1)>', { exact: true }).waitFor();
     assert.equal(await frame.locator('img').count(), 0);
     await frame.getByText('Period comparison unavailable', { exact: true }).waitFor();
@@ -1036,7 +1074,10 @@ try {
       1,
     );
     await verifyWidth(375);
+    if (!(await frame.getByRole('button', { name: 'Browser', exact: true }).isVisible()))
+      await frame.getByText(/^Apps · \d+$/, { exact: true }).click();
     await frame.getByRole('button', { name: 'Browser', exact: true }).click();
+    await frame.getByText('Plan an experiment', { exact: true }).click();
     await frame.getByLabel('Experiment start date', { exact: true }).fill('2026-10-08');
     await frame.getByLabel('Daily limit in minutes', { exact: true }).fill('120');
     await frame
@@ -1064,7 +1105,70 @@ try {
     await compare.first().click();
     await frame.getByRole('heading', { name: 'Experiment hour patterns', exact: true }).waitFor();
     await frame.getByText(/hours have goal-app observations in both periods/).waitFor();
+    assert.equal(await frame.locator('.hour-map-cell').count(), 336);
+    await frame.locator('.hour-map-cell').first().press('Enter');
+    assert.match(
+      await frame.locator('.hour-map-readout').innerText(),
+      /baseline .*elapsed minutes/,
+    );
+    await page.screenshot({ path: '.local/weekly-review/compact-experiment-hours-375.png' });
     await verifyWidth(375);
+    const hourStates = {
+      version: 'myself.md.screen-time-insights.v1',
+      kind: 'experiment_hours',
+      data: {
+        comparison: {
+          pairedHours: 1,
+          note: 'Fictional hour states',
+          cells: [
+            {
+              date: '2026-10-08',
+              baselineDate: '2026-10-01',
+              hour: 0,
+              baselineMs: 0,
+              experimentMs: 60000,
+              baselineElapsedMs: 3600000,
+              experimentElapsedMs: 3600000,
+              changeMs: 60000,
+            },
+            {
+              date: '2026-10-08',
+              baselineDate: '2026-10-01',
+              hour: 1,
+              baselineMs: null,
+              experimentMs: null,
+              baselineElapsedMs: 3600000,
+              experimentElapsedMs: 0,
+              changeMs: null,
+            },
+          ],
+        },
+      },
+    };
+    await page.evaluate(
+      `window.frames[0].postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:${JSON.stringify(hourStates)}}},'*')`,
+    );
+    await frame
+      .getByRole('button', { name: /baseline 2026-10-01 00:00 · 0.0 min observed/ })
+      .waitFor();
+    assert.equal(await frame.locator('.hour-map-cell.zero').count(), 1);
+    assert.equal(
+      await frame.getByRole('button', { name: /baseline .*01:00 · Unknown usage/ }).innerText(),
+      '·',
+    );
+    assert.equal(
+      await frame
+        .getByRole('button', { name: /experiment .*01:00 · Nonexistent clock hour/ })
+        .innerText(),
+      '—',
+    );
+    await frame
+      .getByRole('button', { name: /experiment .*00:00 · 1.0 min observed/ })
+      .press('Enter');
+    assert.match(
+      await frame.locator('.hour-map-readout').innerText(),
+      /experiment 2026-10-08 00:00 · 1.0 min observed/,
+    );
     const standaloneNotes = await owner.client.callTool({
       name: 'list_screen_time_reflections',
       arguments: { deviceId: device, profileId: approved.id },

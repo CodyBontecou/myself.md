@@ -1,3 +1,5 @@
+import { compactReview } from './review-presentation.js';
+import { mountLocationMap } from './chatgpt-catalog-map.js';
 /** @param {string} tag @param {string} [text] @param {string} [className] */
 function el(tag, text = '', className = '') {
   const node = document.createElement(tag);
@@ -16,8 +18,11 @@ function button(text, action) {
 function mount() {
   const root = document.getElementById('heart-rate-context');
   if (!root) return;
-  /** @typedef {ReturnType<typeof import('../core/heart-rate-context.js').heartRateContext> & {exports:{id:string,day:string,partial:boolean}[],scope:{deviceId:string,healthProfileId:string,contextProfileId:string}}} Review */
+  /** @typedef {ReturnType<typeof import('../core/heart-rate-context.js').heartRateContext> & {mapTiles?:boolean,exports:{id:string,day:string,partial:boolean}[],scope:{deviceId:string,healthProfileId:string,contextProfileId:string}}} Review */
   /** @type {Review|null} */ let review = null;
+  let mapEnabled = false;
+  /** @type {(()=>void)|undefined} */
+  let mapCleanup;
   let sourceIndex = 0,
     healthIndex = 0,
     selected = '',
@@ -26,12 +31,19 @@ function mount() {
     page = 0;
   function render() {
     if (!review || !root) return;
+    mapCleanup?.();
+    root.dataset.map = String(mapEnabled);
     const data = review,
       source = data.sources[sourceIndex],
-      health = data.healthSources[healthIndex],
+      health = data.healthSources[healthIndex] ?? {
+        id: '',
+        source: 'No supported heart-rate samples',
+        samples: [],
+      },
       location = data.context === 'location';
-    const minimum = Math.min(...(health?.samples.map((p) => p.bpm) ?? [0])),
-      maximum = Math.max(...(health?.samples.map((p) => p.bpm) ?? [0]));
+    const values = health.samples.map((p) => p.bpm);
+    const minimum = values.length ? Math.min(...values) : 0,
+      maximum = values.length ? Math.max(...values) : 0;
     /** @param {number|null} bpm */
     const color = (bpm) =>
       bpm === null
@@ -60,9 +72,7 @@ function mount() {
       el('p', `${data.days[0]?.date} – ${data.days.at(-1)?.date} · ${data.timezone}`),
       el(
         'p',
-        location
-          ? `Closest sample within ±${data.windowSeconds} seconds · no interpolation`
-          : 'Shared clock-hour observations · exact app-use timing unknown',
+        location ? `Nearest sample · ±${data.windowSeconds}s` : 'Shared hours · timing approximate',
         'muted',
       ),
     );
@@ -111,7 +121,15 @@ function mount() {
         selected = '';
       },
     );
-    if (!source || !health) {
+    if (!data.healthSources.length)
+      root.append(
+        el(
+          'p',
+          'No supported heart-rate samples. Location markers remain unknown; share timestamped heart-rate samples to color them.',
+          'muted',
+        ),
+      );
+    if (!source) {
       root.append(
         el(
           'p',
@@ -124,21 +142,22 @@ function mount() {
       const legend = el('section', '', 'legend');
       legend.setAttribute('aria-label', 'Heart-rate color scale');
       legend.append(
-        el('strong', minimum === maximum ? `${minimum} BPM` : `${minimum}–${maximum} BPM`),
-      );
-      const ramp = el('div', '', 'ramp');
-      ramp.style.background =
-        minimum === maximum
-          ? color(minimum)
-          : `linear-gradient(90deg,${color(minimum)},${color((minimum + maximum) / 2)},${color(maximum)})`;
-      legend.append(
-        ramp,
         el(
-          'p',
-          'Observed range for this source · gray = unmatched / unknown · colors are not clinical zones',
-          'muted',
+          'strong',
+          !values.length
+            ? 'Heart rate unknown'
+            : minimum === maximum
+              ? `${minimum} BPM`
+              : `${minimum}–${maximum} BPM`,
         ),
       );
+      const ramp = el('div', '', 'ramp');
+      ramp.style.background = !values.length
+        ? color(null)
+        : minimum === maximum
+          ? color(minimum)
+          : `linear-gradient(90deg,${color(minimum)},${color((minimum + maximum) / 2)},${color(maximum)})`;
+      legend.append(ramp, el('p', 'Gray = unknown', 'muted'));
       root.append(legend);
       const observations = source.observations.filter(
         (o) =>
@@ -172,7 +191,12 @@ function mount() {
       root.append(
         el(
           'p',
-          `${observations.length} ${location ? 'recorded points' : 'observed usage hours'} · ${observations.filter((o) => o.heartRates.find((h) => h.sourceId === health.id)?.bpm !== null).length} matched · gaps remain unknown`,
+          `${observations.length} ${location ? 'recorded points' : 'observed usage hours'} · ${
+            observations.filter((o) => {
+              const bpm = o.heartRates.find((h) => h.sourceId === health.id)?.bpm;
+              return bpm !== null && bpm !== undefined;
+            }).length
+          } matched · gaps remain unknown`,
           'muted',
         ),
       );
@@ -196,7 +220,29 @@ function mount() {
           picked = observations.find((o) => o.id === selected);
         if (picked && !shown.includes(picked)) shown[shown.length - 1] = picked;
         for (const o of shown) {
-          const dot = el('span', '', 'dot');
+          const dot =
+            root.dataset.map === 'true'
+              ? button('', () => {
+                  day =
+                    data.days.find(
+                      (d) =>
+                        Date.parse(o.start) >= Date.parse(d.start) &&
+                        Date.parse(o.start) < Date.parse(d.end),
+                    )?.date ?? '';
+                  page = 0;
+                  selected = o.id;
+                  selectedSample =
+                    o.heartRates.find((h) => h.sourceId === health.id)?.sampleIds[0] ?? '';
+                  render();
+                })
+              : el('span', '', 'dot');
+          dot.classList.add('dot');
+          dot.dataset.latitude = String(o.latitude);
+          dot.dataset.longitude = String(o.longitude);
+          dot.setAttribute(
+            'aria-label',
+            `Location ${o.start} · ${o.heartRates.find((h) => h.sourceId === health.id)?.bpm ?? 'Unknown'} BPM`,
+          );
           dot.style.left = `${east === west ? 50 : 5 + (((o.longitude ?? 0) - west) / (east - west)) * 90}%`;
           dot.style.top = `${north === south ? 50 : 5 + ((north - (o.latitude ?? 0)) / (north - south)) * 90}%`;
           dot.style.background = color(
@@ -211,7 +257,7 @@ function mount() {
           el(
             'p',
             `West → East · longitude ${west.toFixed(4)}° to ${east.toFixed(4)}° · ${shown.length}/${observations.length} points plotted`,
-            'muted',
+            'muted review-note',
           ),
           el(
             'p',
@@ -242,7 +288,7 @@ function mount() {
         );
       }
       root.append(days);
-      if (day) {
+      if (day && values.length) {
         const interval = data.days.find((d) => d.date === day);
         const samples = health.samples.filter(
           (p) =>
@@ -256,7 +302,7 @@ function mount() {
           el(
             'p',
             `Local midnight → next midnight · ${samples.length} recorded samples · no connecting lines across gaps`,
-            'muted',
+            'muted review-note',
           ),
         );
         const track = el('div', '', 'timeline');
@@ -294,7 +340,7 @@ function mount() {
           el(
             'p',
             `Vertical range ${minimum}–${maximum} BPM · dots may be sampled for display; all records remain in details`,
-            'muted',
+            'muted review-note',
           ),
         );
         root.append(timeline);
@@ -308,7 +354,7 @@ function mount() {
             el(
               'p',
               `Usage bars: 0–${maximumMinutes.toFixed(1)} minutes; color shows the hour’s observed heart-rate mean.`,
-              'muted',
+              'muted review-note',
             ),
           );
         for (const o of observations.slice(page * 25, (page + 1) * 25)) {
@@ -415,8 +461,8 @@ function mount() {
         root.append(details);
       }
     }
-    const limits = el('details');
-    limits.append(el('summary', 'Sources & limits'));
+    const limits = el('details', '', 'review-notes');
+    limits.append(el('summary', 'About this data'));
     for (const warning of data.warnings) limits.append(el('p', warning));
     limits.append(
       el(
@@ -431,6 +477,21 @@ function mount() {
     root.append(limits);
     if (data.exports.some((f) => f.partial))
       overview.append(el('p', 'Selected exports include partial data.', 'muted'));
+    if (root.dataset.preview !== 'true' && location) {
+      const toggle = button(
+        mapEnabled ? 'Show coordinate plot' : 'Show map · OpenStreetMap',
+        () => {
+          mapEnabled = !mapEnabled;
+          render();
+        },
+      );
+      const notice = el('p', 'Map shares the viewed area with OpenStreetMap.', 'muted');
+      root.prepend(toggle, notice);
+    }
+    compactReview(root);
+    const mapField = root.querySelector('.coordinate-field');
+    if (mapEnabled && mapField instanceof HTMLElement)
+      mapCleanup = mountLocationMap(mapField, data.fictional);
   }
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
@@ -449,6 +510,8 @@ function mount() {
     }
     const data = event.data.params?.structuredContent;
     if (data?.version !== 'myself.md.heart-rate-context.v1') return;
+    mapEnabled =
+      data.mapTiles === true || (root.dataset.preview === 'true' && root.dataset.map === 'true');
     review = data;
     sourceIndex = 0;
     healthIndex = 0;

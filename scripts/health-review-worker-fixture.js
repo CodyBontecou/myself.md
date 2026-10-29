@@ -42,8 +42,9 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
         health: [
           'native:HKQuantityTypeIdentifierStepCount',
           'native:HKCategoryTypeIdentifierSleepAnalysis',
+          'native:whoop.sleep',
         ],
-        time: [],
+        time: ['native:application'],
         location: [],
       },
     }),
@@ -60,21 +61,27 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
     ],
     domains: ['health', 'time', 'location'].map((domain) => ({
       domain,
-      enabled: domain === 'health',
+      enabled: domain === 'health' || domain === 'time',
       types:
         domain === 'health'
           ? [
               'native:HKQuantityTypeIdentifierStepCount',
               'native:HKCategoryTypeIdentifierSleepAnalysis',
+              'native:whoop.sleep',
             ]
-          : [],
+          : domain === 'time'
+            ? ['native:application']
+            : [],
       availableTypes:
         domain === 'health'
           ? [
               'native:HKQuantityTypeIdentifierStepCount',
               'native:HKCategoryTypeIdentifierSleepAnalysis',
+              'native:whoop.sleep',
             ]
-          : [],
+          : domain === 'time'
+            ? ['native:application']
+            : [],
       notes: [],
     })),
   };
@@ -94,6 +101,7 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
     ).status,
     200,
   );
+  /** @type {import('../core/data.js').DataRecord[]} */
   const records = [
     {
       domain: 'health',
@@ -111,7 +119,44 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
       end: '2026-10-14T06:00:00Z',
       native: { value: 4, fictional: true },
     },
+    {
+      domain: 'health',
+      type: 'whoop.sleep',
+      source: 'whoop',
+      start: '2026-10-13T22:00:00Z',
+      end: '2026-10-14T06:00:00Z',
+      native: {
+        id: 'worker-whoop-sleep',
+        fictional: true,
+        score_state: 'SCORED',
+        nap: false,
+        score: {
+          sleep_performance_percentage: 88,
+          stage_summary: {
+            total_light_sleep_time_milli: 4 * 3600000,
+            total_slow_wave_sleep_time_milli: 3600000,
+            total_rem_sleep_time_milli: 2 * 3600000,
+            total_awake_time_milli: 3600000,
+            total_no_data_time_milli: 0,
+            total_in_bed_time_milli: 8 * 3600000,
+          },
+        },
+      },
+    },
   ];
+  records.push({
+    domain: 'time',
+    type: 'application',
+    source: 'fictional-usage',
+    start: '2026-10-13T21:00:00Z',
+    end: '2026-10-13T22:00:00Z',
+    native: {
+      identifier: 'fixture.reader',
+      displayName: 'Fictional Reader',
+      durationMs: 3600000,
+      fictional: true,
+    },
+  });
   const id = z.object({ id: z.string() }).parse(
     (
       await request('/api/cloud/uploads', `Upload ${upload}`, 'POST', {
@@ -157,6 +202,7 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
         series: z.array(
           z.object({
             kind: z.string(),
+            source: z.string(),
             daily: z.array(z.object({ date: z.string(), value: z.number().nullable() })),
           }),
         ),
@@ -165,6 +211,104 @@ export async function verifyHealthReviewWorker({ origin, request, token }) {
     assert.equal(review.series.find((s) => s.kind === 'activity')?.daily.at(-1)?.value, 4000);
     assert.equal(review.series.find((s) => s.kind === 'sleep')?.daily.at(-1)?.value, 6);
     assert.equal(review.series[0]?.daily[0]?.value, null);
+    assert.equal(review.series.find((s) => s.source === 'whoop')?.daily.at(-1)?.value, 7);
+    assert.equal(
+      (await client.readResource({ uri: 'ui://myself-md/activity-sleep-review-v3.html' })).contents
+        .length,
+      1,
+    );
+    // Unrelated large HealthKit records must not prevent a WHOOP-only comparison.
+    const largeRecords = [
+      ...records.filter((record) => record.source === 'whoop'),
+      {
+        domain: 'health',
+        type: 'HKQuantityTypeIdentifierStepCount',
+        source: 'fictional-health',
+        start: '2026-10-14T10:00:00Z',
+        end: '2026-10-14T10:01:00Z',
+        native: { fictional: true, payload: 'x'.repeat(210000) },
+      },
+    ];
+    assert.equal(
+      (
+        await request('/api/billing', phone, 'POST', {
+          action: 'reserve',
+          id: 'comparison-large-health-upload',
+          scope: { profileId: profile.id, days: ['2026-10-15'], formats: ['jsonl'] },
+        })
+      ).status,
+      200,
+    );
+    const largeId = z.object({ id: z.string() }).parse(
+      (
+        await request('/api/cloud/uploads', `Upload ${upload}`, 'POST', {
+          profile,
+          day: '2026-10-15',
+          format: 'jsonl',
+          manifest: {
+            profileId: profile.id,
+            recordCount: largeRecords.length,
+            billingOperationId: 'comparison-large-health-upload',
+          },
+        })
+      ).value,
+    ).id;
+    assert.equal(
+      (
+        await fetch(`${origin}/api/cloud/uploads/${largeId}`, {
+          method: 'PUT',
+          headers: { Authorization: `Upload ${upload}` },
+          body: largeRecords.map((record) => JSON.stringify(record)).join('\n') + '\n',
+        })
+      ).status,
+      200,
+    );
+    const comparison = await client.callTool({
+      name: 'compare_sleep_screen_time',
+      arguments: {
+        healthExportIds: [largeId],
+        screenTimeExportIds: [id],
+        view: 'sleep_performance',
+        start: '2026-10-14',
+        end: '2026-10-14',
+        timezone: 'UTC',
+      },
+    });
+    assert.ok(!comparison.isError, JSON.stringify(comparison));
+    const compared = z
+      .object({
+        view: z.literal('sleep_performance'),
+        usageSources: z.array(
+          z.object({
+            preSleep: z.array(
+              z.object({
+                lowerMs: z.number().nullable(),
+                upperMs: z.number().nullable(),
+                sleepPerformancePercent: z.number().nullable(),
+              }),
+            ),
+          }),
+        ),
+        rows: z.array(
+          z.object({
+            sleepHours: z.number().nullable(),
+            screenHours: z.number().nullable(),
+            paired: z.boolean(),
+          }),
+        ),
+      })
+      .parse(comparison.structuredContent);
+    assert.equal(compared.rows[0]?.sleepHours, 7);
+    assert.equal(compared.rows[0]?.screenHours, 1);
+    assert.equal(compared.rows[0]?.paired, true);
+    assert.equal(compared.usageSources[0]?.preSleep[0]?.lowerMs, 3600000);
+    assert.equal(compared.usageSources[0]?.preSleep[0]?.upperMs, 3600000);
+    assert.equal(compared.usageSources[0]?.preSleep[0]?.sleepPerformancePercent, 88);
+    assert.equal(
+      (await client.readResource({ uri: 'ui://myself-md/sleep-screen-time-v1.html' })).contents
+        .length,
+      1,
+    );
     const resource = await client.readResource({
       uri: 'ui://myself-md/activity-sleep-review-v1.html',
     });

@@ -5,9 +5,15 @@ import { visualizationIds } from '../core/chatgpt-catalog.js';
 /** Public catalog delivery through the actual Worker, including the restricted MCP surface.
  * @param {{origin:string,token:(subject:string,client:string,path?:string)=>Promise<string>}} fixture */
 export async function verifyChatgptCatalogWorker({ origin, token }) {
+  assert.equal((await fetch(origin + '/apps/chatgpt/tiles/12/0/0.png')).status, 404);
   const page = await fetch(origin + '/apps/chatgpt');
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /Visualization catalog/);
+  const gallery = await page.text();
+  assert.match(gallery, /Visualization catalog/);
+  assert.equal((gallery.match(/class="preview-link"/g) ?? []).length, visualizationIds.length);
+  assert.equal(gallery.includes('<iframe'), false);
+  const focused = await fetch(origin + '/apps/chatgpt?example=sleep-performance');
+  assert.equal((await focused.text()).includes('data-example="sleep-performance"'), true);
   assert.match(page.headers.get('content-security-policy') ?? '', /frame-src 'self'/);
   const data = await fetch(
     origin + '/apps/chatgpt/catalog.json?example=heart-screen-time&includeData=1',
