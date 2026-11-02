@@ -1617,7 +1617,7 @@ try {
     );
     await ready(200);
     const { chromium } = await import('playwright');
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true });
     try {
       const reviewerBrowser = await browser.newContext();
       const reviewerTab = await reviewerBrowser.newPage();

@@ -14,7 +14,7 @@ const rows = heartRateContextFixture('2026-10-19').map((record) => ({
   record,
   exportId: 'fictional-fixture',
 }));
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 mkdirSync('.local/heart-rate-context-release', { recursive: true });
 try {
   await Promise.all(

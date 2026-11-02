@@ -11,7 +11,7 @@ const bundle = await build({
 });
 const source = bundle.outputFiles[0]?.text;
 assert.ok(source);
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 try {
   await Promise.all(
     ['none', 'local', 'all'].flatMap((blocked) =>

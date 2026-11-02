@@ -367,7 +367,11 @@ async function verifyAnalyticsAudiences({ request, token }, path, owner) {
 /** Synthetic OAuth exchange; report requests still cross real JWT verification and D1.
  * @param {string} origin @param {string} owner */
 async function verifyAnalyticsBrowser(origin, owner) {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    chromiumSandbox: true,
+    headless: true,
+  });
   try {
     const context = await browser.newContext();
     const page = await context.newPage();

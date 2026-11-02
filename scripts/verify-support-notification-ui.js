@@ -118,7 +118,7 @@ server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const address = server.address();
 assert.ok(address && typeof address === 'object');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 402, height: 874 } });
   await page.goto(`http://127.0.0.1:${address.port}`);

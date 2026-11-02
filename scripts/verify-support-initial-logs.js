@@ -136,7 +136,7 @@ await once(server, 'listening');
 const address = server.address();
 assert.ok(address && typeof address === 'object');
 const fixtureUrl = `http://127.0.0.1:${address.port}`;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 /** @param {'native'|'web'} surface */
 async function verifySurface(surface) {
   conversation = null;

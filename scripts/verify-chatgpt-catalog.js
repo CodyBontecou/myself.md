@@ -144,7 +144,7 @@ await once(server, 'listening');
 const address = server.address();
 assert.ok(address && typeof address !== 'string');
 const origin = `http://127.0.0.1:${address.port}`;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 mkdirSync('.local/chatgpt-catalog-release', { recursive: true });
 try {
   const response = await fetch(

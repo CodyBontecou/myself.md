@@ -35,7 +35,7 @@ const data = {
   ),
   exports: [{ id: 'fictional', day: day.date, partial: false }],
 };
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 mkdirSync('.local/sleep-screen-time-release', { recursive: true });
 try {
   await Promise.all(

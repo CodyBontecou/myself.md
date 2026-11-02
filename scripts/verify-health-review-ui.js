@@ -59,7 +59,7 @@ const review = {
   ),
   exports: [{ id: 'fictional', day: '2026-10-20', partial: false }],
 };
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 mkdirSync('.local/health-review-release', { recursive: true });
 try {
   await Promise.all(

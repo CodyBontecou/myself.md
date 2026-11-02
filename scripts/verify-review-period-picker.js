@@ -77,7 +77,7 @@ assert.deepEqual(screenTimePresetPeriod('last_30_days', '2026-01-01'), {
 });
 assert.throws(() => screenTimePresetPeriod('last_7_days', '2026-02-30'), /valid/);
 const initial = fixture('2026-10-14', 'America/Puerto_Rico');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 375, height: 1200 } });
   page.setDefaultTimeout(10000);

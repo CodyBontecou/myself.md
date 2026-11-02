@@ -813,7 +813,11 @@ try {
   const resource = await owner.client.readResource({ uri });
   const html = resource.contents[0];
   assert.ok(html && 'text' in html);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    chromiumSandbox: true,
+    headless: true,
+  });
   mkdirSync('.local/weekly-review', { recursive: true });
   try {
     const page = await browser.newPage();

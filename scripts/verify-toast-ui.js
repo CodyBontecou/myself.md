@@ -86,7 +86,7 @@ export default {View};`,
 });
 assert.ok(output.outputFiles[0]);
 const code = output.outputFiles[0].text;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 402, height: 874 }, hasTouch: true });
   /** @type {string[]} */

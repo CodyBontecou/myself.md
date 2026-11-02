@@ -26,7 +26,7 @@ for (const invalid of [
 
 const html = readFileSync('dashboard/dist/profile-share/share/profile/index.html', 'utf8');
 const script = readFileSync('dashboard/dist/profile-share/share/profile/app.js', 'utf8');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 try {
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await context.newPage();

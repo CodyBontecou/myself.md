@@ -42,7 +42,7 @@ assert.equal(review.series[0]?.topApps[0]?.name, 'ChatGPT');
 assert.equal(review.series[0]?.appDrilldowns[0]?.identifier, 'com.openai.chat');
 assert.equal(review.series[0]?.heatmap.cells[0]?.topApps[0]?.name, 'ChatGPT');
 assert.equal(review.series[0]?.previous.observedDurationMs, null);
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', chromiumSandbox: true, headless: true });
 mkdirSync('.local/review-design', { recursive: true });
 try {
   const page = await browser.newPage({ viewport: { width: 375, height: 1000 } });

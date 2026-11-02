@@ -465,7 +465,11 @@ try {
       assert.doesNotMatch(await response.text(), /\/demo\b|\b(?:dashboard|browser) demo\b/i);
     }),
   );
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    chromiumSandbox: true,
+    headless: true,
+  });
   try {
     await Promise.all(
       ['/privacy', '/privacy/', '/support', '/support/'].map(async (path) => {
@@ -977,7 +981,11 @@ try {
     403,
   );
   assert.deepEqual((await request(statusPath, null)).value, { status: 'pending' });
-  const pairingBrowser = await chromium.launch({ headless: true });
+  const pairingBrowser = await chromium.launch({
+    channel: 'chrome',
+    chromiumSandbox: true,
+    headless: true,
+  });
   let claimed;
   try {
     const page = await pairingBrowser.newPage({ colorScheme: 'dark' });
@@ -1159,7 +1167,11 @@ try {
     dashboard.cloudStorage,
   );
   assert.equal(dashboard.cloudStorage.limitBytes, 100_000_000);
-  const usageBrowser = await chromium.launch({ headless: true });
+  const usageBrowser = await chromium.launch({
+    channel: 'chrome',
+    chromiumSandbox: true,
+    headless: true,
+  });
   try {
     const usagePage = await usageBrowser.newPage({
       viewport: { width: 1280, height: 900 },
