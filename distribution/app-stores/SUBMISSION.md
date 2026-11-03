@@ -11,3 +11,11 @@ The 30-second video is [unlisted on YouTube](https://www.youtube.com/watch?v=n5n
 The event files remain templates: no qualifying live event was supplied. Static header/search/universal variants are alternatives to the assigned motion assets. Icons supplied through Apple's existing app build were not changed by a metadata upload.
 
 Detailed receipts, completed delivery checks, upload logs and screenshots are retained in `.local/store-redesign/submission/`. The generation manifest describes the files; it is not a submission receipt.
+
+## Apple rejection corrections — 30 October 2026
+
+The current submission remains rejected pending review follow-up. Following guideline 2.3.3 feedback, the owner authorized replacing all iPhone and iPad screenshots with full-screen native UI. Each iPhone medium/large and iPad set now has four ordered images (profile, Health, Screen time, Location), all COMPLETE with verified upload checksums. The Watch capture and other creative assets were retained. This supersedes the historical 22-screenshot package above; the current total is thirteen including Watch.
+
+For guideline 2.5.4, a physical iPhone 13 Pro Max recording demonstrates the location recording controls, background-use indicator while Clock is foreground, saved-point summary and stop. The phone runs build 17; this is not submitted-build-23 runtime evidence, and no new point was observed during cable-limited movement. The App Review notes disclose the limitation. See [the review ledger](../../docs/app-store-review.md) for attachment details, cleanup and remaining follow-up. The response draft is prepared locally; no review message or resubmission was sent.
+
+The owner subsequently authorized sending the prepared reply. App Store Connect confirms it in Messages (7), attributed to Cody Bontecou at 2:26 PM Puerto Rico on 30 October. It references the completed App Review Information video attachment and discloses its build/movement limitations. Submission status remains Unresolved Issues; no resubmission or publication occurred.
