@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
 import { verifyMigrationPurchase } from '../server/migration-purchases.js';
+import { readHealthMdPlaySubscription } from '../server/health-md-subscriptions.js';
 import { PairingError } from '../server/errors.js';
 import { handleStoreNotification, storeSubscriptions } from '../server/store-subscriptions.js';
 import { pairingPage } from '../server/pairing-page.js';
@@ -73,6 +74,7 @@ async function boundedJson(request, limit) {
   return /** @type {unknown} */ (JSON.parse(new TextDecoder().decode(bytes)));
 }
 const limitPublicRead = createPublicReadLimiter();
+const limitPlayStatus = createPublicReadLimiter();
 export default {
   /** @param {ScheduledController} _controller @param {Env} env */
   async scheduled(_controller, env) {
@@ -270,6 +272,28 @@ export default {
         const ticket = await env.PURCHASES.getByName(purchase).createClaim(proof);
         await registerTicket(env, ticket, null, purchase, Date.now() + 900000);
         return json({ claimUrl: `${env.PUBLIC_URL}/claim#${ticket}` });
+      }
+      if (url.pathname === '/api/health-md/play-subscription' && request.method === 'POST') {
+        const limit = limitPlayStatus(request.headers.get('cf-connecting-ip') ?? 'unknown');
+        if (!limit.allowed)
+          return Response.json(
+            { error: 'Too many subscription checks. Retry later.' },
+            {
+              status: 429,
+              headers: {
+                'Retry-After': limit.headers['RateLimit-Reset'],
+                'Cache-Control': 'no-store',
+              },
+            },
+          );
+        const body = await readBytes(request, 40000);
+        let input;
+        try {
+          input = JSON.parse(new TextDecoder().decode(body));
+        } catch {
+          throw new PairingError(400, 'A Google Play purchase token is required.');
+        }
+        return json(await readHealthMdPlaySubscription(input));
       }
       const watch = request.headers.get('authorization')?.match(/^Watch ([A-Za-z0-9_-]{43})$/)?.[1];
       if (watch && url.pathname === '/api/watch/runtime' && request.method === 'POST') {

@@ -124,6 +124,7 @@
     "verify:whoop": "node --experimental-vm-modules scripts/verify-whoop.js",
     "verify:native-sources": "node --experimental-vm-modules scripts/verify-native-sources.js",
     "verify:migration": "node scripts/verify-migration.js",
+    "verify:health-md-subscription": "node scripts/verify-health-md-subscription.js",
     "billing:grant": "node --env-file-if-exists=.env scripts/grant-lifetime.js",
     "cloud:storage": "node --env-file-if-exists=.env.cloud scripts/cloud-storage.js",
     "verify:r2": "npm run dashboard:build && node scripts/verify-r2.js && node scripts/verify-cloud-http.js --r2",

@@ -121,6 +121,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     AUTH_PROXY: '0',
     IOS_APP_ID: '67KC823C9A.com.myself.md',
     GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT: 'push@fixture.iam.gserviceaccount.com',
+    GOOGLE_APPLICATION_CREDENTIALS: '',
+    GOOGLE_SERVICE_ACCOUNT_JSON: '',
     HOST: '127.0.0.1',
     PORT: String(port),
   },
@@ -273,6 +275,16 @@ try {
     'Google webhook requires its OIDC token, not phone OAuth',
   );
   assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
+  // Health.md Play status is public, token-bearing and fails closed without Google credentials.
+  assert.equal(
+    (await request('/api/health-md/play-subscription', null, 'POST', { purchaseToken: '' })).status,
+    400,
+  );
+  const playStatus = await request('/api/health-md/play-subscription', null, 'POST', {
+    purchaseToken: 'fixture-token',
+  });
+  assert.equal(playStatus.status, 503);
+  assert.match(JSON.stringify(playStatus.value), /not configured/);
   const tierToken = await token('cloud-tier', 'myselfmd-phone');
   const tierStatus = z
     .object({
