@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readFile, writeFile, stat, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -20,6 +20,12 @@ async function canReuse(file) {
 }
 await mkdir(publicDir, { recursive: true });
 await mkdir(output, { recursive: true });
+// These generated Apple sets contain only full-screen native captures. Remove stale artwork.
+await Promise.all(
+  ['iphone-medium', 'iphone-large', 'ipad-13'].map((device) =>
+    rm(path.join(output, 'apple/screenshots', device), { recursive: true, force: true }),
+  ),
+);
 await cp(path.join(root, 'launch-video/public/app-stores'), publicDir, { recursive: true });
 await Promise.all([
   copyFile(path.join(root, 'dashboard/geist-regular.ttf'), path.join(publicDir, 'geist.ttf')),
@@ -68,6 +74,17 @@ await storeAssets.reduce(
 const retained = [
   ['assets/myself-icon.png', 'apple/icon.png', 1024, 1024],
   ['launch-video/public/app-stores/watch-home.png', 'apple/screenshots/watch/01.png', 416, 496],
+  ...['iphone-medium', 'iphone-large', 'ipad-13'].flatMap((device) =>
+    ['profile', 'health', 'time', 'location'].map(
+      (source, i) =>
+        /** @type {[string,string,number,number]} */ ([
+          `launch-video/public/app-stores/${device === 'ipad-13' ? 'ipad' : 'iphone'}-${source}.png`,
+          `apple/screenshots/${device}/0${i + 1}.png`,
+          device === 'ipad-13' ? 2064 : device === 'iphone-large' ? 1320 : 1206,
+          device === 'ipad-13' ? 2752 : device === 'iphone-large' ? 2868 : 2622,
+        ]),
+    ),
+  ),
   ...['tablet7', 'tablet10'].flatMap((device) =>
     ['profile', 'health', 'time', 'location'].map(
       (source, i) =>
@@ -85,7 +102,9 @@ await retained.reduce(
     prior.then(async () => {
       await mkdir(path.dirname(path.join(output, file)), { recursive: true });
       const original = await readFile(path.join(root, source));
-      if (original[25] === 2) await copyFile(path.join(root, source), path.join(output, file));
+      const resize = original.readUInt32BE(16) !== width || original.readUInt32BE(20) !== height;
+      if (original[25] === 2 && !resize)
+        await copyFile(path.join(root, source), path.join(output, file));
       else
         await run('ffmpeg', [
           '-v',
@@ -93,6 +112,8 @@ await retained.reduce(
           '-y',
           '-i',
           path.join(root, source),
+          '-vf',
+          `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=0xf9f9f9`,
           '-pix_fmt',
           'rgb24',
           path.join(output, file),
@@ -225,7 +246,7 @@ function assetAltText(file) {
       'Screen time data selection',
       'Recorded location data selection',
     ];
-    const index = file.includes('ipad') ? (number === 1 ? 0 : number - 2) : (number - 1) % 4;
+    const index = (number - 1) % 4;
     return `${subjects[index] ?? subjects[0]} in myself.md${tablet ? ' on a tablet' : ''}. Choose what to share with your AI agent.`;
   }
   if (file.includes('icon'))

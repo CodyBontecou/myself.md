@@ -2,46 +2,6 @@
  * @type {Array<{id:string,kind:string,file:string,width:number,height:number,platform?:string,slide?:number,format?:string,product?:string}>}
  */
 export const storeAssets = [
-  ...['medium', 'large'].flatMap((size) =>
-    [1, 2, 3, 4].flatMap((slide) => [
-      {
-        id: `Pack-iphone-${size}-${slide}`,
-        kind: 'editorial',
-        file: `apple/screenshots/iphone-${size}/0${slide}.png`,
-        width: size === 'large' ? 1320 : 1206,
-        height: size === 'large' ? 2868 : 2622,
-        platform: 'iphone',
-        slide,
-      },
-      {
-        id: `Pack-iphone-${size}-ui-${slide}`,
-        kind: 'showcase',
-        file: `apple/screenshots/iphone-${size}/0${slide + 4}.png`,
-        width: size === 'large' ? 1320 : 1206,
-        height: size === 'large' ? 2868 : 2622,
-        platform: 'iphone',
-        slide,
-      },
-    ]),
-  ),
-  {
-    id: 'Pack-ipad-hero',
-    kind: 'editorial',
-    file: 'apple/screenshots/ipad-13/01.png',
-    width: 2064,
-    height: 2752,
-    platform: 'ipad',
-    slide: 1,
-  },
-  ...[1, 2, 3, 4].map((slide) => ({
-    id: `Pack-ipad-ui-${slide}`,
-    kind: 'showcase',
-    file: `apple/screenshots/ipad-13/0${slide + 1}.png`,
-    width: 2064,
-    height: 2752,
-    platform: 'ipad',
-    slide,
-  })),
   ...[1, 2, 3, 4].flatMap((slide) => [
     {
       id: `Pack-android-${slide}`,
