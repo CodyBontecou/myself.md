@@ -141,6 +141,7 @@
       "./plugins/with-embedded-debug.cjs",
       "./plugins/with-scene-lifecycle.cjs",
       "./plugins/with-scrawl.cjs",
+      "./plugins/with-scrawl-android.cjs",
       "./plugins/with-watch.cjs"
     ],
     "scheme": "myselfmd",
