@@ -76,7 +76,16 @@ function RootStack() {
               <Stack.Screen name="account-delete" options={{ title: 'Delete account' }} />
               <Stack.Screen name="whoop" options={{ title: 'WHOOP' }} />
               <Stack.Screen name="connected-logins" options={{ title: 'Connected logins' }} />
-              <Stack.Screen name="login" options={{ title: 'Sign in' }} />
+              <Stack.Screen
+                name="login"
+                options={{
+                  title: 'Sign in',
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.65, 1],
+                  sheetGrabberVisible: true,
+                  sheetCornerRadius: 28,
+                }}
+              />
               <Stack.Screen name="claim-access" options={{ title: 'Existing purchases' }} />
               <Stack.Screen name="privacy" options={{ title: 'Privacy policy' }} />
             </Stack>

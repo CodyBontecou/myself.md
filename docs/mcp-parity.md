@@ -1,3 +1,11 @@
+## Debug touch recovery — 11 November 2026
+
+The Scrawl compatibility change affects native touch delivery in iOS Debug builds. Existing mobile navigation/actions keep their existing MCP operations and platform handoffs; the dashboard, authorization, source grants, billing and application logic are unchanged. Scrawl developer pairing/capture remains local development tooling rather than an account or data-access operation. Argent's existing physical-phone navigation and destination reads verify the affected tab actions. No new user-facing capability or MCP operation is introduced.
+
+## Sign-in sheet — 10 November 2026
+
+Mobile `/login` now slides up as a native sheet over the current screen, with a grabber, an expanded detent for larger text and a `login-close` control. Dismissal returns to the originating screen; a direct entry without history returns home. Apple, Google, GitHub, reauthentication and existing-purchase actions still use the same application logic. Authentication remains an explicit user handoff to the native provider or browser; agents cannot enter credentials or grant themselves access. Existing MCP account/session reads and authentication handoffs retain their coverage. The dashboard sign-in surface and all authorization rules are unchanged.
+
 ## Strands: Place, Attention and Body — 10 November 2026
 
 The phone computes Strands from its local data; MCP computes from shared cloud exports. Both call the same `core/strands.js` functions (`strandsDay`, `strandsPatterns`, `strandsExperimentReview`), so they return the same structure for the same records. `npm run verify:strands` checks that MCP output equals the core output for identical fixtures.

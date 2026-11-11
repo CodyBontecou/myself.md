@@ -1,7 +1,7 @@
 import { Redirect, Stack, router, useLocalSearchParams } from 'expo-router';
 import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { usePhone } from '../../client/PhoneProvider.js';
-import { Screen, Copy, Button, Icon, Notice } from '../components/ui.js';
+import { Screen, Copy, Button, Icon, IconButton, Notice } from '../components/ui.js';
 import { ErrorToast } from '../components/Toast.js';
 import { useTheme } from '../lib/theme.js';
 import googleLogo from '../../assets/google-logo.png';
@@ -25,6 +25,21 @@ const providers = /** @type {const} */ ([
     testID: 'account-continue-with-github',
   },
 ]);
+function closeLogin() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/');
+}
+function headerClose() {
+  return (
+    <IconButton
+      plain
+      icon="close"
+      label="Close sign in"
+      testID="login-close"
+      onPress={closeLogin}
+    />
+  );
+}
 export default function LoginScreen() {
   const { session, busy, error, run, signInAccount, reauthenticateAccount, deletionStatusUrl } =
     usePhone();
@@ -34,7 +49,9 @@ export default function LoginScreen() {
   if (session?.owner && !session.requiresSignIn && !recovery) return <Redirect href="/account" />;
   return (
     <Screen compact testID="login-screen">
-      <Stack.Screen options={{ title: 'Sign in' }} />
+      <Stack.Screen
+        options={{ title: 'Sign in', headerBackVisible: false, headerRight: headerClose }}
+      />
       <Copy muted style={styles.center}>
         {recovery
           ? 'Sign in to the same account to keep this phone and its saved data connected.'

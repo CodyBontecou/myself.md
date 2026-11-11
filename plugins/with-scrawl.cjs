@@ -7,7 +7,31 @@ const revision = '6d4fa333475ef5170c4df683e306480f8618b95a';
 // never recognizes, so that dependency blocks RN presses indefinitely.
 const touchCompatibility = `
 #if DEBUG
+import ObjectiveC
+
 private final class ScrawlTouchDelegate: NSObject, UIGestureRecognizerDelegate {
+  // Fix the handler's own prevention policy before UIKit caches relationships.
+  // New RN surfaces can appear after pairing; a per-view delegate installed on
+  // their first touch is too late for those surfaces.
+  @MainActor private static let preventionCompatibility: Void = {
+    let selector = NSSelectorFromString("canBePreventedByGestureRecognizer:")
+    typealias Policy = @convention(c) (UIGestureRecognizer, Selector, UIGestureRecognizer) -> Bool
+    for name in ["RCTSurfaceTouchHandler", "RCTTouchHandler"] {
+      guard let handler = NSClassFromString(name),
+        let method = class_getInstanceMethod(handler, selector) else { continue }
+      let original = unsafeBitCast(method_getImplementation(method), to: Policy.self)
+      let policy: @convention(block) (UIGestureRecognizer, UIGestureRecognizer) -> Bool = { handler, other in
+        if NSStringFromClass(type(of: other)) == "ScrawlKit.TouchObserver" { return false }
+        return original(handler, selector, other)
+      }
+      method_setImplementation(method, imp_implementationWithBlock(policy))
+    }
+  }()
+
+  @MainActor static func installPreventionCompatibility() {
+    _ = preventionCompatibility
+  }
+
   private weak var original: (any UIGestureRecognizerDelegate)?
 
   init(original: any UIGestureRecognizerDelegate) {
@@ -38,6 +62,7 @@ private final class ScrawlTouchWindow: UIWindow {
 
   override func addGestureRecognizer(_ gestureRecognizer: UIGestureRecognizer) {
     if NSStringFromClass(type(of: gestureRecognizer)) == "ScrawlKit.TouchObserver" {
+      ScrawlTouchDelegate.installPreventionCompatibility()
       // UIKit can cache failure relationships when pairing adds the observer,
       // before this window receives its first touch.
       var pending: [UIView] = [self]
@@ -99,7 +124,7 @@ module.exports = function withScrawl(config) {
     let source = mod.modResults.contents;
     // Replace our generated helper on incremental prebuilds as well as clean ones.
     source = source.replace(
-      /\n#if DEBUG\nprivate final class ScrawlTouchDelegate[\s\S]*?\n#endif\n?/,
+      /\n#if DEBUG\n(?:import ObjectiveC\n\n)?private final class ScrawlTouchDelegate[\s\S]*?\n#endif\n?/,
       '',
     );
     if (!source.includes('window = ScrawlTouchWindow(')) {
