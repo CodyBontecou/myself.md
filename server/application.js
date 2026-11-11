@@ -1164,6 +1164,30 @@ export function createApplication(
         );
         return;
       }
+      if (url.pathname.startsWith('/api/strands/')) {
+        // Account-owned Strands experiments; MCP uses the same store methods.
+        if (payload.azp !== 'myselfmd-phone')
+          throw new PairingError(
+            403,
+            'Phone OAuth client required. Agents use the Strands experiment MCP tools.',
+          );
+        const store = cloud.strandsExperiments;
+        const cancel = url.pathname.match(/^\/api\/strands\/experiments\/([^/]+)\/cancel$/);
+        if (url.pathname === '/api/strands/experiments' && req.method === 'GET')
+          json(res, 200, { experiments: store.list(subject) });
+        else if (url.pathname === '/api/strands/experiments' && req.method === 'POST') {
+          const { experiment, created } = store.create(
+            subject,
+            JSON.parse((await bodyBytes(req, 4096)).toString()),
+          );
+          json(res, created ? 201 : 200, experiment);
+        } else if (cancel?.[1] && req.method === 'POST')
+          json(res, 200, store.cancel(subject, cancel[1]));
+        else if (url.pathname === '/api/strands/experiments' || cancel)
+          throw new PairingError(405, 'Method not allowed.');
+        else throw new PairingError(404, 'Not found.');
+        return;
+      }
       if (url.pathname === '/api/history' && req.method === 'POST') {
         if (payload.azp !== 'myselfmd-phone')
           throw new PairingError(403, 'Phone OAuth client required.');

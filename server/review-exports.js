@@ -2,22 +2,25 @@ import { scheduleCalendar } from './schedule-calendar.js';
 /** Bounded, metered export reads shared by embedded reviews.
  * @param {{exportIds:string[],start:string,end:string,timezone:string}} args
  * @param {{cloud:import('./cloud-store.js').CloudStore,subject:string,readPage:(id:string,cursor:string)=>ReturnType<import('./cloud-store.js').CloudStore['page']>}} dependencies
- * @param {import('../core/data.js').Domain} domain */
+ * @param {import('../core/data.js').Domain} domain
+ * @param {{maxDays?:number,openLastDay?:boolean}} [options] openLastDay lets the final day be in progress (it must have started). */
 export async function readReviewExports(
   { exportIds, start, end, timezone },
   { cloud, subject, readPage },
   domain,
+  { maxDays = 31, openLastDay = false } = {},
 ) {
   const length = (Date.parse(end) - Date.parse(start)) / 86400000 + 1;
-  if (!Number.isInteger(length) || length < 1 || length > 31)
-    throw new Error('Choose 1–31 completed days, with end on or after start.');
+  if (!Number.isInteger(length) || length < 1 || length > maxDays)
+    throw new Error(`Choose 1–${maxDays} completed days, with end on or after start.`);
   const calendar = scheduleCalendar(timezone);
   const days = Array.from({ length }, (_, index) => {
     const date = new Date(Date.parse(start) + index * 86400000).toISOString().slice(0, 10);
     const next = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
     const a = calendar.instant(date, 0, 0),
       b = calendar.instant(next, 0, 0);
-    if (calendar.day(a) !== date || b <= a || Date.parse(b) > Date.now())
+    const open = openLastDay && index === length - 1;
+    if (calendar.day(a) !== date || b <= a || Date.parse(open ? a : b) > Date.now())
       throw new Error('Choose completed calendar days in this timezone.');
     return { date, start: a, end: b };
   });

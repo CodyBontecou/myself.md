@@ -115,7 +115,17 @@
         }
       ],
       "./plugins/with-phone-data.cjs",
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Geist-Regular.ttf",
+            "./assets/fonts/Geist-Medium.ttf",
+            "./assets/fonts/Geist-SemiBold.ttf",
+            "./assets/fonts/JetBrainsMono-Regular.ttf"
+          ]
+        }
+      ],
       "expo-background-task",
       "expo-router",
       "expo-status-bar",
@@ -129,6 +139,7 @@
       ],
       "./plugins/with-automatic-signing.cjs",
       "./plugins/with-embedded-debug.cjs",
+      "./plugins/with-scene-lifecycle.cjs",
       "./plugins/with-scrawl.cjs",
       "./plugins/with-watch.cjs"
     ],

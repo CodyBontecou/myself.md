@@ -147,6 +147,35 @@ export function finishExport(context, id, status, error = null) {
       error === null ? {} : { error },
     );
 }
+/** Local days whose data this profile exported (complete or partial), from exports started since
+ * an instant. Reads local and synced history; it reflects recorded outcomes, not schedule slots.
+ * @param {{owner:string,deviceId:string}} context @param {string} profileId @param {string} since */
+export function exportedDays(context, profileId, since) {
+  const rows = /** @type {{value:string}[]} */ (
+    db.getAllSync(
+      'SELECT value FROM activity_history WHERE owner=? AND device=? AND started>=?',
+      context.owner,
+      context.deviceId,
+      since,
+    )
+  );
+  /** @type {Set<string>} */ const days = new Set();
+  for (const row of rows) {
+    try {
+      const event = parseHistoryEvent(JSON.parse(row.value));
+      if (
+        event.kind === 'export' &&
+        event.profile.id === profileId &&
+        (event.status === 'complete' || event.status === 'partial')
+      )
+        // Mark the days whose data was exported, not the day the export ran.
+        for (const artifact of event.artifacts) days.add(artifact.day);
+    } catch {
+      // Invalid rows are removed at startup; skip any that appear later.
+    }
+  }
+  return days;
+}
 /** Sync metadata in bounded batches; local file paths never leave the phone.
  * @param {import('./session.js').Session} session @param {number} [offset] */
 async function publishHistory(session, offset = 0) {

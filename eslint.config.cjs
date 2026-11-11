@@ -34,7 +34,7 @@ module.exports = defineConfig([
     ],
     plugins: { 'react-native': reactNative },
     rules: {
-      'react-native/no-raw-text': ['error', { skip: ['Copy', 'NativeTabs.Trigger.Label'] }],
+      'react-native/no-raw-text': ['error', { skip: ['Copy', 'Mono', 'NativeTabs.Trigger.Label'] }],
       'react-native/no-unused-styles': 'error',
       'react-native/no-inline-styles': 'error',
     },

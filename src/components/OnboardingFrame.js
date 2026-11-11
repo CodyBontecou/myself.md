@@ -2,16 +2,14 @@ import { ErrorToast } from './Toast.js';
 import { useRef, useState } from 'react';
 import { router, Stack, useNavigation } from 'expo-router';
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
-  useWindowDimensions,
 } from 'react-native';
-import portrait from '../../assets/myself-portrait.png';
+import StrandsMark from './StrandsMark.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOnboarding } from '../../client/onboarding';
 import { useTheme } from '../lib/theme';
@@ -96,10 +94,8 @@ export default function OnboardingFrame({
   testID,
   disabled = false,
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const navigation = useNavigation();
-  const { width } = useWindowDimensions();
-  const portraitWidth = Math.min(width * 1.5, 760);
   const insets = useSafeAreaInsets();
   const { error } = useOnboarding();
   const container = useRef(/** @type {View|null} */ (null));
@@ -110,28 +106,6 @@ export default function OnboardingFrame({
       onLayout={() => container.current?.measureInWindow((_x, y) => setKeyboardOffset(y))}
       style={[styles.background, { backgroundColor: colors.background }]}
     >
-      <View
-        style={StyleSheet.absoluteFill}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        pointerEvents="none"
-      >
-        <Image
-          source={portrait}
-          resizeMode="contain"
-          accessible={false}
-          style={[
-            styles.portrait,
-            isDark ? styles.portraitDark : styles.portraitLight,
-            {
-              width: portraitWidth,
-              height: portraitWidth * (1073 / 720),
-              right: -portraitWidth * 0.3,
-              tintColor: colors.text,
-            },
-          ]}
-        />
-      </View>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={keyboardOffset}
@@ -164,6 +138,7 @@ export default function OnboardingFrame({
           contentContainerStyle={styles.scroll}
         >
           <View style={styles.column}>
+            <StrandsMark height={72} />
             <View style={styles.heading}>
               <Copy variant="title" style={styles.title}>
                 {title}
@@ -190,9 +165,6 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   backButton: { minWidth: 44, minHeight: 44, justifyContent: 'center' },
   background: { flex: 1, overflow: 'hidden' },
-  portrait: { position: 'absolute', top: -64 },
-  portraitLight: { opacity: 0.07 },
-  portraitDark: { opacity: 0.1 },
   scroll: {
     flexGrow: 1,
     alignItems: 'center',
@@ -200,10 +172,10 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 24,
   },
-  column: { width: '100%', maxWidth: 560, gap: 16 },
-  heading: { gap: 8 },
-  title: { fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
-  body: { fontSize: 14, lineHeight: 21 },
+  column: { width: '100%', maxWidth: 560, gap: 20 },
+  heading: { gap: 10 },
+  title: { fontSize: 36, lineHeight: 39, letterSpacing: -1.1 },
+  body: { fontSize: 15, lineHeight: 22 },
   footer: { paddingHorizontal: 16, paddingTop: 12, alignItems: 'center' },
   actions: {
     width: '100%',

@@ -1,29 +1,39 @@
 import { useColorScheme } from 'react-native';
-const light = {
-  background: '#FAFAFA',
-  surface: '#FFFFFF',
-  text: '#171717',
-  secondary: '#666666',
-  border: '#E5E5E5',
-  subtle: '#F2F2F2',
-  accent: '#171717',
-  accentSoft: '#F2F2F2',
-  onAccent: '#FFFFFF',
-  danger: '#A33B36',
-  tracking: '#0066CC',
-};
+/** Strands follows the system appearance: an ivory or dark ground with one color per data strand. */
 const dark = {
-  background: '#0A0A0A',
-  surface: '#141414',
-  text: '#EDEDED',
-  secondary: '#A1A1A1',
-  border: '#2E2E2E',
-  subtle: '#1F1F1F',
-  accent: '#EDEDED',
-  accentSoft: '#1F1F1F',
-  onAccent: '#0A0A0A',
-  danger: '#F1A59F',
-  tracking: '#64A8FF',
+  background: '#0E0F0C',
+  surface: '#181A15',
+  text: '#EDEBE3',
+  secondary: '#9A9C92',
+  border: '#2A2C25',
+  outline: '#4A4C43',
+  subtle: '#23251F',
+  accent: '#EDEBE3',
+  accentSoft: '#23251F',
+  onAccent: '#0E0F0C',
+  danger: '#FF8F66',
+  tracking: '#7B93FF',
+  place: '#C8E36A',
+  attention: '#7B93FF',
+  body: '#FF7A45',
+};
+/** @type {typeof dark} */
+const light = {
+  background: '#F6F5EF',
+  surface: '#FFFFFF',
+  text: '#141512',
+  secondary: '#5E6057',
+  border: '#E2E0D6',
+  outline: '#BDBBB0',
+  subtle: '#ECEAE2',
+  accent: '#141512',
+  accentSoft: '#ECEAE2',
+  onAccent: '#F6F5EF',
+  danger: '#B4441C',
+  tracking: '#3550D9',
+  place: '#55700F',
+  attention: '#3550D9',
+  body: '#C2410C',
 };
 export function useTheme() {
   const isDark = useColorScheme() === 'dark';

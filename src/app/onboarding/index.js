@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { View } from 'react-native';
 import OnboardingFrame, { OnboardingButton } from '../../components/OnboardingFrame';
 import { Row } from '../../components/ui';
+import { StrandBar } from '../../components/StrandsMark.js';
 
 export default function Welcome() {
   return (
@@ -20,9 +21,21 @@ export default function Welcome() {
     >
       <View>
         <AnalyticsConsent />
-        <Row title="Health" subtitle="Sleep, activity, and other health data" />
-        <Row title="Screen time" subtitle="App and website usage" />
-        <Row title="Location" subtitle="Places recorded by your phone" />
+        <Row
+          icon={<StrandBar strand="body" />}
+          title="Health"
+          subtitle="Sleep, activity, and other health data"
+        />
+        <Row
+          icon={<StrandBar strand="attention" />}
+          title="Screen time"
+          subtitle="App and website usage"
+        />
+        <Row
+          icon={<StrandBar strand="place" />}
+          title="Location"
+          subtitle="Places recorded by your phone"
+        />
       </View>
     </OnboardingFrame>
   );

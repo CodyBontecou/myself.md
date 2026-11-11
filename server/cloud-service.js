@@ -2,6 +2,7 @@ import { registerSleepScreenTime } from './sleep-screen-time.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { registerHeartRateContext } from './heart-rate-context.js';
+import { registerStrands } from './strands.js';
 import { registerLocationReview } from './location-review.js';
 import { registerHealthReview } from './health-review.js';
 import { registerScreenTimeReview } from './screen-time-review.js';
@@ -251,6 +252,12 @@ export function createCloudService({
         ),
     });
     registerHeartRateContext(mcp, {
+      cloud,
+      subject,
+      readPage: (id, cursor, domain) =>
+        readCloudExportPage(subject, client, id, cursor, 50, domain),
+    });
+    registerStrands(mcp, {
       cloud,
       subject,
       readPage: (id, cursor, domain) =>

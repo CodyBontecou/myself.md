@@ -7,7 +7,7 @@ export default function Index() {
     /** @type {import('expo-router/react-navigation').NavigationProp<{'(tabs)':undefined,pair:undefined}>} */ (
       useNavigation()
     );
-  // Consume the setup choice once; later returns to / open Profiles.
+  // Consume the setup choice once; later returns to / open Today.
   const [target] = useState(complete ? destination : '/onboarding');
   const routed = useRef(false);
   useEffect(() => {

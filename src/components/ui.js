@@ -1,4 +1,5 @@
 import { Ionicons } from '@react-native-vector-icons/ionicons';
+import { createContext, useContext } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../lib/theme';
@@ -25,6 +26,15 @@ export function Copy({
 }) {
   const { colors } = useTheme();
   const { fontScale } = useWindowDimensions();
+  const base = {
+    body: variantStyles.body,
+    caption: variantStyles.caption,
+    heading: variantStyles.heading,
+    title: variantStyles.title,
+  }[variant];
+  const flat = /** @type {import('react-native').TextStyle} */ (
+    StyleSheet.flatten([base, style]) ?? {}
+  );
   return (
     <Text
       testID={testID}
@@ -33,24 +43,34 @@ export function Copy({
       key={fontScale}
       selectable={selectable}
       style={[
-        {
-          body: styles.body,
-          caption: styles.caption,
-          heading: styles.heading,
-          title: styles.title,
-        }[variant],
         { color: muted ? colors.secondary : colors.text },
-        style,
+        flat,
+        flat.fontFamily
+          ? null
+          : {
+              regular: families.regular,
+              medium: families.medium,
+              semibold: families.semibold,
+            }[geistFamily(flat.fontWeight)],
       ]}
     >
       {children}
     </Text>
   );
 }
+/** Geist ships as separate weights, so map a requested weight to its file.
+ * @param {import('react-native').TextStyle['fontWeight']} weight */
+function geistFamily(weight) {
+  const value = Number(weight === 'bold' ? 700 : weight === 'normal' ? 400 : (weight ?? 400));
+  return value >= 600 ? 'semibold' : value >= 500 ? 'medium' : 'regular';
+}
+/** Extra bottom space reserved by the floating tab dock. */
+export const DockInset = createContext(0);
 /** @param {{children:import('react').ReactNode,compact?:boolean,testID?:string}} props */
 export function Screen({ children, compact = false, testID }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const dock = useContext(DockInset);
   return (
     <ScrollView
       testID={testID}
@@ -62,7 +82,7 @@ export function Screen({ children, compact = false, testID }) {
       contentContainerStyle={[
         styles.screen,
         compact && styles.compactScreen,
-        { paddingBottom: insets.bottom + 32 },
+        { paddingBottom: insets.bottom + 32 + dock },
       ]}
     >
       <View style={[styles.column, compact && styles.compactColumn]}>{children}</View>
@@ -80,7 +100,10 @@ export function IconButton({ icon, label, onPress, testID, plain = false }) {
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
-        { backgroundColor: plain ? 'transparent' : colors.subtle, opacity: pressed ? 0.6 : 1 },
+        plain
+          ? styles.transparent
+          : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+        { opacity: pressed ? 0.6 : 1 },
       ]}
     >
       <Icon name={icon} size={21} />
@@ -100,13 +123,7 @@ export function Button({
   icon,
 }) {
   const { colors } = useTheme();
-  const color = filled
-    ? colors.onAccent
-    : plain
-      ? colors.accent
-      : secondary
-        ? colors.secondary
-        : colors.text;
+  const color = filled ? colors.onAccent : plain ? colors.accent : colors.text;
   return (
     <Pressable
       testID={testID}
@@ -280,7 +297,7 @@ export function SectionHeader({ title, count, action, onPress, compact = false, 
   return (
     <View style={[styles.sectionHeader, compact && styles.compactSectionHeader]}>
       <View style={styles.sectionTitle}>
-        <Copy variant={compact ? 'caption' : 'heading'} style={compact && styles.semibold}>
+        <Copy variant="caption" muted style={styles.sectionLabel}>
           {title}
         </Copy>
         {count !== undefined && (
@@ -309,7 +326,7 @@ export function SectionHeader({ title, count, action, onPress, compact = false, 
 export function Notice({ title, body, icon = 'information-circle-outline' }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.notice, { backgroundColor: colors.subtle }]}>
+    <View style={[styles.notice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Icon name={icon} size={20} color={colors.secondary} />
       <View style={styles.noticeText}>
         <Copy variant="caption" style={styles.semibold}>
@@ -327,7 +344,7 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline', tes
   const { colors } = useTheme();
   return (
     <View testID={testID} style={styles.empty}>
-      <View style={[styles.providerIcon, styles.largeIcon, { backgroundColor: colors.subtle }]}>
+      <View style={[styles.providerIcon, styles.largeIcon, { backgroundColor: colors.surface }]}>
         <Icon name={icon} size={32} color={colors.secondary} />
       </View>
       <Copy variant="heading" style={styles.center}>
@@ -344,12 +361,23 @@ export function Empty({ title, body, action, onPress, icon = 'link-outline', tes
     </View>
   );
 }
+const families = StyleSheet.create({
+  regular: { fontFamily: 'Geist-Regular', fontWeight: 'normal' },
+  medium: { fontFamily: 'Geist-Medium', fontWeight: 'normal' },
+  semibold: { fontFamily: 'Geist-SemiBold', fontWeight: 'normal' },
+});
+const variantStyles = StyleSheet.create({
+  body: { fontSize: 15, lineHeight: 22 },
+  caption: { fontSize: 13, lineHeight: 19 },
+  heading: { fontSize: 18, lineHeight: 24, fontWeight: '600', letterSpacing: -0.3 },
+  title: { fontSize: 34, lineHeight: 38, fontWeight: '600', letterSpacing: -1 },
+});
 const styles = StyleSheet.create({
   transparent: { backgroundColor: 'transparent' },
   fill: { flex: 1 },
   compactScreen: { paddingHorizontal: 16, paddingTop: 8 },
   compactColumn: { gap: 16 },
-  compactGroup: { borderRadius: 12 },
+  compactGroup: { borderRadius: 18 },
   compactRow: {
     minHeight: 44,
     paddingVertical: 10,
@@ -359,7 +387,7 @@ const styles = StyleSheet.create({
   },
   compactTitle: { fontSize: 14, lineHeight: 20 },
   rowValue: { flexShrink: 1, maxWidth: '60%', textAlign: 'right', fontVariant: ['tabular-nums'] },
-  compactSectionHeader: { minHeight: 32 },
+  compactSectionHeader: { minHeight: 28 },
   disabled: { opacity: 0.45 },
   buttonLabel: { fontWeight: '600', textAlign: 'center' },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
@@ -367,16 +395,19 @@ const styles = StyleSheet.create({
   rowTitle: { fontWeight: '500' },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   semibold: { fontWeight: '600' },
+  sectionLabel: {
+    fontFamily: 'JetBrainsMono-Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
   noticeText: { flex: 1, gap: 5 },
   center: { textAlign: 'center' },
   emptyBody: { textAlign: 'center', maxWidth: 280 },
   emptyAction: { alignSelf: 'stretch', marginTop: 12 },
   screen: { paddingHorizontal: 16, paddingTop: 24, alignItems: 'center' },
   column: { width: '100%', maxWidth: 560, gap: 24 },
-  body: { fontSize: 15, lineHeight: 22 },
-  caption: { fontSize: 13, lineHeight: 19 },
-  heading: { fontSize: 16, lineHeight: 24, fontWeight: '600', letterSpacing: -0.3 },
-  title: { fontSize: 28, lineHeight: 35, fontWeight: '600', letterSpacing: -0.7 },
   providerIcon: {
     width: 32,
     height: 32,
@@ -389,8 +420,7 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
-    borderCurve: 'continuous',
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -399,7 +429,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderWidth: 1,
-    borderRadius: 5,
+    borderRadius: 6,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
@@ -413,17 +443,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filledButton: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderCurve: 'continuous',
+    minHeight: 54,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 27,
+    justifyContent: 'center',
+  },
+  outlineButton: {
+    minHeight: 44,
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    borderWidth: 1,
     justifyContent: 'center',
   },
   group: {
-    borderRadius: 12,
+    borderRadius: 22,
     borderCurve: 'continuous',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   row: {
@@ -446,8 +482,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 18,
     borderCurve: 'continuous',
+    borderWidth: 1,
   },
   empty: { paddingVertical: 32, paddingHorizontal: 12, alignItems: 'center', gap: 12 },
 });

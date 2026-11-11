@@ -50,8 +50,8 @@ function RootStack() {
               screenOptions={{
                 headerStyle: { backgroundColor: colors.background },
                 headerTintColor: colors.text,
-                headerTitleStyle: { color: colors.text },
-                headerLargeTitleStyle: { color: colors.text },
+                headerTitleStyle: { color: colors.text, fontFamily: 'Geist-SemiBold' },
+                headerLargeTitleStyle: { color: colors.text, fontFamily: 'Geist-SemiBold' },
                 headerShadowVisible: false,
                 contentStyle: { backgroundColor: colors.background },
                 headerBackButtonDisplayMode: 'minimal',

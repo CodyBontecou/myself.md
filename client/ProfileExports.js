@@ -10,15 +10,20 @@ import { Copy, Group, Icon, Row, SectionHeader } from '../src/components/ui';
 import { useTheme } from '../src/lib/theme';
 import { scheduleState, setScheduleEnabled, exportNow, cancelExports } from './export-task.js';
 import { saveDestinationCredential } from './destinations.js';
+import { shareableExportFile } from './export-folder.js';
 import { nextOccurrence } from '../core/schedules.js';
 import { formatNextExport, localCalendar } from './calendar.js';
+import { exportedDays } from './history.js';
+import { countdownLabel, daySelected, lastSevenDays, selectDay } from '../core/profile-timeline.js';
+import { deliveredFormats } from '../core/export-files.js';
+import { NextExportCard, RecentDays } from '../src/screens/strands/ProfileStrands.js';
 import ProfileQuickAction from './ProfileQuickAction.js';
 import { useProfileEditor } from './ProfileEditorState.js';
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void,hero?:boolean}} props */
 export default function ProfileExports(props) {
   return <ProfileExportControls {...props} disabled={props.disabled || qaEnabled} />;
 }
-/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void}} props */
+/** @param {{session:import('./session.js').Session,profile:import('../core/profiles.js').ExportProfile,disabled:boolean,visible?:boolean,renderProfile?:(action:import('react').ReactNode,controls:import('react').ReactNode)=>import('react').ReactNode,quick?:boolean,roomy?:boolean,compact?:boolean,showStatus?:boolean,cloudAccessOnly?:boolean,scheduleOnly?:boolean,destinationOnly?:boolean,filesOnly?:boolean,onOpenSchedule?:()=>void,hero?:boolean}} props */
 function ProfileExportControls({
   session,
   profile,
@@ -34,6 +39,7 @@ function ProfileExportControls({
   destinationOnly = false,
   filesOnly = false,
   onOpenSchedule,
+  hero = false,
 }) {
   const { colors } = useTheme();
   const { start } = useProfileEditor();
@@ -42,7 +48,11 @@ function ProfileExportControls({
   const [bearer, setBearer] = useState('');
   const [now, setNow] = useState(() => new Date().toISOString());
   const [state, setState] = useState(() => scheduleState(session.deviceId, profile));
+  const [doneDays, setDoneDays] = useState(() => recentExportDays(session, profile.id));
   const [exporting, setExporting] = useState(false);
+  const [selection, setSelection] = useState(
+    /** @type {import('../core/profile-timeline.js').DaySelection|null} */ (null),
+  );
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
   useEffect(() => {
@@ -51,6 +61,7 @@ function ProfileExportControls({
       if (mounted) {
         setNow(new Date().toISOString());
         setState(scheduleState(session.deviceId, profile));
+        setDoneDays(recentExportDays(session, profile.id));
       }
     };
     refresh();
@@ -59,7 +70,7 @@ function ProfileExportControls({
       mounted = false;
       clearInterval(timer);
     };
-  }, [session.deviceId, profile]);
+  }, [session, profile]);
   useEffect(() => {
     if (!scheduleOnly && !destinationOnly && !filesOnly && state.retryAt && state.message)
       showToast({
@@ -75,6 +86,7 @@ function ProfileExportControls({
     try {
       await action();
       setState(scheduleState(session.deviceId, profile));
+      setDoneDays(recentExportDays(session, profile.id));
       setMessage('');
     } catch (e) {
       setMessage('');
@@ -88,8 +100,8 @@ function ProfileExportControls({
       setExporting(false);
     }
   }
-  /** @param {boolean} [allTimeHealth] */
-  function exportProfile(allTimeHealth = false) {
+  /** @param {{allTimeHealth?:boolean,days?:import('../core/profile-timeline.js').DaySelection}} [scope] */
+  function exportProfile({ allTimeHealth = false, days } = {}) {
     if (qaEnabled || disabled || running.current) {
       showToast({
         message: qaEnabled
@@ -121,8 +133,13 @@ function ProfileExportControls({
               progress,
             });
           },
-          allTimeHealth ? { domains: ['health'], range: { start: null, end: null } } : {},
+          allTimeHealth
+            ? { domains: ['health'], range: { start: null, end: null } }
+            : days?.length
+              ? { days }
+              : {},
         );
+        if (days) setSelection(null);
         updateToast({
           detail: result.failedSources
             ? `${result.failedSources} source failures · See export details`
@@ -150,7 +167,7 @@ function ProfileExportControls({
       `Export the ${profile.selection.health.length} selected Health types in ${profile.name}, from the earliest readable record through today, to ${destination}. This uses the profile’s formats and file replacement settings and your export allowance. Existing files may be replaced. Keep the app open; a large history can take a long time. Health permissions still apply.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Export All Time', onPress: () => exportProfile(true) },
+        { text: 'Export All Time', onPress: () => exportProfile({ allTimeHealth: true }) },
       ],
     );
   }
@@ -262,14 +279,6 @@ function ProfileExportControls({
           app. Check notification settings and connectivity.
         </Copy>
       )}
-      {!scheduleOnly && (
-        <Row
-          compact
-          testID="export-next-eligible"
-          title="Next eligible"
-          value={next ? new Date(next).toLocaleString() : 'Off'}
-        />
-      )}
       {state.job && (
         <Row
           compact
@@ -289,11 +298,93 @@ function ProfileExportControls({
       onPress={() =>
         void run(async () => {
           if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing unavailable.');
-          await Sharing.shareAsync(uri);
+          await Sharing.shareAsync(await shareableExportFile(session, profile, uri));
         })
       }
     />
   ));
+  const today = localCalendar.day(now);
+  const week = lastSevenDays(today);
+  // Drop selected days once they leave the seven-day window.
+  const visibleSelection = selection?.filter((day) => week.includes(day)) ?? [];
+  const activeSelection = visibleSelection.length ? visibleSelection : null;
+  const selectedCount = visibleSelection.length;
+  const firstDay = visibleSelection[0] ?? '';
+  const lastDay = visibleSelection.at(-1) ?? '';
+  // Consecutive days read as a range; any gap lists the count instead.
+  const contiguous = week.indexOf(lastDay) - week.indexOf(firstDay) === selectedCount - 1;
+  const recentDays = (
+    <RecentDays
+      caption={state.progress.enabled ? 'Automatic' : 'Automatic exports off'}
+      days={week.map((day) => ({
+        day,
+        label: day === today ? 'Today' : (dayName(day).at(0) ?? ''),
+        name: day === today ? 'Today' : dayName(day),
+        done: doneDays.has(day),
+        today: day === today,
+        selected: daySelected(activeSelection, day),
+      }))}
+      onSelectDay={(day) => setSelection(selectDay(activeSelection, day))}
+      selectionLabel={
+        !activeSelection
+          ? ''
+          : busy
+            ? 'Exporting…'
+            : selectedCount === 1
+              ? `Export ${firstDay === today ? 'today' : dayName(firstDay)}`
+              : contiguous
+                ? `Export ${dayName(firstDay).slice(0, 3)}–${lastDay === today ? 'today' : dayName(lastDay).slice(0, 3)} · ${selectedCount} days`
+                : `Export ${selectedCount} days`
+      }
+      onExport={() => activeSelection && exportProfile({ days: activeSelection })}
+      onClear={() => setSelection(null)}
+      disabled={disabled || busy}
+    />
+  );
+  const statusMessage =
+    message ||
+    (!state.retryAt &&
+    state.message &&
+    !['No exports yet.', 'Profile changed; pending exports cancelled.'].includes(state.message)
+      ? state.message
+      : '');
+  /** @param {string} testID @param {{name?:string,onOpen?:()=>void,openTestID?:string,status?:string}} [extra] */
+  const nextExportCard = (testID, extra = {}) => (
+    <NextExportCard
+      testID={testID}
+      countdown={
+        busy
+          ? 'Exporting…'
+          : next
+            ? countdownLabel(next, now)
+            : state.progress.enabled
+              ? 'Not scheduled'
+              : 'Manual only'
+      }
+      meta={[
+        next ? formatNextExport(next, now) : 'Automatic exports off',
+        profile.export.destination === 'local'
+          ? 'Phone'
+          : profile.export.destination === 'cloud'
+            ? 'Cloud'
+            : 'HTTPS',
+        profile.export.destination === 'cloud'
+          ? 'JSONL'
+          : deliveredFormats(profile.export).join(' + ').toUpperCase(),
+      ].join(' · ')}
+      mix={{
+        health: profile.selection.health.length,
+        time: profile.selection.time.length,
+        location: profile.selection.location.length,
+      }}
+      runLabel={busy ? 'Exporting…' : 'Run now'}
+      busy={busy}
+      disabled={disabled || busy}
+      onRun={() => exportProfile()}
+      onDisabledPress={() => exportProfile()}
+      {...extra}
+    />
+  );
   const headerAction = (
     <ProfileQuickAction
       testID={`profile-export-${profile.id}`}
@@ -319,6 +410,20 @@ function ProfileExportControls({
     );
   if (scheduleOnly) return <Group compact>{scheduleControls}</Group>;
   if (cloudAccessOnly) return <View style={styles.container}>{cloudControls}</View>;
+  if (hero)
+    return (
+      <View style={styles.container}>
+        {nextExportCard(`profile-run-${profile.id}`, {
+          name: profile.name,
+          openTestID: `profile-open-${profile.id}`,
+          onOpen: () => router.push({ pathname: '/profiles/[id]', params: { id: profile.id } }),
+          status: statusMessage,
+        })}
+        {exporting && (
+          <Row compact testID="export-cancel" title="Cancel export" onPress={cancelExports} />
+        )}
+      </View>
+    );
   if (quick)
     return (
       <View style={styles.container}>
@@ -390,7 +495,7 @@ function ProfileExportControls({
     );
   const controls = (
     <View testID="profile-exports" accessibilityState={{ busy }} style={styles.container}>
-      <SectionHeader compact title="Exports" />
+      {nextExportCard('export-now')}
       {qaEnabled && (
         <Copy testID="qa-integration-handoff" variant="caption">
           Exports, scheduling, credentials and sharing require a normal build for integration QA.
@@ -398,14 +503,7 @@ function ProfileExportControls({
       )}
       <Group compact>
         {scheduleControls}
-        <Row
-          compact
-          testID="export-now"
-          title={busy ? 'Exporting…' : 'Export profile now'}
-          disabled={disabled || busy}
-          onPress={() => exportProfile()}
-          onDisabledPress={() => exportProfile()}
-        />
+        {recentDays}
         {profile.selection.health.length > 0 && (
           <Row
             compact
@@ -456,3 +554,17 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
   },
 });
+/** Weekday name for a local calendar day.
+ * @param {string} day */
+function dayName(day) {
+  return (
+    ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][
+      new Date(`${day}T00:00:00Z`).getUTCDay()
+    ] ?? day
+  );
+}
+/** @param {import('./session.js').Session} session @param {string} profileId */
+function recentExportDays(session, profileId) {
+  const first = lastSevenDays(localCalendar.day(new Date().toISOString()))[0] ?? '';
+  return exportedDays(session, profileId, localCalendar.instant(first, 0, 0));
+}

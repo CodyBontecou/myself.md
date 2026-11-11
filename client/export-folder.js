@@ -222,3 +222,37 @@ export function exportFolderStatus(context, profile) {
       'Open Output → Folders → Folder, choose a folder in the system picker, then Save. Folder access can only be granted on the phone. Exports save directly into the chosen folder, with format subfolders only when enabled. Verify the next catalog and completed export history.',
   };
 }
+
+/** Find a saved export again and copy it to cache for the share sheet. Saved file URIs go stale
+ * when an app update moves the iOS container, and picked folders need their bookmark restored.
+ * @param {Context} context @param {import('../core/profiles.js').ExportProfile} profile @param {string} uri */
+export async function shareableExportFile(context, profile, uri) {
+  const name = decodeURIComponent(uri.split('/').at(-1) ?? '');
+  const format =
+    name
+      .replace(/\.manifest\.json$/, '')
+      .split('.')
+      .at(-1) ?? '';
+  let directory;
+  if (profile.export.localFolderId) {
+    directory = await selectedDirectory(context, profile.export.localFolderId);
+    if (profile.export.formatFolders) directory = new Directory(directory, format);
+  } else
+    directory = new Directory(
+      Paths.document,
+      profile.export.folderName,
+      encodeURIComponent(context.deviceId),
+      encodeURIComponent(profile.id),
+      ...(profile.export.formatFolders ? [format] : []),
+    );
+  const saved = directory.exists
+    ? directory.list().find((item) => item instanceof File && item.name === name)
+    : undefined;
+  if (!(saved instanceof File))
+    throw new Error(`${name || 'This export'} is no longer in the export folder. Export again.`);
+  const shared = new Directory(Paths.cache, 'share');
+  shared.create({ intermediates: true, idempotent: true });
+  const copy = new File(shared, name);
+  await saved.copy(copy, { overwrite: true });
+  return copy.uri;
+}

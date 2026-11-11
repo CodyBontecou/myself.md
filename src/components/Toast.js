@@ -140,82 +140,93 @@ export function ToastProvider({ children }) {
                 { backgroundColor: colors.surface, borderColor: colors.border },
               ]}
             >
-              <Pressable
-                testID="action-toast-content"
-                accessibilityRole="button"
-                accessibilityLabel={
-                  toast.accessibilityLabel ?? `${toast.message}. Dismiss notification`
-                }
-                onPress={() => {
-                  setToast(null);
-                  toast.onPress?.();
-                }}
-                style={[styles.content, expanded && styles.expandedContent]}
-              >
-                <Animated.View
-                  key={toast.kind}
-                  {...(!reducedMotion && { entering: STATUS_FADE })}
-                  style={styles.status}
+              <View style={styles.row}>
+                <Pressable
+                  testID="action-toast-content"
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    toast.accessibilityLabel ?? `${toast.message}. Dismiss notification`
+                  }
+                  onPress={() => {
+                    setToast(null);
+                    toast.onPress?.();
+                  }}
+                  style={[styles.content, expanded && styles.expandedContent]}
                 >
-                  {toast.kind === 'loading' ? (
-                    <ActivityIndicator size="small" color={colors.text} />
-                  ) : (
-                    <Icon
-                      name={
-                        toast.icon ??
-                        (toast.kind === 'success'
-                          ? 'checkmark-circle-outline'
-                          : 'alert-circle-outline')
-                      }
-                      size={18}
-                      color={toast.kind === 'error' ? colors.danger : colors.text}
-                    />
-                  )}
-                </Animated.View>
-                <View style={[styles.message, expanded && styles.expandedContent]}>
-                  <View style={styles.heading}>
-                    <Copy
-                      testID="action-toast-message"
-                      accessibilityRole="alert"
-                      style={styles.title}
-                    >
-                      {toast.message}
-                    </Copy>
-                    {percentage !== undefined && (
-                      <Copy testID="action-toast-percentage" style={styles.percentage}>
-                        {percentage}%
+                  <Animated.View
+                    key={toast.kind}
+                    {...(!reducedMotion && { entering: STATUS_FADE })}
+                    style={styles.status}
+                  >
+                    {toast.kind === 'loading' ? (
+                      <ActivityIndicator size="small" color={colors.text} />
+                    ) : (
+                      <Icon
+                        name={
+                          toast.icon ??
+                          (toast.kind === 'success'
+                            ? 'checkmark-circle-outline'
+                            : 'alert-circle-outline')
+                        }
+                        size={18}
+                        color={toast.kind === 'error' ? colors.danger : colors.text}
+                      />
+                    )}
+                  </Animated.View>
+                  <View style={[styles.message, expanded && styles.expandedContent]}>
+                    <View style={styles.heading}>
+                      <Copy
+                        testID="action-toast-message"
+                        accessibilityRole="alert"
+                        style={styles.title}
+                      >
+                        {toast.message}
                       </Copy>
+                      {percentage !== undefined && (
+                        <Copy testID="action-toast-percentage" style={styles.percentage}>
+                          {percentage}%
+                        </Copy>
+                      )}
+                    </View>
+                    {toast.detail ? (
+                      <Copy
+                        testID="action-toast-detail"
+                        variant="caption"
+                        muted
+                        style={styles.detail}
+                      >
+                        {toast.detail}
+                      </Copy>
+                    ) : null}
+                    {percentage !== undefined && (
+                      <View
+                        testID="action-toast-progress"
+                        accessibilityRole="progressbar"
+                        accessibilityLabel="Export progress"
+                        accessibilityValue={{ min: 0, max: 100, now: percentage }}
+                        style={[styles.track, { backgroundColor: colors.subtle }]}
+                      >
+                        <Animated.View
+                          {...(!reducedMotion && { layout: MORPH })}
+                          style={[
+                            styles.fill,
+                            { backgroundColor: colors.accent, width: `${percentage}%` },
+                          ]}
+                        />
+                      </View>
                     )}
                   </View>
-                  {toast.detail ? (
-                    <Copy
-                      testID="action-toast-detail"
-                      variant="caption"
-                      muted
-                      style={styles.detail}
-                    >
-                      {toast.detail}
-                    </Copy>
-                  ) : null}
-                  {percentage !== undefined && (
-                    <View
-                      testID="action-toast-progress"
-                      accessibilityRole="progressbar"
-                      accessibilityLabel="Export progress"
-                      accessibilityValue={{ min: 0, max: 100, now: percentage }}
-                      style={[styles.track, { backgroundColor: colors.subtle }]}
-                    >
-                      <Animated.View
-                        {...(!reducedMotion && { layout: MORPH })}
-                        style={[
-                          styles.fill,
-                          { backgroundColor: colors.accent, width: `${percentage}%` },
-                        ]}
-                      />
-                    </View>
-                  )}
-                </View>
-              </Pressable>
+                </Pressable>
+                <Pressable
+                  testID="action-toast-dismiss"
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss notification"
+                  onPress={() => setToast(null)}
+                  style={({ pressed }) => [styles.dismiss, { opacity: pressed ? 0.6 : 1 }]}
+                >
+                  <Icon name="close" size={18} />
+                </Pressable>
+              </View>
               {Boolean(toast.actions?.length) && (
                 <View style={styles.actions}>
                   {toast.actions?.map((action, index) => (
@@ -254,15 +265,6 @@ export function ToastProvider({ children }) {
                   ))}
                 </View>
               )}
-              <Pressable
-                testID="action-toast-dismiss"
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss notification"
-                onPress={() => setToast(null)}
-                style={({ pressed }) => [styles.dismiss, { opacity: pressed ? 0.6 : 1 }]}
-              >
-                <Icon name="close" size={18} />
-              </Pressable>
             </Animated.View>
           </View>
         </ToastOverlay>
@@ -302,11 +304,8 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderCurve: 'continuous',
     overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexWrap: 'wrap',
   },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   compact: { flexShrink: 1 },
   expanded: { width: '100%' },
   status: { width: 20, alignItems: 'center', justifyContent: 'center' },
@@ -327,7 +326,13 @@ const styles = StyleSheet.create({
   detail: { fontSize: 12, lineHeight: 18 },
   track: { height: 3, borderRadius: 4, overflow: 'hidden', marginTop: 4 },
   fill: { height: '100%', borderRadius: 4 },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1 },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 6,
+    paddingRight: 8,
+  },
   action: {
     minWidth: 44,
     minHeight: 44,

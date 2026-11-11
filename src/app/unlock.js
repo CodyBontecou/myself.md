@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Screen, Copy, Button, Group, Row, IconButton } from '../components/ui';
 import { useBilling } from '../../client/BillingPaywalls';
+import { ExportAllowance } from '../components/StrandsMark.js';
 import { buyLifetime, restoreLifetime, lifetimeProduct } from '../../client/store-purchases';
 import { existingCustomerGuide } from '../../core/billing';
 
@@ -58,6 +59,7 @@ export default function UnlockScreen() {
       <Stack.Screen
         options={{ title: 'Lifetime unlock', headerBackVisible: false, headerRight: headerClose }}
       />
+      <ExportAllowance used={current.used} />
       <View style={styles.intro}>
         <Copy variant="heading" style={styles.heading}>
           {current.used >= 5
@@ -138,6 +140,6 @@ export default function UnlockScreen() {
 
 const styles = StyleSheet.create({
   intro: { gap: 8 },
-  heading: { fontSize: 22, lineHeight: 28, letterSpacing: -0.4 },
+  heading: { fontSize: 30, lineHeight: 34, letterSpacing: -0.9 },
   recovery: { gap: 4 },
 });

@@ -4,7 +4,7 @@ import { qaEnabled, qaSnapshot, updateQa } from './qa-runtime.js';
 import Storage from 'expo-sqlite/kv-store';
 
 const key = 'agent-bridge-onboarding-v1';
-/** @typedef {'/profiles'|`/profiles/${string}`|'/pair'} Destination */
+/** @typedef {'/today'|'/profiles'|`/profiles/${string}`|'/pair'} Destination */
 const Context = createContext(
   /** @type {{complete:boolean,destination:Destination,error:string,finish:(destination:Destination)=>void,resetDestination:()=>void}|null} */ (
     null
@@ -26,7 +26,7 @@ function readStatus() {
 /** @param {{children:import('react').ReactNode}} props */
 export function OnboardingProvider({ children }) {
   const [status, setStatus] = useState(readStatus);
-  const [destination, setDestination] = useState(/** @type {Destination} */ ('/profiles'));
+  const [destination, setDestination] = useState(/** @type {Destination} */ ('/today'));
   const finish = useCallback((/** @type {Destination} */ target) => {
     try {
       if (qaEnabled) updateQa({ onboarding: true });
@@ -41,7 +41,7 @@ export function OnboardingProvider({ children }) {
       });
     }
   }, []);
-  const resetDestination = useCallback(() => setDestination('/profiles'), []);
+  const resetDestination = useCallback(() => setDestination('/today'), []);
   const value = useMemo(
     () => ({ ...status, destination, finish, resetDestination }),
     [status, destination, finish, resetDestination],

@@ -1,5 +1,6 @@
 import { ScreenTimeReflectionStore } from './screen-time-reflection-store.js';
 import { ScreenTimeExperimentStore } from './screen-time-experiment-store.js';
+import { StrandsExperimentStore } from './strands-experiment-store.js';
 import { cloudAllowance, cloudUploadFits, lifetimeEntitlement } from '../core/cloud-allowance.js';
 import { appendExportContent } from '../core/export-files.js';
 import { parseExportSchema } from '../core/export-schemas.js';
@@ -51,6 +52,7 @@ export class CloudStore {
     this.profileSync = new ProfileSyncStore(this);
     this.experiments = new ScreenTimeExperimentStore(this);
     this.reflections = new ScreenTimeReflectionStore(this);
+    this.strandsExperiments = new StrandsExperimentStore(this);
     const columns = new Set(
       this.db
         .prepare('PRAGMA table_info(exports)')

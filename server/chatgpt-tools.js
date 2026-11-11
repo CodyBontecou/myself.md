@@ -36,6 +36,12 @@ export const chatgptToolNames = [
   'check_screen_time_readiness',
   'review_monthly_attention',
   'compare_screen_time_experiment_hours',
+  'review_strands_day',
+  'review_strands_patterns',
+  'save_strands_experiment',
+  'list_strands_experiments',
+  'cancel_strands_experiment',
+  'review_strands_experiment',
 ];
 const allowed = new Set(chatgptToolNames);
 const chatgptDocumentation = `# myself.md for ChatGPT
@@ -58,7 +64,9 @@ For a weekly screen-time reflection, use list_cloud_exports to discover explicit
 
 For personal experiments, let the user choose one app, a daily cap in minutes, a local start date after the completed baseline week, and an optional plan. save_screen_time_experiment stores the verified baseline and user-chosen goal using current grants and normal billed reads. Use exact review series/app identifiers and a new UUID requestId; reuse identical arguments for a retry. list_screen_time_experiments rediscovers goals across chats and returns reviewAfter. After that instant, discover shared exports from the saved phone/profile and call review_screen_time_experiment. Missing app observations are unknown, partial/excluded data prevents a conclusive outcome, and observed changes cannot establish causality. Already-started goals are labeled retrospective. cancel_screen_time_experiment stops a saved goal without deleting its history. No reminders or phone limits are scheduled.
 
-For file exports, discover an owned phone with dataExport.version: 1 and a saved profile. Call export_phone_data with deviceId, profileId, a new UUID requestId, optional selected domains, date bounds in range and action request. Null start means earliest readable history; null end means now. Screen Time requires a start date. The owner must review and approve the saved selection and destination on the phone; OS Health/history permission is still required. Keep the app open. Poll the same tool with action status and the same IDs; accepted, awaiting_user and running do not mean delivery. Completion requires a phone receipt; partial reports source failures. Reuse requestId for safe retries. Use action cancel to stop remaining work; already-written files remain. Exporting grants no agent read access and uses the same billing and history as the phone action.
+For Strands (one local day as Place, Attention and Body), discover shared health, screen-time and location exports on one owned phone and call review_strands_day with each list, a completed date and an IANA timezone. review_strands_patterns compares 7–31 nights (the day after end must also be complete) and returns observed co-occurrences with group sizes and caveats, never causes. Unknown strands stay null. For a phone-down experiment, let the user choose the cutoff hour, allowance, start date and nights, then call save_strands_experiment with a new UUID requestId; list_strands_experiments and cancel_strands_experiment share the phone Try screen's store, and review_strands_experiment reads baseline and trial nights from shared exports. No reminder, Screen Time limit or phone setting is created.
+
+For file exports, discover an owned phone with dataExport.version: 1 and a saved profile. Call export_phone_data with deviceId, profileId, a new UUID requestId, optional selected domains, date bounds in range and action request. Null start means earliest readable history; null end means now. Screen Time requires a start date. To export specific days (e.g. Wed, Thu, Sun and Mon), pass days as phone-local YYYY-MM-DD dates instead of range when the phone advertises dataExport.days 1. The owner must review and approve the saved selection and destination on the phone; OS Health/history permission is still required. Keep the app open. Poll the same tool with action status and the same IDs; accepted, awaiting_user and running do not mean delivery. Completion requires a phone receipt; partial reports source failures. Reuse requestId for safe retries. Use action cancel to stop remaining work; already-written files remain. Exporting grants no agent read access and uses the same billing and history as the phone action.
 
 This connection exposes approved data discovery and reads plus owner-reviewed file export requests. It does not expose debug logs, captured credentials, support-message delivery, deletion, pairing-ticket creation, purchase flows or agent-controlled permission changes. A blocked operation cannot be invoked by guessing its tool name. Grants must be changed by the owner in the app or dashboard. Revoke sharing there to stop future reads; copies already sent to ChatGPT follow ChatGPT's own controls.
 

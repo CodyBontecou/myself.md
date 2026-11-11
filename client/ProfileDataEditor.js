@@ -10,7 +10,10 @@ import { Copy, Group, Icon, Row } from '../src/components/ui';
 import { Checkbox } from './Terminal.js';
 import { useTheme } from '../src/lib/theme';
 import { domains } from '../core/data.js';
+import { StrandBar } from '../src/components/StrandsMark.js';
 import { categories } from './health-types.js';
+/** @type {Record<string,'place'|'attention'|'body'|undefined>} */
+const strandOf = { health: 'body', time: 'attention', location: 'place' };
 /** @typedef {{kind:'type',domain:import('../core/data.js').Domain,key:string}} TypeRow */
 /** @typedef {{kind:'group',key:string,selected:number,total:number,expanded:boolean}} GroupRow */
 /** @typedef {{kind:'location-controls',key:string}} LocationControlsRow */
@@ -232,6 +235,10 @@ export default function ProfileDataEditor({
                 size={18}
                 color={colors.secondary}
               />
+              {(() => {
+                const strand = strandOf[item.domain];
+                return strand ? <StrandBar strand={strand} /> : null;
+              })()}
               <View style={[styles.groupText, inline && styles.domainTitle]}>
                 <Copy style={styles.groupTitle}>{label}</Copy>
                 <Copy variant="caption" muted>

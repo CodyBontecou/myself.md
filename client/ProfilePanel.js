@@ -26,6 +26,8 @@ import { useProfileEditor } from './ProfileEditorState.js';
 import ProfileDataEditor from './ProfileDataEditor.js';
 import ProfileExports from './ProfileExports.js';
 import ProfileFeed from './ProfileFeed.js';
+import ProfilesOverview from './ProfilesOverview.js';
+import { cadenceLabel } from '../core/profile-timeline.js';
 import { exportFolderStatus } from './export-folder.js';
 import ExportSettingsEditor from './ExportSettingsEditor.js';
 import { scheduleIntervalMs } from '../core/schedules.js';
@@ -264,6 +266,9 @@ export default function ProfilePanel({
         >
           <View style={styles.profileIdentity}>
             <Copy variant="heading">{profile.name}</Copy>
+            <Copy variant="caption" muted>
+              {`${profile.export.destination === 'local' ? 'On this phone' : profile.export.destination === 'http' ? 'HTTPS' : 'Cloud'} · ${cadenceLabel(profile.schedule)}`}
+            </Copy>
           </View>
         </Pressable>
         {action}
@@ -285,7 +290,13 @@ export default function ProfilePanel({
     <AccordionLayout
       enabled={inline}
       testID={inline ? `profile-card-${profileId}` : profile ? 'profile-content' : 'profiles-list'}
-      style={[styles.container, inline && styles.profileCard]}
+      style={[
+        styles.container,
+        inline && [
+          styles.profileCard,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ],
+      ]}
     >
       {profileId && !profile && (
         <Text testID="profile-unavailable">This profile no longer exists.</Text>
@@ -300,7 +311,7 @@ export default function ProfilePanel({
           renderProfile={(action, exportControls) => (
             <>
               {profileHeader(action)}
-              {exportFirst && exportControls}
+              {(exportFirst || !inline) && exportControls}
               <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
                 <Group compact>{setting('Profile name', profile.name, 'name')}</Group>
                 <>
@@ -446,8 +457,12 @@ export default function ProfilePanel({
                   </Group>
                 </>
               </AccordionBody>
-              {!exportFirst && exportControls}
-              <AccordionBody open={!inline || expanded} enabled={inline} style={styles.container}>
+              {!exportFirst && inline && exportControls}
+              <AccordionBody
+                open={!inline || expanded}
+                enabled={inline}
+                style={[styles.container, inline && styles.cardEnd]}
+              >
                 <>
                   <SectionHeader compact title="Manage profile" />
                   <Group compact>
@@ -592,7 +607,12 @@ export default function ProfilePanel({
             })
           }
         >
-          {draft ? content : null}
+          <ProfilesOverview
+            session={session}
+            profiles={state.profiles}
+            disabled={disabled}
+            suggestion={draft ? content : null}
+          />
         </ProfileFeed>
       )}
       {shareLink ? (
@@ -613,7 +633,14 @@ function changedFields(before, after) {
   );
 }
 const styles = StyleSheet.create({
-  profileCard: { gap: 16, overflow: 'hidden' },
+  profileCard: {
+    gap: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderRadius: 22,
+    borderCurve: 'continuous',
+    paddingHorizontal: 16,
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
   disclosure: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   cardToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
@@ -639,6 +666,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   container: { gap: 16 },
+  cardEnd: { paddingBottom: 16 },
   feed: { flex: 1 },
   card: {
     gap: 8,

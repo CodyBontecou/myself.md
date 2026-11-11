@@ -5,6 +5,8 @@ import { transformSync } from 'esbuild';
 import * as profilePolicy from '../core/profiles.js';
 import * as exportPolicy from '../core/export-files.js';
 import * as schedules from '../core/schedules.js';
+import * as timeline from '../core/profile-timeline.js';
+import * as calendar from '../client/calendar.js';
 
 /** @typedef {{type:unknown,props:Record<string,unknown>}} Element */
 /** @type {unknown[]} */ let slots = [];
@@ -56,11 +58,7 @@ const imports = {
     Alert: { alert: noop },
   },
   'expo-router': {
-    router: {
-      push: (/** @type {unknown} */ path) => {
-        destination = path;
-      },
-    },
+    router: { push: noop },
     useNavigation: () => ({}),
     useFocusEffect: noop,
   },
@@ -89,6 +87,9 @@ const imports = {
   '../core/schedules.js': { ...schedules, nextOccurrence: () => null },
   '../core/data.js': { domains: ['health', 'time', 'location'] },
   './export-folder.js': { exportFolderStatus: () => ({ name: 'Exports' }) },
+  '../core/profile-timeline.js': timeline,
+  './calendar.js': calendar,
+  './history.js': { exportedDays: () => new Set() },
   './export-task.js': {
     scheduleState: () => ({ progress, files: [] }),
     exportNow: () => {
@@ -245,7 +246,6 @@ console.log(
   'PASS real profile collapse/reopen preserves the pending export controller and working Cancel action.',
 );
 
-/** @type {unknown} */ let destination;
 data = {
   session: {},
   profiles: null,
@@ -259,8 +259,4 @@ cursor = 0;
 const loading = call(dataModule.default, { management: true });
 control(loading, 'profiles-loading');
 assert.equal(control(loading, 'profile-new-profile').props.disabled, true);
-call(control(loading, 'settings-open').props.onPress, {});
-assert.equal(destination, '/settings');
-console.log(
-  'PASS Settings navigation remains actionable while profiles are unavailable and creation is disabled.',
-);
+console.log('PASS Profile creation is disabled while profiles are unavailable.');

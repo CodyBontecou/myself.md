@@ -42,7 +42,7 @@ The unmodified GitHub logo comes from the [GitHub Brand Toolkit](https://brand.g
 
 ## Geist documentation font
 
-Geist by Vercel is distributed under the SIL Open Font License 1.1. The documentation serves regular, medium and semibold files locally, downloaded from Google Fonts. The complete license is included in dashboard/geist-license.txt and served alongside the font assets.
+Geist by Vercel is distributed under the SIL Open Font License 1.1. The documentation serves regular, medium and semibold files locally, downloaded from Google Fonts. The complete license is included in dashboard/geist-license.txt and served alongside the font assets. The mobile app embeds the same regular, medium and semibold files under assets/fonts with their license in assets/fonts/Geist-OFL.txt.
 
 ## Agent identity artwork
 
