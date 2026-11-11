@@ -110,13 +110,14 @@ export function IconButton({ icon, label, onPress, testID, plain = false }) {
     </Pressable>
   );
 }
-/** @param {{label:string,onPress:()=>void,secondary?:boolean,plain?:boolean,filled?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
+/** @param {{label:string,onPress:()=>void,secondary?:boolean,plain?:boolean,filled?:boolean,destructive?:boolean,disabled?:boolean,busy?:boolean,testID?:string,icon?:IconName}} props */
 export function Button({
   label,
   onPress,
   secondary = false,
   plain = false,
   filled = false,
+  destructive = false,
   disabled = false,
   busy = false,
   testID,
@@ -134,7 +135,11 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        filled && [styles.filledButton, { backgroundColor: colors.accent }],
+        filled && [
+          styles.filledButton,
+          { backgroundColor: destructive ? colors.danger : colors.accent },
+        ],
+        secondary && !filled && [styles.outlineButton, { borderColor: colors.outline }],
         {
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },

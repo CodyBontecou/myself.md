@@ -17,6 +17,7 @@ export default function SettingsScreen() {
       <Stack.Screen
         options={{ headerRight: renderSettingsAccountAvatar, headerLeft: renderSettingsBack }}
       />
+      <SettingsIdentity />
       {qaEnabled && (
         <Row testID="settings-qa" title="QA fixtures" onPress={() => router.push('/qa')} />
       )}
@@ -118,14 +119,60 @@ function renderSettingsAccountAvatar() {
 
 function SettingsAccountAvatar() {
   const { session, accountProfile } = usePhone();
+  const billing = useBilling();
   const signedIn = Boolean(session?.owner && !session.requiresSignIn);
   return (
     <AccountAvatar
       testID="settings-account-avatar"
       signedIn={signedIn}
       picture={signedIn ? accountProfile?.picture : null}
+      name={signedIn ? accountProfile?.name : null}
+      email={signedIn ? accountProfile?.email : null}
+      unlocked={billing.accountUnlocked}
       onPress={() => router.push(signedIn ? '/account' : '/login')}
     />
+  );
+}
+
+/** Who is signed in, and their access, directly under the Settings title. */
+function SettingsIdentity() {
+  const { session, accountProfile } = usePhone();
+  const billing = useBilling();
+  const { colors } = useTheme();
+  const signedIn = Boolean(session?.owner && !session.requiresSignIn);
+  const who = accountProfile?.email || accountProfile?.name;
+  const access = billing.accountUnlocked
+    ? billing.lifetime
+      ? 'Lifetime'
+      : 'Cloud subscription'
+    : billing.unlocked
+      ? 'Unlocked on this phone'
+      : `${billing.remaining} free ${billing.remaining === 1 ? 'export' : 'exports'} left`;
+  const label = signedIn
+    ? `${who ? `Signed in as ${who}` : 'Signed in'} · ${access}`
+    : 'Not signed in · sign in to keep exports in the cloud';
+  return (
+    <Pressable
+      testID="settings-identity"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={() => router.push(signedIn ? '/account' : '/login')}
+      style={({ pressed }) => [styles.identity, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <View
+        style={[
+          styles.identityDot,
+          signedIn && billing.accountUnlocked
+            ? { backgroundColor: colors.place }
+            : signedIn
+              ? { backgroundColor: colors.secondary }
+              : [styles.identityDotEmpty, { borderColor: colors.secondary }],
+        ]}
+      />
+      <Copy variant="caption" muted style={styles.identityText}>
+        {label}
+      </Copy>
+    </Pressable>
   );
 }
 
@@ -141,6 +188,16 @@ function renderSettingsBack() {
 }
 
 const styles = StyleSheet.create({
+  identity: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: -12,
+  },
+  identityDot: { width: 8, height: 8, borderRadius: 4 },
+  identityDotEmpty: { borderWidth: 1 },
+  identityText: { flex: 1 },
   unlock: { borderRadius: 22, borderCurve: 'continuous', padding: 18, gap: 6 },
   unlockTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   unlockTitle: { fontSize: 18, lineHeight: 24, fontWeight: '600' },

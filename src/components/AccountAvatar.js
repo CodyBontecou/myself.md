@@ -1,70 +1,160 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
-import { Icon } from './ui.js';
+import Svg, { Circle } from 'react-native-svg';
+import { Copy, Icon } from './ui.js';
 import { useTheme } from '../lib/theme.js';
-/** @param {{signedIn?:boolean,picture?:string|null|undefined,size?:number,onPress?:()=>void,testID?:string}} props */
-export default function AccountAvatar({ signedIn = false, picture, size = 44, onPress, testID }) {
+
+/** Up to two initials from a display name, else the first letter of an email.
+ * @param {string|null|undefined} name @param {string|null|undefined} email */
+export function accountInitials(name, email) {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.[0] ?? '';
+  const letters = words.length > 1 ? `${first}${words.at(-1)?.[0] ?? ''}` : first;
+  return (letters || (email ?? '').trim()[0] || '').toUpperCase();
+}
+
+/** Account identity: the login photo or initials inside a ring that shows access.
+ * Signed out with an action, it becomes a labelled Sign in pill.
+ * @param {{signedIn?:boolean,picture?:string|null|undefined,name?:string|null|undefined,email?:string|null|undefined,unlocked?:boolean,size?:number,onPress?:()=>void,testID?:string}} props */
+export default function AccountAvatar({
+  signedIn = false,
+  picture,
+  name,
+  email,
+  unlocked = false,
+  size = 44,
+  onPress,
+  testID,
+}) {
   const { colors } = useTheme();
   const [failedPicture, setFailedPicture] = useState('');
-  const content = signedIn ? (
+  if (!signedIn && onPress)
+    return (
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel="Sign in"
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.pill,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.outline,
+            opacity: pressed ? 0.6 : 1,
+          },
+        ]}
+      >
+        <Icon name="person-outline" size={18} />
+        <Copy style={styles.pillLabel}>Sign in</Copy>
+      </Pressable>
+    );
+  const ring = Math.max(2, Math.round(size / 18));
+  const gap = ring;
+  const inner = size - (ring + gap) * 2;
+  const initials = accountInitials(name, email);
+  const face = (
     <>
-      <View style={[styles.face, { width: size * 0.48, height: size * 0.4 }]}>
-        <View style={styles.eyes}>
-          {[0, 1].map((eye) => (
-            <View key={eye} style={[styles.eye, { backgroundColor: colors.text }]} />
-          ))}
-        </View>
-        <View style={[styles.smile, { borderColor: colors.text }]} />
+      <AccessRing size={size} width={ring} unlocked={signedIn && unlocked} />
+      <View
+        style={[
+          styles.face,
+          {
+            width: inner,
+            height: inner,
+            borderRadius: inner / 2,
+            backgroundColor: colors.subtle,
+          },
+        ]}
+      >
+        {!signedIn ? (
+          <Icon name="person-outline" size={inner * 0.5} />
+        ) : initials ? (
+          <Copy style={[styles.initials, { fontSize: inner * 0.36, lineHeight: inner * 0.46 }]}>
+            {initials}
+          </Copy>
+        ) : (
+          <Icon name="person" size={inner * 0.5} />
+        )}
+        {signedIn && picture && picture !== failedPicture && (
+          <Image
+            key={picture}
+            source={{ uri: picture }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            onError={() => setFailedPicture(picture)}
+            accessible={false}
+          />
+        )}
       </View>
-      {picture && picture !== failedPicture && (
-        <Image
-          key={picture}
-          source={{ uri: picture }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          onError={() => setFailedPicture(picture)}
-          accessible={false}
-        />
-      )}
     </>
-  ) : (
-    <Icon name="person-outline" size={22} />
   );
-  const style = [
-    styles.avatar,
-    { width: size, height: size, borderRadius: size / 2, backgroundColor: colors.subtle },
-  ];
+  const box = [styles.avatar, { width: size, height: size }];
+  const who = name || email;
   return onPress ? (
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={signedIn ? 'Manage account' : 'Sign in'}
+      accessibilityLabel={who ? `Manage account, ${who}` : 'Manage account'}
       onPress={onPress}
-      style={({ pressed }) => [...style, { opacity: pressed ? 0.6 : 1 }]}
+      hitSlop={Math.max(0, (44 - size) / 2)}
+      style={({ pressed }) => [...box, { opacity: pressed ? 0.6 : 1 }]}
     >
-      {content}
+      {face}
     </Pressable>
   ) : (
-    <View testID={testID} style={style}>
-      {content}
+    <View
+      testID={testID}
+      style={box}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {face}
     </View>
   );
 }
+
+/** Three braid-colored arcs for verified unlimited access; one quiet ring otherwise.
+ * @param {{size:number,width:number,unlocked:boolean}} props */
+function AccessRing({ size, width, unlocked }) {
+  const { colors } = useTheme();
+  const r = (size - width) / 2;
+  const length = 2 * Math.PI * r;
+  const arcs = unlocked ? [colors.place, colors.attention, colors.body] : [colors.outline];
+  const pause = unlocked ? width * 1.5 : 0;
+  const arc = length / arcs.length - pause;
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      {arcs.map((color, index) => (
+        <Circle
+          key={color}
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={width}
+          strokeLinecap={unlocked ? 'round' : 'butt'}
+          strokeDasharray={`${arc} ${length - arc}`}
+          strokeDashoffset={-(index * (length / arcs.length)) + length / 4}
+        />
+      ))}
+    </Svg>
+  );
+}
+
 const styles = StyleSheet.create({
-  avatar: {
-    overflow: 'hidden',
+  avatar: { alignItems: 'center', justifyContent: 'center' },
+  face: { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  initials: { fontWeight: '600', letterSpacing: 0.4, textAlign: 'center' },
+  pill: {
+    minHeight: 44,
+    paddingLeft: 12,
+    paddingRight: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
-  face: { alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
-  eyes: { flexDirection: 'row', justifyContent: 'space-between', width: '65%' },
-  eye: { width: 4, height: 5, borderRadius: 2 },
-  smile: {
-    width: '70%',
-    height: '50%',
-    borderWidth: 2,
-    borderTopWidth: 0,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
+  pillLabel: { fontSize: 15, fontWeight: '500' },
 });
