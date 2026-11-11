@@ -398,7 +398,7 @@ function browserRequest(path, sessionCookie, body, requestOrigin = origin) {
     request.end(body);
   });
 }
-/** @param {string} clientId @param {boolean} loggedIn @param {string} [scope] @param {string} [resource] @param {string} [sessionCookie] @param {string} [prompt] @param {string} [provider] */
+/** @param {string} clientId @param {boolean} loggedIn @param {string} [scope] @param {string} [resource] @param {string} [sessionCookie] @param {string} [prompt] @param {string} [provider] @returns {Promise<{response:Response,verifier:string,redirect:string}>} */
 async function authorize(
   clientId,
   loggedIn,
@@ -859,8 +859,83 @@ try {
       Math.floor(Number(loginURL.searchParams.get('ba_iat')) / 1000),
     15 * 60,
   );
-  const loginPage = await fetch(loginURL);
+  // A signed, provider-hinted login goes straight to the provider without loading the page.
+  const continued = await fetch(loginURL, {
+    redirect: 'manual',
+    headers: { 'cf-connecting-ip': '198.51.100.21' },
+  });
+  assert.equal(continued.status, 302, await continued.clone().text());
+  const continuedURL = new URL(continued.headers.get('location') ?? '');
+  assert.equal(continuedURL.hostname, 'github.com');
+  assert.equal(continuedURL.searchParams.get('redirect_uri'), `${issuer}/broker/github/endpoint`);
+  assert.ok(
+    continued.headers.getSetCookie().length > 0,
+    'Provider state cookies stay in the browser',
+  );
+  // Without a provider, or with an invalid signature, the ordinary picker page is served.
+  const unhinted = new URL(loginURL);
+  unhinted.searchParams.delete('kc_idp_hint');
+  const loginPage = await fetch(unhinted);
   assert.match(await loginPage.text(), /id="root"/);
+  const tamperedLogin = new URL(loginURL);
+  tamperedLogin.searchParams.set('state', 'tampered');
+  const tamperedPage = await fetch(tamperedLogin, {
+    redirect: 'manual',
+    headers: { 'cf-connecting-ip': '198.51.100.22' },
+  });
+  assert.equal(tamperedPage.status, 200);
+  assert.match(await tamperedPage.text(), /id="root"/);
+  // Provider ID tokens are refused on the public social endpoint; only /native/sign-in takes them.
+  const directIdToken = await fetch(`${issuer}/sign-in/social`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      provider: 'apple',
+      oauth_query: loginURL.search.slice(1),
+      idToken: { token: 'header.payload.signature', nonce: 'n'.repeat(32) },
+    }),
+  });
+  assert.equal(directIdToken.status, 400);
+  /** @param {unknown} body */
+  const nativeSignIn = (body) =>
+    fetch(`${issuer}/native/sign-in`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const nativeBase = {
+    provider: 'apple',
+    idToken: 'header.payload.signature',
+    nonce: 'n'.repeat(32),
+    oauth_query: loginURL.search.slice(1),
+  };
+  assert.equal((await fetch(`${issuer}/native/sign-in`)).status, 405);
+  assert.equal((await nativeSignIn({ ...nativeBase, extra: true })).status, 400);
+  assert.equal((await nativeSignIn({ ...nativeBase, nonce: 'short' })).status, 400);
+  // Apple requires its one-time authorization code, which keeps a revocable Apple token.
+  assert.equal((await nativeSignIn(nativeBase)).status, 400);
+  // Google stays on the browser flow until the app has its own Google client IDs.
+  assert.equal((await nativeSignIn({ ...nativeBase, provider: 'google' })).status, 404);
+  const dashboardStart = await authorize(
+    'myselfmd-dashboard',
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'github',
+  );
+  assert.equal(
+    (
+      await nativeSignIn({
+        ...nativeBase,
+        oauth_query: new URL(dashboardStart.response.headers.get('location') ?? '').search.slice(1),
+        authorizationCode: 'code',
+      })
+    ).status,
+    400,
+    'Native sign-in only continues phone authorizations',
+  );
   // The shared /login UI continues the signed phone/MCP request through the social API.
   const social = await fetch(`${issuer}/sign-in/social`, {
     method: 'POST',

@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "com.myself.md",
       "associatedDomains": ["applinks:myself.md"],
       "infoPlist": {
@@ -83,6 +84,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "expo-apple-authentication",
       "expo-web-browser",
       "expo-secure-store",
       [

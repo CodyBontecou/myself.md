@@ -16,7 +16,9 @@ const nativeReturnSchema = z.object({
 });
 
 /**
- * @typedef {{issuer:string,secret:string,resource:string,resources?:string[],githubId:string,githubSecret:string,appleId:string,appleSecret:string,googleId?:string,googleSecret?:string,reviewerEnabled?:boolean}} IdentityConfig
+ * appleBundleId enables native Sign in with Apple ID tokens issued to the iOS app; googleNativeClientIds
+ * enables native Google ID tokens issued to the app's iOS/Android clients. Both are phone-only.
+ * @typedef {{issuer:string,secret:string,resource:string,resources?:string[],githubId:string,githubSecret:string,appleId:string,appleSecret:string,appleBundleId?:string,googleId?:string,googleSecret?:string,googleNativeClientIds?:string[],reviewerEnabled?:boolean}} IdentityConfig
  */
 /** @param {import('better-auth').BetterAuthOptions['database']} database @param {IdentityConfig} config @returns {import('better-auth').BetterAuthOptions} */
 export function identityOptions(database, config) {
@@ -110,6 +112,21 @@ export function identityOptions(database, config) {
         throw ctx.redirect(callback.href);
       }),
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === '/sign-in/social' && ctx.body?.idToken) {
+          // Provider ID tokens only sign in the phone app: they must continue a signed phone
+          // authorization (PKCE code to myselfmd://oauth) and carry a fresh replay nonce.
+          const query = new URLSearchParams(
+            typeof ctx.body.oauth_query === 'string' ? ctx.body.oauth_query : '',
+          );
+          const nonce = ctx.body.idToken?.nonce;
+          if (
+            query.get('client_id') !== 'myselfmd-phone' ||
+            query.get('redirect_uri') !== 'myselfmd://oauth' ||
+            typeof nonce !== 'string' ||
+            nonce.length < 32
+          )
+            throw new APIError('BAD_REQUEST', { error: 'native_sign_in_only' });
+        }
         if (ctx.path === '/sign-in/social' && typeof ctx.body?.oauth_query === 'string') {
           const query = new URLSearchParams(ctx.body.oauth_query);
           if (query.get('client_id') === 'myselfmd-phone') {
@@ -206,10 +223,14 @@ export function identityOptions(database, config) {
       ...(config.googleId && config.googleSecret
         ? {
             google: {
-              clientId: config.googleId,
+              // The web client stays first for browser sign-in; native client IDs only widen
+              // the accepted ID-token audience when the phone app has its own Google clients.
+              clientId: config.googleNativeClientIds?.length
+                ? [config.googleId, ...config.googleNativeClientIds]
+                : config.googleId,
               clientSecret: config.googleSecret,
               redirectURI: `${config.issuer}/broker/google/endpoint`,
-              disableIdTokenSignIn: true,
+              disableIdTokenSignIn: !config.googleNativeClientIds?.length,
               includeGrantedScopes: false,
               prompt: 'select_account',
             },
@@ -225,7 +246,10 @@ export function identityOptions(database, config) {
         clientId: config.appleId,
         clientSecret: config.appleSecret,
         redirectURI: `${config.issuer}/broker/apple/endpoint`,
-        disableIdTokenSignIn: true,
+        // Native Sign in with Apple tokens are issued to the app's bundle ID, never the web
+        // Services ID; browser sign-in verifies through the authorization code instead.
+        ...(config.appleBundleId ? { audience: [config.appleBundleId] } : {}),
+        disableIdTokenSignIn: !config.appleBundleId,
       },
     },
     plugins: [

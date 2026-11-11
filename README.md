@@ -122,7 +122,7 @@ This is public access to the local development Keycloak runtime, with the same g
 
 iOS uses bundle ID `com.myself.md`; Universal Links use `67KC823C9A.com.myself.md`. This installs separately from the previous iOS identity, so existing app data does not migrate automatically. The new Apple App ID needs the app’s capabilities and signing profiles configured before a signed device build.
 
-The web dashboard and the iOS/Android pairing screen offer **Sign in with Apple** and **Continue with GitHub** buttons that open the existing Keycloak browser flow with the matching `kc_idp_hint`. The phone still requires a pairing link and the same account as the agent. Configure the Apple provider below before using these buttons.
+The web dashboard and the iOS/Android pairing screen offer **Sign in with Apple**, **Continue with GitHub** and **Continue with Google**. On iOS, Apple uses the native system sheet with no browser; other providers open the provider's page directly in a browser sheet. See [native phone sign-in](docs/cloudflare-migration.md#native-phone-sign-in). The phone still requires a pairing link and the same account as the agent. Configure the Apple provider below before using these buttons.
 
 Provider provisioning is ready; a provider appears on Keycloak's login page only after its real credentials have been configured. Both mobile and MCP clients keep using the same Keycloak OAuth flow. No mobile rebuild is needed.
 

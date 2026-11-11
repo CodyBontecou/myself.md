@@ -21,7 +21,12 @@ import { assets } from '../server/dashboard-assets.js';
 import { readBytes } from './request.js';
 import { migrationRequest } from './import.js';
 import { digest, findTicket, registerTicket } from './tickets.js';
-import { identityRequest, identityJwks, reviewerActive } from './identity.js';
+import {
+  continueProviderLogin,
+  identityRequest,
+  identityJwks,
+  reviewerActive,
+} from './identity.js';
 import { reviewerUserId } from '../server/reviewer.js';
 export { Account as MyselfAccount } from './account.js';
 export { Purchase as MyselfPurchase } from './claims.js';
@@ -214,6 +219,11 @@ export default {
               : [],
           },
         });
+      if (url.pathname === '/login' && request.method === 'GET') {
+        // A signed first-party login that already names its provider goes straight there.
+        const provider = await continueProviderLogin(request, env);
+        if (provider) return provider;
+      }
       if (request.method === 'GET' || request.method === 'HEAD') {
         const asset = await publicAsset(request, env);
         if (asset) return asset;

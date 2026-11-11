@@ -3,7 +3,10 @@ import { saveExportContext } from './export-context.js';
 import { recordDebug } from './debug-log.js';
 import { debugOperation } from '../core/debug-log.js';
 import { canonicalServiceOrigin } from '../core/hosting.js';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as AuthSession from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
@@ -317,8 +320,26 @@ function trustedUrl(value) {
   if (url.username || url.password) throw new Error('Invalid server URL.');
   return url;
 }
-/** @param {string} server @param {'apple'|'github'|'google'} provider @returns {Promise<Session>} */
-export async function signIn(server, provider) {
+/** Sign-in failure codes shared by the browser and native flows.
+ * @param {string|undefined} code @param {unknown} [cause] */
+function signInError(code, cause) {
+  return new Error(
+    code === 'account_not_linked'
+      ? 'This sign-in method is not connected to your account. Use your original method, then open Connected logins to connect it.'
+      : code === 'account_already_linked_to_different_user'
+        ? 'This sign-in method belongs to another account. Sign in with the method connected to your original account.'
+        : code === 'state_mismatch' || code === 'state_not_found'
+          ? 'This sign-in attempt expired or was replaced. Please start again from the app.'
+          : code === 'access_denied'
+            ? 'Sign-in was cancelled.'
+            : code === 'rate_limited'
+              ? 'Too many sign-in attempts. Wait a minute and try again.'
+              : 'Sign-in could not finish. Please start again from the app.',
+    { cause },
+  );
+}
+/** @param {string} server */
+async function signInConfig(server) {
   server = canonicalServiceOrigin(server);
   trustedUrl(server);
   const config = await request(/** @type {string} */ (`${server}/config`));
@@ -327,44 +348,30 @@ export async function signIn(server, provider) {
   if (checked.clientId !== 'myselfmd-phone' || checked.resource !== `${server}/mcp`)
     throw new Error('Invalid pairing server configuration.');
   const discovery = await AuthSession.fetchDiscoveryAsync(checked.issuer);
-  const redirectUri = 'myselfmd://oauth';
-  const auth = new AuthSession.AuthRequest({
+  return { server, checked, discovery };
+}
+/** A PKCE phone authorization; the browser and native flows send the same request.
+ * @param {{issuer:string,clientId:string,resource:string}} checked @param {Record<string,string>} [extraParams] */
+function phoneAuthorization(checked, extraParams = {}) {
+  return new AuthSession.AuthRequest({
     clientId: checked.clientId,
-    redirectUri,
+    redirectUri: 'myselfmd://oauth',
     responseType: AuthSession.ResponseType.Code,
     usePKCE: true,
     codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
     scopes: ['openid', 'profile', 'myselfmd', 'offline_access'],
-    extraParams: {
-      resource: checked.resource,
-      prompt: 'select_account',
-      kc_idp_hint: provider,
-    },
+    extraParams: { resource: checked.resource, ...extraParams },
   });
-  const result = await auth.promptAsync(discovery);
-  if (result.type === 'error') {
-    const code = result.error?.code ?? result.params.error;
-    throw new Error(
-      code === 'account_not_linked'
-        ? 'This sign-in method is not connected to your account. Use your original method, then open Connected logins to connect it.'
-        : code === 'account_already_linked_to_different_user'
-          ? 'This sign-in method belongs to another account. Sign in with the method connected to your original account.'
-          : code === 'state_mismatch' || code === 'state_not_found'
-            ? 'This sign-in attempt expired or was replaced. Please start again from the app.'
-            : code === 'access_denied'
-              ? 'Sign-in was cancelled.'
-              : 'Sign-in could not finish. Please start again from the app.',
-      { cause: result.error },
-    );
-  }
-  if (result.type !== 'success' || !result.params.code || !auth.codeVerifier)
-    throw new Error('Sign-in was cancelled or unsuccessful.');
+}
+/** Exchange the one-time code and read the account it belongs to.
+ * @param {string} server @param {{issuer:string,clientId:string,resource:string}} checked @param {AuthSession.DiscoveryDocument} discovery @param {string} code @param {string} codeVerifier @returns {Promise<Session>} */
+async function finishSignIn(server, checked, discovery, code, codeVerifier) {
   const token = await AuthSession.exchangeCodeAsync(
     {
       clientId: checked.clientId,
-      code: result.params.code,
-      redirectUri,
-      extraParams: { code_verifier: auth.codeVerifier, resource: checked.resource },
+      code,
+      redirectUri: 'myselfmd://oauth',
+      extraParams: { code_verifier: codeVerifier, resource: checked.resource },
     },
     discovery,
   );
@@ -393,6 +400,91 @@ export async function signIn(server, provider) {
       session.deviceId = previous.deviceId;
   }
   return session;
+}
+/** Sign in with Apple's native sheet: no browser or website. The ID token continues the same
+ * signed PKCE phone authorization on the server, which returns the usual one-time code.
+ * @param {string} server @returns {Promise<Session>} */
+async function signInWithAppleSheet(server) {
+  const { server: origin, checked, discovery } = await signInConfig(server);
+  const auth = phoneAuthorization(checked);
+  const authorizeUrl = await auth.makeAuthUrlAsync(discovery);
+  if (!auth.codeVerifier) throw signInError(undefined);
+  // Without a session the server answers with its signed login query instead of a page.
+  const started = /** @type {{url?:unknown}} */ (
+    await request(authorizeUrl, { headers: { Accept: 'application/json' } })
+  );
+  if (typeof started.url !== 'string') throw signInError(undefined);
+  const login = new URL(started.url);
+  if (login.origin !== origin || !login.searchParams.has('sig')) throw signInError(undefined);
+  const nonce = Crypto.randomUUID() + Crypto.randomUUID();
+  /** @type {AppleAuthentication.AppleAuthenticationCredential} */
+  let credential;
+  try {
+    credential = await AppleAuthentication.signInAsync({
+      nonce,
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (error) {
+    throw signInError(
+      error && typeof error === 'object' && 'code' in error && error.code === 'ERR_REQUEST_CANCELED'
+        ? 'access_denied'
+        : undefined,
+      error,
+    );
+  }
+  if (!credential.identityToken || !credential.authorizationCode) throw signInError(undefined);
+  const name = {
+    ...(credential.fullName?.givenName ? { firstName: credential.fullName.givenName } : {}),
+    ...(credential.fullName?.familyName ? { lastName: credential.fullName.familyName } : {}),
+  };
+  const response = await fetch(`${checked.issuer}/native/sign-in`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      provider: 'apple',
+      idToken: credential.identityToken,
+      nonce,
+      authorizationCode: credential.authorizationCode,
+      oauth_query: login.search.slice(1),
+      ...(Object.keys(name).length ? { name } : {}),
+    }),
+  });
+  const result = /** @type {{url?:unknown,error?:unknown}|null} */ (
+    await response.json().catch(() => null)
+  );
+  if (!response.ok || typeof result?.url !== 'string')
+    throw signInError(typeof result?.error === 'string' ? result.error : undefined);
+  const callback = new URL(result.url);
+  const code = callback.searchParams.get('code');
+  if (
+    callback.protocol !== 'myselfmd:' ||
+    callback.searchParams.get('state') !== auth.state ||
+    !code
+  )
+    throw signInError('state_mismatch');
+  return finishSignIn(origin, checked, discovery, code, auth.codeVerifier);
+}
+/** @param {string} server @param {'apple'|'github'|'google'} provider @returns {Promise<Session>} */
+export async function signIn(server, provider) {
+  // Apple signs in with the system sheet where available; other providers open the provider page.
+  if (
+    provider === 'apple' &&
+    Platform.OS === 'ios' &&
+    (await AppleAuthentication.isAvailableAsync())
+  )
+    return signInWithAppleSheet(server);
+  const { server: origin, checked, discovery } = await signInConfig(server);
+  // The server sends a provider-hinted login straight to the provider's page.
+  const auth = phoneAuthorization(checked, { prompt: 'select_account', kc_idp_hint: provider });
+  const result = await auth.promptAsync(discovery);
+  if (result.type === 'error')
+    throw signInError(result.error?.code ?? result.params.error, result.error);
+  if (result.type !== 'success' || !result.params.code || !auth.codeVerifier)
+    throw new Error('Sign-in was cancelled or unsuccessful.');
+  return finishSignIn(origin, checked, discovery, result.params.code, auth.codeVerifier);
 }
 /** Renew login without changing the paired owner, server or phone partition.
  * @param {Session} previous @param {'apple'|'github'|'google'} provider */

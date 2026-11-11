@@ -3,7 +3,8 @@ import { accountLogins, connectedAccountsPage } from '../server/account-links.js
 import { revokeAppleToken } from '../server/apple-revocation.js';
 import { decryptOAuthToken } from 'better-auth/oauth2';
 import { PairingError } from '../server/errors.js';
-import { importPKCS8, SignJWT } from 'jose';
+import { decodeJwt } from 'jose';
+import { appleClientSecret, exchangeAppleCode, issuedToBundle } from '../server/apple-native.js';
 import { createIdentity } from '../server/identity.js';
 import { recordPhoneTokenExchange } from '../server/auth-diagnostics.js';
 import { readBytes } from './request.js';
@@ -14,14 +15,7 @@ import { providerLogos } from '../server/provider-logos.js';
 
 /** @param {Env} env */
 async function identity(env) {
-  const secret = await new SignJWT({})
-    .setProtectedHeader({ alg: 'ES256', kid: env.APPLE_AUTH_KEY_ID })
-    .setIssuer(env.APPLE_AUTH_TEAM_ID)
-    .setSubject(env.APPLE_AUTH_CLIENT_ID)
-    .setAudience('https://appleid.apple.com')
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(await importPKCS8(env.APPLE_AUTH_PRIVATE_KEY, 'ES256'));
+  const secret = await appleSecret(env, env.APPLE_AUTH_CLIENT_ID);
   const auth = createIdentity(env.IDENTITY, {
     issuer: env.OAUTH_ISSUER,
     secret: env.IDENTITY_SECRET,
@@ -33,6 +27,9 @@ async function identity(env) {
     githubSecret: env.GITHUB_AUTH_CLIENT_SECRET,
     appleId: env.APPLE_AUTH_CLIENT_ID,
     appleSecret: secret,
+    // The iOS app's bundle ID is the audience of native Sign in with Apple tokens.
+    ...(env.APPLE_IAP_BUNDLE_ID ? { appleBundleId: env.APPLE_IAP_BUNDLE_ID } : {}),
+    googleNativeClientIds: googleNativeClientIds(env),
     reviewerEnabled: env.REVIEWER_LOGIN_ENABLED === '1',
   });
   // Keep the adapter and its initialization promises inside the current request.
@@ -40,6 +37,188 @@ async function identity(env) {
   const context = await auth.$context;
   await context.checkSchema?.();
   return auth;
+}
+/** @param {Env} env @param {string} clientId */
+function appleSecret(env, clientId) {
+  return appleClientSecret({
+    teamId: env.APPLE_AUTH_TEAM_ID,
+    keyId: env.APPLE_AUTH_KEY_ID,
+    privateKey: env.APPLE_AUTH_PRIVATE_KEY,
+    clientId,
+  });
+}
+/** Optional comma-separated Google OAuth client IDs of the iOS/Android apps.
+ * @param {Env} env */
+function googleNativeClientIds(env) {
+  const value = /** @type {{GOOGLE_NATIVE_CLIENT_IDS?:string}} */ (env).GOOGLE_NATIVE_CLIENT_IDS;
+  return (value ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+const nativeSignInSchema = z
+  .object({
+    provider: z.enum(['apple', 'google']),
+    idToken: z.string().min(20).max(8192),
+    nonce: z.string().min(32).max(256),
+    oauth_query: z.string().min(1).max(8192),
+    authorizationCode: z.string().min(1).max(2048).optional(),
+    name: z
+      .object({
+        firstName: z.string().max(200).optional(),
+        lastName: z.string().max(200).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+/** Sign the phone in with a native Apple/Google sheet's ID token, continuing its signed PKCE
+ * authorization. Returns only the myselfmd://oauth redirect carrying the one-time code; the app
+ * exchanges it with its code verifier as in the browser flow. No web session cookie is returned.
+ * @param {Request} request @param {Env} env @param {Awaited<ReturnType<typeof identity>>} auth */
+async function nativeSignIn(request, env, auth) {
+  if (request.method !== 'POST')
+    return Response.json({ error: 'Method not allowed.' }, { status: 405 });
+  const parsed = nativeSignInSchema.safeParse(
+    (() => {
+      try {
+        return JSON.parse(
+          new TextDecoder().decode(/** @type {Uint8Array} */ (bodyBytes.get(request))),
+        );
+      } catch {
+        return null;
+      }
+    })(),
+  );
+  if (!parsed.success) return Response.json({ error: 'invalid_request' }, { status: 400 });
+  const input = parsed.data;
+  const query = new URLSearchParams(input.oauth_query);
+  if (
+    query.get('client_id') !== 'myselfmd-phone' ||
+    query.get('redirect_uri') !== 'myselfmd://oauth'
+  )
+    return Response.json({ error: 'invalid_request' }, { status: 400 });
+  if (input.provider === 'google' && !googleNativeClientIds(env).length)
+    return Response.json({ error: 'provider_unavailable' }, { status: 404 });
+  /** @type {string|undefined} */
+  let accessToken;
+  if (input.provider === 'apple') {
+    if (!env.APPLE_IAP_BUNDLE_ID || !input.authorizationCode)
+      return Response.json({ error: 'invalid_request' }, { status: 400 });
+    let subject;
+    try {
+      subject = String(decodeJwt(input.idToken).sub ?? '');
+    } catch {
+      return Response.json({ error: 'invalid_token' }, { status: 401 });
+    }
+    // Keep a revocable Apple token for account deletion; Better Auth verifies the ID token itself.
+    try {
+      ({ accessToken } = await exchangeAppleCode({
+        clientId: env.APPLE_IAP_BUNDLE_ID,
+        clientSecret: await appleSecret(env, env.APPLE_IAP_BUNDLE_ID),
+        code: input.authorizationCode,
+        subject,
+      }));
+    } catch {
+      return Response.json({ error: 'invalid_token' }, { status: 401 });
+    }
+  }
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Origin: new URL(env.OAUTH_ISSUER).origin,
+  });
+  const ip = request.headers.get('cf-connecting-ip');
+  if (ip) headers.set('cf-connecting-ip', ip);
+  const response = await auth.handler(
+    new Request(`${env.OAUTH_ISSUER}/sign-in/social`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        provider: input.provider,
+        oauth_query: input.oauth_query,
+        idToken: {
+          token: input.idToken,
+          nonce: input.nonce,
+          ...(accessToken ? { accessToken } : {}),
+          ...(input.name ? { user: { name: input.name } } : {}),
+        },
+      }),
+    }),
+  );
+  const result =
+    /** @type {{url?:unknown,redirect_uri?:unknown,code?:unknown,message?:unknown}|null} */ (
+      await response.json().catch(() => null)
+    );
+  const location = result?.url ?? result?.redirect_uri;
+  if (!response.ok || typeof location !== 'string' || !location.startsWith('myselfmd://oauth')) {
+    const message = typeof result?.message === 'string' ? result.message : '';
+    const error =
+      result?.code === 'OAUTH_LINK_ERROR' && /linked to a different user/.test(message)
+        ? 'account_already_linked_to_different_user'
+        : result?.code === 'OAUTH_LINK_ERROR'
+          ? 'account_not_linked'
+          : response.status === 429
+            ? 'rate_limited'
+            : response.status === 401
+              ? 'invalid_token'
+              : 'sign_in_failed';
+    return Response.json(
+      { error },
+      { status: response.ok ? 400 : response.status, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+  return Response.json({ url: location }, { headers: { 'Cache-Control': 'no-store' } });
+}
+/** Request bodies read once by the identity router, keyed by request.
+ * @type {WeakMap<Request,Uint8Array>} */
+const bodyBytes = new WeakMap();
+/** Start a provider-hinted, signed first-party login on the server and redirect the browser
+ * straight to the provider, instead of loading the dashboard page to do it in script. Returns
+ * null whenever the ordinary login page should handle the request.
+ * @param {Request} request @param {Env} env */
+export async function continueProviderLogin(request, env) {
+  if (request.method !== 'GET' || env.IDENTITY_ENABLED !== '1') return null;
+  const url = new URL(request.url);
+  const query = url.searchParams;
+  const provider = query.get('kc_idp_hint');
+  if (
+    !['myselfmd-phone', 'myselfmd-dashboard'].includes(query.get('client_id') ?? '') ||
+    !query.has('sig') ||
+    !query.has('exp') ||
+    !['apple', 'github', 'google'].includes(provider ?? '') ||
+    (provider === 'google' && !availableLogins(env).includes('google'))
+  )
+    return null;
+  const auth = await identity(env);
+  const headers = new Headers(request.headers);
+  headers.set('Content-Type', 'application/json');
+  headers.set('Accept', 'application/json');
+  headers.set('Origin', new URL(env.PUBLIC_URL).origin);
+  const response = await auth.handler(
+    new Request(`${env.OAUTH_ISSUER}/sign-in/social`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        provider,
+        oauth_query: url.search.slice(1),
+        callbackURL: `${env.PUBLIC_URL}/dashboard`,
+      }),
+    }),
+  );
+  if (!response.ok) return null;
+  const result = /** @type {{url?:unknown}|null} */ (await response.json().catch(() => null));
+  if (typeof result?.url !== 'string') return null;
+  const target = new URL(result.url);
+  if (target.protocol !== 'https:') return null;
+  // Keep the provider state cookies set by the sign-in call; they belong to this browser.
+  const redirect = new Headers(response.headers);
+  redirect.delete('Content-Type');
+  redirect.delete('Content-Length');
+  redirect.set('Location', target.href);
+  redirect.set('Cache-Control', 'no-store');
+  redirect.set('Referrer-Policy', 'no-referrer');
+  return new Response(null, { status: 302, headers: redirect });
 }
 /** Internal signature verification must not use the public HTTP rate-limit bucket.
  * The provider API retains the same published-key selection and rotation policy.
@@ -106,6 +285,10 @@ export async function identityRequest(request, env) {
     );
   }
   const auth = await identity(env);
+  if (path === '/native/sign-in') {
+    if (request.method === 'POST') bodyBytes.set(request, await readBytes(request, 32768));
+    return nativeSignIn(request, env, auth);
+  }
   if (path === '/reviewer-login') {
     const client = await env.IDENTITY.prepare(
       'SELECT redirectUris FROM oauthClient WHERE clientId=?',
@@ -265,6 +448,17 @@ export async function identityRequest(request, env) {
   if (request.method === 'POST') {
     body = await readBytes(request, 65536);
     headers.delete('Content-Length');
+  }
+  if (targetPath === '/sign-in/social' && body) {
+    // Provider ID tokens are accepted only through /native/sign-in, which binds them to a phone
+    // authorization and keeps Apple's revocation token.
+    let idToken = false;
+    try {
+      idToken = Boolean(JSON.parse(new TextDecoder().decode(body))?.idToken);
+    } catch {
+      /* Better Auth rejects malformed bodies itself. */
+    }
+    if (idToken) return Response.json({ error: 'native_sign_in_only' }, { status: 400 });
   }
   if (targetPath === '/oauth2/register' && body) {
     const registration = z
@@ -469,21 +663,40 @@ export async function deleteIdentity(env, subject) {
     .filter((account) => account.providerId === 'apple')
     .reduce(async (previous, account) => {
       await previous;
-      const stored = account.refreshToken ?? account.accessToken;
-      if (!stored)
+      if (!account.refreshToken && !account.accessToken)
         throw new PairingError(
           409,
           'Sign in with Apple again to authorize token revocation, then retry deletion.',
         );
-      const token = await decryptOAuthToken(stored, context);
       const provider = context.socialProviders.find((value) => value.id === 'apple');
       if (!provider) throw new Error('Apple provider is unavailable.');
-      await revokeAppleToken({
-        clientId: env.APPLE_AUTH_CLIENT_ID,
-        clientSecret: String(provider.options?.clientSecret),
-        token,
-        hint: account.refreshToken ? 'refresh_token' : 'access_token',
-      });
+      // Refresh tokens only come from the web Services ID flow. A native app sign-in stores an
+      // access token issued to the bundle ID (named by its ID token), revoked with that client.
+      const native =
+        Boolean(env.APPLE_IAP_BUNDLE_ID) &&
+        Boolean(account.accessToken) &&
+        issuedToBundle(account.idToken, env.APPLE_IAP_BUNDLE_ID);
+      if (account.refreshToken)
+        await revokeAppleToken({
+          clientId: env.APPLE_AUTH_CLIENT_ID,
+          clientSecret: String(provider.options?.clientSecret),
+          token: await decryptOAuthToken(account.refreshToken, context),
+          hint: 'refresh_token',
+        });
+      if (native && account.accessToken)
+        await revokeAppleToken({
+          clientId: env.APPLE_IAP_BUNDLE_ID,
+          clientSecret: await appleSecret(env, env.APPLE_IAP_BUNDLE_ID),
+          token: await decryptOAuthToken(account.accessToken, context),
+          hint: 'access_token',
+        });
+      else if (!account.refreshToken && account.accessToken)
+        await revokeAppleToken({
+          clientId: env.APPLE_AUTH_CLIENT_ID,
+          clientSecret: String(provider.options?.clientSecret),
+          token: await decryptOAuthToken(account.accessToken, context),
+          hint: 'access_token',
+        });
     }, Promise.resolve());
   await env.IDENTITY.batch([
     env.IDENTITY.prepare(
