@@ -9,7 +9,7 @@ import { phoneDatabase } from './phone-database.js';
 import { qaEnabled } from './qa-runtime.js';
 import { showToast } from '../src/components/Toast.js';
 
-/** @typedef {{requestId:string,profileId:string,configuration:string,expiresAt:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string}}} PhoneExportRequest */
+/** @typedef {{requestId:string,profileId:string,configuration:string,expiresAt:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string},days?:string[]}} PhoneExportRequest */
 /** @typedef {{status:string}} Outcome */
 const db = phoneDatabase();
 db.execSync(
@@ -120,6 +120,8 @@ export async function reviewPhoneExport(session, request, active) {
         {
           domains: request.domains,
           range: request.range,
+          // Agent day requests export only these local days; range.end is the acceptance snapshot.
+          ...(request.days ? { days: request.days } : {}),
           requestId: `export-${request.requestId}`,
           check: async (force = true) => {
             if (!current()) throw new Error('Phone account, connection or foreground changed.');

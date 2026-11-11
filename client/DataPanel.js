@@ -127,7 +127,7 @@ function usePhoneDataState({ session, incoming, onDismiss }) {
     return {
       ...raw,
       locationCapture: { version: 1 },
-      dataExport: { version: 1 },
+      dataExport: { version: 1, days: 1 },
       dataQuery: { version: 1, aggregation: 1 },
       diagnostics,
       profiles: profileState.current.profiles.map((profile) =>

@@ -339,7 +339,7 @@ export async function stopAccountExports() {
   }
   throw new Error('An export is still stopping. Retry account cleanup shortly.');
 }
-/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{range?:import('../core/data-range.js').DataRange,domains?:import('../core/data.js').Domain[],requestId?:string,check?:(force?:boolean)=>Promise<void>}} [options] */
+/** @param {import('./export-context.js').ExportContext} session @param {import('../core/profiles.js').ExportProfile} profile @param {(message:string,percentage?:number)=>void} progress @param {{range?:import('../core/data-range.js').DataRange,days?:string[],domains?:import('../core/data.js').Domain[],requestId?:string,check?:(force?:boolean)=>Promise<void>}} [options] */
 export async function exportNow(session, profile, progress, options = {}) {
   if (running) throw new Error('An export is already running.');
   running = true;
@@ -390,6 +390,31 @@ export async function exportNow(session, profile, progress, options = {}) {
     if (!valid()) throw new Error('Export cancelled: profile changed.');
   };
   try {
+    if (options.days) {
+      // Selected local days export only those days. The first day starts at local midnight; the
+      // span ends at the midnight after the last day, capped by a frozen end (agent acceptance).
+      const selectedDays = [...new Set(options.days)];
+      const first = selectedDays.reduce((a, b) => (b < a ? b : a), selectedDays[0] ?? '');
+      const last = selectedDays.reduce((a, b) => (b > a ? b : a), first);
+      if (!selectedDays.length || selectedDays.some((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d)))
+        throw new Error('Select at least one day to export.');
+      if (last > day) throw new Error('Choose days up to today.');
+      const nextMidnight = localCalendar.instant(addDays(last, 1), 0, 0);
+      const cap = options.range?.end ?? null;
+      options = {
+        ...options,
+        days: selectedDays,
+        range: {
+          start: localCalendar.instant(first, 0, 0),
+          end:
+            cap && Date.parse(cap) < Date.parse(nextMidnight)
+              ? cap
+              : last === day
+                ? null
+                : nextMidnight,
+        },
+      };
+    }
     await check();
     const cloudAuthorization = await requireCloudAuthorization(session, profile);
     const selected =
@@ -454,8 +479,12 @@ export async function exportNow(session, profile, progress, options = {}) {
       }
       const intervals = exportIntervals(start, intervalEnd, localCalendar);
       dates.length = 0;
-      for (const interval of intervals) dates.push(interval.day);
-      intervalStart = intervals[0]?.start ?? start;
+      // An explicit day list exports only those days inside the range.
+      const wanted = options.days && new Set(options.days);
+      const chosen = wanted ? intervals.filter((interval) => wanted.has(interval.day)) : intervals;
+      if (!chosen.length) throw new Error('Select at least one day to export.');
+      for (const interval of chosen) dates.push(interval.day);
+      intervalStart = chosen[0]?.start ?? start;
     }
     await check();
     historyId = beginExport(

@@ -624,7 +624,7 @@ For filtered catalogs, scalar aggregation, bounded waiting, cursors and file exp
 4. Convert the person's dates to explicit UTC start/end. Use raw records or scalar aggregation according to the task. Aggregation requires catalog.dataQuery.aggregation equal to 1; a backend update alone does not update the phone.
 5. Call query_phone_data with a new requestKey for the page and optional waitMs up to 25000. Retain requestId and honor retryAfterMs while queued or running. A state change can return running; use records only after complete. Stop on failed, expired or missing work.
 6. Follow result.page.nextCursor with the same query configuration and a new page key. Preserve source/unit separation, coverage, skipped counts and warnings. Missing days and empty HealthKit results are not zero measurements or proof of authorization.
-7. Report the verified effect and any gaps. For files, export_phone_data runs without per-request phone approval and requires a delivery receipt; null export bounds select earliest readable history through now, while Screen Time requires a start. Export execution does not change source selections or OS permissions.
+7. Report the verified effect and any gaps. For files, export_phone_data runs without per-request phone approval and requires a delivery receipt; null export bounds select earliest readable history through now, while Screen Time requires a start. To export specific days that need not be consecutive, pass days (phone-local YYYY-MM-DD dates) instead of range. Export execution does not change source selections or OS permissions.
 
 ## Read existing cloud exports
 

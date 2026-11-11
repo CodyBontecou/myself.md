@@ -339,7 +339,7 @@ const catalogSchema = z.object({
     .strict()
     .optional(),
   dataExport: z
-    .object({ version: z.literal(1) })
+    .object({ version: z.literal(1), days: z.literal(1).optional() })
     .strict()
     .optional(),
   locationCapture: z

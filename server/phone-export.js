@@ -46,6 +46,15 @@ export const phoneExportInput = z
       .describe(
         'Inclusive start and exclusive end. Null start discovers earliest readable history; null end freezes the current time. Screen Time requires an explicit start because its OS adapter cannot discover retained history.',
       ),
+    days: z
+      .array(z.iso.date())
+      .min(1)
+      .max(366)
+      .refine((values) => new Set(values).size === values.length, 'Choose each day once.')
+      .optional()
+      .describe(
+        "Specific phone-local calendar days (YYYY-MM-DD), not necessarily consecutive, e.g. four chosen days of the last week. Exports only those days, as one request with one history entry and billing reservation. Omit range when using days. Today's file runs through acceptance time. Requires a phone advertising dataExport.days.",
+      ),
     requestId: z
       .string()
       .uuid()
@@ -54,6 +63,10 @@ export const phoneExportInput = z
       ),
   })
   .strict()
+  .refine(
+    (input) => !input.days || (input.range.start === null && input.range.end === null),
+    'Use either days or range, not both.',
+  )
   .refine(
     (input) =>
       !input.range.start ||
@@ -83,10 +96,27 @@ const phoneInput = z
   })
   .strict();
 /** @typedef {'accepted'|'queued'|'awaiting_user'|'running'|'completed'|'failed'|'cancelled'|'expired'} Status */
-/** @typedef {{requestId:string,subject:string,client:string|null,deviceId:string,profileId:string,configuration:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string},parameters:string,status:Status,createdAt:number,expiresAt:number,receipt?:z.infer<typeof receiptSchema>,error?:'export_failed'|'interrupted'|'profile_changed'|'history_permission_required'}} PhoneExport */
+/** @typedef {{requestId:string,subject:string,client:string|null,deviceId:string,profileId:string,configuration:string,domains:import('../core/data.js').Domain[],range:{start:string|null,end:string},days?:string[],parameters:string,status:Status,createdAt:number,expiresAt:number,receipt?:z.infer<typeof receiptSchema>,error?:'export_failed'|'interrupted'|'profile_changed'|'history_permission_required'}} PhoneExport */
+/** Distinct ISO days in calendar order (insertion keeps the target's ES2022 library).
+ * @param {string[]} values */
+function orderedDays(values) {
+  return values.reduce(
+    (out, value) => [...out.filter((d) => d < value), value, ...out.filter((d) => d > value)],
+    /** @type {string[]} */ ([]),
+  );
+}
+/** Retry identity; day requests add their day list so range-only requests keep their old form.
+ * @param {z.infer<typeof phoneExportInput>} input */
+function requestParameters(input) {
+  return JSON.stringify({
+    domains: input.domains ?? null,
+    range: input.range,
+    ...(input.days ? { days: orderedDays(input.days) } : {}),
+  });
+}
 const terminal = new Set(['completed', 'failed', 'cancelled', 'expired']);
 /** Exports use the owner-saved profile destination and selections with no per-request confirmation.
- * @param {{requests:Map<string,PhoneExport>,own:(deviceId:string,subject:string)=>void,phone:(deviceId:string)=>{seen:number,catalog:{dataExport?:{version:1}|undefined,profiles:{id:string,selection:Record<import('../core/data.js').Domain,string[]>}[]}}|undefined,authorize:(subject:string,client:string|null)=>void}} dependencies */
+ * @param {{requests:Map<string,PhoneExport>,own:(deviceId:string,subject:string)=>void,phone:(deviceId:string)=>{seen:number,catalog:{dataExport?:{version:1,days?:1|undefined}|undefined,profiles:{id:string,selection:Record<import('../core/data.js').Domain,string[]>}[]}}|undefined,authorize:(subject:string,client:string|null)=>void}} dependencies */
 export function createPhoneExports({ requests, own, phone, authorize }) {
   /** @param {PhoneExport} request */
   function expire(request) {
@@ -120,6 +150,7 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       deviceId: request.deviceId,
       profileId: request.profileId,
       range: request.range,
+      ...(request.days ? { days: request.days } : {}),
       domains: request.domains,
       status: request.status,
       createdAt: new Date(request.createdAt).toISOString(),
@@ -170,11 +201,7 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
           404,
           'Export request not found for this account, agent, phone and profile.',
         );
-      if (
-        input.action === 'request' &&
-        existing.parameters !==
-          JSON.stringify({ domains: input.domains ?? null, range: input.range })
-      )
+      if (input.action === 'request' && existing.parameters !== requestParameters(input))
         throw new PairingError(409, 'Request ID already used with different export parameters.');
       validate(existing);
       if (input.action === 'cancel' && !terminal.has(existing.status)) {
@@ -189,6 +216,8 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       throw new PairingError(409, 'Open myself.md on the phone first.');
     if (current.catalog.dataExport?.version !== 1)
       throw new PairingError(409, 'Update the phone app to support data exports.');
+    if (input.days && current.catalog.dataExport.days !== 1)
+      throw new PairingError(409, 'Update the phone app to export specific days.');
     const profile = current.catalog.profiles.find((p) => p.id === input.profileId);
     const selected = input.domains ?? domains.filter((domain) => profile?.selection[domain].length);
     if (
@@ -197,12 +226,16 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       selected.some((domain) => !profile.selection[domain].length)
     )
       throw new PairingError(400, 'Choose saved profile domains with selected data types.');
-    if (input.range.start === null && selected.includes('time'))
+    if (!input.days && input.range.start === null && selected.includes('time'))
       throw new PairingError(
         400,
         'Screen Time requires an explicit start; retained history cannot be discovered by its OS adapter.',
       );
     const range = { start: input.range.start, end: input.range.end ?? new Date().toISOString() };
+    const days = input.days ? orderedDays(input.days) : undefined;
+    // The phone resolves local days; the latest UTC date anywhere is at most one day ahead.
+    if (days && (days.at(-1) ?? '') > new Date(Date.now() + 86400000).toISOString().slice(0, 10))
+      throw new PairingError(400, 'Choose days up to today.');
     if (
       Date.parse(range.end) > Date.now() ||
       (range.start &&
@@ -224,7 +257,8 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
       configuration: JSON.stringify(parseProfile(profile)),
       domains: selected,
       range,
-      parameters: JSON.stringify({ domains: input.domains ?? null, range: input.range }),
+      ...(days ? { days } : {}),
+      parameters: requestParameters(input),
       status: /** @type {const} */ ('accepted'),
       createdAt: Date.now(),
       expiresAt: Date.now() + 300000,
@@ -256,6 +290,7 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
         configuration: request.configuration,
         domains: request.domains,
         range: request.range,
+        ...(request.days ? { days: request.days } : {}),
         expiresAt: new Date(request.expiresAt).toISOString(),
       };
     }
@@ -283,9 +318,13 @@ export function createPhoneExports({ requests, own, phone, authorize }) {
         !input.receipt ||
         input.receipt.historyId !== `export-${request.requestId}` ||
         Date.parse(input.receipt.end) <= Date.parse(input.receipt.start) ||
-        Date.parse(input.receipt.end) !== Date.parse(request.range.end) ||
-        (request.range.start !== null &&
-          Date.parse(input.receipt.start) !== Date.parse(request.range.start))
+        (request.days
+          ? // Local midnights are phone-resolved; require every day and no time past acceptance.
+            input.receipt.days !== request.days.length ||
+            Date.parse(input.receipt.end) > Date.parse(request.range.end)
+          : Date.parse(input.receipt.end) !== Date.parse(request.range.end) ||
+            (request.range.start !== null &&
+              Date.parse(input.receipt.start) !== Date.parse(request.range.start)))
       )
         throw new PairingError(409, 'A completed export requires a matching delivery receipt.');
       request.status = 'completed';

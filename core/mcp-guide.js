@@ -71,6 +71,7 @@ The hosted backend may update before the installed phone. Read capabilities from
 | Queries longer than 31 days | dataQuery.version equals 1 |
 | Scalar query aggregation | dataQuery.aggregation equals 1 |
 | Flexible automatic file exports | dataExport.version equals 1 |
+| Export specific days | dataExport.days equals 1 |
 
 An update-required response means the owner needs a compatible phone app. Repeated query attempts cannot add that capability. Older phones can still perform supported raw queries under their existing grants.
 
@@ -153,7 +154,7 @@ Cloud availability depends on the last synchronized profile/source grants, not a
 
 ## Export files and All Time history
 
-Discover export_phone_data and a phone advertising dataExport.version 1. Supply the saved profileId, caller-chosen UUID requestId, selected domains, action request and range. For All Time Health use domains ["health"] and range {"start":null,"end":null}. Null start discovers earliest readable selected history; null end freezes the current time at acceptance. Screen Time requires an explicit start because its adapter cannot discover earliest retention.
+Discover export_phone_data and a phone advertising dataExport.version 1. Supply the saved profileId, caller-chosen UUID requestId, selected domains, action request and range. For All Time Health use domains ["health"] and range {"start":null,"end":null}. Null start discovers earliest readable selected history; null end freezes the current time at acceptance. Screen Time requires an explicit start because its adapter cannot discover earliest retention. To export specific phone-local days that need not be consecutive, pass days (YYYY-MM-DD list) instead of range on a phone advertising dataExport.days 1; only those days are exported as one request, and today runs through acceptance time.
 
 The phone automatically exports the selected domains and requested interval using the saved profile destination, formats and conflict policy; existing files may be replaced. No per-request phone approval is required. Native Health history permission and source retention still apply. Keep the app open. Reuse the same IDs and frozen parameters for safe retries/status, with action status and optional waitMs. Report success only after a completed receipt; inspect partial, recordCount, failedSources and history for actual delivery. Cancellation stops remaining work but retains files already written. Export execution does not change profile selections or OS permissions.
 
