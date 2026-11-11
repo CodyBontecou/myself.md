@@ -10,6 +10,10 @@ import { PairingError } from './errors.js';
 /** Undelivered or failed reminder. Channel states: 0 pending, 1 delivered, 2 unavailable.
  * @typedef {{id:string,kind:string,details:import('../core/cloud-notices.js').CloudNoticeContext,push:number,email:number,attempts:number}} PendingNotice */
 /** @typedef {{kind:string,channel:string,at:number,message:string,retrying:boolean}} NoticeFailure */
+/** Owner left on purchase records after account deletion. A verified Lifetime purchase or
+ * existing-customer claim held by it can be claimed by the next account; it is never
+ * shared by two live accounts. Subscription and account-token bindings stay retired. */
+export const deletedOwner = 'deleted';
 export const subscriptionClaimed =
   'This subscription belongs to another myself.md account. Sign in to that account to restore it.';
 const day = 86_400_000;
@@ -146,6 +150,11 @@ export class BillingStore {
     this.db
       .prepare('INSERT OR IGNORE INTO billing_grants VALUES (?,?,?,?)')
       .run(source, reference, subject, Date.now());
+    this.db
+      .prepare(
+        'UPDATE billing_grants SET subject=?,created=? WHERE source=? AND reference=? AND subject=?',
+      )
+      .run(subject, Date.now(), source, reference, deletedOwner);
     const owner = this.db
       .prepare('SELECT subject FROM billing_grants WHERE source=? AND reference=?')
       .get(source, reference);
@@ -201,17 +210,39 @@ export class BillingStore {
         .run(subject, store, id);
     else this.db.prepare('DELETE FROM billing_purchases WHERE subject=?').run(subject);
   }
+  /** Account deletion: drop identity and receipt data. A Lifetime purchase or
+   * existing-customer claim stays single-owner and can be verified again by a new account.
+   * @param {string} subject */
+  forgetAccount(subject) {
+    transaction(this.db, () => {
+      this.db
+        .prepare("UPDATE billing_purchases SET subject=?,proof='' WHERE subject=?")
+        .run(deletedOwner, subject);
+      this.db
+        .prepare('UPDATE billing_grants SET subject=? WHERE subject=?')
+        .run(deletedOwner, subject);
+      this.db.prepare('DELETE FROM billing_claims WHERE subject=?').run(subject);
+      this.db
+        .prepare('UPDATE cloud_owners SET subject=? WHERE subject=?')
+        .run(deletedOwner, subject);
+    });
+  }
   /** @param {string} subject @param {{store:string,id:string,proof:string}} purchase */
   unlock(subject, purchase) {
     const owner = this.db
       .prepare('SELECT subject FROM billing_purchases WHERE store=? AND id=?')
       .get(purchase.store, purchase.id);
-    if (owner && owner.subject !== subject)
+    if (owner && owner.subject !== subject && owner.subject !== deletedOwner)
       throw new PairingError(
         409,
         'This purchase is linked to another account. Sign in to that account to restore.',
       );
-    this.bindOwner(`lifetime|${purchase.store}|${purchase.id}`, subject);
+    const key = `lifetime|${purchase.store}|${purchase.id}`;
+    // A deleted account's purchase moves to the next account that verifies it.
+    this.db
+      .prepare('UPDATE cloud_owners SET subject=? WHERE key=? AND subject=?')
+      .run(subject, key, deletedOwner);
+    this.bindOwner(key, subject);
     this.db
       .prepare('INSERT OR REPLACE INTO billing_purchases VALUES (?,?,?,?,?)')
       .run(purchase.store, purchase.id, subject, purchase.proof, Date.now());

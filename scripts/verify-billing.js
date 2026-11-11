@@ -161,6 +161,27 @@ try {
   store.revoke('alice');
   assert.equal(store.snapshot('alice').unlocked, false);
   assert.throws(() => store.reserve('alice', 'revoked'), /5 free exports/);
+  // Account deletion leaves the purchase single-owner but claimable by the next verified account.
+  const reclaimed = { store: 'ios', id: 'deleted-account-purchase', proof: 'fixture' };
+  store.unlock('dana', reclaimed);
+  store.grant('dana', 'healthmd', 'migrated-purchase');
+  store.forgetAccount('dana');
+  assert.equal(store.purchaseOwner('ios', reclaimed.id), 'deleted');
+  assert.equal(store.snapshot('dana').unlocked, false);
+  peer.unlock('erin', { ...reclaimed, proof: 'fixture-2' });
+  assert.equal(store.purchaseOwner('ios', reclaimed.id), 'erin');
+  assert.equal(store.owner(`lifetime|ios|${reclaimed.id}`), 'erin');
+  assert.equal(store.snapshot('erin').unlocked, true);
+  assert.throws(() => store.unlock('frank', reclaimed), /another account/);
+  peer.grant('erin', 'healthmd', 'migrated-purchase');
+  assert.throws(() => store.grant('frank', 'healthmd', 'migrated-purchase'), /another account/);
+  store.bindOwner('subscription|ios|deleted-chain', 'dana-2');
+  store.forgetAccount('dana-2');
+  assert.throws(
+    () => store.bindOwner('subscription|ios|deleted-chain', 'erin'),
+    /another myself\.md account/,
+    'Subscription ownership stays retired after account deletion',
+  );
   const scope = JSON.stringify({ profileId: 'profile', days: ['2026-10-09'], formats: ['json'] });
   store.reserve('charlie', 'export', scope);
   store.requireUpload('charlie', 'export', 'profile', '2026-10-09', 'json');

@@ -1,3 +1,4 @@
+import { deletedOwner } from '../server/billing-store.js';
 import { catalogMapTileResponse } from '../server/chatgpt-catalog.js';
 import { createAnalytics } from './analytics.js';
 import { chatgptMcpPath } from '../server/chatgpt-tools.js';
@@ -267,7 +268,7 @@ export default {
                 env.PURCHASES.getByName(digest(`${store}|${id}`)).purchaseOwner(store, id),
               read: storeSubscriptions.read,
               deliver: async (subject, event) => {
-                if (subject !== 'deleted')
+                if (subject !== deletedOwner)
                   await env.ACCOUNTS.getByName(digest(subject)).storeNotification(subject, event);
               },
             },
