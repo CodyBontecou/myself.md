@@ -1,0 +1,35 @@
+steps:
+  - tap:
+      id: profiles-tab
+  - await:
+      visible:
+        id: profiles-screen
+      timeout: 5000
+  - await:
+      idle: true
+  - tap:
+      id: settings-tab
+  - await:
+      visible:
+        id: settings-screen
+      timeout: 5000
+  - await:
+      idle: true
+  - tap:
+      id: today-tab
+  - await:
+      visible:
+        id: strands-today
+      timeout: 5000
+  - await:
+      idle: true
+  - tap:
+      id: patterns-tab
+  - await:
+      visible:
+        id: strands-patterns
+      timeout: 5000
+  - await:
+      idle: true
+executionPrerequisite: Normal physical iPhone build of myself.md open and
+  unlocked, with the four main tabs visible. Preserve existing account and data.
