@@ -84,20 +84,22 @@ function store(device, id, state) {
 /** @param {string} device @param {import('../core/profiles.js').ExportProfile} profile @param {boolean} enabled */
 export async function setScheduleEnabled(device, profile, enabled) {
   if (enabled && !qaEnabled) {
-    const session = await loadSession();
-    if (!session?.server || session.deviceId !== device)
-      throw new Error('Connect this phone to enable cloud export notifications.');
-    await requireCloudAuthorization(session, profile);
+    // Only Cloud uploads need the account session. Phone and HTTPS schedules run from the local
+    // export context; push wakes are an optional reliability boost registered when signed in.
+    if (profile.export.destination === 'cloud') {
+      const session = await loadSession();
+      if (!session?.server || session.deviceId !== device)
+        throw new Error('Sign in again to enable scheduled Cloud exports.');
+      await requireCloudAuthorization(session, profile);
+    }
     if (Platform.OS === 'android')
       await Notifications.setNotificationChannelAsync('exports', {
         name: 'Scheduled exports',
         importance: Notifications.AndroidImportance.DEFAULT,
       });
-    let permission = await Notifications.getPermissionsAsync();
+    const permission = await Notifications.getPermissionsAsync();
     if (!permission.granted && permission.canAskAgain)
-      permission = await Notifications.requestPermissionsAsync();
-    if (!permission.granted)
-      throw new Error('Allow notifications in Settings to enable scheduled export reminders.');
+      await Notifications.requestPermissionsAsync().catch(() => {});
   }
   const current = loadProfiles(device)?.profiles.find((p) => p.id === profile.id);
   if (!current || fingerprint(current) !== fingerprint(profile))
@@ -499,11 +501,13 @@ export async function exportNow(session, profile, progress, options = {}) {
     );
     billingId = historyId;
     progress('Preparing export…', 0);
-    await reserveExport(session, billingId, {
-      profileId: profile.id,
-      days: dates,
-      formats: deliveredFormats(profile.export),
-    });
+    await reserveExport(
+      session,
+      billingId,
+      { profileId: profile.id, days: dates, formats: deliveredFormats(profile.export) },
+      // Only Cloud uploads need the account; other destinations can export signed out.
+      { offline: profile.export.destination !== 'cloud' },
+    );
     state.files = [];
     let failedSources = 0;
     for (const [index, d] of dates.entries()) {
@@ -685,11 +689,16 @@ async function executeScheduledExports(profileId, requested) {
         const cloudAuthorization = await requireCloudAuthorization(session, job.profile);
         // Reuse the occurrence ID across OS restarts and retries.
         // oxlint-disable-next-line eslint/no-await-in-loop
-        await reserveExport(session, historyId, {
-          profileId: profile.id,
-          days: job.days.map((day) => day.day),
-          formats: deliveredFormats(job.profile.export),
-        });
+        await reserveExport(
+          session,
+          historyId,
+          {
+            profileId: profile.id,
+            days: job.days.map((day) => day.day),
+            formats: deliveredFormats(job.profile.export),
+          },
+          { offline: job.profile.export.destination !== 'cloud' },
+        );
         if (state.retryAt)
           beginExport(
             session,

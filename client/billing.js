@@ -149,25 +149,54 @@ export async function savePurchase(proof) {
   if (session?.owner) await send(session, 'purchase', undefined, proof);
   setNativeUnlocked(true);
 }
-/** @param {import('./export-context.js').ExportContext} context @param {string} id @param {ExportScope} [scope] */
-export async function reserveExport(context, id, scope) {
+/** Whether this phone already knows the export is unlocked for this account: a native purchase,
+ * the build preview, or the account's last-synced unlimited access (kept when a login expires and
+ * cleared on sign-out).
+ * @param {import('./export-context.js').ExportContext} context */
+function unlockedOnDevice(context) {
+  if (previewLifetime || nativeUnlocked) return true;
+  const owner = db.getFirstSync('SELECT value FROM billing_cache WHERE id=3')?.value;
+  return owner === context.owner && allowance().accountUnlocked;
+}
+/** Missing/expired sign-in and network failures carry no HTTP status; server refusals do.
+ * @param {unknown} error */
+function unreachable(error) {
+  return !(error && typeof error === 'object' && 'status' in error);
+}
+/** Reserve one export use. Local and HTTPS destinations need no sign-in once this phone knows the
+ * account is unlocked: the use is recorded here and reported with the next account sync. Cloud
+ * uploads, free-tier accounts and explicit server refusals still require the server.
+ * @param {import('./export-context.js').ExportContext} context @param {string} id @param {ExportScope} [scope] @param {{offline?:boolean}} [options] */
+export async function reserveExport(context, id, scope, options = {}) {
   const existing = db.getFirstSync('SELECT id FROM export_allowance WHERE id=?', id);
-  const session = await billingSession(context);
-  if (session) {
-    await syncBilling(session);
-    try {
+  const offlineAllowed = Boolean(options.offline) && unlockedOnDevice(context);
+  /** @type {import('./session.js').Session|null} */
+  let session = null;
+  try {
+    session = await billingSession(context);
+    if (session) {
+      await syncBilling(session);
       await send(session, 'reserve', id, undefined, scope);
-    } catch (error) {
-      if (!remote.remaining && !remote.unlocked) {
+    }
+  } catch (error) {
+    if (!offlineAllowed || !unreachable(error)) {
+      if (session && !remote.remaining && !remote.unlocked) {
         blocked = true;
         promptVersion++;
         notify();
       }
       throw error;
     }
-  } else {
+    // Unlocked locally and the account is unreachable: record this use on the phone.
+    session = null;
+  }
+  if (!session) {
     if (existing) return;
-    if (db.getFirstSync('SELECT value FROM billing_cache WHERE id=3') && !allowance().unlocked)
+    if (
+      !offlineAllowed &&
+      db.getFirstSync('SELECT value FROM billing_cache WHERE id=3') &&
+      !allowance().unlocked
+    )
       throw new Error('Reconnect your account to use its shared free exports.');
     const current = allowance();
     if (!current.unlocked && !current.remaining) {
@@ -182,11 +211,16 @@ export async function reserveExport(context, id, scope) {
   db.runSync("INSERT OR IGNORE INTO export_allowance VALUES (?,'reserved',?)", id, session ? 0 : 1);
   notify();
 }
-/** @param {import('./export-context.js').ExportContext} context @param {string} id @param {boolean} used */
+/** Uses reserved on the phone settle locally; the next account sync imports completed ones.
+ * @param {import('./export-context.js').ExportContext} context @param {string} id @param {boolean} used */
 export async function settleExport(context, id, used) {
+  const row = /** @type {{offline:number}|null} */ (
+    db.getFirstSync('SELECT offline FROM export_allowance WHERE id=?', id)
+  );
   if (used) db.runSync("UPDATE export_allowance SET state='complete' WHERE id=?", id);
   else db.runSync("DELETE FROM export_allowance WHERE id=? AND state='reserved'", id);
   notify();
+  if (row?.offline) return;
   const session = await billingSession(context);
   if (session) await send(session, used ? 'complete' : 'release', id);
 }

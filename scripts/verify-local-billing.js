@@ -20,6 +20,8 @@ const sqlite = {
 let signedInAccount = null;
 let rejectStoredProof = false;
 let accountGranted = true;
+/** @type {null|'signed-out'|'refused'} Simulated server outcome for paired-account calls. */
+let accountFailure = null;
 /** @type {string[]} */
 const billingActions = [];
 const mocks = {
@@ -45,6 +47,11 @@ const mocks = {
       if (!signedInAccount) throw new Error('Unexpected network call for a local export.');
       const action = JSON.parse(String(options.body)).action;
       billingActions.push(action);
+      // An expired login surfaces as a status-less sign-in error; refusals carry an HTTP status.
+      if (accountFailure === 'signed-out')
+        throw new Error('Your sign-in has expired. Sign in again to reconnect your agent.');
+      if (accountFailure === 'refused')
+        throw Object.assign(new Error('Lifetime access was revoked.'), { status: 403 });
       if (rejectStoredProof && action === 'purchase') throw new Error('Sandbox purchase rejected');
       if (!accountGranted) return policy.exportAllowance(5, 0, false);
       return { used: 5, reserved: 0, remaining: 0, unlocked: true, complimentary: true };
@@ -64,7 +71,7 @@ async function load() {
     });
   });
   await module.evaluate();
-  return /** @type {{allowance:()=>{used:number,unlocked:boolean,accountUnlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string)=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
+  return /** @type {{allowance:()=>{used:number,unlocked:boolean,accountUnlocked:boolean,promptVersion:number},reserveExport:(context:{owner:string,deviceId:string},id:string,scope?:{profileId:string,days:string[],formats:string[]},options?:{offline?:boolean})=>Promise<void>,settleExport:(context:{owner:string,deviceId:string},id:string,used:boolean)=>Promise<void>,takeBlockedPaywall:(version:number)=>boolean,markPaywallSeen:(milestone:2|5)=>void,paywallSeen:(milestone:2|5)=>boolean,savePurchase:(proof:{store:'ios'|'android',proof:string})=>Promise<void>,clearNativePurchase:()=>Promise<void>,acceptAllowance:(value:import('../core/billing.js').ExportAllowance)=>void,clearAccountAllowance:()=>void,syncBilling:(session:{owner:string,deviceId:string}|null)=>Promise<void>}} */ (
     module.namespace
   );
 }
@@ -226,8 +233,75 @@ try {
   );
   billing.clearAccountAllowance();
   assert.equal(billing.allowance().unlocked, false, 'Signing out removes Cloud account access');
+
+  // Paired phone whose account has Lifetime, then its login expires.
+  const paired = { owner: 'owner-1', deviceId: 'phone-1' };
+  signedInAccount = paired;
+  accountGranted = true;
+  accountFailure = null;
+  billing = await load();
+  await billing.syncBilling(signedInAccount);
+  assert.equal(billing.allowance().unlocked, true);
+  accountFailure = 'signed-out';
+  billingActions.length = 0;
+  await billing.reserveExport(paired, 'expired-local', undefined, { offline: true });
+  await billing.settleExport(paired, 'expired-local', true);
+  assert.deepEqual(billingActions, ['sync'], 'Only the failed check reaches the server.');
+  assert.deepEqual(
+    { ...db.prepare("SELECT state, offline FROM export_allowance WHERE id='expired-local'").get() },
+    { state: 'complete', offline: 1 },
+    'An expired login records a Lifetime local export on the phone.',
+  );
+  await assert.rejects(
+    billing.reserveExport(paired, 'expired-cloud', undefined, { offline: false }),
+    /sign-in has expired/,
+    'Cloud uploads still require sign-in.',
+  );
+  accountFailure = 'refused';
+  await assert.rejects(
+    billing.reserveExport(paired, 'refused-local', undefined, { offline: true }),
+    /revoked/,
+    'An explicit server refusal is never bypassed offline.',
+  );
+  // Signed out entirely: the cached account grant is cleared, but a native purchase still works.
+  accountFailure = null;
+  signedInAccount = null;
+  billing.clearAccountAllowance();
+  await assert.rejects(
+    billing.reserveExport(paired, 'signed-out-grant', undefined, { offline: true }),
+    /Sign in/,
+    'Sign-out drops an account-only grant.',
+  );
+  await billing.savePurchase({ store: 'ios', proof: 'signed-out-native' });
+  await billing.reserveExport(paired, 'signed-out-native', undefined, { offline: true });
+  await billing.settleExport(paired, 'signed-out-native', true);
+  await billing.clearNativePurchase();
+  // Another account's cached Lifetime does not unlock this account.
+  signedInAccount = paired;
+  billing = await load();
+  await billing.syncBilling(signedInAccount);
+  accountFailure = 'signed-out';
+  const other = { owner: 'owner-2', deviceId: 'phone-1' };
+  await assert.rejects(
+    billing.reserveExport(other, 'other-owner', undefined, { offline: true }),
+    /Sign in/,
+  );
+  // A free-tier account still needs the server for its shared allowance.
+  accountFailure = null;
+  accountGranted = false;
+  await billing.syncBilling(signedInAccount).catch(() => {});
+  assert.equal(billing.allowance().unlocked, false);
+  accountFailure = 'signed-out';
+  await assert.rejects(
+    billing.reserveExport(paired, 'free-expired', undefined, { offline: true }),
+    /sign-in has expired/,
+    'Free-tier accounts cannot count shared exports offline.',
+  );
+  accountFailure = null;
+  accountGranted = true;
+  signedInAccount = null;
   console.log(
-    'Local billing: shared counter, blocked prompts, reminder persistence, offline lifetime access across process restarts, and refund clearing passed.',
+    'Local billing: shared counter, blocked prompts, reminder persistence, offline lifetime access across process restarts, refund clearing, and signed-out Lifetime local exports passed.',
   );
 } finally {
   db.close();
