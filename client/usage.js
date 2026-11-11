@@ -13,10 +13,23 @@ export async function usageStatus() {
 export async function authorizeUsage() {
   return (await bridge()?.authorize()) ?? 'unavailable';
 }
+/** iOS publishes Screen Time authorization asynchronously after launch, so an early read can
+ * see a stale status. Re-check briefly before treating access as unavailable.
+ * @param {UsageModule} module */
+async function settledStatus(module) {
+  let status = await module.status();
+  for (let attempt = 0; status !== 'authorized' && status !== 'denied' && attempt < 6; attempt++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    status = await module.status();
+  }
+  return status;
+}
 /** @param {import('../core/data.js').DataQuery} query @param {string} token @returns {Promise<import('../core/data.js').DataPage>} */
 export async function usagePage(query, token) {
   const module = bridge();
-  if (!module || (await module.status()) !== 'authorized')
+  if (!module || (await settledStatus(module)) !== 'authorized')
     throw new Error('Screen Time data access is unavailable. Enable system Usage Access.');
   const offset = Number(token || 0);
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid usage cursor.');
