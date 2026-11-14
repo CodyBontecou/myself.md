@@ -418,6 +418,16 @@ try {
   );
   assert.equal((await request('/api/store/google/notifications', null, 'POST', {})).status, 401);
   assert.equal((await request('/api/store/apple/notifications', null, 'GET')).status, 405);
+  // Health.md Play status is public, token-bearing and fails closed without Google credentials.
+  assert.equal(
+    (await request('/api/health-md/play-subscription', null, 'POST', { purchaseToken: '' })).status,
+    400,
+  );
+  const playStatus = await request('/api/health-md/play-subscription', null, 'POST', {
+    purchaseToken: 'fixture-token',
+  });
+  assert.equal(playStatus.status, 503);
+  assert.match(JSON.stringify(playStatus.value), /not configured/);
   const tierToken = await token('cloud-tier', 'myselfmd-phone');
   z.object({
     plan: z.literal('cloud_100gb'),

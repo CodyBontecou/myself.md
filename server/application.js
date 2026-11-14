@@ -46,7 +46,7 @@ async function bodyBytes(req, limit) {
   }
   return Buffer.concat(chunks);
 }
-/** @typedef {{analytics?:import('../core/analytics.js').AnalyticsService,analyticsMilestone?:(subject:string,name:'phone_connected',operation:string)=>Promise<void>,exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],ticketStatus:import('./pairing-store.js').PairingStore['ticketStatus'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} BaseApplicationServices */
+/** @typedef {{analytics?:import('../core/analytics.js').AnalyticsService,analyticsMilestone?:(subject:string,name:'phone_connected',operation:string)=>Promise<void>,exportSchedules?:ReturnType<typeof import('./export-schedules.js').createExportSchedules>,accountLoginsApi?:(subject:string)=>Promise<ReturnType<import('./account-links.js').accountLogins>>,accountApi?:(subject:string,action:'status'|'delete')=>Promise<import('../core/account-deletion.js').DeletionStatus>,qrPng:(value:string,options:{width:number,margin?:number})=>Promise<import('node:buffer').Buffer>,billing:import('./billing-store.js').BillingStore,billingApi:ReturnType<import('./billing-service.js').createBillingService>['billingApi'],refreshEntitlement:(subject:string)=>Promise<void>,verifyMigrationPurchase:typeof import('./migration-purchases.js').verifyMigrationPurchase,readHealthMdPlaySubscription?:typeof import('./health-md-subscriptions.js').readHealthMdPlaySubscription,createMigrationClaim:(proof:{source:string,reference:string})=>string|Promise<string>,claimMigration:(subject:string,ticket:string)=>unknown|Promise<unknown>,registerTicket:(ticket:string,subject:string,expires:number)=>Promise<void>,registerDataTools:ReturnType<import('./data-service.js').createDataService>['registerDataTools'],phoneApi:ReturnType<import('./data-service.js').createDataService>['phoneApi'],cancelPhone:ReturnType<import('./data-service.js').createDataService>['cancelPhone'],cloud:import('./cloud-store.js').CloudStore,history:import('./history-store.js').HistoryStore,registerCloudTools:ReturnType<import('./cloud-service.js').createCloudService>['registerCloudTools'],ownCloudDevice:(subject:string,id:string)=>void,dashboardAsset:(path:string,res:import('node:http').ServerResponse,issuer:string)=>boolean|Promise<boolean>,dashboardApi:ReturnType<import('./dashboard-service.js').createDashboardService>['dashboardApi'],proxyAuth:typeof import('./auth-proxy.js').proxyAuth,createPairing:import('./pairing-store.js').PairingStore['createPairing'],claim:import('./pairing-store.js').PairingStore['claim'],devices:import('./pairing-store.js').PairingStore['devices'],disconnect:import('./pairing-store.js').PairingStore['disconnect'],ticketStatus:import('./pairing-store.js').PairingStore['ticketStatus'],pending:import('./pairing-store.js').PairingStore['pending'],status:import('./pairing-store.js').PairingStore['status']}} BaseApplicationServices */
 /** @typedef {BaseApplicationServices & Partial<ReturnType<typeof import('./watch-service.js').createWatchService>>} ApplicationServices */
 /** Shared HTTP authorization and routes for Node and Workers.
  * @param {Record<string,string|undefined>} config @param {ApplicationServices & {cloudSubscriptions?:ReturnType<typeof import('./cloud-subscriptions.js').createCloudSubscriptions>,storeNotification?:(source:'apple'|'google',bytes:Uint8Array,authorization:string|undefined,audience:string)=>Promise<unknown>}} services
@@ -71,6 +71,7 @@ export function createApplication(
     billingApi,
     refreshEntitlement,
     verifyMigrationPurchase,
+    readHealthMdPlaySubscription,
     createMigrationClaim,
     claimMigration,
     registerTicket,
@@ -129,6 +130,7 @@ export function createApplication(
   );
   const limitPublicRead = createPublicReadLimiter();
   const limitAgentRest = createPublicReadLimiter();
+  const limitPlayStatus = createPublicReadLimiter();
   const metadata = {
     resource,
     authorization_servers: [issuer],
@@ -748,6 +750,25 @@ export function createApplication(
         const ticket = await createMigrationClaim(verified);
         res.setHeader('Cache-Control', 'no-store');
         json(res, 200, { claimUrl: `${requestOrigin}/claim#${ticket}` });
+        return;
+      }
+      if (url.pathname === '/api/health-md/play-subscription' && req.method === 'POST') {
+        const limit = limitPlayStatus(req.socket.remoteAddress ?? 'unknown');
+        if (!limit.allowed) {
+          res.setHeader('Retry-After', limit.headers['RateLimit-Reset']);
+          json(res, 429, { error: 'Too many subscription checks. Retry later.' });
+          return;
+        }
+        if (!readHealthMdPlaySubscription)
+          throw new PairingError(503, 'Google Play subscription status is not configured.');
+        const body = await bodyBytes(req, 40000);
+        let input;
+        try {
+          input = JSON.parse(body.toString());
+        } catch {
+          throw new PairingError(400, 'A Google Play purchase token is required.');
+        }
+        json(res, 200, await readHealthMdPlaySubscription(input));
         return;
       }
       if (url.pathname === '/health') {

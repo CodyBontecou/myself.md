@@ -67,6 +67,14 @@ Deploy time.md's verification endpoint before deploying the myself.md verifier; 
 
 The operator grant command remains available as a fallback after independently verifying payment. Use the same canonical payment intent ID and account subject, never an email address. See [Cloudflare migration](cloudflare-migration.md) for hosted operator grants.
 
+## Health.md Android subscription status
+
+Health.md Android's Settings › Subscription screen cannot read a renewal date from Play Billing, so it sends the purchase token of its active subscription to `POST /api/health-md/play-subscription` with `{ "purchaseToken": "…" }` (1–30,000 characters, 40,000-byte body). The endpoint is unauthenticated; the token is the bearer secret and only its owning device sends it. It is read-only: it issues no claim, grants nothing and is independent of myself.md's own cloud subscriptions.
+
+The server reads Google `purchases.subscriptionsv2.get` for `com.healthmd.android` (15-second timeout) and returns `Cache-Control: no-store` JSON `{ productId, state, expiresAt, autoRenewing, test }`. Only `health_md_premium_weekly` and `health_md_premium_yearly` line items count; the one with the latest `expiryTime` is reported. `state` is `active`, `grace`, `on_hold`, `paused`, `canceled`, `expired` or `pending` (`PENDING_PURCHASE_CANCELED` and unknown states report `expired`). `expiresAt` is an ISO timestamp or `null`; `test` reports a license-test purchase without rejecting it. The token, linked tokens, order IDs and account identifiers are never returned.
+
+Errors are `{ "error": "…" }`: 400 malformed body or token, 413 oversized body, 429 more than 120 checks per minute from one client address (per process/isolate), 403 when Google reports the token invalid or not found or it is not a Health.md weekly/yearly subscription, and 503 when `GOOGLE_APPLICATION_CREDENTIALS`/`GOOGLE_SERVICE_ACCOUNT_JSON` is absent or Google is unreachable, rejects the service account, or fails. It uses the same Android Publisher service account as Health.md lifetime claims, which also needs permission to view Health.md subscription purchases. `npm run verify:health-md-subscription` covers state mapping, line-item selection, denials, configuration and leakage; `npm run verify:cloud` and `npm run verify:worker` cover the unconfigured runtime routes.
+
 ## Validation
 
 `npm run verify:migration` covers eligible products, grandfather cutoff, revoked/shared purchases, expiry, purchase reuse, and permanent manual grants. `npm run verify:billing` covers the shared quota and clearing cached account access on sign-out. `npm run verify:dashboard` exercises the claim return route through OAuth PKCE. `npm run verify:cloud` checks authenticated claim redemption and phone retrieval across real HTTP boundaries.

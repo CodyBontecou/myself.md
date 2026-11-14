@@ -2,6 +2,7 @@ import { createWatchService } from './watch-service.js';
 import { join } from 'node:path';
 import { billing, billingApi, refreshEntitlement } from './billing.js';
 import { verifyMigrationPurchase } from './migration-purchases.js';
+import { readHealthMdPlaySubscription } from './health-md-subscriptions.js';
 import { createServer } from 'node:http';
 import { registerDataTools, phoneApi, cancelPhone } from './data.js';
 import {
@@ -43,6 +44,7 @@ createServer(
     billingApi,
     refreshEntitlement,
     verifyMigrationPurchase,
+    readHealthMdPlaySubscription,
     createMigrationClaim: (proof) => billing.createClaim(proof),
     claimMigration: (subject, ticket) => billing.claim(subject, ticket),
     registerTicket: async () => {},
